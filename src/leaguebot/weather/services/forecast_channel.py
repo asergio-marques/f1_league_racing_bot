@@ -16,17 +16,26 @@ import aiosqlite
 
 from leaguebot.weather.models.switch import SWITCH_KEY
 from leaguebot.framework.db.database import get_connection, sole_row, tuple_rows_in
+from leaguebot.core.models.channel_needs import ATTACH, SEND, VIEW, Needs
+from leaguebot.core.services.modules.kept_channels import KeptChannel, KeptReader
 from leaguebot.core.services.seasons.approval_checks import channel_fault
 from leaguebot.core.services.settings.channel_registry_service import ChannelUse, DiscordTargets
 
 if TYPE_CHECKING:
     from leaguebot.framework.services.switches.module_service import ModuleService
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
+
+#: The forecast channel as a league calls it, and the command that sets it: what its faults name.
+_LABEL = "weather channel"
+_COMMAND = "/weather channel"
 
 
 async def set_division_forecast_channel(
-    db: aiosqlite.Connection, division_id: int, channel_id: int
+    db: aiosqlite.Connection, division_id: int, channel_id: int | None
 ) -> int | None:
     """Set `divisions.forecast_channel_id` on *db*, never committing; returns the previous value.
+    A *channel_id* of `None` clears it, as the weather switch-on does for a channel another
+    setting took while the module was off (`module_switch_settings.module_on_weather`).
 
     The save that calls it owns the transaction, so the column and the audit entry stand or fall
     together. A value already held is left unwritten, and the caller told so by the value it gets
@@ -81,15 +90,48 @@ async def division_lines(
     }
 
 
+async def channel_needs(drawing: "ImageDrawing") -> Needs:
+    """What the forecast channel needs of the bot: View Channel and Send Messages, as a forecast
+    is posted as text, and Attach Files where the image module answers that the `weather`
+    pictures could attach a file (`aspect_attaches_files`, a question it answers by its switches
+    and not by the state of a template). A forecast is a post and not an embed, and is not
+    reposted, so Embed Links and Read Message History are not asked."""
+    attaches = await drawing.aspect_attaches_files("weather")
+    return (VIEW, SEND) + ((ATTACH,) if attaches else ())
+
+
+async def kept_channels(drawing: "ImageDrawing") -> KeptReader:
+    """The reader of the forecast channels weather keeps, for the check its switch-on makes
+    (`core/services/modules/kept_channels.py`): given a connection and the live season's divisions
+    (id to name), it gives each one's forecast channel that is set, with what it needs of the bot
+    (`channel_needs`, asked of the *drawing* now and not when the switch-on is built, as a picture
+    switched on while weather was off may attach a file). Reads only."""
+    needs = await channel_needs(drawing)
+
+    async def read(db: aiosqlite.Connection, divisions: Mapping[int, str]) -> list[KeptChannel]:
+        channels = await forecast_channels_on(db, list(divisions))
+        return [
+            KeptChannel(
+                "weather", division_id, divisions[division_id], channel, _LABEL, _COMMAND, needs
+            )
+            for division_id, channel in sorted(channels.items())
+            if channel is not None
+        ]
+
+    return read
+
+
 async def division_channel_faults(
     modules: "ModuleService",
     db_path: str,
     *,
+    drawing: "ImageDrawing",
     divisions: Mapping[int, str],
     guild: Any = None,
 ) -> dict[int, list[str]]:
-    """The forecast channel of each division in *divisions* (id to name) that is not set, or not
-    on the *guild*, by division id; nothing where the weather module is off.
+    """The forecast channel of each division in *divisions* (id to name) that is not set, not on
+    the *guild* or lacking a permission its use needs (`channel_needs`, asked of the *drawing*),
+    by division id; nothing where the weather module is off.
 
     Subscribed to core's `division_channel_faults_read`, which hands the divisions the
     confirmation judges and the server. A division with no fault is given an empty list. With no
@@ -99,25 +141,30 @@ async def division_channel_faults(
         return {}
     async with get_connection(db_path) as db:
         channels = await forecast_channels_on(db, list(divisions))
+    needs = await channel_needs(drawing)
     found: dict[int, list[str]] = {}
     for division_id, name in divisions.items():
         fault = await channel_fault(
-            guild, name, channels.get(division_id), "weather channel", "/weather channel"
+            guild, name, channels.get(division_id), _LABEL, _COMMAND, needs
         )
         found[division_id] = [fault] if fault else []
     return found
 
 
 async def channel_uses(
-    db_path: str, *, channel_id: int, divisions: Mapping[int, str]
+    modules: "ModuleService", db_path: str, *, channel_id: int, divisions: Mapping[int, str]
 ) -> list[ChannelUse]:
     """The weather use of *channel_id* by each of *divisions* (the live season's, by id, naming
-    each) whose forecast channel it is, in division id order; empty where none is.
+    each) whose forecast channel it is, in division id order; empty where none is, and always
+    where the weather module is off.
 
     Subscribed to core's `channel_uses_read`, which asks it as a channel is set, so that a channel
-    does one job. Asked no switch: a channel weather holds is held whether weather is on or off.
-    Reads only.
+    does one job. A switched-off module answers for none of its channels, which it keeps: another
+    setting may take one, and the module clears it when it is switched on again
+    (`core/services/modules/kept_channels.py`). Reads only.
     """
+    if not await modules.is_enabled(SWITCH_KEY):
+        return []
     async with get_connection(db_path) as db:
         channels = await forecast_channels_on(db, list(divisions))
     return [

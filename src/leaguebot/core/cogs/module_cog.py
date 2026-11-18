@@ -84,10 +84,10 @@ def _results_disable_warning(*, season_active: bool, attendance: bool) -> str:
             "⚠️ **Attendance goes with it.** Attendance depends on Results & Standings and "
             "cannot run alone. If you continue:\n"
             "• every check-in call, reminder and deadline still to come will stop;\n"
-            "• every division's check-in and attendance channels will be cleared, and you "
-            "will have to set them again;\n"
             "• Attendance cannot be switched back on once a season's placements are confirmed.\n"
-            "Timings, penalties and thresholds are kept either way."
+            "Its settings and every division's check-in and attendance channels are kept for "
+            "when it is switched back on; any channel deleted or put to another use meanwhile "
+            "will be named, for you to set again."
         )
 
     return "\n\n".join(lines)
@@ -369,16 +369,6 @@ class ModuleCog(commands.Cog):
         if await self._refuse_missing_dependency(interaction, "results"):
             return
 
-        # Block if ACTIVE season exists (FR-003)
-        active_season = await self.bot.season_service.get_confirmed_season()
-        if active_season is not None:
-            await refuse(
-                interaction,
-                "❌ Results & Standings module cannot be enabled once a season's placements are confirmed.",
-                what=describe(interaction),
-            )
-            return
-
         # The switch is results' own change on the queue, whose check refuses "already enabled":
         # this asks for it and does nothing else.
         await self.bot.change_queue.ask(
@@ -393,8 +383,8 @@ class ModuleCog(commands.Cog):
     async def _disable_results(self, interaction: discord.Interaction) -> None:
         """Disable results & standings, warning first wherever it costs the league something.
 
-        The warning names the cascade: attendance goes with results, its check-in and
-        attendance channels are cleared, and it cannot come back while the season runs.
+        The warning names the cascade: attendance goes with results, its settings and its check-in and
+        attendance channels are kept, and it cannot come back while the season runs.
 
         A running season is owed the confirmation in its own right, whatever attendance is
         doing: disabling mid-season destroys that season's results entire and closes every
@@ -442,16 +432,6 @@ class ModuleCog(commands.Cog):
         if await self._refuse_missing_dependency(interaction, "attendance"):
             return
 
-        # Guard: no ACTIVE season
-        active_season = await self.bot.season_service.get_confirmed_season()
-        if active_season is not None:
-            await refuse(
-                interaction,
-                "❌ Attendance module cannot be enabled once a season's placements are confirmed.",
-                what=describe(interaction),
-            )
-            return
-
         # The switch is attendance's own change on the queue, whose check refuses "already
         # enabled": this asks for it and does nothing else.
         await self.bot.change_queue.ask(
@@ -484,8 +464,8 @@ class ModuleCog(commands.Cog):
         self, interaction: discord.Interaction
     ) -> None:
         # The switch-off is image's own change on the queue: it lowers the flag and writes
-        # its audit entry in one save, deleting nothing and removing nothing (Principle X.6's
-        # exception, which image claims). This asks for it and does nothing else.
+        # its audit entry in one save, deleting nothing and removing nothing (Principle X rule 6:
+        # a disabled module keeps its configuration). This asks for it and does nothing else.
         await self.bot.change_queue.ask(
             module_off("images"),
             {},

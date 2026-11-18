@@ -133,17 +133,18 @@ def test_the_season_warning_says_it_cannot_be_switched_back():
 
 
 def test_the_cascade_is_announced_in_its_own_right():
-    """The silent half of issue #114."""
+    """The silent half of issue #114, and what attendance keeps (#449): its settings and its
+    channels stand for when it is switched back on."""
     warning = _results_disable_warning(season_active=False, attendance=True)
 
     assert warning == (
         "⚠️ **Attendance goes with it.** Attendance depends on Results & Standings and "
         "cannot run alone. If you continue:\n"
         "• every check-in call, reminder and deadline still to come will stop;\n"
-        "• every division's check-in and attendance channels will be cleared, and you "
-        "will have to set them again;\n"
         "• Attendance cannot be switched back on once a season's placements are confirmed.\n"
-        "Timings, penalties and thresholds are kept either way."
+        "Its settings and every division's check-in and attendance channels are kept for when "
+        "it is switched back on; any channel deleted or put to another use meanwhile will be "
+        "named, for you to set again."
     )
 
 
@@ -730,7 +731,9 @@ async def test_a_disable_between_seasons_reports_no_destruction(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-async def test_the_cascade_disables_attendance_and_says_so(tmp_path):
+async def test_the_cascade_disables_attendance_and_says_what_it_keeps(tmp_path):
+    """Its settings and its channels survive (#449), so a league re-enabling it later does not
+    have to configure it again, and the reply says so rather than that anything was cleared."""
     db_path = await _make_db(tmp_path, attendance=True)
     cog = await _queued_cog(db_path)
 
@@ -738,18 +741,54 @@ async def test_the_cascade_disables_attendance_and_says_so(tmp_path):
 
     replied = updated_reply(interaction)
     assert "Attendance module disabled with it" in replied
-    assert "check-in and attendance channels have been cleared" in replied
+    assert (
+        "Its settings and its per-division check-in and attendance channels are kept." in replied
+    )
+    assert "cleared" not in replied
 
 
-async def test_the_cascade_says_what_attendance_keeps(tmp_path):
-    """Its timings, penalties and thresholds survive — so a league re-enabling it later
-    does not have to configure it again."""
-    db_path = await _make_db(tmp_path, attendance=True)
-    cog = await _queued_cog(db_path)
+async def test_attendance_taken_down_with_results_comes_back_as_it_was(tmp_path):
+    """The issue's reproduction (#449), through the cascade: a league whose attendance went off
+    with Results & Standings, and which switches both back on, finds its check-in notice and its
+    division's check-in and attendance channels as it left them, both still on the server and
+    usable, so the switch-on's check of its kept channels finds nothing to name."""
+    from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
+    from tests.support.channel_faults import answer_attachments, server_holding
+    from tests.support.settings_league import interaction, settings_league
 
-    interaction = await _turn_off(cog, cascade=True)
+    league = await settings_league(tmp_path, modules=("results", "attendance"))
+    async with get_connection(league.db_path) as db:
+        await db.execute(
+            "INSERT INTO seasons (id, season_number, start_date, status) "
+            "VALUES (1, 1, '2026-11-01', 'SETUP')"
+        )
+        await db.execute(
+            "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "
+            "VALUES (1, 1, 'Pro', 1, 501)"
+        )
+        await db.execute(
+            "INSERT INTO attendance_division_config "
+            "(division_id, rsvp_channel_id, attendance_channel_id) VALUES (1, '7101', '7102')"
+        )
+        await db.execute("UPDATE attendance_config SET rsvp_notice_days = 7")
+        await db.commit()
+    league.bot.get_guild = MagicMock(return_value=server_holding())
+    answer_attachments(league.bot.image_drawing)
+    cog = ModuleCog(league.bot)
 
-    assert "timings, penalties and thresholds are kept" in updated_reply(interaction)
+    await _turn_off(cog, cascade=True)
+    await cog._enable_results(interaction(league.bot, "module enable"))
+    await run_queue(league.bot)
+    await cog._enable_attendance(interaction(league.bot, "module enable"))
+    await run_queue(league.bot)
+
+    service = AttendanceService(league.db_path)
+    config = await service.get_config()
+    assert config.module_enabled is True
+    assert config.rsvp_notice_days == 7
+    pro = await service.get_division_config(1)
+    assert pro is not None
+    assert (pro.rsvp_channel_id, pro.attendance_channel_id) == ("7101", "7102")
 
 
 async def test_no_cascade_where_attendance_is_already_off(tmp_path):

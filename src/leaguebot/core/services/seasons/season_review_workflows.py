@@ -636,7 +636,9 @@ async def approve_season(
     #
     # Read through the hook `/season placements-review` reports from, so the report a manager
     # was given and the refusal they then meet cannot disagree.
-    refusals = await read_refusals(confirmation_refused, season.id, Confirmation.APPROVAL)
+    refusals = await read_refusals(
+        confirmation_refused, season.id, Confirmation.APPROVAL, guild=interaction.guild
+    )
     if refusals:
         await refuse(
             interaction, refusals[0].message, what=what, reason=refusals[0].reason

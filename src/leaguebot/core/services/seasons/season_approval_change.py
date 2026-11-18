@@ -12,12 +12,13 @@ first that fails being the refusal: another approval of the season in hand, queu
 stopped, **naming no job** and asking no backup question (`approval_in_hand`); the season no longer
 in Placements; the season changed since the review (the review's own fingerprint, which covers
 everything the press's gates read of the season); a date gone by (the clock); a channel no longer on
-the server (Discord); the rasteriser gone from the host, where images is on. The press keeps every
-gate in its own words and order, so a refusal there answers the member at once; the check is what
-stands between a season changed while the approval waited on the queue and its commitment. It
-imports nothing from a module and no cog, and reaches a module's service only through what the
-builder hands it (`season_approval_change`'s parameters); `ctx.bot` is used for Discord alone, the
-league's server.
+the server (Discord); the first refusal any module gives the approval, as the press asks it
+(`confirmation_refused`, handed the server); the rasteriser gone from the host, where images is
+on. The press keeps every gate in its own words and order, so a refusal there answers the member
+at once; the check is what stands between a season changed while the approval waited on the queue
+and its commitment. It imports nothing from a module and no cog, and reaches a module's service
+only through what the builder hands it (`season_approval_change`'s parameters); `ctx.bot` is used
+for Discord alone, the league's server.
 
 **Everything the approval writes is one job** (`apply`, architecture.md, "All or nothing in one
 step"): every round's sessions, the points snapshot, the commitment of the placements and the move
@@ -64,6 +65,7 @@ from leaguebot.core.services.rounds.round_moments import (
 )
 from leaguebot.framework.utils.hooks import AwaitedHook, Hook
 from leaguebot.core.services.seasons import approval_checks
+from leaguebot.core.services.seasons.confirmation_refusals import Confirmation, read_refusals
 from leaguebot.core.services.drivers import lineup_posting
 from leaguebot.framework.services.posting import standing_posts
 from leaguebot.core.services.rounds.calendar_post_service import POST_CALENDAR, calendar_steps
@@ -293,6 +295,7 @@ def season_approval_change(
     placements_confirmed_steps: Hook,
     division_channel_faults_read: AwaitedHook,
     fingerprint_areas_read: AwaitedHook,
+    confirmation_refused: AwaitedHook,
     rasteriser_fault: Callable[[], str | None],
     season_approved: AwaitedHook,
     now: Callable[[], datetime],
@@ -310,10 +313,11 @@ def season_approval_change(
     *placements_confirmed_steps* (each module's step definitions for its own opening post, by
     name), *division_channel_faults_read* (the hook each module names its own channels' faults
     through), *fingerprint_areas_read* (the hook each module's own areas of the fingerprint are
-    asked through), *rasteriser_fault* (what is wrong with the host's drawing program, None where
-    nothing is), *season_approved* (the hook each module's keeping for the season is called
-    through, inside the save, handed its connection and the season's id) and *now* (the queue's
-    clock).
+    asked through), *confirmation_refused* (the hook each module's refusals of the approval are
+    read through, handed the season and the server, as the press reads them), *rasteriser_fault*
+    (what is wrong with the host's drawing program, None where nothing is), *season_approved*
+    (the hook each module's keeping for the season is called through, inside the save, handed its
+    connection and the season's id) and *now* (the queue's clock).
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -366,6 +370,15 @@ def season_approval_change(
                 f"⛔ Season cannot be approved:\n{bullets}",
                 "the season cannot be approved:\n" + "\n".join(channels),
             )
+
+        # What the modules refuse the approval on, as the press asks it: the first refusal ends
+        # it, with the module's own words. A module's channel deleted after the press, or its
+        # settings changed while the approval waited, is caught here.
+        refusals = await read_refusals(
+            confirmation_refused, season_id, Confirmation.APPROVAL, guild=guild
+        )
+        if refusals:
+            return Verdict.refuse(refusals[0].message, refusals[0].reason or "")
 
         if await modules.is_enabled("images"):
             fault = rasteriser_fault()

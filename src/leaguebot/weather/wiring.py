@@ -208,10 +208,12 @@ def sign_up_to_division_lines_read(bot: "LeagueBot") -> None:
 
 def sign_up_to_channel_uses_read(bot: "LeagueBot") -> None:
     """Sign weather up to the hook a channel being set is asked of each module through, handed the
-    database's path."""
+    module service, which answers whether weather is on, and the database's path."""
     from leaguebot.weather.services import forecast_channel
 
-    bot.channel_uses_read.subscribe(partial(forecast_channel.channel_uses, bot.db_path))
+    bot.channel_uses_read.subscribe(
+        partial(forecast_channel.channel_uses, bot.module_service, bot.db_path)
+    )
 
 
 def sign_up_to_setting_channels_read(bot: "LeagueBot") -> None:
@@ -223,13 +225,17 @@ def sign_up_to_setting_channels_read(bot: "LeagueBot") -> None:
 
 
 def sign_up_to_division_channel_faults_read(bot: "LeagueBot") -> None:
-    """Sign weather's lines naming its forecast channel not set or not on the server up to the hook
-    a division's channel faults are read through, handed the module service and the database's
-    path."""
+    """Sign weather's lines naming its forecast channel not set, not on the server or missing a
+    permission it needs up to the hook a division's channel faults are read through, handed the
+    module service, the database's path and the image module's drawing, which says whether a
+    picture could attach a file."""
     from leaguebot.weather.services import forecast_channel
 
     bot.division_channel_faults_read.subscribe(
-        partial(forecast_channel.division_channel_faults, bot.module_service, bot.db_path)
+        partial(
+            forecast_channel.division_channel_faults, bot.module_service, bot.db_path,
+            drawing=as_image_drawing(bot.image_drawing),
+        )
     )
 
 
@@ -305,7 +311,11 @@ def register_change_types(bot: "LeagueBot") -> None:
     )
     bot.change_queue.register(
         setting_change(
-            module_on_weather(modules=bot.module_service, seasons=bot.season_service)
+            module_on_weather(
+                modules=bot.module_service, seasons=bot.season_service,
+                channel_uses_read=bot.channel_uses_read,
+                drawing=as_image_drawing(bot.image_drawing),
+            )
         )
     )
     bot.change_queue.register(

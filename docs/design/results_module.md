@@ -268,7 +268,7 @@ must write all or nothing; the posts follow it. A step marked † cannot be disc
 |---|---|---|
 | `results.setting.config_*` (seven), `results.setting.amend_*` (four), `results.setting.reserves` | the `/results config` and `/results amend` commands that change a value, `/results reserves toggle` | a `Setting`: **the value and its audit entry** (`core.md`, "A league's settings") |
 | `results.setting.results_channel`, `standings_channel`, `verdicts_channel` | `/results channel …` | a `Setting` that overtakes a stopped job (`Setting.repairs_the_bot`) |
-| `module.on:results` | core's `/module enable results` | a `Setting`: **the flag and the audit entry**; then the hub's refresh and the sweep armed, each an `After` step |
+| `module.on:results` | core's `/module enable results` | a `Setting`: before it, `check_kept_channels`; then **the flag, the clear of each channel another setting took, and the audit entries**; then the hub's refresh and the sweep armed, each an `After` step |
 | `module.off:results` | core's `/module disable results` | **`switch_off`**: the season erased, the flag down, attendance off where cascaded, the rounds waiting on results closed; `disarm_sweep`; one `take_down` for each message or channel; **`close`** |
 | `results.rounds.sync`, `results.standings.sync` | `/results rounds sync`, `/results standings sync` | each round's posts, each followed by the deletion of what it replaces; `close`. Repeatable |
 | `results.amend.open` | `/results rounds amend` | `delete_stale`, the channel made and recorded, `post_opening`, the first prompt, `arm_lapse` |
@@ -581,6 +581,19 @@ and the log lines the router delivers.
 
 Answers to `architecture.md`, "How modules and core fit together".
 
+### The channels results keeps while it is off
+
+`division_channels._CHANNELS` is the one table of the three channels: each one's column, its
+setting, its label, its command and what the review shows where it is unset. The review's lines, the
+confirmation's faults, the registry's answer and the switch-on's reader (`kept_channels`) are all
+read from it, so that a channel added to it is judged by all four. `channel_uses` asks the module's
+switch, which is how the channels yield while it is off. The switch-on's save clears a taken channel
+through the column's own writer, audited as the setting's own change, and the reader asks
+`channel_needs` as the check runs, not as the switch-on is built. `core.md`, "Core's change types",
+and `architecture.md`, "How modules and core fit together", give the arrangement;
+core_specification.md, "Channels", the rules, among them what the review lines of an off module
+show.
+
 ### The hooks results signs up to
 
 Results declares no hook, and calls none of core's list hooks: where results ends a round as not
@@ -605,7 +618,7 @@ held or turns itself off, it hands core's writer the hook (`cancellation_notices
 | `divisions_raced_read` | `results_purge_service.divisions_raced_on` | reads the divisions a driver's accounts raced in |
 | `test_mode_turned_on` | `season_points_service.seed_test_configs_on` | seeds the test configurations where the core specification's "Entering and leaving it" says, whatever results' switch, through the writers `/results config` uses, and hands back the names and the audit entries as a `TestModePart` |
 | `review_sections_read` | `season_points_service.review_section` | results' section of a season review |
-| `division_lines_read`, `division_channel_faults_read`, `channel_uses_read`, `setting_channels_read` | `division_channels.division_lines`, `division_channel_faults`, `channel_uses`, `setting_channels` | a division's channels, read for the reviews, the channel registry and the factory reset |
+| `division_lines_read`, `division_channel_faults_read`, `channel_uses_read`, `setting_channels_read` | `division_channels.division_lines`, `division_channel_faults`, `channel_uses`, `setting_channels` | a division's channels, read for the reviews, the channel registry (answering nothing while results is off) and the factory reset |
 | `fingerprint_areas_read` | `fingerprint_areas.fingerprint_areas` | results' configuration in the season's fingerprint |
 | `round_leads_read` | `round_start.submission_leads` | answers the submission's lead for every round, whatever results' switch ("The round's `results` job") |
 | `round_armed` | `round_start.round_armed` | answers the submission's lead for an amended round, whatever results' switch |
@@ -656,9 +669,25 @@ and hands in. A session's table and the two standings go through the standing-po
 picture Discord refuses goes out as its text in the same try. A verdict and the heading go through
 the notice handler (`send_notice`), and a picture Discord refuses stops the queue, so that the retry
 posts the text. What the drawing had to report comes back as lines of the job, in every case. The
-repost's check that a channel can take a file asks the drawing whether the aspect attaches files
-(`ImageDrawing.aspect_attaches_files`). A retry asks for no picture (above, "Pictures and their
+repost's check that a channel can use what it posts reads results' stated needs for the channel
+(`division_channels.channel_needs`, below) and so asks the drawing whether the aspect attaches
+files (`ImageDrawing.aspect_attaches_files`). A retry asks for no picture (above, "Pictures and their
 fallbacks").
+
+### What results' channels need of the bot
+
+`division_channels.channel_needs` states it, the one source of it within results; the results
+specification, under "Assigning channels to divisions", says what each channel needs. The one thing
+the statement asks of the image module is whether a channel's pictures could attach a file, which
+the drawing answers by its switches (`results`, `standings`, and `verdicts` or `verdict_banner` for
+the verdicts channel, where attendance's sanction cards go too). The confirmation's faults
+(`division_channel_faults`) and the repost gate (`results_post_service.repost_channel_faults`) both
+read it, as does attendance's recalculation for the verdicts channel, so the gates judge a channel
+by one statement and cannot disagree about what it needs. They do not share a reader: the
+confirmation finds a channel in the cache or by a fetch (`approval_checks.channel_presence`), where
+the repost and recalculation gates read the cache alone and also refuse a channel that is not a text
+channel (`results_post_service.channel_fault`). `manage_messages` is not asked: the bot deletes only
+its own posts.
 
 ### The `/results` group
 

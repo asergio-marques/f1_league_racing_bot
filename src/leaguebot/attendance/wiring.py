@@ -219,10 +219,12 @@ def sign_up_to_division_lines_read(bot: "LeagueBot") -> None:
 
 def sign_up_to_channel_uses_read(bot: "LeagueBot") -> None:
     """Sign attendance up to the hook a channel being set is asked of each module through,
-    handed the database's path."""
+    handed the module service, which answers whether attendance is on, and the database's path."""
     from leaguebot.attendance.services.settings import division_channels
 
-    bot.channel_uses_read.subscribe(partial(division_channels.channel_uses, bot.db_path))
+    bot.channel_uses_read.subscribe(
+        partial(division_channels.channel_uses, bot.module_service, bot.db_path)
+    )
 
 
 def sign_up_to_setting_channels_read(bot: "LeagueBot") -> None:
@@ -234,13 +236,16 @@ def sign_up_to_setting_channels_read(bot: "LeagueBot") -> None:
 
 
 def sign_up_to_division_channel_faults_read(bot: "LeagueBot") -> None:
-    """Sign attendance's lines naming its own channels not set or not on the server up to the hook
-    a division's channel faults are read through, handed its service and the module service."""
+    """Sign attendance's lines naming its own channels not set, not on the server or missing a
+    permission they need up to the hook a division's channel faults are read through, handed its
+    service, the module service and the image module's drawing, which says whether a picture could
+    attach a file."""
     from leaguebot.attendance.services.hooks import attendance_hooks
 
     bot.division_channel_faults_read.subscribe(
         partial(
-            attendance_hooks.division_channel_faults, bot.attendance_service, bot.module_service
+            attendance_hooks.division_channel_faults, bot.attendance_service, bot.module_service,
+            drawing=as_image_drawing(bot.image_drawing),
         )
     )
 
@@ -347,7 +352,11 @@ def register_change_types(bot: "LeagueBot") -> None:
     )
     bot.change_queue.register(
         setting_change(
-            module_on_attendance(modules=bot.module_service, seasons=bot.season_service)
+            module_on_attendance(
+                modules=bot.module_service, seasons=bot.season_service,
+                channel_uses_read=bot.channel_uses_read,
+                drawing=as_image_drawing(bot.image_drawing),
+            )
         )
     )
     bot.change_queue.register(

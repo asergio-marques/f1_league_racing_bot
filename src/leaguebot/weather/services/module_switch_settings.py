@@ -4,9 +4,17 @@
 `Setting` below by `setting_change` (`framework/services/queue/setting_change.py`, which holds what every
 settings change does with a value already held and with a fault): `module_on("weather")` and
 `module_off("weather")` (`framework/models/change.py`), so core's cog names the change without
-importing weather. Each save writes only `server_configs.weather_module_enabled`, weather's own
-column on core's table (architecture.md, "The database"; `OWN_COLUMNS` in
+importing weather. The switch-off's save writes only `server_configs.weather_module_enabled`,
+weather's own column on core's table (architecture.md, "The database"; `OWN_COLUMNS` in
 `tests/repository/test_architecture_rules.py`).
+
+**The switch-on checks the channels weather kept while it was off, before its save**
+(`core/services/modules/kept_channels.py`, handed `forecast_channel.kept_channels`): a forecast
+channel gone from the server is named, one another setting took meanwhile is named and cleared by
+the save through `set_division_forecast_channel`, audited as the forecast channel's own change
+(from the channel to none), with a line beneath the Success line for each, and one the bot cannot
+use keeps weather off, refused. A check that cannot be made ends the switch-on on a fault, nothing
+saved. The switch-on's save writes the flag and may clear a forecast channel in `divisions`.
 
 **The switch-off removes the season's weather jobs after the save, not before**
 (`docs/design/architecture.md`, "How modules and core fit together"): the flag going down and its
@@ -50,6 +58,16 @@ from leaguebot.core.services.seasons.season_lifecycle_service import (
     modules_frozen_for_completion,
 )
 from leaguebot.framework.services.queue.setting_change import After, Saved, Setting
+from leaguebot.core.services.modules.kept_channels import (
+    division_of,
+    found_in,
+    kept_channels_check,
+    named_reply,
+)
+from leaguebot.weather.services.forecast_channel import (
+    kept_channels,
+    set_division_forecast_channel,
+)
 
 if TYPE_CHECKING:
     import aiosqlite
@@ -57,6 +75,8 @@ if TYPE_CHECKING:
     from leaguebot.framework.services.switches.module_service import ModuleService
     from leaguebot.core.services.rounds.round_jobs import RoundJobs
     from leaguebot.core.services.seasons.season_service import SeasonService
+    from leaguebot.framework.utils.hooks import AwaitedHook
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
 
 #: The name of the step, after the switch-off's save, that removes the season's weather jobs.
 REMOVE_JOBS = "remove_jobs"
@@ -74,8 +94,18 @@ def _still_off(_payload: dict[str, Any]) -> str:
     return "The module is still off. Run `/module enable weather` again once the fault is cleared."
 
 
-def module_on_weather(*, modules: "ModuleService", seasons: "SeasonService") -> Setting:
-    """`module.on:weather`: raise the flag in one save, with its audit entry.
+def module_on_weather(
+    *,
+    modules: "ModuleService",
+    seasons: "SeasonService",
+    channel_uses_read: "AwaitedHook",
+    drawing: "ImageDrawing",
+) -> Setting:
+    """`module.on:weather`: check the forecast channels weather kept, then raise the flag in one
+    save, with its audit entry and, for each channel another setting took, the clear's.
+
+    *channel_uses_read* is core's hook, which the check asks who holds a kept channel through, and
+    *drawing* the image module's, which says whether a forecast picture could attach a file.
 
     **The check reads the season's stage again as the change starts,** not only at the ask
     (`module_cog.py`'s stage refusal): asked while no season's placements are confirmed, and run
@@ -91,20 +121,33 @@ def module_on_weather(*, modules: "ModuleService", seasons: "SeasonService") -> 
             return Verdict.refuse(PLACEMENTS_CONFIRMED_REFUSAL)
         return Verdict.go()
 
-    async def save(db: "aiosqlite.Connection", _payload: dict[str, Any]) -> Saved:
+    async def save(db: "aiosqlite.Connection", payload: dict[str, Any]) -> Saved:
+        named, taken, details = found_in(payload)
         await db.execute("UPDATE server_configs SET weather_module_enabled = 1")
+        audits = [
+            AuditRecord(change_type="MODULE_ENABLE", old_value={}, new_value={"module": "weather"})
+        ]
+        for each in taken:
+            old_id = await set_division_forecast_channel(db, division_of(each), None)
+            if old_id is not None:
+                audits.append(
+                    AuditRecord(
+                        "DIVISION_CHANNEL_SET",
+                        {"channel_type": "weather", "channel_id": old_id},
+                        {"channel_type": "weather", "channel_id": None},
+                        division_of(each),
+                    )
+                )
         return Saved(
             changed=True,
-            audits=(
-                AuditRecord(
-                    change_type="MODULE_ENABLE", old_value={}, new_value={"module": "weather"}
-                ),
-            ),
+            audits=tuple(audits),
+            details=tuple(details),
+            result={"named": named},
             then=(PlannedStep(REFRESH_HUB),),
         )
 
-    def reply(_payload: dict[str, Any], _results: Mapping[str, dict[str, Any]]) -> str:
-        return "✅ Weather module enabled."
+    def reply(_payload: dict[str, Any], results: Mapping[str, dict[str, Any]]) -> str:
+        return named_reply("✅ Weather module enabled.", results["save"]["named"])
 
     return Setting(
         kind=module_on("weather"),
@@ -113,8 +156,14 @@ def module_on_weather(*, modules: "ModuleService", seasons: "SeasonService") -> 
         check=check,
         save=save,
         reply=reply,
-        writes=("server_configs",),
+        writes=("server_configs", "divisions"),
         not_saved=_still_off,
+        before=(
+            kept_channels_check(
+                lambda: kept_channels(drawing), command=_ENABLE_COMMAND,
+                channel_uses_read=channel_uses_read,
+            ),
+        ),
         after={REFRESH_HUB: hub_refresh_after(_ENABLE_COMMAND)},
     )
 

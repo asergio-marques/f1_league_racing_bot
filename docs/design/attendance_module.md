@@ -54,12 +54,12 @@ write.
 
 | Table | Written by | What it writes |
 |---|---|---|
-| `attendance_config` | `module_switch_settings` | the switch-on: the row is replaced naming only the flag (below) |
+| `attendance_config` | `module_switch_settings` | the switch-on: the row created naming only the flag, or, where one is stored, only the flag raised (below) |
 | | `attendance_settings` | one column for each of the eight settings, in the setting's save |
 | | `attendance_config_service` (`switch_off_on`) | the flag lowered, the settings kept |
 | `attendance_division_config` | `division_channels` | each channel, by an upsert naming its one column, so setting one never blanks the other |
 | | `attendance_sheet` (`record_sheet_on`) | the live sheet's message id |
-| | `attendance_config_service` (`switch_off_on`) | every row deleted, so a returning module posts into no stale channel |
+| | `attendance_config_service` (`switch_off_on`) | every row's sheet message id cleared, the channels kept, so a returning module posts a sheet afresh and keeps its channels |
 | | `attendance_hooks` | a deleted division's row; every sheet id cleared when the bot is packed |
 | `driver_round_attendance` | `attendance_config_service` | a round's rows as its call is posted (`bulk_insert_attendance_rows_on`) and a driver's answer (`upsert_rsvp_status_on`, `answer_rsvp_on`) |
 | | `rsvp_service` | the reserves' placement, made at the deadline and cleared when an amended round reopens its check-in, and a round's answers cleared when a call is given up (`clear_check_in_answers_on`) |
@@ -110,16 +110,19 @@ so that a figure that looks wrong can be traced round by round, which a flattene
 commit a connection of their own, which a stop leaves right up to one round and stale from the
 next (`_recalculate_forward`'s docstring).
 
-### The packaged defaults are written once
+### The packaged defaults are written by the first switch-on
 
 The module's packaged settings are the column defaults of `attendance_config`. The switch-on's save
-writes `INSERT OR REPLACE INTO attendance_config (id, module_enabled) VALUES (1, 1)`, naming the
-flag alone and leaving the eight values to the schema, so a module turned off and on again starts
-from the packaged values, not from the ones it was left with, and the defaults live in one place.
+writes `INSERT INTO attendance_config (id, module_enabled) VALUES (1, 1) ON CONFLICT(id) DO UPDATE
+SET module_enabled = 1`, naming the flag alone. A first switch-on, with no row, leaves the eight
+values to the schema, and the defaults live in one place; a later one finds the row and raises the
+flag, so a module turned off and on again comes back with the values it was left with (Principle X,
+rule 6). *Rejected:* `INSERT OR REPLACE`, which deletes the stored row and writes the defaults over
+the league's settings.
 `get_config_or_defaults` reads the same defaults off the schema where no row is stored, so a read
 creates no row. A read hook, the leads core asks for when a round is armed, is a reader and writes
 nothing (`attendance_hooks.round_leads`). Pinned by
-`test_re_enabling_attendance_starts_from_the_packaged_defaults`,
+`test_re_enabling_attendance_keeps_the_league_s_settings`,
 `test_enabling_attendance_leaves_the_schema_s_own_defaults` and
 `test_reading_a_round_s_window_writes_nothing`.
 
@@ -140,8 +143,9 @@ cascade, from their attendance row.
 
 Each works on the delete's own connection and commits nothing, so the rows go with the thing they
 belong to or not at all (`architecture.md`, "Deletes are proven by a test, and each module deletes
-its own rows"). Turning attendance off is another delete of attendance's own: it lowers the flag and
-clears the divisions' channels but keeps the settings and the answers (`switch_off_on`).
+its own rows"). Turning attendance off deletes none of its rows: it lowers the flag, keeps the
+settings, the divisions' channels and the answers, and clears only the divisions' sheet message ids,
+which name messages the module posted and are not configuration (`switch_off_on`).
 
 ### What a restart loses
 
@@ -255,7 +259,8 @@ a league is told.
 | `attendance.check_in.clean_up` | the `rsvp_cleanup` timer, the restart, `/test-mode advance` | `plan`, `delete_message` for each message, `mark_cleared` |
 | `attendance.check_in.answer` | a press of a button, the maintainer's form | `save_answer` (or `save_answers`), `redraw` |
 | `attendance.sync` | `/attendance sync` | the reserve's capacity, one save, the roles, the cards, lineups and sheets, the closing line |
-| `attendance.setting.<name>` for the five settings that are not penalties, `attendance.setting.rsvp_channel`, `attendance.setting.attendance_channel`, `module.on:attendance`, `module.off:attendance` | the commands | one save: the value, its audit entry and its log line |
+| `attendance.setting.<name>` for the five settings that are not penalties, `attendance.setting.rsvp_channel`, `attendance.setting.attendance_channel`, `module.off:attendance` | the commands | one save: the value, its audit entry and its log line |
+| `module.on:attendance` | `/module enable attendance` | before it, `check_kept_channels`; then one save: the flag, the clear of each channel another setting took, and the audit entries; then the hub's refresh, an `After` step |
 | `attendance.setting.no_rsvp_penalty`, `attendance.setting.absent_penalty`, `attendance.setting.no_show_penalty` | the commands | the Reserve capacity, one save (the value, the season's recalculation and the sanctions it owes), then the roles, cards, lineups, sheets and deletions the sync's jobs make |
 
 Attendance also contributes jobs to changes core owns, through the hooks of a round amended, a
@@ -527,7 +532,7 @@ Attendance declares no hook of its own. Core declares them and attendance subscr
 | `amendment_steps`, `amendment_step_failure` | `check_in_amendment.amendment_steps`, `check_in_failure` | the steps an amendment asks of the check-in, and its words for one left undone, so that core's outcome names none of them; the entry point signs the hook up, weather then attendance |
 | `rounds_called_off`, `cancellation_notices`, `cancellation_steps` | `take_down_called_off_on`, `notices_on`, `take_down_steps`, `read_check_in_steps`, `notify_checkin_steps` | takes down the calls, reads the check-in's record before they come down and plans its own notice |
 | `rounds_deleted`, `divisions_deleted`, `profiles_deleted`, `profiles_merged`, `bot_packed` | `attendance_hooks` | see "The database" |
-| `division_lines_read`, `division_channel_faults_read`, `channel_uses_read`, `setting_channels_read` | `attendance_hooks`, `division_channels` | its channels, read for the reviews, the channel registry and the factory reset |
+| `division_lines_read`, `division_channel_faults_read`, `channel_uses_read`, `setting_channels_read` | `attendance_hooks`, `division_channels` | its channels, read for the reviews, the channel registry (answering nothing while attendance is off) and the factory reset |
 | `fingerprint_areas_read` | `fingerprint_areas.fingerprint_areas` | its channels and its configuration in the season's fingerprint, whatever its switch |
 | `pending_steps_read`, `review_marks_read` | `test_mode_steps.pending_steps`, `review_marks` | a round's check-in for `/test-mode advance` and its review |
 | `placements_confirmed`, `placements_confirmed_steps`, `season_completed`, `season_completed_steps` | `sheet_posting` | plans and defines the opening and the final sheet |
@@ -568,6 +573,29 @@ with no placement row there is refused as not a member
 (`test_the_seat_read_through_core_judges_a_driver_as_the_old_join_did`,
 `test_both_seat_joins_read_the_drivers_core_s_reader_seats`).
 
+### The channels attendance keeps while it is off
+
+`division_channels.CHANNELS` is the one table of the two channels (setting, column, label, command),
+public because `attendance_hooks` reads it across files for the confirmation's faults. The
+switch-on's reader (`kept_channels`) reads it too, and the registry's answer its columns.
+`channel_uses` asks the module's switch, which is how the channels yield while it is off. The
+switch-on's save clears a taken channel through the column's own writer (`set_rsvp_channel`,
+`set_attendance_channel`), audited as that setting's change, and the reader asks `channel_needs` as
+the check runs. `core.md`, "Core's change types", and `architecture.md`, "How modules and core fit
+together", give the arrangement; core_specification.md, "Channels", the rules.
+
+### What attendance's channels need of the bot
+
+`division_channels.channel_needs` states it, the one source of it within attendance. The check-in
+call's channel is `rsvp` and the attendance sheet's is `attendance`; the attendance specification,
+under "Configuring the attendance module", "Channels", says what each needs. The one thing the
+statement asks of the image module is whether a channel's pictures could attach a file, which the
+drawing answers by its switches and not by a template's state. The confirmation's faults
+(`attendance_hooks.division_channel_faults`) judge both channels by it, and the recalculation's gate
+judges the attendance channel by it and the verdicts channel by results' statement of its needs,
+where the sanction's picture goes, so a verdicts channel the bot cannot attach to is refused up
+front like one it cannot see.
+
 ### The dependency table and the image module
 
 Attendance needs results (`NEEDS`, `core.md`, "The dependency table"): the sanctions and the
@@ -577,10 +605,12 @@ image module draws the call (`ImageDrawing.attach_check_in_call`) and the sheet
 (`ImageDrawing.attendance_wanted` and `draw_attendance_sheet`), both on the drawing the wiring hands
 the post jobs, from what attendance hands it, the call's deadline included: attendance works it out
 (`derive_checkin_deadline`) and hands it in. The recalculation's check that the attendance channel
-can take a file asks the same drawing whether the aspect attaches files
-(`ImageDrawing.aspect_attaches_files`), which the cog reads off the bot. It also implements its
-share of the image module's `PreviewSources`, the check-in deadline the previews draw, and the
-builder joins it with results' share and hands the whole in as `bot.preview_sources`.
+can use what it is sent reads the module's stated needs (`division_channels.channel_needs`, above)
+and, for the verdicts channel, results' (`channel_needs` in `results.services.module`); both ask the
+same drawing whether the aspect attaches files (`ImageDrawing.aspect_attaches_files`), which the cog
+reads off the bot. It also implements its share of the image module's `PreviewSources`, the check-in
+deadline the previews draw, and the builder joins it with results' share and hands the whole in as
+`bot.preview_sources`.
 
 ---
 
@@ -635,7 +665,7 @@ Each is stated where it lives and pinned by the test named.
 | Constraint | Stated in | Pinned by |
 |---|---|---|
 | `/attendance`'s subgroups join the group in one file, in the order a league sees them | `attendance_group.py`'s docstring | `test_the_listed_order_holds_whichever_subgroup_s_file_is_imported_first` |
-| The switch-on writes the flag alone and leaves the eight values to the column defaults | `module_on_attendance`'s save | `test_re_enabling_attendance_starts_from_the_packaged_defaults` |
+| The switch-on writes the flag alone: a first one leaves the eight values to the column defaults, a later one keeps the stored row | `module_on_attendance`'s save | `test_re_enabling_attendance_keeps_the_league_s_settings` and `test_enabling_attendance_leaves_the_schema_s_own_defaults` |
 | A read of a round's leads creates no row | `attendance_hooks.round_leads` | `test_reading_a_round_s_window_writes_nothing` |
 | A cross-setting rule is judged by the setting's change as it starts | `attendance_settings`' docstring | `test_set_setting_refuses_a_timing_that_breaks_the_invariant` and its two companions |
 | A stored copy has one recompute, run on its caller's connection | `_recalculate_forward`'s docstring | the four tests of "The stored copies of derived figures" |

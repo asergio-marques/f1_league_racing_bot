@@ -3,7 +3,8 @@
 Exercises the full migrated schema via ``run_migrations``, then drives the service layer
 the cog handlers call. The gate tests here are:
 
-* ``test_disable_retains_configuration`` — the Principle X.6 exception (FR-004a, SC-008)
+* ``test_disable_retains_configuration`` — Principle X rule 6: a disabled module keeps its
+  configuration (FR-004a, SC-008)
 * ``test_toggle_reply_*`` / ``test_aspect_section_footer_*`` — the two surfaces telling a
   manager which aspects actually post, both read from ``LIVE_POSTING_ASPECTS``
 """
@@ -117,7 +118,7 @@ async def test_enable_creates_defaults(tmp_path):
     assert not any(toggles.values())
 
 
-# ── T012 — the gate for the X.6 exception ─────────────────────────────────
+# ── T012 — the gate for Principle X rule 6: a disabled module keeps its configuration ──
 
 
 async def test_disable_retains_configuration(tmp_path):

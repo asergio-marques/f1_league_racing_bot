@@ -175,6 +175,13 @@ class ImageDrawing(Protocol):
         calendar goes out and a league never loses its calendar to a fault reading a switch; a
         switch nobody signed up for (`SwitchNotSignedUp`) is raised."""
 
+    async def calendar_attaches_files(self) -> bool:
+        """Whether the calendar could cause a file to be attached to a posting on this server:
+        the module and the `calendar` aspect on, whatever the template's state, which is the
+        stable question a permission is judged by. A gate that cannot be read answers False; a
+        switch nobody signed up for (`SwitchNotSignedUp`) answers False too, and is left to the
+        job that draws."""
+
     async def draw_calendar(
         self, division: Any, rounds: Any, tracks: Any, *, season_number: Any = None,
     ) -> CalendarPicture:
@@ -187,6 +194,11 @@ class ImageDrawing(Protocol):
         `lineup` aspect must be on. A gate that cannot be read answers False, so the text
         lineup goes out and a league never loses its lineup to a fault reading a switch; a
         switch nobody signed up for (`SwitchNotSignedUp`) is raised."""
+
+    async def lineup_attaches_files(self) -> bool:
+        """Whether the lineup could cause a file to be attached to a posting on this server:
+        the module and the `lineup` aspect on, whatever the template's state, as
+        `calendar_attaches_files` answers for the calendar."""
 
     async def draw_lineup(self, guild: Any, division_id: int) -> LineupPicture:
         """Draw *division_id*'s lineup in *guild*, as the lineup of record. Hands back the

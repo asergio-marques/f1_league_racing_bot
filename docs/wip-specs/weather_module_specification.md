@@ -3,6 +3,7 @@
 - The weather module may be disabled via a "module disable" command akin to other modules. May only be used by league admins.
 - The weather module is disabled by default.
 - The weather module shall not be enabled once the season's placements have been confirmed. It may be enabled while the server holds no active season, or while its season's placements are yet to be first confirmed.
+- Enabling the weather module shall check each division's forecast channel it kept while disabled, as the core specification's Modules section says: one no longer on the server, or given to another setting meanwhile, shall be named for the league to set again, and the latter cleared from the module; one the bot cannot see or post in, or cannot attach a file to where a forecast picture could be posted, shall keep the module disabled, the reply naming what it lacks. Decided 2026-11-17 (#449).
 - Upon being disabled, all scheduled weather jobs for the server shall be cancelled. Forecast messages already posted, phase results already recorded, division forecast channels and the configured phase deadlines shall all be retained.
 - Weather module activation status shall be displayed in the configuration review and the placements review.
 - This module must work with the fake driver rosters used in test mode.
@@ -19,6 +20,7 @@
 - A "weather channel" command shall be available to league managers, which shall have as input a division name and a channel on which weather forecasts for that division shall be posted by the bot.
     - If a forecast channel is not configured for a division while the weather module is enabled, then the season shall fail validation and confirming its placements shall be refused, the offending divisions being named.
     - Each division's forecast channel shall be displayed in the placements review much alike other division channels like results, standings, attendance, etc.
+    - A forecast channel shall be one the bot can post in: View Channel and Send Messages, and Attach Files where the weather forecast could be posted as a picture. Confirming a season's placements shall name a division whose forecast channel lacks any, with what it lacks, as it names one that is gone.
     - A division created by duplicating another shall not inherit the source division's forecast channel.
 - The bot shall output weather forecasts only in the forecast channel configured for the division of the round, and shall record the calculations behind each phase only in the server log channel.
 - Every forecast shall mention the division's configured role. The mystery round notice is the sole exception.

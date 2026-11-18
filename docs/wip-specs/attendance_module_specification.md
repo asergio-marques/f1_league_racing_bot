@@ -9,6 +9,8 @@
     - A check-in call already posted shall not be withdrawn, but its buttons shall record no further answer.
     - The attendance sheet standing in each division shall not be taken down. Decided 2026-11-13.
     - The season's scheduled work shall not be destroyed by the disabling, so that nothing is lost that only confirming a season's placements could create again.
+- Disabling the attendance module shall keep its settings and each division's check-in and attendance channels, whether it is disabled directly or with the results & standings module, and enabling it again shall find them as they stood, save the check of those channels below. Only the first time it is enabled shall it start from the values given below. Decided 2026-09-25 (#282).
+- Enabling the attendance module shall check each division's check-in and attendance channels it kept while disabled, as the core specification's Modules section says: one no longer on the server, or given to another setting meanwhile, shall be named for the league to set again, and the latter cleared from the module; one the bot cannot use as the module needs, which includes reading its history, shall keep the module disabled, the reply naming what it lacks. Decided 2026-11-17 (#449).
 - Attendance module activation status shall be displayed in the configuration review and the placements review.
 - This module must work with the fake driver rosters used in test mode.
 
@@ -21,9 +23,12 @@
 - <NEW COMMAND> An "attendance channel rsvp" command will be made available to league managers, which shall have as input a division name and a channel on which RSVP polls shall be posted by the bot.
     - If a RSVP channel is not configured for a division in the placements review, then the season will fail validation.
     - Each division's RSVP channel will be displayed in the placements review much alike other division channels like results, standings, weather, etc.
+    - The RSVP channel shall be one the bot can post an embed in: View Channel, Send Messages, Embed Links and Read Message History, since the call is read back to redraw it after an answer and to take its buttons off at the deadline, and Attach Files where the check-in call could be posted with a picture.
 - <NEW COMMAND> An "attendance channel attendance" command will be made available to league managers, which shall have as input a division name and a channel on which attendance for each one of the rounds will be posted by the bot.
     - If an attendance channel is not configured for a division in the placements review, then the season will fail validation.
     - Each division's attendance channel will be displayed in the placements review much alike other division channels like results, standings, weather, etc.
+    - The attendance channel shall be one the bot can post in and take its own sheet down from: View Channel, Send Messages and Read Message History, and Attach Files where the attendance sheet could be posted as a picture.
+    - Confirming a season's placements shall name a division whose RSVP or attendance channel lacks a permission it needs, with what it lacks, as it names one that is gone.
 
 ### RSVP notices
 - <NEW COMMAND> An "attendance config rsvp-notice" command will be made available to league managers, which shall have as input an integer standing for a number of days. This command configures the number of days before a round at which point RSVP notices will be sent out too all drivers of a division to mark their attendance for that round.
@@ -202,7 +207,7 @@
 ### Resynchronising attendance
 - <NEW COMMAND> An "attendance sync" command shall be made available to league managers, which shall have as input a division name and a round number.
     - It shall be available only while the season is in one of the three ongoing stages, and only for a round whose penalties have been approved. It shall be refused otherwise, with nothing changed.
-    - It shall be refused, with nothing changed, where any channel the recalculation posts to cannot be reached, as the approval of an amendment is.
+    - It shall be refused, with nothing changed, where any channel the recalculation posts to cannot be reached, as the approval of an amendment is: its attendance channel and its verdicts channel are judged by the permissions each needs, Attach Files included where that channel's pictures are on.
     - It shall be refused, with nothing changed, while a round of the division has an amendment of its results open, naming the round being amended and its channel. The recalculation would otherwise read that amendment's corrections before they are approved, and its sheet and sanctions would stand were the amendment then abandoned. Decided 2026-09-21.
     - It shall be a change on the queue: acknowledged at once, naming what it is doing, and the acknowledgement updated with its reply. Decided 2026-11-12.
     - It shall recalculate the attendance of every round of the division from the one given onwards whose penalties have been approved, from their results, and apply the sanctions the latest of those rounds then owes, in one save that lands whole or not at all. Rounds before the one given shall be left alone. Decided 2026-11-12.

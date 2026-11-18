@@ -20,9 +20,11 @@ from leaguebot.attendance.models.attendance import AttendanceWindows
 from leaguebot.core.models.round import RoundLead
 from leaguebot.core.services.seasons.review_sections import Review, ReviewSection
 from leaguebot.core.services.seasons.approval_checks import channel_fault
+from leaguebot.attendance.services.settings.division_channels import CHANNELS, channel_needs
 
 if TYPE_CHECKING:
     from leaguebot.framework.services.switches.module_service import ModuleService
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
 
 
 async def rounds_deleted_on(db: aiosqlite.Connection, round_ids: list[int]) -> None:
@@ -204,11 +206,13 @@ async def division_channel_faults(
     service: AttendanceService,
     modules: "ModuleService",
     *,
+    drawing: "ImageDrawing",
     divisions: Mapping[int, str],
     guild: Any = None,
 ) -> dict[int, list[str]]:
     """Each division's RSVP channel and then its attendance channel, in that order, that is not
-    set or not on the *guild*, by division id; nothing where the attendance module is off.
+    set, not on the *guild* or lacking a permission its use needs (`channel_needs`, asked of the
+    *drawing*), by division id; nothing where the attendance module is off.
 
     Subscribed to core's `division_channel_faults_read`, which hands the divisions the
     confirmation judges (id to name) and the server. A division with no fault is given an empty
@@ -216,17 +220,14 @@ async def division_channel_faults(
     """
     if not await modules.is_enabled(SWITCH_KEY):
         return {}
+    needs = await channel_needs(drawing)
     found: dict[int, list[str]] = {}
     for division_id, name in divisions.items():
         channels = await service.get_division_config(division_id)
         lines: list[str] = []
-        for value, label, command in (
-            (channels.rsvp_channel_id if channels else None, "RSVP channel",
-             "/attendance channel rsvp"),
-            (channels.attendance_channel_id if channels else None, "attendance channel",
-             "/attendance channel attendance"),
-        ):
-            fault = await channel_fault(guild, name, value, label, command)
+        for setting, column, label, command in CHANNELS:
+            value = getattr(channels, column) if channels else None
+            fault = await channel_fault(guild, name, value, label, command, needs[setting])
             if fault:
                 lines.append(fault)
         found[division_id] = lines

@@ -13,6 +13,14 @@ Once it has changed something it asks the hub's panel to be refreshed, as an `Af
 (`hub_service.hub_refresh_after`): the panel offers what a module offers while it is on, so the
 switch asks for that itself rather than the command doing it after every press.
 
+**The switch-on checks the channels results kept while it was off, before its save**
+(`core/services/modules/kept_channels.py`, handed `division_channels.kept_channels`): a results,
+standings or verdicts channel gone from the server is named, one another setting took meanwhile
+is named and cleared by the save through the column's own writer, audited as that channel's own
+change (from the channel to none), with a line beneath the Success line for each, and one the
+bot cannot use keeps results off, refused. A check that cannot be made ends the switch-on on a
+fault, nothing saved. The save may then write `division_results_config` as well as the flag.
+
 **It arms the sweep that undoes a lapsed amendment,** as a further `After` step, so the lapse rule
 holds from the switch-on and not only from the next restart, whose start-up turn arms it too
 (`wiring.arm_amendment_sweep`). Under the core specification's rule for work after a setting, an
@@ -41,6 +49,22 @@ from leaguebot.framework.services.queue.change_types import CheckContext, Step, 
 from leaguebot.core.services.modules.hub_service import REFRESH_HUB, hub_refresh_after
 from leaguebot.core.services.seasons.season_lifecycle_service import PLACEMENTS_CONFIRMED_REFUSAL
 from leaguebot.framework.services.queue.setting_change import After, Saved, Setting
+from leaguebot.core.services.modules.kept_channels import (
+    division_of,
+    found_in,
+    kept_channels_check,
+    named_reply,
+)
+from leaguebot.results.services.module.channel_settings import (
+    typed_channel_audit,
+    verdicts_channel_audit,
+)
+from leaguebot.results.services.module.division_channels import (
+    kept_channels,
+    set_division_penalty_channel,
+    set_division_results_channel,
+    set_division_standings_channel,
+)
 from leaguebot.results.services.round_amendment.amendment_writes import schedule_amendment_sweep
 
 if TYPE_CHECKING:
@@ -48,12 +72,22 @@ if TYPE_CHECKING:
 
     from leaguebot.framework.services.switches.module_service import ModuleService
     from leaguebot.framework.services.jobs.scheduler import SchedulerService
+    from leaguebot.framework.utils.hooks import AwaitedHook
     from leaguebot.core.services.seasons.season_service import SeasonService
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
 
 #: The name of the step, after the switch-on's save, that arms the amendment sweep.
 ARM_SWEEP = "arm_amendment_sweep"
 
 _ENABLE_COMMAND = "/module enable results"
+
+#: What clearing each of results' channels is: the column's own writer, and the audit entry of
+#: the setting that sets it.
+_CLEARS = {
+    "results": (set_division_results_channel, typed_channel_audit("results")),
+    "standings": (set_division_standings_channel, typed_channel_audit("standings")),
+    "verdicts": (set_division_penalty_channel, verdicts_channel_audit),
+}
 
 _SWEEP_NOT_ARMED = (
     "⚠️ The module is on, but the check that undoes an amendment left unapproved past its time "
@@ -91,10 +125,19 @@ def _arm_sweep(scheduler: "SchedulerService") -> After:
 
 
 def module_on_results(
-    *, modules: "ModuleService", seasons: "SeasonService", scheduler: "SchedulerService"
+    *,
+    modules: "ModuleService",
+    seasons: "SeasonService",
+    scheduler: "SchedulerService",
+    channel_uses_read: "AwaitedHook",
+    drawing: "ImageDrawing",
 ) -> Setting:
-    """`module.on:results`: the flag raised and the audit, in one save, then the amendment sweep
+    """`module.on:results`: the channels results kept checked, then the flag raised and the audit
+    (and the clear of each channel another setting took), in one save, then the amendment sweep
     armed in a step of its own, after the hub's refresh.
+
+    *channel_uses_read* is core's hook, which the check asks who holds a kept channel through, and
+    *drawing* the image module's, which says whether a picture could attach a file.
 
     **The check reads the season's stage again as the change starts,** not only at the ask
     (`module_cog.py`'s stage refusal): asked while no season's placements are confirmed, and run
@@ -110,22 +153,31 @@ def module_on_results(
             return Verdict.refuse(PLACEMENTS_CONFIRMED_REFUSAL)
         return Verdict.go()
 
-    async def save(db: "aiosqlite.Connection", _payload: dict[str, Any]) -> Saved:
+    async def save(db: "aiosqlite.Connection", payload: dict[str, Any]) -> Saved:
+        named, taken, details = found_in(payload)
         await db.execute(
             "INSERT OR REPLACE INTO results_module_config (id, module_enabled) VALUES (1, 1)"
         )
+        audits = [
+            AuditRecord(
+                change_type="MODULE_ENABLE", old_value={}, new_value={"module": "results"}
+            )
+        ]
+        for each in taken:
+            write, audit = _CLEARS[each.setting]
+            old_id = await write(db, division_of(each), None)
+            if old_id is not None:
+                audits.append(audit(old_id, None, division_of(each)))
         return Saved(
             changed=True,
-            audits=(
-                AuditRecord(
-                    change_type="MODULE_ENABLE", old_value={}, new_value={"module": "results"}
-                ),
-            ),
+            audits=tuple(audits),
+            details=tuple(details),
+            result={"named": named},
             then=(PlannedStep(REFRESH_HUB), PlannedStep(ARM_SWEEP)),
         )
 
-    def reply(_payload: dict[str, Any], _results: Mapping[str, dict[str, Any]]) -> str:
-        return "✅ Results & Standings module enabled."
+    def reply(_payload: dict[str, Any], results: Mapping[str, dict[str, Any]]) -> str:
+        return named_reply("✅ Results & Standings module enabled.", results["save"]["named"])
 
     return Setting(
         kind=module_on("results"),
@@ -134,8 +186,14 @@ def module_on_results(
         check=check,
         save=save,
         reply=reply,
-        writes=("results_module_config",),
+        writes=("results_module_config", "division_results_config"),
         not_saved=_still_off,
+        before=(
+            kept_channels_check(
+                lambda: kept_channels(drawing), command=_ENABLE_COMMAND,
+                channel_uses_read=channel_uses_read,
+            ),
+        ),
         after={
             REFRESH_HUB: hub_refresh_after(_ENABLE_COMMAND),
             ARM_SWEEP: _arm_sweep(scheduler),

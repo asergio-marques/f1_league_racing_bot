@@ -5,17 +5,16 @@ dependency rules on the way *in*, this one covers what each module leaves behind
 — which differs per module, deliberately, and is the part a reader would be most tempted to
 make uniform.
 
-**The image module clears its flag and nothing else** — the Principle X.6 exception. No image
-configuration value names a Discord channel, role, message or scheduled job, so none can become
-a stale binding while the module is off (FR-004a). That is why there is no `--preserve-config`
-flag: nothing is cleared, so there is nothing to preserve (FR-004b). Every other module's
-disable *does* clear something, which is what makes this one worth pinning —
-`test_disabling_images_keeps_the_configuration` is the test a later reader tidying the three
-into one shape would break.
+**The image module clears its flag and nothing else**, as Principle X rule 6 asks of every
+module: a disabled module keeps its configuration (FR-004a). No image configuration value names a
+Discord channel, role, message or scheduled job, so re-enabling has nothing kept to check against
+the server. `test_disabling_images_keeps_the_configuration` is the test a later reader clearing
+a module's setup on the way out would break.
 
-**Attendance clears its division channel bindings.** Those *are* stale bindings: a channel id
-recorded against a division for a module that is off would have the bot posting into it the
-moment somebody turned the module back on, against a season that had moved on.
+**Attendance keeps its division channels too** (#449). Principle X rule 6 asks the same of it as
+of every module: a league switching it back on finds each division's check-in and attendance
+channels where it left them. Only each division's attendance-sheet message id goes, as a message
+id is not configuration.
 
 **Attendance can be disabled two ways, and the audit tells them apart.** A manager switching it
 off is `ATTENDANCE_MODULE_DISABLED`; attendance going off because Results & Standings did is
@@ -35,11 +34,11 @@ from __future__ import annotations
 
 import os
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
 from leaguebot.core.cogs.module_cog import ModuleCog, _ConfirmDisableResultsView
 from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.services.settings.config_service import ConfigService
@@ -63,7 +62,7 @@ NOW = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
 # ---------------------------------------------------------------------------
 
 
-async def _make_db(tmp_path, *, attendance_divisions: int = 0) -> str:
+async def _make_db(tmp_path) -> str:
     db_path = os.path.join(str(tmp_path), "disable.db")
     await run_migrations(db_path)
     async with get_connection(db_path) as db:
@@ -76,22 +75,6 @@ async def _make_db(tmp_path, *, attendance_divisions: int = 0) -> str:
             "INSERT INTO attendance_config (id, module_enabled) VALUES (?, 1)",
             (1,),
         )
-        if attendance_divisions:
-            await db.execute(
-                "INSERT INTO seasons (id, season_number, start_date, status) "
-                "VALUES (1, 1, '2026-01-01', 'ACTIVE')"
-            )
-            for index in range(1, attendance_divisions + 1):
-                await db.execute(
-                    "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "
-                    "VALUES (?, 1, ?, ?, ?)",
-                    (index, f"Division {index}", index, 500 + index),
-                )
-                await db.execute(
-                    "INSERT INTO attendance_division_config "
-                    "(division_id, rsvp_channel_id) VALUES (?, ?)",
-                    (index, str(700000 + index)),
-                )
         await db.commit()
     return db_path
 
@@ -177,10 +160,10 @@ async def test_disabling_images_clears_the_flag(tmp_path):
 
 
 async def test_disabling_images_keeps_the_configuration(tmp_path):
-    """The Principle X.6 exception, and the reason no `--preserve-config` flag exists. No
-    image config value names a channel, role, message or job, so none can go stale — a
-    reader making the three disables uniform would clear a league's whole image setup for
-    no reason. The reply says the configuration is kept and that every aspect reverts to text,
+    """Principle X rule 6: a disabled module keeps its configuration. No image config value
+    names a channel, role, message or job, so nothing kept needs checking on the way back in — a
+    reader clearing settings on the way out would wipe a league's whole image setup against
+    that rule. The reply says the configuration is kept and that every aspect reverts to text,
     which is what a league will actually notice, and it and the Success line keep today's
     words; `tests/image/test_image_module_flow.py` pins the configuration surviving."""
     from tests.support.settings_league import last_said, log_lines
@@ -313,17 +296,22 @@ async def test_disabling_attendance_clears_the_flag(tmp_path):
     assert await log_lines(league) == [f"{NAMED} | /module disable attendance | Success"]
 
 
-async def test_disabling_attendance_clears_its_division_channels(tmp_path):
-    """Those are stale bindings: a channel recorded against a division for a module that
-    is off would have the bot posting into it the moment it came back on, against a season
-    that had moved along."""
+async def test_disabling_attendance_keeps_its_division_channels(tmp_path):
+    """Principle X rule 6: a disabled module keeps its configuration, the channels it names
+    included, so a league switching attendance back on finds each division's check-in channel
+    where it left it."""
     league, cog, asked = await _attendance_league(tmp_path, divisions=2)
-    assert await _division_configs(league.db_path) == 2
 
     await cog._disable_attendance(asked)
     await run_queue(league.bot)
 
-    assert await _division_configs(league.db_path) == 0
+    async with get_connection(league.db_path) as db:
+        cursor = await db.execute(
+            "SELECT division_id, rsvp_channel_id FROM attendance_division_config "
+            "ORDER BY division_id"
+        )
+        kept = [tuple(row) for row in await cursor.fetchall()]
+    assert kept == [(1, "700001"), (2, "700002")]
 
 
 async def test_disabling_attendance_twice_does_no_work(tmp_path):
@@ -397,35 +385,6 @@ async def test_a_cascade_is_audited_as_a_cascade(tmp_path):
     assert "ATTENDANCE_MODULE_DISABLED" not in types
 
 
-async def test_a_cascade_does_the_same_work(tmp_path):
-    """The cascade and the manual disable switch attendance off through the one call, so the
-    module ends up in the same state either way, or a cascade would leave stale bindings a
-    manual disable clears."""
-    db_path = await _make_db(tmp_path, attendance_divisions=2)
-
-    async with get_connection(db_path) as db:
-        assert await AttendanceService(db_path).switch_off_on(db) is True
-        await db.commit()
-
-    assert await _attendance_flag(db_path) == 0
-    assert await _division_configs(db_path) == 0
-
-
-async def test_a_cascade_runs_even_where_attendance_was_already_off(tmp_path):
-    """It skips the guard deliberately — clearing twice is harmless where refusing would leave
-    bindings behind — and says attendance was already off."""
-    db_path = await _make_db(tmp_path, attendance_divisions=1)
-    async with get_connection(db_path) as db:
-        await db.execute("UPDATE attendance_config SET module_enabled = 0")
-        await db.commit()
-
-    async with get_connection(db_path) as db:
-        assert await AttendanceService(db_path).switch_off_on(db) is False
-        await db.commit()
-
-    assert await _division_configs(db_path) == 0
-
-
 async def test_a_cascade_is_still_logged_to_the_league(tmp_path):
     """The league must be able to see that attendance went off, even though nobody asked
     for it: the cascade's own line, beside the switch-off's."""
@@ -474,6 +433,33 @@ async def _signup_config(db_path: str) -> dict | None:
     return None if row is None else dict(row)
 
 
+def _kept_channel_on_the_server(league) -> None:
+    """The league's server, reachable, holding the kept signup channel 620 with every permission
+    the bot needs there and no overwrite standing on it."""
+    import discord
+
+    channel = MagicMock(spec=discord.TextChannel)
+    channel.id = 620
+    channel.set_permissions = AsyncMock()
+    channel.overwrites = {}
+    channel.overwrites_for = MagicMock(side_effect=lambda _target: discord.PermissionOverwrite())
+    channel.permissions_for = MagicMock(return_value=discord.Permissions.all())
+    guild = MagicMock()
+    guild.get_channel = MagicMock(side_effect=lambda cid: channel if int(cid) == 620 else None)
+    # The switch-on records each role it puts a permission on by its id.
+    roles: dict[int, Any] = {}
+
+    def _role(role_id: int) -> Any:
+        if role_id not in roles:
+            roles[role_id] = MagicMock(spec=discord.Role)
+            roles[role_id].id = role_id
+        return roles[role_id]
+
+    guild.get_role = MagicMock(side_effect=_role)
+    channel.guild = guild
+    league.bot.get_guild = MagicMock(return_value=guild)
+
+
 async def test_enabling_signup_writes_a_bare_configuration(tmp_path):
     """So the `/signup …` commands have a row to update. Without it every one of them would be a
     silent no-op against nothing. The member is acknowledged at once; once the change has run the
@@ -501,7 +487,8 @@ async def test_enabling_signup_writes_a_bare_configuration(tmp_path):
 async def test_re_enabling_signup_keeps_a_standing_row(tmp_path):
     """A configuration row standing while the module is off (a restored database could hold one)
     is kept, not replaced by a bare one: the switch-on creates only what is missing. The signup
-    channel it names is still named once the module is on again."""
+    channel it names, 620, on the league's server and usable there, is still named once the
+    module is on again."""
     league, cog, asked = await _signup_league(tmp_path)
     async with get_connection(league.db_path) as db:
         await db.execute(
@@ -509,6 +496,7 @@ async def test_re_enabling_signup_keeps_a_standing_row(tmp_path):
             "VALUES (1, 620, 0)"
         )
         await db.commit()
+    _kept_channel_on_the_server(league)
 
     await cog._enable_signup(asked)
     await run_queue(league.bot)
@@ -518,24 +506,38 @@ async def test_re_enabling_signup_keeps_a_standing_row(tmp_path):
     assert config is not None and str(config["signup_channel_id"]) == "620"
 
 
-async def test_enabling_signup_names_the_three_commands_that_follow(tmp_path):
+@pytest.mark.parametrize("kept", [
+    pytest.param(False, id="no channel kept"),
+    pytest.param(True, id="a channel kept"),
+])
+async def test_enabling_signup_names_the_three_commands_that_follow(tmp_path, kept):
     """A module enabled with nothing configured does nothing at all, and these are the
     difference between a league proceeding and a league wondering what happened. With neither
-    role set, the reply names all three, word for word."""
+    role set and no signup channel kept, the reply names all three, word for word. Where the
+    configuration kept from before the switch-off names channel 620, on the server and usable,
+    `/signup channel` is not asked for, and only the two roles are."""
     from tests.support.settings_league import last_said
 
     league, cog, asked = await _signup_league(tmp_path)
+    if kept:
+        async with get_connection(league.db_path) as db:
+            await db.execute(
+                "INSERT INTO signup_module_config (id, signup_channel_id, signups_open) "
+                "VALUES (1, 620, 0)"
+            )
+            await db.commit()
+        _kept_channel_on_the_server(league)
 
     await cog._enable_signup(asked)
     await run_queue(league.bot)
 
-    assert last_said(asked) == (
-        "✅ Signup module enabled.\n"
-        "Next steps — configure with:\n"
-        "  • `/signup channel <channel>`\n"
-        "  • `/bot base-role <role>`\n"
-        "  • `/bot driver-role <role>`"
-    )
+    assert last_said(asked) == "\n".join([
+        "✅ Signup module enabled.",
+        "Next steps — configure with:",
+        *(() if kept else ("  • `/signup channel <channel>`",)),
+        "  • `/bot base-role <role>`",
+        "  • `/bot driver-role <role>`",
+    ])
 
 
 async def test_enabling_signup_does_not_ask_for_roles_the_league_already_set(tmp_path):

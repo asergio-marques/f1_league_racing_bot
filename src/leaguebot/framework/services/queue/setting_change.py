@@ -18,7 +18,11 @@ Settings are written only on the league lane, one change at a time, and conversa
 write these tables. No other setting ever runs beside it: an overtaking setting (below) runs ahead
 of its lane's stopped head, never beside it, and the queue keeps that overtaking change running to
 the end before the head is tried again, so no second writer can land between a check and its save.
-The save judges only held or not.
+The save judges only held or not. For a setting with steps before its save their readings are its
+last judgement too (a switch-on's reading of what holds each channel it kept), and the invariant
+behind it is that the steps before the save and the save end on a fault: a switch-on is never a
+stopped head, so no channel setting overtaking a stop can run ahead of it between a step and its
+save. The save is handed what the steps found (`FOUND`), read from the steps the queue keeps.
 
 **A setting a league repairs itself with overtakes a stop on the league lane.**
 `Setting.repairs_the_bot` is read once, here, to set the change type's `overtakes_a_stop` — never a
@@ -62,6 +66,24 @@ type per command, which forms the line, the audit and the fault answer a score o
 catching its own fault, which could not undo its partial writes nor catch what fails after it
 returns (see `change_queue`).
 
+**A setting may run steps before its save** (`Setting.before`), which the save waits on: a module's
+kept channels checked before it is switched on. The change opens with the first and each plans the
+next, the save after the last, so the queue carries the order and a restart resumes it. A fault in
+one ends the setting as a fault in the save does: nothing is saved, no `SAVE` is planned, the
+member is told so and to run it again (`NOTHING_SAVED`), one failure line is written and the lane
+goes on. A step may instead end the setting refused (`HALTED`): its result gives the reply and the
+reason, no `SAVE` is planned, and the one line, a ⛔ refusal, is formed here from the reason, the
+step writing none. Either way nothing is saved and nothing is audited. **A step that changes
+something on Discord declares an undo** (`Before.undo`), planned as a job of the change where a
+later step before the save halts or faults, or the save does, last step first, so that nothing is
+half-set (Constitution X, rule 2) and a restart finishes it; a step that ends on a fault part-way
+takes back its own partial work before it raises, and the undo is for work it finished. Where
+Discord refuses the take-back, the step raises `StepFailedOnDiscord` with a notice of what was left
+and how to put it right: the reply to the member and the failure line carry it. *Rejected:* an
+`After` step that undoes the switch-on, which would leave the module on for a moment and whose undo
+is a second save that can itself fail; and the check in `check()`, which carries no findings and
+runs at the ask as well.
+
 **Recorded twice, in one save, but for a step that carries the line.** The value, its audit entry
 and its line share one save, save where a step after it `carries_line` (the arming of the daily
 portrait job, and a role's grant to every driver where the one it replaces is gone from the
@@ -78,7 +100,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -87,6 +109,7 @@ import aiosqlite
 from leaguebot.framework.models.change import (
     AuditRecord,
     PlannedStep,
+    StepFailedOnDiscord,
     StepKind,
     StepResult,
     Verdict,
@@ -99,6 +122,7 @@ from leaguebot.framework.services.queue.change_types import (
     StepContext,
 )
 from leaguebot.framework.utils.interaction_errors import failure_line, failure_reply
+from leaguebot.framework.utils.log_lines import refusal_line
 
 #: What a fault in a setting's save, or in its check as it comes up to run, says became of it.
 #: `{command}` is the command to run again.
@@ -106,6 +130,19 @@ NOTHING_SAVED = "Nothing was saved. Run `{command}` again to retry."
 
 #: The name of the step that saves the setting.
 SAVE = "save"
+
+#: The key, in the payload the save is handed, of what the steps before it found: each step's
+#: result, by the step's name. Read from the steps the queue keeps, so that a restart between a step
+#: and the save hands the save the same findings; the change's own payload is not rewritten.
+FOUND = "found"
+
+#: The key, in a step before the save's result, of a halt: the step found the setting cannot go
+#: ahead, and the value is `{"reply": the member's answer, "reason": what the ⛔ line says}`.
+HALTED = "halted"
+
+#: The key, in the result of a step that ended on a fault, of the notice it left: what it left on
+#: Discord and how to put it right (`StepFailedOnDiscord.notice`), added to the reply.
+LEFT = "left"
 
 #: The key, in the save's result, of the line kept back for a step that carries it.
 _KEPT_LINE = "setting_line"
@@ -153,6 +190,26 @@ class After:
 
 
 @dataclass(frozen=True)
+class Before:
+    """A step before the save that the save waits on: a fault in it ends the setting, nothing saved.
+
+    *step* is an `ACT` step. It runs ahead of the save, in the order the setting lists them, and
+    the save is planned only once the last has returned.
+
+    *undo*, where a step changes something on Discord, is an `ACT` step that takes back what
+    *step* did once it has returned. It is planned, as a job of the change, where a later step
+    before the save halts or faults, or the save does; it reads what *step* found from the steps
+    the queue keeps (`StepContext.steps`), never from memory, so that a restart finishes it. Where
+    *step* itself ends on a fault part-way it takes back its own partial work before it raises
+    again: an undo is for finished work only. The undos of the steps that returned run last first.
+    Where Discord refuses what an undo takes back, it raises `StepFailedOnDiscord` with a notice.
+    """
+
+    step: Step
+    undo: Step | None = None
+
+
+@dataclass(frozen=True)
 class Setting:
     """One settings command's change, as `setting_change` builds it.
 
@@ -164,7 +221,8 @@ class Setting:
     *not_saved* is what a fault's reply says became of the change, or a function of the payload
     that returns it, for a setting whose command is a paste as well as a single value (the reply
     to a check that raises as the change starts is formed from the payload, as the outcome is);
-    *after* are the steps that may follow the save, by name. *repairs_the_bot* marks a league's
+    *after* are the steps that may follow the save, by name; *before* are the steps that run ahead
+    of it and that it waits on. *repairs_the_bot* marks a league's
     repair settings, the four that let it back into the bot and every channel setting, and makes
     the change type `overtakes_a_stop`, so that it can still be asked for, and run, while the
     league's lane is stopped on something else — see the module docstring.
@@ -179,6 +237,7 @@ class Setting:
     writes: tuple[str, ...]
     not_saved: str | Callable[[dict[str, Any]], str] = NOTHING_SAVED
     after: Mapping[str, After] = field(default_factory=dict)
+    before: tuple[Before, ...] = ()
     repairs_the_bot: bool = False
 
 
@@ -190,9 +249,34 @@ def _line(named: str, command: str, saved: Saved) -> str:
     )
 
 
-def _failed(ctx: StepContext, error: BaseException) -> StepResult:
-    """A step ended on a fault: its mark, and the failure line."""
-    return StepResult(result={"failed": True}, lines=(failure_line(ctx.what, ctx.named, error),))
+def _failed(
+    ctx: StepContext, error: BaseException, then: tuple[PlannedStep, ...] = ()
+) -> StepResult:
+    """A step ended on a fault: its mark, and the failure line; *then* are the undos to run.
+
+    A step that leaves something on Discord raises `StepFailedOnDiscord` with a *notice* saying
+    what and how to put it right. The line names the kind of fault from the cause the step chained
+    it from, or from its reason where it chained none, never `StepFailedOnDiscord`, and carries the
+    notice beneath it; the notice is kept in the result as `left`, for the reply to add
+    (`outcome`).
+    """
+    marks: dict[str, Any] = {"failed": True}
+    cause = error
+    while isinstance(cause, StepFailedOnDiscord) and cause.__cause__ is not None:
+        cause = cause.__cause__
+    line = failure_line(
+        ctx.what, ctx.named, cause,
+        kind=cause.reason if isinstance(cause, StepFailedOnDiscord) else None,
+    )
+    if isinstance(error, StepFailedOnDiscord) and error.notice:
+        marks[LEFT] = error.notice
+        line = f"{line}\n{error.notice}"
+    return StepResult(result=marks, lines=(line,), then=then)
+
+
+def _undos(befores: Sequence[Before]) -> tuple[PlannedStep, ...]:
+    """The undos of *befores*, which have returned, as the jobs that run them: last step first."""
+    return tuple(PlannedStep(before.undo.name) for before in reversed(befores) if before.undo)
 
 
 def _lowered(text: str) -> str:
@@ -243,15 +327,50 @@ def _after_step(after: After) -> Step:
     return dataclasses.replace(inner, run=run, on_fault=_failed)
 
 
+def _before_step(before: Before, following: str, earlier: Sequence[Before] = ()) -> Step:
+    """*before*'s step as the change runs it: ending on a fault, and planning the step *following*.
+
+    A step's own `then` stays, and the next step of the setting follows it. A step that returns
+    `HALTED` ends the setting refused: no step follows, and the one line, a refusal, is formed here
+    from its reason, the step returning no lines of its own. Where the step halts or faults, the
+    undos of the *earlier* steps, which have returned, are planned in its place.
+    """
+    inner = before.step
+
+    async def run(ctx: StepContext) -> StepResult:
+        result = await inner.run(ctx)
+        halted = result.result.get(HALTED)
+        if halted is not None:
+            return StepResult(
+                result={HALTED: halted},
+                lines=(refusal_line(ctx.named, ctx.what, halted["reason"]),),
+                then=_undos(earlier),
+            )
+        return dataclasses.replace(result, then=(*result.then, PlannedStep(following)))
+
+    return dataclasses.replace(
+        inner, run=run, on_fault=lambda ctx, error: _failed(ctx, error, _undos(earlier))
+    )
+
+
 def setting_change(setting: Setting) -> ChangeType:
-    """The change type of *setting*: one `SAVE` step, then whatever steps after it its save plans.
+    """The change type of *setting*: its steps before the save, one `SAVE` step, then whatever
+    steps after it its save plans.
 
     See the module for what the change does with a value already held, a fault and the line.
     """
     carriers = {name for name, after in setting.after.items() if after.carries_line}
+    before_names = [before.step.name for before in setting.before]
+    order = [*before_names, SAVE]
 
     async def save(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
-        saved = await setting.save(db, ctx.payload)
+        found = {
+            view.name: dict(view.result)
+            for view in ctx.steps
+            if view.name in before_names and view.result is not None
+        }
+        payload = {**ctx.payload, FOUND: found} if found else ctx.payload
+        saved = await setting.save(db, payload)
         planned = saved.then if saved.changed else ()
         line = _line(ctx.named, setting.command(ctx.payload), saved)
         result: dict[str, Any] = {"changed": saved.changed, **saved.result}
@@ -271,11 +390,16 @@ def setting_change(setting: Setting) -> ChangeType:
 
     def outcome(ctx: OutcomeContext) -> str:
         results = {view.name: dict(view.result) for view in ctx.steps if view.result is not None}
-        if results.get(SAVE, {}).get("failed"):
-            return failure_reply(
-                ctx.what,
-                _not_saved(setting, ctx.payload).format(command=setting.command(ctx.payload)),
+        left = [str(each[LEFT]) for each in results.values() if each.get(LEFT)]
+        if any(results.get(name, {}).get("failed") for name in (*before_names, SAVE)):
+            not_saved = _not_saved(setting, ctx.payload).format(
+                command=setting.command(ctx.payload)
             )
+            return failure_reply(ctx.what, " ".join((not_saved, *left)))
+        for name in before_names:
+            halted = results.get(name, {}).get(HALTED)
+            if halted is not None:
+                return "\n".join((str(halted["reply"]), *left))
         reply = setting.reply(ctx.payload, results)
         for view in ctx.steps:
             after = setting.after.get(view.name)
@@ -284,12 +408,24 @@ def setting_change(setting: Setting) -> ChangeType:
         return reply
 
     steps: dict[str, Step] = {
-        SAVE: Step(SAVE, StepKind.SAVE, save, describe=describe, on_fault=_failed),
+        **{
+            before.step.name: _before_step(before, order[index + 1], setting.before[:index])
+            for index, before in enumerate(setting.before)
+        },
+        **{
+            before.undo.name: dataclasses.replace(before.undo, on_fault=_failed)
+            for before in setting.before
+            if before.undo is not None
+        },
+        SAVE: Step(
+            SAVE, StepKind.SAVE, save, describe=describe,
+            on_fault=lambda ctx, error: _failed(ctx, error, _undos(setting.before)),
+        ),
         **{name: _after_step(after) for name, after in setting.after.items()},
     }
     return ChangeType(
         kind=setting.kind,
-        opening=(PlannedStep(SAVE),),
+        opening=(PlannedStep(order[0]),),
         steps=steps,
         check=setting.check,
         key=lambda payload: f"{setting.kind}|{json.dumps(payload, sort_keys=True)}",
@@ -302,6 +438,6 @@ def setting_change(setting: Setting) -> ChangeType:
 
 
 __all__ = [
-    "After", "NOTHING_SAVED", "RENAMED_OUTCOME", "SAVE", "Saved", "Setting",
-    "setting_change",
+    "After", "Before", "FOUND", "HALTED", "LEFT", "NOTHING_SAVED", "RENAMED_OUTCOME", "SAVE", "Saved",
+    "Setting", "setting_change",
 ]

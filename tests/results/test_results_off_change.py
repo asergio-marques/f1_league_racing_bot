@@ -1098,7 +1098,10 @@ async def test_the_cascade_lands_in_the_switch_off_s_save(tmp_path):
     assert await _value(
         seeded.db_path, "SELECT module_enabled FROM attendance_config WHERE id = 1"
     ) == 0
-    assert await _count(seeded.db_path, "attendance_division_config") == 0
+    assert await _value(
+        seeded.db_path,
+        "SELECT rsvp_channel_id || '/' || attendance_channel_id FROM attendance_division_config",
+    ) == "71/72"
     audits = await _audit_types(seeded.db_path)
     assert "MODULE_DISABLE" in audits
     assert "ATTENDANCE_MODULE_CASCADE_DISABLED" in audits
@@ -1107,8 +1110,8 @@ async def test_the_cascade_lands_in_the_switch_off_s_save(tmp_path):
 
     await run_queue(bot)
     assert updated_reply(interaction).startswith(
-        f"{SUCCESS}\n✅ Attendance module disabled with it. Its per-division check-in and "
-        "attendance channels have been cleared; its timings, penalties and thresholds are kept."
+        f"{SUCCESS}\n✅ Attendance module disabled with it. Its settings and its per-division "
+        "check-in and attendance channels are kept."
     )
 
 

@@ -11,12 +11,16 @@ from typing import TYPE_CHECKING
 import aiosqlite
 
 from leaguebot.attendance.services.scoring import attendance_scoring
+from leaguebot.attendance.services.settings.division_channels import channel_needs
 from leaguebot.framework.db.database import get_connection
 from leaguebot.core.models.division import DivisionStatus
 from leaguebot.core.models.round import RoundStatus
 from leaguebot.core.services.seasons.season_service import division_round_states_on, season_divisions_on
 from leaguebot.framework.utils.league_bot import LeagueBot
-from leaguebot.results.services.module.division_channels import verdicts_channels_on
+from leaguebot.results.services.module.division_channels import (
+    channel_needs as results_channel_needs,
+    verdicts_channels_on,
+)
 
 if TYPE_CHECKING:
     from leaguebot.image.services.render.image_drawing import ImageDrawing
@@ -141,8 +145,10 @@ async def recalculation_faults(
     the raced rounds of a division since cancelled too, so the channels of that division are
     part of its question, and the results specification's "every division's" holds.
 
-    **Whether a channel will be sent pictures is asked of *drawing*, the image module's, which the
-    caller hands in**; with none, no picture is drawn and no channel needs Attach Files.
+    **What each channel needs is the owner's to say** (attendance's `channel_needs` for its sheet,
+    results' for the verdicts channel, where a sanction's picture goes), **and whether a channel
+    will be sent pictures is asked of *drawing*, the image module's, which the caller hands in**;
+    with none, no picture is drawn and no channel needs Attach Files.
     """
     from leaguebot.results.services.publishing import results_post_service
 
@@ -185,8 +191,11 @@ async def recalculation_faults(
         thresholds
         and (thresholds["autoreserve_threshold"] or thresholds["autosack_threshold"])
     )
-    # Asked of the image module's drawing, which is handed in; with none, nothing is drawn.
-    attendance_graphics = drawing is not None and await drawing.aspect_attaches_files("attendance")
+    # Each channel is judged by what its owner says it needs: attendance's for its sheet, results'
+    # for the verdicts channel, where a sanction's picture is posted. Both ask the image module's
+    # drawing, which is handed in; with none, nothing is drawn.
+    attendance_needs = (await channel_needs(drawing))["attendance"]
+    verdicts_needs = (await results_channel_needs(drawing))["verdicts"]
 
     faults: list[str] = []
     for division in sorted(divisions, key=lambda d: (d.tier, d.id)):
@@ -196,7 +205,7 @@ async def recalculation_faults(
             fault = results_post_service.channel_fault(
                 guild, bot_member, division_name, "attendance",
                 int(attendance_channel),
-                needs_attachment=attendance_graphics,
+                needs=attendance_needs,
             )
             if fault is not None:
                 faults.append(fault)
@@ -205,7 +214,7 @@ async def recalculation_faults(
             fault = results_post_service.channel_fault(
                 guild, bot_member, division_name, "verdicts",
                 verdicts_channel,
-                needs_attachment=False,
+                needs=verdicts_needs,
             )
             if fault is not None:
                 faults.append(fault)

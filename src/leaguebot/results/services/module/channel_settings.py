@@ -159,10 +159,11 @@ def _may_post(channel: object) -> bool:
     return found is not None and found.permissions_for(found.guild.me).send_messages
 
 
-def _typed(channel_type: str) -> Callable[[int | None, int, int], AuditRecord]:
-    """The audit entry of a results or standings channel moving, which names its type."""
+def typed_channel_audit(channel_type: str) -> Callable[[int | None, int | None, int], AuditRecord]:
+    """The audit entry of a results or standings channel moving, which names its type: set here,
+    and cleared by the switch-on (*new* None) where another setting took it."""
 
-    def audit(old: int | None, new: int, division_id: int) -> AuditRecord:
+    def audit(old: int | None, new: int | None, division_id: int) -> AuditRecord:
         return AuditRecord(
             "DIVISION_CHANNEL_SET",
             {"channel_type": channel_type, "channel_id": old},
@@ -171,6 +172,14 @@ def _typed(channel_type: str) -> Callable[[int | None, int, int], AuditRecord]:
         )
 
     return audit
+
+
+def verdicts_channel_audit(old: int | None, new: int | None, division_id: int) -> AuditRecord:
+    """The audit entry of a verdicts channel moving, which names only the id: set here, and
+    cleared by the switch-on (*new* None) where another setting took it."""
+    return AuditRecord(
+        "VERDICTS_CHANNEL_SET", {"channel_id": old}, {"channel_id": new}, division_id
+    )
 
 
 def _mentioned(label: str) -> Callable[[str, str, int, str], str]:
@@ -202,21 +211,21 @@ def results_channel_settings(
         _channel_setting(
             kind=RESULTS_CHANNEL, key="results", said=_mentioned("Results"),
             write=set_division_results_channel, not_found=division_not_found,
-            audit=_typed("results"), channel_of=None, modules=modules, seasons=seasons,
+            audit=typed_channel_audit("results"), channel_of=None, modules=modules,
+            seasons=seasons,
             channel_uses_read=channel_uses_read,
         ),
         _channel_setting(
             kind=STANDINGS_CHANNEL, key="standings", said=_mentioned("Standings"),
             write=set_division_standings_channel, not_found=division_not_found,
-            audit=_typed("standings"), channel_of=None, modules=modules, seasons=seasons,
+            audit=typed_channel_audit("standings"), channel_of=None, modules=modules,
+            seasons=seasons,
             channel_uses_read=channel_uses_read,
         ),
         _channel_setting(
             kind=VERDICTS_CHANNEL, key="verdicts", said=_named,
             write=set_division_penalty_channel, not_found=verdicts_division_not_found,
-            audit=lambda old, new, division_id: AuditRecord(
-                "VERDICTS_CHANNEL_SET", {"channel_id": old}, {"channel_id": new}, division_id
-            ),
+            audit=verdicts_channel_audit,
             channel_of=channel_of, modules=modules, seasons=seasons,
             channel_uses_read=channel_uses_read,
         ),
@@ -225,5 +234,6 @@ def results_channel_settings(
 
 __all__ = [
     "NOT_ENABLED", "NO_ACCESS", "RESULTS_CHANNEL", "STANDINGS_CHANNEL", "VERDICTS_CHANNEL",
-    "results_channel_settings", "verdicts_division_not_found",
+    "results_channel_settings", "typed_channel_audit", "verdicts_channel_audit",
+    "verdicts_division_not_found",
 ]

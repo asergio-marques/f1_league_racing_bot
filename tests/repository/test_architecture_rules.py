@@ -3116,7 +3116,7 @@ CATCH_ALLS_ALLOWED = {
         "left",
     ("results/services/points/points_amendment_faults.py", "approval_faults"):
         "a stated exception: an attendance switch that cannot be read never refuses an amendment",
-    ("core/services/seasons/approval_checks.py", "channel_on_server"):
+    ("core/services/seasons/approval_checks.py", "judged_presence"):
         "a stated exception: a channel check that cannot tell must not refuse a season",
     ("core/services/seasons/season_fingerprint_service.py", "take_fingerprint"):
         "a stated exception: a fingerprint that cannot be taken is empty, which refuses an approval",

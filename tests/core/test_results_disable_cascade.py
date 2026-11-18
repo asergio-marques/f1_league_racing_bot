@@ -295,6 +295,8 @@ async def test_a_confirmation_left_unanswered_is_recorded_as_lapsed(tmp_path):
 
 
 async def test_confirming_disables_both_and_names_both(tmp_path):
+    """Both modules go off, attendance keeping its per-division channels for when it is switched
+    back on (#449), and the reply names both."""
     db_path = await _make_db(tmp_path, attendance_enabled=True)
     cog = await _make_cog(db_path, attendance_enabled=True, queued=True)
     view = _ConfirmDisableResultsView(cog, ACTOR_ID)
@@ -306,7 +308,7 @@ async def test_confirming_disables_both_and_names_both(tmp_path):
     results, attendance, div_rows = await _module_flags(db_path)
     assert results == 0
     assert attendance == 0
-    assert div_rows == 0, "the cascade left the per-division channels behind"
+    assert div_rows == 1, "the cascade took attendance's per-division channels"
 
     reply = updated_reply(interaction)
     assert "Results & Standings module disabled" in reply

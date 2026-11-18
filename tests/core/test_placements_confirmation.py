@@ -7,6 +7,7 @@ lineup or calendar channel. Confirming commits every placement made, which
 """
 from __future__ import annotations
 
+from collections.abc import Mapping
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -21,6 +22,7 @@ from tests.support.review_workflows import (
     sign_up_division_channel_faults_read,
     sign_up_driver_names_read,
 )
+from tests.support.channel_faults import answer_attachments, server_holding
 from tests.support.setup_reads import hold_setup
 
 from tests.support.undecorate import undecorate
@@ -65,6 +67,8 @@ def _cog(db_path, *, weather=False, results=False, attendance=False) -> SeasonCo
     answer_switch(cog.bot.module_service, "weather", weather)
     answer_switch(cog.bot.module_service, "results", results)
     answer_switch(cog.bot.module_service, "attendance", attendance)
+    # The image module's drawing: no picture attaches a file, so no channel needs Attach Files.
+    answer_attachments(cog.bot.image_drawing)
     sign_up_driver_names_read(cog.bot)
     sign_up_division_channel_faults_read(cog.bot)
     return cog
@@ -88,21 +92,15 @@ async def _approve(cog, interaction) -> None:
     await run_workflow("approve_season", cog.bot, interaction)
 
 
-def _guild(*, gone: tuple[int, ...] = (), unreadable: tuple[int, ...] = ()):
-    """A server holding every channel but those *gone*; *unreadable* ones fail to fetch."""
-    import discord
-
-    async def _fetch(channel_id):
-        if channel_id in gone:
-            raise discord.NotFound(MagicMock(status=404), "Unknown Channel")
-        raise discord.HTTPException(MagicMock(status=503), "unavailable")
-
-    guild = MagicMock()
-    guild.get_channel = MagicMock(
-        side_effect=lambda cid: None if cid in gone or cid in unreadable else MagicMock()
-    )
-    guild.fetch_channel = AsyncMock(side_effect=_fetch)
-    return guild
+def _guild(
+    *,
+    gone: tuple[int, ...] = (),
+    unreadable: tuple[int, ...] = (),
+    unusable: Mapping[int, tuple[str, ...]] = {},
+):
+    """A server holding every channel but those *gone*; *unreadable* ones fail to fetch, and in
+    each of those *unusable* the bot is denied the permissions it maps to."""
+    return server_holding(gone=gone, unreadable=unreadable, unusable=unusable)
 
 
 async def _set_module_channels(db_path) -> None:
@@ -219,16 +217,28 @@ async def test_a_missing_module_channel_is_named_with_the_command_that_now_sets_
     assert f"**Pro** has no {label} — `{command}`." in channels
 
 
-async def test_a_channel_deleted_from_the_server_is_named_with_its_command(db_path):
+async def test_a_channel_deleted_or_unusable_is_named_with_its_command(db_path):
     """Nothing clears a channel's id when Discord deletes it, so mid-season every channel is
-    still set — whether it is still there is the question worth asking (#374)."""
+    still set — whether it is still there is the question worth asking (#374). Nor does anything
+    clear it when the bot loses a permission there: with calendar pictures on, Pro's calendar
+    channel lacks Attach Files, and its results channel Read Message History, which a repost
+    needs. Each is named with what it lacks, beside the channels deleted (#449)."""
     await _set_module_channels(db_path)
     cog = _cog(db_path, weather=True, results=True, attendance=True)
+    answer_attachments(cog.bot.image_drawing, "calendar")
+    guild = _guild(
+        gone=(100, 222, 231),
+        unusable={101: ("attach_files",), 120: ("read_message_history",)},
+    )
 
-    _, channels = await _faults(cog, _guild(gone=(100, 222, 231)))
+    _, channels = await _faults(cog, guild)
 
     assert channels == [
         "**Pro**'s lineup channel is no longer on the server — `/division lineup-channel`.",
+        "**Pro**'s calendar channel is missing permissions the bot needs there: Attach Files — "
+        "give the bot them, or `/division calendar-channel`.",
+        "**Pro**'s results channel is missing permissions the bot needs there: "
+        "Read Message History — give the bot them, or `/results channel results`.",
         "**Am**'s verdicts channel is no longer on the server — `/results channel verdicts`.",
         "**Am**'s attendance channel is no longer on the server — "
         "`/attendance channel attendance`.",

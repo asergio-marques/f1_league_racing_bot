@@ -187,6 +187,28 @@ its lane"), set by each setting's declaration; a step that carries the save's li
 once it has succeeded (`carries_line`). Core's settings are listed in `core.md`, "A league's
 settings".
 
+A setting may run steps before its save (`Setting.before`, each a `Before`), for work the save waits
+on, such as a module's kept channels checked before it is switched on. Each is a step of the
+change, so a restart resumes at it. A fault in one ends the setting as a fault in its save does,
+with nothing saved and nothing audited. A step may end the setting refused by returning a `HALTED`
+result carrying the reply and the reason, from which `setting_change` forms the one ⛔ line, the step
+writing none. What the steps found is handed to the save under `FOUND` in its payload, read from
+the steps the queue keeps rather than from memory, so a restart between a step and the save
+hands it the same. The docstring of `setting_change` holds why the steps before the save keep the
+queue's last-judgement invariant.
+
+A step that changes something on Discord declares an undo (`Before.undo`), itself an `ACT` step.
+The undos of the steps that returned run, last step first, where a later step halts or faults and
+where the save does, planned as jobs of the change in the place of the rest, so a restart finishes
+them; a step that fails part-way takes back its own partial work before it raises, and its undo is
+not run. The pattern a module follows is a step that records what is there, a step that changes it
+whose undo restores the record, and the save, the record being the record step's result among the
+steps the queue keeps (`StepContext.steps`) rather than in memory. Where Discord refuses a
+take-back, whether the undo's or a step's own part-way one, the step raises `StepFailedOnDiscord`
+with a notice of what was left and how to put it right; `setting_change` carries the notice into
+the failure line and the reply, and names the kind of fault from its cause, or from its reason
+where it chained none, never `StepFailedOnDiscord`.
+
 ### The clock
 
 The queue's clock, `ChangeQueue.now`, is the bot's: the builder hands services, change types and

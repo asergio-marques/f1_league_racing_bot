@@ -802,16 +802,12 @@ async def configuring_league(
     """`season_league`'s season 3 before its configuration is confirmed: status SETUP, stage
     Configuration, the results module on with its points configuration attached, no other module
     on, test mode as *test_mode*. With *signup*, the signup module on, its signup channel 620
-    set, and the league's base role (819) and driver role (820) stored, both on the server and
-    the driver role one the bot can grant."""
+    set and on the server (`signup_channel_set`), and the league's base role (819) and driver
+    role (820) stored, both on the server and the driver role one the bot can grant."""
     league = await season_league(tmp_path, test_mode=test_mode, monkeypatch=monkeypatch)
     await league.write("UPDATE seasons SET stage = 'CONFIGURATION' WHERE id = ?", SEASON_ID)
     if signup:
-        await league.switch("signup", True)
-        await league.write(
-            "INSERT OR REPLACE INTO signup_module_config (id, signup_channel_id) VALUES (1, ?)",
-            SIGNUP_CHANNEL,
-        )
+        await signup_channel_set(league)
         await league.write(
             "UPDATE server_configs SET base_role_id = ?, driver_role_id = ?",
             BASE_ROLE, DRIVER_ROLE,
@@ -822,6 +818,19 @@ async def configuring_league(
         driver_role.guild.me.guild_permissions.manage_roles = True
         driver_role.guild.me.top_role.__gt__ = lambda _self, _other: True
     return league
+
+
+async def signup_channel_set(league: SeasonLeague) -> None:
+    """Turn the signup module on with its signup channel (620) set, standing on the server with
+    every permission the bot needs there; `league.remove_channel(SIGNUP_CHANNEL)` deletes it."""
+    await league.switch("signup", True)
+    await league.write(
+        "INSERT OR REPLACE INTO signup_module_config (id, signup_channel_id) VALUES (1, ?)",
+        SIGNUP_CHANNEL,
+    )
+    signup = league._recording(channel(SIGNUP_CHANNEL, league.events))
+    signup.guild = league.guild
+    league.channels[SIGNUP_CHANNEL] = signup
 
 
 async def post_config_review(league: SeasonLeague) -> Review:

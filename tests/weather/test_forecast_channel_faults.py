@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from leaguebot.framework.db.database import get_connection, run_migrations
-from tests.support.channel_faults import server_holding
+from tests.support.channel_faults import answer_attachments, server_holding
 from tests.support.switches import answer_switch
 
 
@@ -25,7 +25,11 @@ async def test_weather_names_each_division_s_missing_or_deleted_forecast_channel
     """Pro's weather channel 110 is gone from the server, Am has none, and Old's 310 is there but
     Old is not among the divisions judged. Weather on names Pro's and Am's, each with
     `/weather channel`, and nothing of Old; where the server cannot say whether 110 is there, it
-    is taken as there; with no server, only Am's, unset, is named. Weather off names nothing."""
+    is taken as there; with no server, only Am's, unset, is named. Weather off names nothing.
+
+    With weather pictures on, Pro's channel 110 there but the bot lacking Attach Files in it is
+    named with what it lacks; lacking only Embed Links, which a forecast does not need, it is
+    not."""
     from leaguebot.weather.services.forecast_channel import division_channel_faults
 
     db_path = str(tmp_path / "weather.db")
@@ -43,9 +47,10 @@ async def test_weather_names_each_division_s_missing_or_deleted_forecast_channel
         await db.commit()
     divisions = {1: "Pro", 2: "Am"}
 
-    async def faults(on: bool, guild) -> dict[int, list[str]]:
+    async def faults(on: bool, guild, *pictures: str) -> dict[int, list[str]]:
         found = await division_channel_faults(
-            _modules(on), db_path, divisions=divisions, guild=guild
+            _modules(on), db_path, drawing=answer_attachments(MagicMock(), *pictures),
+            divisions=divisions, guild=guild,
         )
         return {division_id: lines for division_id, lines in found.items() if lines}
 
@@ -57,3 +62,11 @@ async def test_weather_names_each_division_s_missing_or_deleted_forecast_channel
     assert await faults(True, server_holding(unreadable=(110,))) == am
     assert await faults(True, None) == am
     assert await faults(False, server_holding(gone=(110,))) == {}
+    assert await faults(True, server_holding(unusable={110: ("attach_files",)}), "weather") == {
+        1: [
+            "**Pro**'s weather channel is missing permissions the bot needs there: Attach Files "
+            "— give the bot them, or `/weather channel`."
+        ],
+        **am,
+    }
+    assert await faults(True, server_holding(unusable={110: ("embed_links",)}), "weather") == am

@@ -124,8 +124,9 @@ and their amendments, tracks, the calendar post, and the arming of a round's tim
 framework's scheduler), `drivers/` (drivers, teams, placements, the lineup and the changes to them),
 `settings/` (which answers the framework's questions of the league), `test_mode/`, `upkeep/`
 (backup, pack, factory reset, the in-memory state and clean-up) and `modules/` (the hub and its
-About option, and what core asks of the modules, such as the drawing protocol). A folder is not a
-kind: every check reads a file's kind from the first folder below its part or the framework, so
+About option, and what core asks of the modules, such as the drawing protocol and the check a
+switch-on runs on the channels its module kept). A folder is not a kind: every check reads a file's
+kind from the first folder below its part or the framework, so
 `core/services/seasons/season_service.py` is a service of core. A module's own services stay in its
 `services/` folder unless its design file groups them. `tests/repository/test_import_contracts.py`
 holds it: no service of the framework's or of core's sits outside a topic folder.
@@ -276,14 +277,15 @@ judged, a round amended or its timed work armed again, a round's timed work read
 a division or a season cancelled, a round's results made final, placements confirmed, a season's
 approval saved, a season's configuration confirmed, a review gathering its lines, the placements
 review gathering each division's lines, a division's channel faults read, a channel's uses read as a
-command sets it, the factory reset gathering the channels each module holds, a round's drawn phases
-read, a driver's signup name, username and nationality read for a season, with whether a nationality
-is collected, which the modules that draw a driver ask through core's reader, the divisions a
-driver's accounts raced in read, a driver's standing in a division read for the season's history, a
-season's fingerprint taken, a season's pending test-mode steps read, the test-mode review's marks
-read, a season's confirmation judged, a division's final round read, a season ending, a season,
-division, round or driver deleted, a driver merged into another or turned down, a driver's account
-changed, a base role changed, the bot packed, test mode turned on, the bot's in-memory state
+command sets it or as a module is switched on (weather, results, attendance and signup answer it
+only while the module is on), the factory reset gathering the channels each module holds, a round's
+drawn phases read, a driver's signup name, username and nationality read for a season, with whether
+a nationality is collected, which the modules that draw a driver ask through core's reader, the
+divisions a driver's accounts raced in read, a driver's standing in a division read for the season's
+history, a season's fingerprint taken, a season's pending test-mode steps read, the test-mode
+review's marks read, a season's confirmation judged, a division's final round read, a season ending,
+a season, division, round or driver deleted, a driver merged into another or turned down, a driver's
+account changed, a base role changed, the bot packed, test mode turned on, the bot's in-memory state
 cleared, the hub's panel gathering its options, a module's switch read), core declares a hook. The
 builder, or the module's wiring it calls, signs each module up to it before the bot connects. Core
 calls whoever signed up, and never imports a module, the bot's type aside (see "How the code is laid
@@ -403,6 +405,27 @@ module's settings, with work after it that nothing waits on (the removal of its 
 of its own. Where the dependency table makes one module's switch-off take another's with it, the
 dependent module offers its switch-off as a function on the connection it is handed, and the builder
 hands it to the change that cascades, as results' switch-off is handed attendance's.
+
+A module that keeps channels while it is off has its switch-on check them. The switch-on is a
+`Setting` with a step before its save, which core's check (`core/services/modules/kept_channels.py`)
+supplies and which the module hands its own reader of the channels it kept, with its own needs of
+the bot in each: core names no module in it, and each module's reader is built from the one
+statement of its channels that its confirmation faults also read (a table of them, or, for the one
+channel of weather and of signup, the constants it is named and set by, signup's needs being stated
+once and read by `/signup open` for the part it needs to post). The channel hook is read as the
+switch-on runs and a module answers it only while it is on, so a channel it kept does not count
+against another setting while it is off, and the switch-on claims it again, clearing what another
+setting took meanwhile (core_specification.md, "Modules" and "Channels"). Signup's channel is the
+server's, not a division's, so its reader answers with no division.
+*Rejected:* an `After` step that undoes the switch-on, and the check in `check()`; the reasons are
+in `setting_change`'s docstring.
+
+Where a module also put something on the server that its switch-off took off, its switch-on puts it
+back as two further steps before the save, after the check: a record step, which keeps what it found
+there before it puts anything back, and a restore step, which puts it back and is undone where the
+switch-on does not go through, so that nothing is half-set (the undo is framework.md's, "Settings").
+The record is a step of its own so that a restore run again after a stop takes back to the first
+record. The steps of signup's switch-on are in signup_module.md.
 
 **A module's private code stays inside it.** A name starting with an underscore is used only
 inside its own module (after PEP 8's convention, extended to the files of one module). What a
@@ -610,27 +633,32 @@ it that carries the line — the arming of the daily portrait job, a role's gran
 where it replaces one gone from the server while the season's configuration is fixed, the old hub
 stood down and the new one's permissions set once its channel is moved, or the signup channel's
 permissions set (the new channel's first, the old one's cleared last); see "The record is the
-queue's"), and the work after it that the setting does not need (checking it against the templates,
-arming or removing a timed job, granting a role to every driver, asking the hub's panel to be posted
-again as the bot's own change, posting the signup information in the new signup channel where a
-window is open) is work nothing later depends on. A fault in either leaves nothing half-done and
-nothing behind it on the lane waits on it. A fault in the save is rolled back whole, so nothing is
-saved and the member can simply ask again; a fault in a step after the save leaves the setting
-saved, so asking again with the same value saves nothing and repeats no step, and the reply says
-what was not done, or what to do by hand, where the step has anything to say. So such a step carries
-`Step.on_fault`: where it raises, the queue does not stop the lane but marks the job done with what
-`on_fault` returns, in a save of its own with its lines, and the change carries on to its next step
-or finishes. A change type may likewise give `ChangeType.on_check_fault` for a check that raises as
-a **member's** change starts: the change is ended as REFUSED in one save, with the failure line in
-place of a refusal's, and the reply it returns. What the member is told and what the log channel
-records of either is the core specification's "How a change is carried out"; the full detail goes to
-the host's log. A step that is `undiscardable` may not carry `on_fault`, since it is a step a stop
-must hold. `framework/services/queue/setting_change.py` builds both callbacks for every settings
-command once. *Rejected:* a step that catches its own fault, which would leave its partial writes on
-the save's connection and could not catch what fails after it returns, the queue's own audit and
-line writes and the commit; stopping the lane for a setting, which would hold every other change for
-a fault that either the member cures by asking again (a save rolled back) or that nothing later on
-the lane depends on (a step after it).
+queue's"), after any step before the save, and the work after it that the setting does not need
+(checking it against the templates, arming or removing a timed job, granting a role to every
+driver, asking the hub's panel to be posted again as the bot's own change, posting the signup
+information in the new signup channel where a window is open) is work nothing later depends on.
+Work the save waits on may come before it (a module's kept channels checked before it is switched
+on, and what it put back on Discord): it saves nothing, and a fault in it, or a refusal by it, ends
+the setting with nothing saved and no audit record, what a step before the save changed on Discord
+being undone so that nothing is half-set (framework.md, "Settings"). A fault in any of these leaves
+nothing half-done and nothing behind it on the lane waits on it. A fault in a step before the save
+saves nothing, and one in the save is rolled back whole, so nothing is saved and the member can
+simply ask again; a fault in a step after the save leaves the setting saved, so asking again with
+the same value saves nothing and repeats no step, and the reply says what was not done, or what to
+do by hand, where the step has anything to say. So such a step carries `Step.on_fault`: where it
+raises, the queue does not stop the lane but marks the job done with what `on_fault` returns, in a
+save of its own with its lines, and the change carries on to its next step or finishes. A change
+type may likewise give `ChangeType.on_check_fault` for a check that raises as a **member's** change
+starts: the change is ended as REFUSED in one save, with the failure line in place of a refusal's,
+and the reply it returns. What the member is told and what the log channel records of either is the
+core specification's "How a change is carried out"; the full detail goes to the host's log. A step
+that is `undiscardable` may not carry `on_fault`, since it is a step a stop must hold.
+`framework/services/queue/setting_change.py` builds both callbacks for every settings command once.
+*Rejected:* a step that catches its own fault, which would leave its partial writes on the save's
+connection and could not catch what fails after it returns, the queue's own audit and line writes
+and the commit; stopping the lane for a setting, which would hold every other change for a fault
+that either the member cures by asking again (a save rolled back) or that nothing later on the lane
+depends on (a step after it).
 
 One kind of setting is not wholly so: a change that recalculates and posts as `/attendance sync`
 does follows the sync's rule whatever starts it, a setting included. Its cards, lineups and sheets
@@ -699,9 +727,12 @@ stop nobody yet holds the role to clear.
   command that sets such a channel keeps to this as it moves onto the queue. So no stopped head ever
   has a remaining job that claims a channel, an overtaking change runs to its own end before the
   head is tried again, and a channel setting's check as the change starts is still the save's last
-  judgement of the state. That invariant is the one a later reader could tune away: a change that
-  can stop its lane and claims a channel would need the save to re-check, or would need to be barred
-  from being overtaken.
+  judgement of the state, as is the reading a module's switch-on makes of its kept channels before
+  its save: a module's channels are not counted while it is off, and its switch-on claims them
+  again, so a switch-on must stay a change that never stops its lane, its steps before the save and
+  its save ending on a fault, and the undos of those steps ending on a fault too. That invariant is
+  the one a later reader could tune away: a change that can stop its lane and claims a channel
+  would need the save to re-check, or would need to be barred from being overtaken.
 
   Nothing else overtakes the stopped job, so whatever runs outside the queue leaves alone what a
   change is in hand on, stopped included, as the queue tells it (`unfinished` or `in_hand`; core
@@ -794,22 +825,24 @@ stop nobody yet holds the role to clear.
   through the bot, since a service does not use the bot to look up other services (above).
 
   A league's settings share the mechanism rather than each forming its own: a command declares a
-  `Setting` (its check, its save on a connection, its reply and the tables it writes) and
-  `setting_change` builds the change type, so that the line, whether an audit record is written,
-  the answer for a value already held and the answer for a fault are decided in one place. A
-  setting's value, its audit record and its line are one save, save where a step after it arms the
-  daily portrait job, grants a role to every driver where it replaces one gone from the server
-  while the season's configuration is fixed, stands the old hub down and sets the new one's
-  permissions once its channel is moved, or sets the new signup channel's permissions and then
-  clears the old one's: there the value and the audit record share the save and
-  the line follows in that step's own save, so that a fault of the bot's own in that step — a
-  failed arming, a failed grant, the guild or the new hub's channel gone missing — records no
-  success, while a permission edit Discord refuses, which the step reports rather than raises, or a
-  base role gone from the server, records a success with that fault named beneath it. *Rejected:* a
-  bespoke change type for each command, which forms the line, the audit and the fault answer a
-  score of ways. `/bot init` alone is a change type of its own rather than a `Setting`: it claims
-  the server, where a setting writes one column of a server already claimed
-  (`core/services/settings/bot_init_change.py`).
+  `Setting` (its check, any steps before its save, its save on a connection, its reply and the
+  tables it writes) and `setting_change` builds the change type, so that the line, whether an audit
+  record is written, the answer for a value already held and the answer for a fault are decided in
+  one place. A setting's value, its audit record and its line are one save, after any steps before
+  it (a module's kept channels checked before it is switched on, and what it puts back, which save
+  nothing and end the setting on a fault, or refused, with no audit record, what they changed on
+  Discord undone), save where a step after it arms the daily
+  portrait job, grants a role to every driver where it replaces one gone from the server while the
+  season's configuration is fixed, stands the old hub down and sets the new one's permissions once
+  its channel is moved, or sets the new signup channel's permissions and then clears the old one's:
+  there the value and the audit record share the save and the line follows in that step's own save,
+  so that a fault of the bot's own in that step — a failed arming, a failed grant, the guild or the
+  new hub's channel gone missing — records no success, while a permission edit Discord refuses,
+  which the step reports rather than raises, or a base role gone from the server, records a success
+  with that fault named beneath it. *Rejected:* a bespoke change type for each command, which forms
+  the line, the audit and the fault answer a score of ways. `/bot init` alone is a change type of
+  its own rather than a `Setting`: it claims the server, where a setting writes one column of a
+  server already claimed (`core/services/settings/bot_init_change.py`).
 
 ---
 
@@ -1543,18 +1576,24 @@ one that says otherwise below.
   review and confirmation that checks the names carries on with them unchecked: the check only keeps
   a team name from becoming a bad artwork filename.
 - Results' reader of an attendance switch (`points_amendment_faults.approval_faults`) and core's
-  reader of whether a channel is on the server (`approval_checks.channel_on_server`) stand aside,
-  reading the switch as off and the channel as present, because a reader that cannot answer must not
-  refuse an amendment or a season.
+  reader of whether a channel can be used as its posting needs (`approval_checks.judged_presence`,
+  which `channel_on_server` asks) stand aside, reading the switch as off and the channel as
+  present, because a reader that cannot answer must not refuse an amendment or a season. The strict
+  reader beneath it (`approval_checks.channel_presence`) answers only what Discord proves, a
+  channel found, gone, or found and lacking a permission its use needs, and raises on anything
+  else, so that a caller which can refuse for a check that could not be made is not forced to
+  treat it as passed.
 - The image module's gate (`ImageDrawing.aspect_wanted`, which every aspect's picture asks but the
   weather forecast's, whose own gate is of the sixth place) answers that the league does not draw the
   aspect, with no line to the log channel, so the text goes out, because a gate that cannot be read
   must not lose a league its text. Its pre-flight question, whether the aspect attaches files
   (`ImageDrawing.aspect_attaches_files`, asked by the checks of results' reposting and attendance's
-  recalculation), answers no too, and is the one reader that takes a switch nobody signed up for as
-  an answer: it is asked by a command's pre-flight ahead of the jobs that draw, and the picture's
-  own gate, asked when the job draws, raises that fault there and stops the job, where a manager
-  sees it with the rest of the queue.
+  recalculation and by each module's judging of its channels at a confirmation, and
+  `calendar_attaches_files` and `lineup_attaches_files`, which core asks for its own two channels),
+  answers no too, and is the one reader that takes a switch nobody signed up for as an answer: it
+  is asked by a command's pre-flight ahead of the jobs that draw, and the picture's own gate, asked
+  when the job draws, raises that fault there and stops the job, where a manager sees it with the
+  rest of the queue.
 - The verdict picture's five readers of an optional field (the round's context, the driver's
   nationality and the names a mention stands for: `_round_context`, `_driver_nationality` and
   `_mention_names`, in `image_verdict_post.py`; the team's name and its shorthand:

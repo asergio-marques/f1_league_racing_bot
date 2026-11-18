@@ -27,6 +27,7 @@ from tests.support.review_workflows import (
     sign_up_driver_names_read,
 )
 from tests.support.season_league import PLACEMENTS_CONFIRM_KIND as KIND
+from tests.support.channel_faults import answer_attachments
 from tests.support.setup_reads import hold_setup
 from tests.support.undecorate import undecorate
 from tests.attendance.test_uncommitted_drivers_outside_attendance import (
@@ -163,6 +164,8 @@ def _cog(db_path, stage: SeasonStage) -> SeasonCog:
     # gave.
     cog.bot.image_drawing.calendar_wanted = AsyncMock(return_value=False)
     cog.bot.image_drawing.lineup_wanted = AsyncMock(return_value=False)
+    # No picture attaches a file, so no channel needs Attach Files.
+    answer_attachments(cog.bot.image_drawing)
     sign_up_driver_names_read(cog.bot)
     sign_up_division_channel_faults_read(cog.bot)
     return cog

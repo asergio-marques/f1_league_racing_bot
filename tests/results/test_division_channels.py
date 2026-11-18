@@ -198,11 +198,16 @@ async def test_results_names_each_division_s_missing_or_deleted_channels(tmp_pat
     Results on names Division 11's standings channel as gone, taking the verdicts channel as there, and each of
     Am's three as missing, in the order results, standings, verdicts, each with the command that
     sets it. With no server to check, Am's three alone are named, Division 11's set channels
-    being taken as there. Results off names nothing."""
+    being taken as there. Results off names nothing.
+
+    On a server where the bot lacks Read Message History in channel 120, which a repost needs,
+    and Attach Files in channel 122: with verdict banners on, the results and verdicts channels
+    are named with what each lacks, beside the standings channel gone; with no picture on, the
+    verdicts channel needs no Attach Files and is not named."""
     from unittest.mock import AsyncMock, MagicMock
 
     from leaguebot.results.services.module.division_channels import division_channel_faults
-    from tests.support.channel_faults import server_holding
+    from tests.support.channel_faults import answer_attachments, server_holding
 
     db_path = await _make_db(tmp_path)
     async with get_connection(db_path) as db:
@@ -218,11 +223,12 @@ async def test_results_names_each_division_s_missing_or_deleted_channels(tmp_pat
         await db.commit()
     guild = server_holding(gone=(121,), unreadable=(122,))
 
-    async def faults(on: bool, server=guild) -> dict[int, list[str]]:
+    async def faults(on: bool, server=guild, *pictures: str) -> dict[int, list[str]]:
         modules = MagicMock()
         answer_switch(modules, "results", on)
         found = await division_channel_faults(
-            modules, db_path, divisions={DIVISION_ID: "Division 11", 12: "Am"}, guild=server
+            modules, db_path, drawing=answer_attachments(MagicMock(), *pictures),
+            divisions={DIVISION_ID: "Division 11", 12: "Am"}, guild=server,
         )
         return {division_id: lines for division_id, lines in found.items() if lines}
 
@@ -242,6 +248,28 @@ async def test_results_names_each_division_s_missing_or_deleted_channels(tmp_pat
     }
     assert await faults(True, None) == am
     assert await faults(False) == {}
+
+    lacking = server_holding(
+        gone=(121,), unusable={120: ("read_message_history",), 122: ("attach_files",)}
+    )
+    results_line = (
+        "**Division 11**'s results channel is missing permissions the bot needs there: "
+        "Read Message History — give the bot them, or `/results channel results`."
+    )
+    standings_line = (
+        "**Division 11**'s standings channel is no longer on the server — "
+        "`/results channel standings`."
+    )
+    assert await faults(True, lacking, "verdict_banner") == {
+        DIVISION_ID: [
+            results_line,
+            standings_line,
+            "**Division 11**'s verdicts channel is missing permissions the bot needs there: "
+            "Attach Files — give the bot them, or `/results channel verdicts`.",
+        ],
+        **am,
+    }
+    assert await faults(True, lacking) == {DIVISION_ID: [results_line, standings_line], **am}
 
 
 async def test_results_hands_the_review_each_division_s_channel_lines(tmp_path):

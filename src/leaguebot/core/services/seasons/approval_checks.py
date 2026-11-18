@@ -17,11 +17,13 @@ import logging
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from enum import Enum
 from typing import Any, TypeVar
 
 import discord
 
 from leaguebot.framework.db.database import get_connection
+from leaguebot.core.models.channel_needs import ATTACH, EMBED, SEND, VIEW, Needs
 from leaguebot.core.models.division import Division
 from leaguebot.core.models.round import Round, RoundLead
 from leaguebot.core.services.seasons.approval_window_service import calendar_faults
@@ -112,38 +114,169 @@ def date_refusal(
     )
 
 
+class PresenceState(Enum):
+    """What a check can prove of a channel the league saved."""
+
+    PRESENT = "present"
+    GONE = "gone"
+    UNUSABLE = "unusable"
+
+
+@dataclass(frozen=True)
+class Presence:
+    """The answer of `channel_presence`: *missing* names, in Discord's own words, the permissions
+    an unusable channel lacks, and is empty otherwise."""
+
+    state: PresenceState
+    missing: tuple[str, ...] = ()
+
+
+async def channel_presence(guild: discord.Guild, channel_id: int, needs: Needs) -> Presence:
+    """Whether *channel_id* is a channel of *guild* the bot can use as *needs* asks, answering
+    only what Discord proves, and raising otherwise.
+
+    The cache is asked first and the API second, the cache holding no channel it has not seen.
+    A channel found, in either, is `PRESENT` where the bot holds every permission in *needs*
+    there, and `UNUSABLE` naming those it lacks where it does not. A fetch answering NotFound
+    proves the channel `GONE`; one Discord refuses the bot proves it `UNUSABLE`, as a channel the
+    bot cannot see, lacking View Channel. **Anything else is not an answer** and is raised: a
+    server error from the fetch, or a bot member the client cannot read (`guild.me` raises where
+    the client has no user yet, #187), is a check that cannot be made. The caller decides what
+    that means: `judged_presence` stands aside, which is what a confirmation does.
+    """
+    channel: discord.abc.GuildChannel | discord.Thread | None = guild.get_channel(channel_id)
+    if channel is None:
+        try:
+            channel = await guild.fetch_channel(channel_id)
+        except discord.NotFound:
+            return Presence(PresenceState.GONE)
+        except discord.Forbidden:
+            return Presence(PresenceState.UNUSABLE, (VIEW[1],))
+    member = getattr(guild, "me", None)
+    if member is None:
+        raise RuntimeError("the bot's member in the server cannot be read")
+    permissions = channel.permissions_for(member)
+    missing = tuple(name for attribute, name in needs if not getattr(permissions, attribute, False))
+    if missing:
+        return Presence(PresenceState.UNUSABLE, missing)
+    return Presence(PresenceState.PRESENT)
+
+
+async def judged_presence(guild: discord.Guild, channel_id: int, needs: Needs) -> Presence:
+    """`channel_presence`, standing aside where it cannot answer: a check that could not tell
+    answers `PRESENT`, logged on the host, and so is never the thing that refuses a season.
+
+    A stated exception (architecture.md, "A catch-all error handler"): only what Discord proves
+    is a fault, whatever the reason the question could not be put.
+    """
+    try:
+        return await channel_presence(guild, channel_id, needs)
+    except Exception as exc:  # noqa: BLE001 — cannot tell, so not a fault
+        log.warning("channel check: could not judge channel %s: %s", channel_id, exc, exc_info=True)
+    return Presence(PresenceState.PRESENT)
+
+
 async def channel_on_server(guild, channel_id: int) -> bool:
     """Whether *channel_id* is still a channel of *guild*, only NotFound answering no.
 
-    The cache is asked first and the API second, the cache holding no channel it has not
-    seen. Any failure but NotFound answers yes, logged on the host: a check that could not tell
-    must not be the thing that refuses a season.
+    Judged by `judged_presence` against View Channel alone: a channel the bot cannot see is still
+    on the server, and any failure but NotFound answers yes.
     """
-    if guild.get_channel(channel_id) is not None:
-        return True
-    try:
-        await guild.fetch_channel(channel_id)
-    except discord.NotFound:
-        return False
-    except Exception as exc:  # noqa: BLE001 — cannot tell, so not a fault
-        log.warning("channel check: could not fetch channel %s: %s", channel_id, exc, exc_info=True)
-    return True
+    return (await judged_presence(guild, channel_id, (VIEW,))).state is not PresenceState.GONE
 
 
 async def channel_fault(
-    guild, division_name: str, value, label: str, command: str
+    guild,
+    division_name: str | None,
+    value,
+    label: str,
+    command: str,
+    needs: Needs,
 ) -> str | None:
-    """The line saying a division's channel is not set, or no longer on the *guild*, or None
-    where it is fine: the one wording every module's channel faults and core's own are laid in.
+    """The line saying a division's channel is not set, no longer on the *guild*, or missing
+    permissions the bot needs there, or None where it is fine: the one wording every module's
+    channel faults and core's own are laid in.
 
     *value* is the channel's id as the column holds it; *label* is what a league calls the
-    channel and *command* sets it. With no *guild*, only whether it is set is judged.
+    channel and *command* sets it. A channel of no division (the server's, as signup's) is
+    given as a *division_name* of None, set, and named "The {label}". *needs* is what the
+    channel's use asks of the bot, which its module states (`channel_needs`); a channel lacking
+    any is named with what it lacks, in Discord's own words, so the league can give the bot them
+    or set another. The channel is judged by `judged_presence`, so one that could not be looked
+    up for any reason but its absence is not a fault. With no *guild*, only whether it is set is
+    judged.
     """
+    owner = f"**{division_name}**'s {label}" if division_name is not None else f"The {label}"
     if not value:
         return f"**{division_name}** has no {label} — `{command}`."
-    if guild is not None and not await channel_on_server(guild, int(value)):
-        return f"**{division_name}**'s {label} is no longer on the server — `{command}`."
+    if guild is None:
+        return None
+    presence = await judged_presence(guild, int(value), needs)
+    if presence.state is PresenceState.GONE:
+        return f"{owner} is no longer on the server — `{command}`."
+    if presence.state is PresenceState.UNUSABLE:
+        return (
+            f"{owner} is missing permissions the bot needs there: "
+            f"{', '.join(presence.missing)} — give the bot them, or `{command}`."
+        )
     return None
+
+
+async def core_channel_needs(drawing: ImageDrawing) -> dict[str, Needs]:
+    """What core's two division channels, `lineup` and `calendar`, need of the bot: the lineup,
+    an embed or a picture, View Channel, Send Messages and Embed Links, and the calendar, text or
+    a picture, View Channel and Send Messages. Each also needs Attach Files where the image module
+    answers that the picture could attach a file (`calendar_attaches_files`,
+    `lineup_attaches_files`), which core asks of it rather than read its configuration."""
+    lineup_attaches = await drawing.lineup_attaches_files()
+    calendar_attaches = await drawing.calendar_attaches_files()
+    return {
+        "lineup": (VIEW, SEND, EMBED) + ((ATTACH,) if lineup_attaches else ()),
+        "calendar": (VIEW, SEND) + ((ATTACH,) if calendar_attaches else ()),
+    }
+
+
+async def core_division_channel_faults(
+    db_path: str,
+    drawing: ImageDrawing,
+    *,
+    divisions: Mapping[int, str],
+    guild: Any = None,
+) -> dict[int, list[str]]:
+    """Each of *divisions*' lineup and calendar channels, in that order, that is not set, not on
+    the *guild* or lacking a permission its use needs (`core_channel_needs`), by division id.
+
+    Core's own subscriber of `division_channel_faults_read`, signed up before every module's so
+    that a division's lines read core's first. The divisions handed are those the confirmation
+    judges (id to name), so a cancelled division is passed over. A division with no fault is
+    given an empty list. With no *guild*, only whether each channel is set is judged. Reads only.
+    """
+    if not divisions:
+        return {}
+    needs = await core_channel_needs(drawing)
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT id, lineup_channel_id, calendar_channel_id FROM divisions "
+            f"WHERE id IN ({', '.join('?' * len(divisions))})",
+            tuple(divisions),
+        )
+        rows = {row["id"]: row for row in await cursor.fetchall()}
+    found: dict[int, list[str]] = {}
+    for division_id, name in divisions.items():
+        row = rows.get(division_id)
+        lines: list[str] = []
+        for column, label, setting in (
+            ("lineup_channel_id", "lineup channel", "lineup"),
+            ("calendar_channel_id", "calendar channel", "calendar"),
+        ):
+            fault = await channel_fault(
+                guild, name, None if row is None else row[column], label,
+                f"/division {setting}-channel", needs[setting],
+            )
+            if fault:
+                lines.append(fault)
+        found[division_id] = lines
+    return found
 
 
 async def division_channel_faults(
@@ -153,26 +286,30 @@ async def division_channel_faults(
     *,
     division_channel_faults_read: AwaitedHook,
 ) -> list[str]:
-    """Every channel a division of the season posts to that is not set, or not on the server.
+    """Every channel a division of the season posts to that is not set, not on the server, or
+    lacking a permission its use needs.
 
     **Both confirmations ask this**: the first, and the one mid-season. Nothing
     clears a channel's id when Discord deletes the channel, and no module can be enabled
     once a season is under way, so mid-season every channel is still *set*; the question
-    worth asking is whether it is still *there*. Asked at both, so the two cannot come to
-    disagree about what a division needs.
+    worth asking is whether it is still *there*, and whether the bot can still use it. Asked at
+    both, so the two cannot come to disagree about what a division needs.
 
     A channel is looked for in the cache and then fetched, a fetch answering NotFound
-    being the one proof it is gone. Any other failure is **not** a fault: a check that
-    could not tell must not be what refuses a season. With no *guild*, only whether each
-    channel is set is judged. A cancelled division posts nothing and is passed over.
+    being the one proof it is gone (`channel_presence`). Any other failure is **not** a fault: a
+    check that could not tell must not be what refuses a season. With no *guild*, only whether
+    each channel is set is judged. A cancelled division posts nothing and is passed over.
 
-    Core names the lineup and calendar channels, which every season needs; each module names
-    its own through *division_channel_faults_read*, its switch asked of itself. A division's
-    lines read in tier order: its own, then the modules' in the order they signed up.
+    **Every channel is named through *division_channel_faults_read*, core's own too** (the
+    lineup's and the calendar's, `core_division_channel_faults`): core's needs ask the image
+    module whether a picture could attach a file, so they are built where that is awaited, and
+    this function holds no list of channels, so that the two confirmations, which reach it
+    unchanged, cannot disagree about one. A division's lines read in the order the parts signed
+    up: core's own, then the modules'.
     """
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT id, name, lineup_channel_id, calendar_channel_id FROM divisions "
+            "SELECT id, name FROM divisions "
             "WHERE season_id = ? AND status != 'CANCELLED' ORDER BY tier",
             (season_id,),
         )
@@ -182,18 +319,6 @@ async def division_channel_faults(
     handed = await division_channel_faults_read.call(divisions=divisions, guild=guild)
     faults: list[str] = []
     for row in rows:
-        for fault in (
-            await channel_fault(
-                guild, row["name"], row["lineup_channel_id"], "lineup channel",
-                "/division lineup-channel",
-            ),
-            await channel_fault(
-                guild, row["name"], row["calendar_channel_id"], "calendar channel",
-                "/division calendar-channel",
-            ),
-        ):
-            if fault:
-                faults.append(fault)
         for module_lines in handed:
             faults.extend(module_lines.get(row["id"], []))
     return faults
@@ -542,7 +667,7 @@ async def configuration_faults(
     faults += [
         refusal.message
         for refusal in await read_refusals(
-            confirmation_refused, season_id, Confirmation.CONFIGURATION
+            confirmation_refused, season_id, Confirmation.CONFIGURATION, guild=guild
         )
     ]
 

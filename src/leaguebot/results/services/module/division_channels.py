@@ -26,6 +26,8 @@ import aiosqlite
 
 from leaguebot.results.models.switch import SWITCH_KEY
 from leaguebot.framework.db.database import get_connection
+from leaguebot.core.models.channel_needs import ATTACH, READ_HISTORY, SEND, VIEW, Needs
+from leaguebot.core.services.modules.kept_channels import KeptChannel, KeptReader
 from leaguebot.core.services.seasons.approval_checks import channel_fault
 from leaguebot.core.services.settings.channel_registry_service import (
     ChannelUse,
@@ -35,13 +37,18 @@ from leaguebot.core.services.settings.channel_registry_service import (
 
 if TYPE_CHECKING:
     from leaguebot.framework.services.switches.module_service import ModuleService
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
 
-#: Results' three channels, in the order a division's lines read: the column that holds it, what a
-#: league calls it, the command that sets it, and what the review shows where it is not set.
+#: Results' three channels, in the order a division's lines read and a channel is looked for: the
+#: column that holds it, its setting (what core's `channel_uses_read` names it, and the key of
+#: `channel_needs`), what a league calls it, the command that sets it, and what the review shows
+#: where it is not set.
 _CHANNELS = (
-    ("results_channel_id", "results channel", "/results channel results", "*(none)*"),
-    ("standings_channel_id", "standings channel", "/results channel standings", "*(none)*"),
-    ("penalty_channel_id", "verdicts channel", "/results channel verdicts", "*(not configured)*"),
+    ("results_channel_id", "results", "results channel", "/results channel results", "*(none)*"),
+    ("standings_channel_id", "standings", "standings channel", "/results channel standings",
+     "*(none)*"),
+    ("penalty_channel_id", "verdicts", "verdicts channel", "/results channel verdicts",
+     "*(not configured)*"),
 )
 
 
@@ -146,34 +153,28 @@ async def division_lines(
         lines[division_id] = [
             f"  {label.capitalize()}: "
             + (f"<#{row[column]}>" if row is not None and row[column] else unset)
-            for column, label, _command, unset in _CHANNELS
+            for column, _setting, label, _command, unset in _CHANNELS
         ]
     return lines
 
 
-#: The settings of results' three channels, by the column that holds each, in the order a channel
-#: is looked for: what core's `channel_uses_read` names each.
-_SETTINGS = (
-    ("results_channel_id", "results"),
-    ("standings_channel_id", "standings"),
-    ("penalty_channel_id", "verdicts"),
-)
-
-
 async def channel_uses(
-    db_path: str, *, channel_id: int, divisions: Mapping[int, str]
+    modules: "ModuleService", db_path: str, *, channel_id: int, divisions: Mapping[int, str]
 ) -> list[ChannelUse]:
     """The results, standings and verdicts channels of those of *divisions* (the live season's, by
     id, naming each) that are *channel_id*, each as the use of it, naming its division, in that
-    order; empty where none is.
+    order; empty where none is, and always where the results module is off.
 
     Subscribed to core's `channel_uses_read`, which asks it as a channel is set, so that a
-    channel does one job. Asked no switch: a channel results holds is held whether results is on
-    or off. Reads only.
+    channel does one job. A switched-off module answers for none of its channels, which it keeps:
+    another setting may take one, and the module clears it when it is switched on again
+    (`core/services/modules/kept_channels.py`). Reads only.
     """
+    if not await modules.is_enabled(SWITCH_KEY):
+        return []
     uses: list[ChannelUse] = []
     async with get_connection(db_path) as db:
-        for column, setting in _SETTINGS:
+        for column, setting, _label, _command, _unset in _CHANNELS:
             cursor = await db.execute(
                 f"SELECT division_id FROM division_results_config WHERE {column} = ? "
                 f"ORDER BY division_id",
@@ -197,7 +198,7 @@ async def setting_channels(db_path: str, *, division_ids: Sequence[int]) -> Disc
     """
     found: set[int] = set()
     async with get_connection(db_path) as db:
-        for column, _setting in _SETTINGS:
+        for column, _setting, _label, _command, _unset in _CHANNELS:
             found |= await channel_ids_in(
                 db,
                 f"SELECT {column} FROM division_results_config WHERE {column} IS NOT NULL",
@@ -216,15 +217,77 @@ async def setting_channels(db_path: str, *, division_ids: Sequence[int]) -> Disc
     return DiscordTargets(created=tuple(sorted(created)), channels=tuple(sorted(found)))
 
 
+async def channel_needs(drawing: "ImageDrawing | None") -> dict[str, Needs]:
+    """What results' three channels, `results`, `standings` and `verdicts`, need of the bot: the
+    one source of it within results, read by the faults a season's confirmation names and by the
+    gate before a repost, which attendance's recalculation reads for the verdicts channel too.
+
+    Each is posted in, and reposted: the bot finds what it posted last and takes it down, which
+    needs View Channel, Send Messages and Read Message History (`manage_messages` is deliberately
+    absent: the bot deletes only its own posts, which needs no permission). Each also needs Attach
+    Files where the image module answers that its pictures could attach a file
+    (`aspect_attaches_files`, a question the module answers by its switches and not by the state of
+    a template): `results` for results, `standings` for standings, and `verdicts` or
+    `verdict_banner` for the verdicts channel, where attendance's sanction cards go as well. With
+    no *drawing*, nothing is drawn and no channel needs Attach Files.
+    """
+    reposted: Needs = (VIEW, SEND, READ_HISTORY)
+
+    async def attaches(*aspects: str) -> Needs:
+        for aspect in aspects:
+            if drawing is not None and await drawing.aspect_attaches_files(aspect):
+                return reposted + (ATTACH,)
+        return reposted
+
+    return {
+        "results": await attaches("results"),
+        "standings": await attaches("standings"),
+        "verdicts": await attaches("verdicts", "verdict_banner"),
+    }
+
+
+async def kept_channels(drawing: "ImageDrawing | None") -> KeptReader:
+    """The reader of the channels results keeps, for the check its switch-on makes
+    (`core/services/modules/kept_channels.py`): given a connection and the live season's divisions
+    (id to name), it gives each one's results, standings and verdicts channel that is set, in the
+    order `_CHANNELS` gives, with what each needs of the bot (`channel_needs`, asked of the
+    *drawing* now and not when the switch-on is built, as a picture switched on while results was
+    off may attach a file). Reads only."""
+    needs = await channel_needs(drawing)
+
+    async def read(db: aiosqlite.Connection, divisions: Mapping[int, str]) -> list[KeptChannel]:
+        cursor = await db.execute(
+            "SELECT division_id, results_channel_id, standings_channel_id, penalty_channel_id "
+            "FROM division_results_config ORDER BY division_id"
+        )
+        kept: list[KeptChannel] = []
+        for row in await cursor.fetchall():
+            if int(row["division_id"]) not in divisions:
+                continue
+            for column, setting, label, command, _unset in _CHANNELS:
+                if row[column] is not None and row[column] != "":
+                    kept.append(
+                        KeptChannel(
+                            setting, int(row["division_id"]), divisions[int(row["division_id"])],
+                            int(row[column]), label, command, needs[setting],
+                        )
+                    )
+        return kept
+
+    return read
+
+
 async def division_channel_faults(
     modules: "ModuleService",
     db_path: str,
     *,
+    drawing: "ImageDrawing",
     divisions: Mapping[int, str],
     guild: Any = None,
 ) -> dict[int, list[str]]:
-    """Each division's results, standings and verdicts channels, in that order, that are not set
-    or not on the *guild*, by division id; nothing where the results module is off.
+    """Each division's results, standings and verdicts channels, in that order, that are not set,
+    not on the *guild* or lacking a permission their use needs (`channel_needs`, asked of the
+    *drawing*), by division id; nothing where the results module is off.
 
     Subscribed to core's `division_channel_faults_read`, which hands the divisions the
     confirmation judges (id to name) and the server. A division with no fault is given an empty
@@ -233,13 +296,15 @@ async def division_channel_faults(
     if not await modules.is_enabled(SWITCH_KEY):
         return {}
     channels = await _channels_of(db_path)
+    needs = await channel_needs(drawing)
     found: dict[int, list[str]] = {}
     for division_id, name in divisions.items():
         row = channels.get(division_id)
         lines: list[str] = []
-        for column, label, command, _unset in _CHANNELS:
+        for column, setting, label, command, _unset in _CHANNELS:
             fault = await channel_fault(
-                guild, name, row[column] if row is not None else None, label, command
+                guild, name, row[column] if row is not None else None, label, command,
+                needs[setting],
             )
             if fault:
                 lines.append(fault)

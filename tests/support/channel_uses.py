@@ -9,26 +9,43 @@ signed up to it are the bot's and not a copy. The factory reset asks every seaso
 live one's, through a hook of its own (`setting_channels_read`), made by the builder's
 `_sign_up_to_setting_channels_read`; each module hands it back the channels its settings hold and
 the channels it posted to, and apart from them the channels it created.
+
+A module answers for its channels only while it is on, so the hook is made on a stand-in for the
+bot whose module service answers each module's switch: on, unless the module is named *off*.
+The caller's own bot is never asked for its switches, so a double carrying none still has a hook
+that answers as the bot's would with every module on.
 """
 from __future__ import annotations
 
+from collections.abc import Collection
 from types import SimpleNamespace
 from typing import Any
 
+from tests.support.switches import switches
 
-def sign_up_channel_uses_read(bot: Any) -> None:
+#: The switch key of each module that answers the hook.
+_MODULES = ("weather", "results", "attendance", "signup")
+
+
+def sign_up_channel_uses_read(bot: Any, *, off: Collection[str] = ()) -> None:
     """Give *bot* the hook the registry asks each module for its channels through, made by the
-    builder's own sign-up, which reads *bot*'s `db_path` alone."""
+    builder's own sign-up on a stand-in reading *bot*'s `db_path`, each module's switch answered
+    on but those in *off*."""
     from leaguebot.__main__ import _sign_up_to_channel_uses_read
 
-    _sign_up_to_channel_uses_read(bot)
+    stand_in = SimpleNamespace(
+        db_path=bot.db_path,
+        module_service=switches(**{module: module not in off for module in _MODULES}),
+    )
+    _sign_up_to_channel_uses_read(stand_in)
+    bot.channel_uses_read = stand_in.channel_uses_read
 
 
-def channel_uses_given(db_path: str) -> dict[str, Any]:
+def channel_uses_given(db_path: str, *, off: Collection[str] = ()) -> dict[str, Any]:
     """The keyword `find_channel_use` and `channel_refusal` are handed the hook by: the builder's
-    hook on *db_path*."""
+    hook on *db_path*, each module on but those in *off*."""
     bot = SimpleNamespace(db_path=db_path)
-    sign_up_channel_uses_read(bot)
+    sign_up_channel_uses_read(bot, off=off)
     return {"channel_uses_read": bot.channel_uses_read}
 
 

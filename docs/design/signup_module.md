@@ -29,17 +29,17 @@ runs, on a connection the change queue or a core hook hands in.
 | Table | One row is | Held to it by |
 |---|---|---|
 | `signup_module_config` | the module's configuration: the signup channel, whether the window is open, the Sign Up button's message, the open window's tracks and close time, and the closed notice's message | `CHECK (id = 1)` |
-| `signup_module_settings` | the three question settings (nationality, time type, time image), and where the last "signups are closed" notice stands (`closed_notice_channel_id`, `closed_notice_message_id`) | `CHECK (id = 1)`; the settings are `NOT NULL` with column defaults |
+| `signup_module_settings` | the three question settings (nationality, time type, time image) | `CHECK (id = 1)`; the settings are `NOT NULL` with column defaults |
 | `signup_availability_slots` | one time slot a driver may give as available, by day and time | `UNIQUE (day_of_week, time_hhmm)` |
 | `signup_windows` | one opening of the window for a season: its tracks, its close time, when it opened and when it closed | `idx_signup_windows_one_open`, a partial unique index on the season where `closed_at IS NULL`: a season has one open window at a time |
 | `signup_wizard_records` | one account's wizard: its state, its signup channel, the configuration it started against (`config_snapshot_json`), its draft answers, its last activity, when correction choices were offered (`correction_offered_at`) and when the hold on its channel runs out (`held_until`) | `discord_user_id UNIQUE` |
 | `signup_records` | one completed signup: its season, the window it came through, the account it was made from, its answers, its lap sum (`total_lap_ms`) and whether it is approved | keyed by its id; indexed by account and by season |
 | `season_signup_config` | the signup configuration a season was confirmed with: the three settings and its slots (`slots_json`), stamped `captured_at` | keyed by the season |
 
-**The configuration row and the settings row are apart** because the switch-off forgets one and
-keeps the other ("What disabling forgets and keeps", below). The closed notice's place is kept in
-both: in the configuration while the module is on, and in the settings so that it outlives a
-switch-off (`closed_notice_of`'s docstring; the schema's comment on the two columns).
+**The configuration row and the settings row are apart.** The configuration holds the channel and
+the window's state, which a close and an opening write, and the settings hold what a manager chose,
+which no window touches. The switch-off keeps both ("What disabling keeps", below), and the closed
+notice has one record, the configuration's `signup_closed_message_id`, which the switch-off leaves.
 
 **One open window to a season is the schema's rule**, not a service's: a close time and a close are
 written to "the window whose `closed_at` is null", which is only one row because the index refuses a
@@ -116,12 +116,11 @@ stored (`_snapshot_to_dict`'s docstring; `AvailabilitySlot`'s docstring, pinned 
 
 | Table | Written by | What it writes |
 |---|---|---|
-| `signup_module_config` | `module_switch_settings` | a bare row, inserted only where none stands |
+| `signup_module_config` | `module_switch_settings` | a bare row, inserted only where none stands; the kept channel another setting took, cleared (`clear_signup_channel_on`) |
 | | `channel_setting` | the channel; the Sign Up button's id where `/signup channel` posts the information message |
 | | `signup_module_service` (`set_window_open_on`, `set_window_closed_on`, `set_close_at_on`) | the window opened, closed and its close time, for `window_changes`, `closing_steps` and `close_time_settings` |
-| | `signup_module_service` (`delete_config_on`, `bot_packed_on`) | the row deleted by the switch-off; the ids of Discord objects cleared by a pack |
+| | `signup_module_service` (`switch_off_on`, `bot_packed_on`) | the window's state cleared by the switch-off, the row and its channel kept; the ids of Discord objects cleared by a pack |
 | `signup_module_settings` | `signup_settings` | the three settings |
-| | `signup_module_service` | the closed notice's place, set by a close and cleared by an opening and a pack |
 | `signup_availability_slots` | `signup_settings` | a slot added or removed |
 | `signup_windows` | `signup_module_service` | a window opened, its close time, its closing; a season's windows deleted |
 | | `signup_off_change` (`switch_off`) | the open window stamped closed |
@@ -155,24 +154,57 @@ close time is set.
 
 The wizard's `config_snapshot_json` is not history: the wizard reads it for every answer (above).
 
-### What disabling forgets and keeps
+### What disabling keeps
 
-The switch-off's save (`signup_off_change`'s `switch_off`) calls `delete_config_on`, which deletes
-the configuration row and so forgets the signup channel, the window's state and the Sign Up
-button's id, since a channel can be deleted or given another job while the module is off. Nothing
-cascades from it: the slots and the three settings sit in tables no key joins to it, and stand
-again when the module is switched back on, as the specification's "Enabling signup flow" (the
-disable bullet) requires (`delete_config_on`'s docstring;
-`test_time_slots_and_settings_stand_again_after_a_re_enable`). The closed notice's place, kept
-among the settings, is the one id the switch-off does not lose, so the first opening after a
-switch-on still takes the notice down
-(`test_the_closed_notice_is_kept_in_view_across_switching_signup_off_and_on`). The signups, the
+The switch-off's save (`signup_off_change`'s `switch_off`) calls `switch_off_on`, which clears only
+the window's state, the row reading the window closed with no Sign Up button and no close time, and
+stamps the open window's record closed. The configuration row is kept with its channel, as the
+specification's "Enabling signup flow" (the disable bullet) requires, as the modules that keep their
+channels do: a channel can be deleted or given another job while the module is off, and the
+switch-on checks it (below). The window's state is cleared because a switch-off whose close job was
+discarded never ran the close, and a kept row reading an open window would bring signup back on with
+one (`switch_off_on`'s docstring;
+`test_a_discarded_return_of_the_drivers_says_the_button_was_left_standing`). The slots and the three
+settings sit in tables no key joins to the row, and stand again when the module is switched back on
+(`test_time_slots_and_settings_stand_again_after_a_re_enable`). The closed notice's place is the
+configuration's own, kept with it, so the first opening after a switch-on still takes the notice
+down (`test_the_closed_notice_is_kept_in_view_across_switching_signup_off_and_on`). The signups, the
 windows, the seasons' copies and the wizard rows of held channels are kept too; the league's two
 roles are core's and stand (`test_disabling_signup_keeps_both_roles`).
 
+**What it removes is every permission the bot set on the channel** (everyone's, its own, the base
+role's, the interaction role's and the league admin role's), by a job of its own after the save
+(`clear_overwrites`), so that a switch-off that is refused or discarded leaves the channel as the
+module needs it. A permission Discord refuses to remove is stepped over and told, because a stale
+overwrite is put right by hand where a half-off module is not.
+
+**The switch-on checks the channel, records, puts the permissions back and saves**, in three steps
+before its save (`module_switch_settings`): the check core makes of a kept channel
+(`kept_channels_check`), which finds one another setting took, for the save to clear, and refuses
+one the bot cannot use; `record_permissions`, which reads each target's overwrite as it stands,
+against the base role as it stands now; and `restore_permissions`, which sets the merged overwrite
+of each, declaring `take_back_permissions` as its undo. The record is a step of its own, marked done
+before anything is set, so a restore run again after a stop reads the first record and a take-back
+restores what stood before the first attempt, not what the stop left. The permissions are merged
+with what the league set by hand, which stands, and a take-back restores the exact recorded
+overwrite. The check is `kept_channels_check`'s own and `channel_needs` states what it holds the
+channel to, once, as the signup specification's "Enabling signup flow" gives it: `/signup open`
+reads the posting part (`POSTING_NEEDS`), and `OVERWRITE_NEEDS` holds the rest, which setting who
+may see the channel needs. *Rejected:* an `After` step, which would leave the module on while they
+are unset, where nothing may be half-set (Constitution X, rule 2; `Before.undo` in
+`setting_change`). Tests:
+`test_a_restore_discord_refuses_part_way_leaves_signup_off_and_takes_back_what_it_set`,
+`test_a_save_that_faults_after_the_restore_takes_the_permissions_back`,
+`test_a_restore_run_again_after_a_stop_takes_back_to_the_first_record`.
+
 The switch-on writes a bare configuration row **only where none stands**, so a row that survived is
 kept rather than blanked (`module_switch_settings`' docstring;
-`test_re_enabling_signup_keeps_a_standing_row`).
+`test_re_enabling_signup_keeps_a_standing_row`). **Signup answers `channel_uses_read` only while it
+is on**, as weather's does, so that another setting may take its channel meanwhile and the switch-on
+clears it (`channel_uses`' docstring). **A base role changed while the module is off touches
+nothing on the channel** (`move_base_role_overwrite` returns while the switch is off): the
+switch-on reads the role as it then stands
+(`test_a_base_role_changed_while_signup_is_off_leaves_the_kept_channel_alone`).
 
 ### Links, and what stops a delete
 
@@ -465,7 +497,7 @@ reason `expired`), the lapse's and `signup.close_timer.arm`'s each read the swit
 is pinned by `test_the_timeout_does_nothing_while_the_signup_module_is_disabled` and the expiry's by
 `test_expiry_is_not_due_while_signup_is_off`. The close timer's handler and its start-up step read
 the switch before asking anything, and `signup.close` finds no window once
-the switch-off has forgotten the configuration.
+the switch-off has cleared the window's state.
 
 **A held signup channel is still deleted on time after signup is switched off**, the stated
 exception `architecture.md`'s "Timed work and restarts" names: the channel's driver has left the
@@ -521,7 +553,7 @@ channel is created by `WizardService._create_wizard_channel`, in the `create_cha
 | Post | Kind | Channel | Handler | Found again by |
 |---|---|---|---|---|
 | the information message with its Sign Up button | standing post | the signup channel | `post_standing_message`, pinging the base role | `signup_module_config.signup_button_message_id`, which also names the window a close was asked about |
-| the "signups are closed" notice | standing post | the signup channel | `post_standing_message` | `signup_module_config.signup_closed_message_id`, and the settings' copy across a switch-off |
+| the "signups are closed" notice | standing post | the signup channel | `post_standing_message` | `signup_module_config.signup_closed_message_id`, which a switch-off keeps |
 | the welcome, the questions, the refusals, the review panel, the choices, the closing notice | bot-owned channel | the driver's signup channel | `post` (`post_in_owned_channel`), naming who each may mention | the channel itself; a divided panel's parts are kept by the job for a retry |
 | the driver's signup channel | bot-owned channel | in the signup channel's category | made by `WizardService`; deleted whole by `delete_channel` (`delete_owned_channel`) | `signup_wizard_records.signup_channel_id` |
 
@@ -553,16 +585,16 @@ several modules join a hook the entry point calls the function in its order.
 | Hook | Signup's function | What signup does |
 |---|---|---|
 | `starting` | `wiring.start_up_steps` | its three start-up steps (above) |
-| `base_role_changed` | `SignupModuleService.move_base_role_overwrite` | carries the signup channel's overwrite to the new base role |
+| `base_role_changed` | `SignupModuleService.move_base_role_overwrite` | carries the signup channel's overwrite to the new base role while the module is on; while it is off, nothing, the switch-on reading the role then |
 | `configuration_confirmed` | `configuration_confirmed_on` | the season's copy of the configuration, in the confirmation's save |
-| `confirmation_refused`, `configuration_faults_read` | `signup_prerequisites.confirmation_refusals`, `configuration_faults` | what a season's approval and configuration lack while signup is on |
+| `confirmation_refused`, `configuration_faults_read` | `signup_prerequisites.confirmation_refusals`, `configuration_faults` | what a season's placements review, approval and configuration lack while signup is on |
 | `review_sections_read` | `review_section` | signup's section of a season review |
 | `driver_names_read` | `driver_names` | each driver's signup to the season asked about, else their latest, as name, username and nationality, and whether the league collects a nationality |
 | `driver_turned_down` | `driver_turned_down_on` | the approval of the driver's signup withdrawn |
 | `driver_account_changed`, `driver_account_changed_steps` | `driver_account_changed_on`, `held_channel_moves.held_channel_steps` | the held channel's wizard row re-keyed in the save; its timer and permissions moved after it |
 | `season_end_closes`, `drivers_returned`, `driver_returned_jobs`, `season_end_steps` | `closing_steps`, `window_changes.season_end_steps` | the window closed at a season's end, each returned driver's wizard ended, told and their channel closed |
 | `season_deleted`, `bot_packed` | `season_deleted_on`, `bot_packed_on` | see "The database" |
-| `channel_uses_read`, `setting_channels_read` | `channel_uses` | the channels signup holds, whatever its switch |
+| `channel_uses_read`, `setting_channels_read` | `channel_uses` | the channels signup holds: `channel_uses` only while it is on, `setting_channels` whatever its switch |
 | `fingerprint_areas_read` | `fingerprint_areas.fingerprint_areas` | its channel, window, settings and slots in the season's fingerprint, whatever its switch |
 | `in_memory_state_cleared` | `signup_views.clear_pending_reasons` | drops the pending reasons |
 
@@ -579,12 +611,20 @@ driver, and rows and channels held are held off or on.
 ### Core holds no rule of signup's
 
 **Core reads what signup lacks for a season only through the two hooks signup signs up to**
-(`signup_prerequisites`): `confirmation_refusals` refuses a season's approval while the signup
-channel is unset, and `configuration_faults` names every fault of signup's part of the configuration
-(the channel, the league's two roles, judged on the server). Both read signup's switch and hand
-nothing while it is off, and neither catches a fault in reading, which reaches the caller's own
-failure path. The approval judges the channel alone, since confirming the configuration already
-judged the roles and fixed them (`signup_prerequisites`' module docstring). Core's season checks
+(`signup_prerequisites`): `confirmation_refusals` refuses a season's approval and withholds the
+placements review's Approve button on the signup channel (the signup specification, "Enabling signup
+flow"), and `configuration_faults` names every fault of signup's part of the configuration (the
+channel, the league's two roles, judged on the server). Both judge the channel against
+`channel_needs`, stated once, through `judged_presence`, so a channel the server could not be asked
+about is not refused, and with no server handed only whether it is set is judged. The wording is
+each reader's own: `configuration_faults` lays the channel's line in core's shared `channel_fault`
+(which also words a channel of no division), while `confirmation_refusals` words the review's and
+the approval's lines itself, since after the configuration is confirmed an unusable channel's line
+must say to give the bot the permissions and never offer `/signup channel`, which `channel_fault`
+always offers. Both read signup's switch and hand nothing while it is off, and neither catches a
+fault in reading, which reaches the caller's own failure path. The placements review and the
+approval judge the channel alone, since confirming the configuration already judged the roles and
+fixed them (`signup_prerequisites`' module docstring). Core's season checks
 neither import signup (the `core-uses-no-module` contract) nor name its tables (`TABLE_OWNER` in
 `tests/repository/test_architecture_rules.py`). Pinned by
 `test_the_signup_module_lacks_only_its_channel_while_it_is_on` and
@@ -640,9 +680,12 @@ reason as a change hands any fault to `report_failure` itself (`signup_views`, p
 wizards' start-up catch-up asks each driver's ending and lapse in a loop that one failure never
 stops (`recover_gone_channels`, `recover_correction_timeouts`, place 2). The switch-off's
 `clear_overwrites` is one job of a queued change that clears each overwrite in a loop, logging and
-stepping over one it cannot clear, for the reason `signup_off_change`'s module docstring gives: a channel with a stale overwrite is
-put right by hand, a module left half-off is not. The architecture check accepts it as a catch-all
-inside a loop; it is not one of the six places as `architecture.md` words them.
+stepping over one it cannot clear, for the reason `signup_off_change`'s module docstring gives: a
+channel with a stale overwrite is put right by hand, a module left half-off is not. The switch-on's
+`_take_back` does the same in a loop over the targets it set, so that one refused set-back leaves
+the rest still taken back (its docstring), and the league told of what was left (the module's
+docstring). The architecture check accepts each as a catch-all inside a loop; neither is one of the
+six places as `architecture.md` words them.
 
 **What a restart does to interrupted work** (the core specification's "When the bot stops"):
 
@@ -661,7 +704,8 @@ Each is stated where it lives and pinned by the test named.
 | Constraint | Stated in | Pinned by |
 |---|---|---|
 | A season has one open window | the index's comment in `001_baseline.sql` | `test_a_second_open_window_is_refused` |
-| The switch-off keeps the slots and settings, and the closed notice's place | `delete_config_on`'s docstring | `test_time_slots_and_settings_stand_again_after_a_re_enable`, `test_the_closed_notice_is_kept_in_view_across_switching_signup_off_and_on` |
+| The switch-off keeps the channel, the slots and settings, and the closed notice's place | `switch_off_on`'s docstring | `test_the_channel_is_kept_and_its_permissions_removed`, `test_time_slots_and_settings_stand_again_after_a_re_enable`, `test_the_closed_notice_is_kept_in_view_across_switching_signup_off_and_on` |
+| A switch-on that does not go through leaves nothing of its restore on the channel | `module_switch_settings`' docstring | `test_a_restore_discord_refuses_part_way_leaves_signup_off_and_takes_back_what_it_set`, `test_a_save_that_faults_after_the_restore_takes_the_permissions_back` |
 | The switch-on creates a configuration row only where none stands | `module_switch_settings`' docstring | `test_re_enabling_signup_keeps_a_standing_row` |
 | A slot is removed by its identity, not its rank | `signup_settings`' docstring | `test_removing_slot_n_twice_removes_one_slot` |
 | A driver's availability is stored by slot identity, never by ordinal | `AvailabilitySlot`'s docstring | `test_no_display_ordinal_is_ever_stored` |

@@ -1079,6 +1079,36 @@ async def _gate_2b_no_signup_channel(db_path, monkeypatch):
     return cog, "missing required configuration"
 
 
+async def _a_signup_channel_on(db_path, server):
+    """Signup on, its signup channel (900) set, and the press made on *server*, which the test
+    reads off the cog."""
+    cog = _cog(db_path)
+    answer_switch(cog.bot.module_service, "signup", True)
+    cog.bot.signup_module_service.get_config = AsyncMock(
+        return_value=SimpleNamespace(signup_channel_id=900)
+    )
+    sign_up_signup_refusals(cog.bot)
+    cog.guild = server
+    return cog
+
+
+async def _gate_2b_signup_channel_gone(db_path, monkeypatch):
+    from tests.support.channel_faults import server_holding
+
+    cog = await _a_signup_channel_on(db_path, server_holding(gone=(900,)))
+    return cog, "is no longer on the server"
+
+
+async def _gate_2b_signup_channel_unusable(db_path, monkeypatch):
+    from tests.support.channel_faults import server_holding
+
+    cog = await _a_signup_channel_on(db_path, server_holding(unusable={900: ("embed_links",)}))
+    # A confirmed season's `/signup channel` only replaces a channel gone from the server.
+    return cog, (
+        "missing permissions the bot needs there: Embed Links", "give the bot them",
+    ), ("`/signup channel`",)
+
+
 async def _gate_2d_a_round_already_run(db_path, monkeypatch):
     cog = _cog_with_rounds(db_path, [_round_in(-90)], attendance=False)
     return cog, "dates that have already gone by"
@@ -1112,6 +1142,8 @@ async def _gate_4b_an_image_fault(db_path, monkeypatch):
         _gate_2_no_points_configuration,
         _gate_2a_points_out_of_order,
         pytest.param(_gate_2b_no_signup_channel, id="2b_no_signup_channel"),
+        pytest.param(_gate_2b_signup_channel_gone, id="2b_signup_channel_gone"),
+        pytest.param(_gate_2b_signup_channel_unusable, id="2b_signup_channel_unusable"),
         _gate_2d_a_round_already_run,
         _gate_3a_an_unusable_team_name,
         _gate_4a_a_lineup_too_small,
@@ -1122,14 +1154,20 @@ async def _gate_4b_an_image_fault(db_path, monkeypatch):
 async def test_every_approval_gate_refusal_is_recorded(db_path, monkeypatch, gate):
     """Manager (id 77) presses ✅ Approve and one gate refuses: the reply is today's, nothing is
     approved, and the log channel gets exactly one refusal line naming the button and its
-    review, carrying the reply's reason — every item of it where the reply is a list."""
-    cog, reply_says = await gate(db_path, monkeypatch)
+    review, carrying the reply's reason — every item of it where the reply is a list. A gate
+    that judges the server is pressed on the one it gives the cog; one that names words the reply
+    must not carry finds none of them in it, and one that names several finds each."""
+    cog, reply_says, *reply_omits = await gate(db_path, monkeypatch)
     interaction = _recorded_interaction(cog)
+    interaction.guild = getattr(cog, "guild", None)
 
     await _run(cog, interaction)
 
     reply = _replies(interaction)
-    assert reply_says in reply
+    for says in ((reply_says,) if isinstance(reply_says, str) else reply_says):
+        assert says in reply, (says, reply)
+    for omitted in (reply_omits[0] if reply_omits else ()):
+        assert omitted not in reply, (omitted, reply)
     cog.bot.change_queue.ask.assert_not_awaited()
     lines = _logged(cog)
     assert len(lines) == 1, lines

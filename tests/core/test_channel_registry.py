@@ -196,6 +196,32 @@ async def test_a_module_s_channel_is_found_only_by_asking_the_module(db_path, se
     assert await find_channel_use(db_path, 500, channel_uses_read=AwaitedHook()) is None
 
 
+#: The module each module's division setting belongs to, as its switch is keyed.
+_OWNING_MODULE = {
+    "weather": "weather", "results": "results", "standings": "results", "verdicts": "results",
+    "rsvp": "attendance", "attendance": "attendance",
+}
+
+
+@pytest.mark.parametrize("setting", [*sorted(_OWNING_MODULE), "signup"])
+async def test_a_switched_off_module_s_channel_is_free_to_another_setting(db_path, setting):
+    """Channel 500 kept as Pro's *setting*, or as the server's signup channel, while its module is
+    switched off: the module answers for no channel while it is off, so nothing holds 500, and
+    Pro's lineup may take it. The module clears it when it is switched back on."""
+    season_id = await _season(db_path)
+    division_id = await _division(db_path, season_id, "Pro")
+    await _set(db_path, setting, 500, division_id=division_id)
+    off = (_OWNING_MODULE.get(setting, setting),)
+
+    assert await find_channel_use(
+        db_path, 500, **channel_uses_given(db_path, off=off)
+    ) is None
+    assert await channel_refusal(
+        db_path, _text_channel(500), "lineup", division_name="Pro",
+        **channel_uses_given(db_path, off=off),
+    ) is None
+
+
 @pytest.mark.parametrize("setting", CORE_SETTINGS)
 async def test_core_finds_its_own_channels_with_no_module_asked(db_path, setting):
     """Channel 500 set as *setting*, core's own (Pro's calendar or lineup, or the server's hub,

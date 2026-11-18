@@ -8,12 +8,14 @@ case through the cog; these pin that the service gives the same answers on its o
 """
 from __future__ import annotations
 
+from collections.abc import Mapping
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
 
 from leaguebot.framework.db.database import get_connection, run_migrations
+from tests.support.channel_faults import answer_attachments, server_holding
 from tests.support.switches import answer_switch
 
 SERVER_ID = 22071
@@ -57,55 +59,85 @@ def _modules(*, weather=False, results=False, attendance=False):
     return modules
 
 
-def _guild(*, gone: tuple[int, ...] = (), unreadable: tuple[int, ...] = ()):
+def _guild(
+    *,
+    gone: tuple[int, ...] = (),
+    unreadable: tuple[int, ...] = (),
+    unusable: Mapping[int, tuple[str, ...]] = {},
+):
     """A server holding every channel but those *gone*, which a fetch reports not found, and
-    those *unreadable*, out of the cache and whose fetch fails with a server error."""
-
-    async def _fetch(channel_id):
-        if channel_id in unreadable:
-            raise discord.HTTPException(MagicMock(status=500), "Internal Server Error")
-        raise discord.NotFound(MagicMock(status=404), "Unknown Channel")
-
-    guild = MagicMock()
-    guild.get_channel = MagicMock(
-        side_effect=lambda cid: None if cid in gone or cid in unreadable else MagicMock()
-    )
-    guild.fetch_channel = AsyncMock(side_effect=_fetch)
-    return guild
+    those *unreadable*, out of the cache and whose fetch fails with a server error. A channel in
+    *unusable* is there, the bot denied the permissions it maps to in it."""
+    return server_holding(gone=gone, unreadable=unreadable, unusable=unusable)
 
 
 def _faults_bot(db_path, modules):
-    """A bot carrying *modules*, the database and attendance's service, and the hook a division's
-    channel faults are read through, each module signed up to it by the builder's own sign-up."""
+    """A bot carrying *modules*, the database, attendance's service and the image module's drawing,
+    no picture attaching a file, and the hook a division's channel faults are read through, core's
+    part and each module's signed up to it by the builder's own sign-up."""
     from types import SimpleNamespace
 
     from leaguebot.__main__ import _sign_up_to_division_channel_faults_read
     from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
 
     bot = SimpleNamespace(
-        module_service=modules, db_path=db_path, attendance_service=AttendanceService(db_path)
+        module_service=modules,
+        db_path=db_path,
+        attendance_service=AttendanceService(db_path),
+        image_drawing=answer_attachments(MagicMock()),
     )
     _sign_up_to_division_channel_faults_read(bot)
     return bot
 
 
-@pytest.mark.parametrize("pro_lineup", ["deleted", "cannot be told"])
+@pytest.mark.parametrize("pro_lineup", [
+    "deleted",
+    "cannot be told",
+    "unusable",
+    "no picture to attach",
+    "no picture can be attached",
+])
 async def test_the_channel_faults_are_read_by_the_service(db_path, pro_lineup):
     """With every module off, Am has no lineup channel and Pro's lineup channel 100 has been
     deleted from the server. The service names both, with the command that sets each, and asks
     nothing of the cancelled division. Where Discord cannot say whether channel 100 is there (a
     server error), it is taken as there: a check that could not tell does not refuse a season.
-    Each module is asked its own channels through the hook the builder signs them up to, and,
-    being off, names none."""
+    Where channel 100 is there but the bot lacks Embed Links in it, which a lineup needs, Pro's
+    lineup channel is named with the permission it lacks. Where the bot lacks Attach Files there,
+    Pro's lineup channel is named for it only with lineup pictures on, a lineup otherwise
+    attaching nothing. Core's part and each module's are asked through the hook the builder signs
+    them up to, and each module, being off, names none."""
     from tests.support.review_workflows import run_check
 
-    guild = _guild(gone=(100,)) if pro_lineup == "deleted" else _guild(unreadable=(100,))
+    guild = {
+        "deleted": _guild(gone=(100,)),
+        "cannot be told": _guild(unreadable=(100,)),
+        "unusable": _guild(unusable={100: ("embed_links",)}),
+        "no picture to attach": _guild(unusable={100: ("attach_files",)}),
+        "no picture can be attached": _guild(unusable={100: ("attach_files",)}),
+    }[pro_lineup]
     bot = _faults_bot(db_path, _modules())
+    if pro_lineup == "no picture can be attached":
+        answer_attachments(bot.image_drawing, "lineup")
 
     faults = await run_check("division_channel_faults", bot, db_path, SEASON_ID, guild)
 
-    pro = ["**Pro**'s lineup channel is no longer on the server — `/division lineup-channel`."]
-    assert faults == (pro if pro_lineup == "deleted" else []) + [
+    pro = {
+        "deleted": [
+            "**Pro**'s lineup channel is no longer on the server — `/division lineup-channel`."
+        ],
+        "cannot be told": [],
+        "unusable": [
+            "**Pro**'s lineup channel is missing permissions the bot needs there: Embed Links — "
+            "give the bot them, or `/division lineup-channel`."
+        ],
+        "no picture to attach": [],
+        "no picture can be attached": [
+            "**Pro**'s lineup channel is missing permissions the bot needs there: Attach Files — "
+            "give the bot them, or `/division lineup-channel`."
+        ],
+    }[pro_lineup]
+    assert faults == pro + [
         "**Am** has no lineup channel — `/division lineup-channel`.",
     ]
 
@@ -150,6 +182,60 @@ async def test_each_division_s_module_channels_follow_its_own_in_the_modules_ord
         "**Am** has no RSVP channel — `/attendance channel rsvp`.",
         "**Am** has no attendance channel — `/attendance channel attendance`.",
     ]
+
+
+@pytest.mark.parametrize("found, denied, member, answer", [
+    pytest.param("cached", (), True, ("PRESENT", ()), id="cached, every need held"),
+    pytest.param(
+        "cached", ("read_message_history",), True, ("UNUSABLE", ("Read Message History",)),
+        id="cached, a needed permission missing",
+    ),
+    pytest.param(
+        "cached", ("send_messages",), True, ("UNUSABLE", ("Send Messages",)),
+        id="cached, cannot send",
+    ),
+    pytest.param(
+        "cached", ("embed_links",), True, ("PRESENT", ()),
+        id="cached, a permission not needed missing",
+    ),
+    pytest.param("fetched", (), True, ("PRESENT", ()), id="fetched"),
+    pytest.param("not found", (), True, ("GONE", ()), id="not found"),
+    pytest.param("forbidden", (), True, ("UNUSABLE", ("View Channel",)), id="forbidden"),
+    pytest.param("server error", (), True, discord.HTTPException, id="server error"),
+    pytest.param("cached", (), False, Exception, id="no member"),
+])
+async def test_channel_presence_answers_only_what_discord_proves(found, denied, member, answer):
+    """Channel 100 is judged against what a channel needs to be reposted in: View Channel, Send
+    Messages and Read Message History. Found in the cache, or fetched, with every one held it is
+    there; lacking Read Message History, or Send Messages though it can see the channel, it is
+    unusable, named by what it lacks, and lacking only
+    Embed Links, which is not needed, it is there. A fetch Discord answers not found proves it
+    gone, and one Discord refuses the bot proves it unusable, lacking View Channel. Anything else
+    is not an answer: a server error, or a server whose bot member cannot be read, raises."""
+    from leaguebot.core.models.channel_needs import READ_HISTORY, SEND, VIEW
+    from leaguebot.core.services.seasons.approval_checks import channel_presence
+
+    if found == "cached":
+        guild = server_holding(unusable={100: denied})
+    else:
+        guild = server_holding(
+            gone=(100,) if found == "not found" else (),
+            unreadable=(100,) if found == "server error" else (),
+            forbidden=(100,) if found == "forbidden" else (),
+        )
+        if found == "fetched":
+            guild.get_channel = MagicMock(return_value=None)
+            guild.fetch_channel = AsyncMock(return_value=MagicMock())
+    if not member:
+        guild.me = None
+    needs = (VIEW, SEND, READ_HISTORY)
+
+    if isinstance(answer, type):
+        with pytest.raises(answer):
+            await channel_presence(guild, 100, needs)
+        return
+    presence = await channel_presence(guild, 100, needs)
+    assert (presence.state.name, tuple(presence.missing)) == answer
 
 
 async def test_the_unsettled_signups_are_read_by_the_service(db_path):
@@ -270,7 +356,8 @@ async def test_the_signup_module_lacks_only_its_channel_while_it_is_on(enabled, 
     configuration at all, or off with the channel unset. Signup's refusals are read through the
     hook a season's confirmation is refused through, as signup's wiring signs them up: a season's
     approval is refused only while signup is on and its channel unset, in today's words, word for
-    word; and signup refuses neither the review nor the configuration's confirmation."""
+    word; signup refuses the review only while its channel is unset, naming `/signup channel` and
+    `/season placements-review`, and never the configuration's confirmation."""
     from leaguebot.core.services.seasons.confirmation_refusals import Confirmation, read_refusals
     from tests.support.review_workflows import (
         sign_up_confirmation_refused,
@@ -287,8 +374,15 @@ async def test_the_signup_module_lacks_only_its_channel_while_it_is_on(enabled, 
 
     approval = await read_refusals(bot.confirmation_refused, SEASON_ID, Confirmation.APPROVAL)
     assert [(r.message, r.reason) for r in approval] == refused
-    for other in (Confirmation.REVIEW, Confirmation.CONFIGURATION):
-        assert await read_refusals(bot.confirmation_refused, SEASON_ID, other) == []
+    review = await read_refusals(bot.confirmation_refused, SEASON_ID, Confirmation.REVIEW)
+    if refused:
+        assert len(review) == 1 and review[0].reason is None
+        for words in ("No signup channel is set", "/signup channel", "/season placements-review"):
+            assert words in review[0].message, words
+    else:
+        assert review == []
+    configuration = Confirmation.CONFIGURATION
+    assert await read_refusals(bot.confirmation_refused, SEASON_ID, configuration) == []
 
 
 def test_core_names_no_signup_setting():

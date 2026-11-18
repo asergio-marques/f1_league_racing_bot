@@ -58,7 +58,7 @@ This guide covers the attendance module only. Setting the bot up, creating a sea
 
 Attendance is refused outright without it, because attendance is worked out from your results: the bot decides who turned up by reading who appears in the session classifications you submit, and it only charges points once a round's post-race penalties are settled. Setting that module up is a job of its own — follow [Setting up the results & standings module](configuring-the-results-module.md) for the order.
 
-That dependency runs both ways. **Turning results & standings off turns attendance off with it.** Because that costs you every division's check-in and attendance channels, the bot stops and tells you before it does anything: you get a warning naming what the cascade will take, and nothing is switched off until you confirm it. The reply that follows names both modules. If attendance was already off there is nothing to warn about, and results goes off straight away.
+That dependency runs both ways. **Turning results & standings off turns attendance off with it.** Because that stops every check-in still to come, the bot stops and tells you before it does anything: you get a warning naming what the cascade will take, and nothing is switched off until you confirm it. The reply that follows names both modules, and says that attendance's settings and its channels are kept. If attendance was already off there is nothing to warn about, and results goes off straight away.
 
 ---
 
@@ -70,9 +70,9 @@ That dependency runs both ways. **Turning results & standings off turns attendan
 
 It is refused once a season's placements are confirmed, so this belongs alongside your other setup — with no season, or before you confirm placements. It answers at once that it is turning the module on and updates that reply once it has, but nothing happens yet: the bot needs channels to post in and an approved season to work through, which are the next steps.
 
-Switching it on gives you a starting configuration you can leave alone if it suits you — a call five days out, a reminder a day out, check-in closing two hours before the race, one point for each of the three ways of missing it, and no automatic sanctions at all. Step 4 onwards is about changing those.
+The first time you switch it on it gives you a starting configuration you can leave alone if it suits you — a call five days out, a reminder a day out, check-in closing two hours before the race, one point for each of the three ways of missing it, and no automatic sanctions at all. Step 4 onwards is about changing those. Switching it on again later, after it has been off, restores whatever you had set, not the starting configuration.
 
-> **Turning attendance off forgets your channels, and turning it back on resets the rest.** The timings, the penalties and the thresholds are kept while the module is off, but switching it on again puts the starting configuration back in their place, so set them again afterwards. The per-division check-in and attendance channels are not kept at all — they are deleted, and you will be setting all of them again. That includes the case where the module goes off because you turned results & standings off — which, if a season is running, also deletes that season's results; see [Setting up the results & standings module](configuring-the-results-module.md).
+> **Turning attendance off keeps everything you set, and turning it back on finds it as you left it.** The timings, the penalties, the thresholds and every division's check-in and attendance channels are kept while the module is off, so you have nothing to set again, apart from what the check on switching it on names. Switching it on again checks the channels it kept before it saves anything: a channel deleted from the server, or given to another setting while the module was off, is named for you to set again (the second is cleared from the module), and a channel the bot can no longer use as the module needs keeps the module off, the reply naming what it lacks. That includes the case where the module goes off because you turned results & standings off — which, if a season is running, also deletes that season's results; see [Setting up the results & standings module](configuring-the-results-module.md).
 
 > **Turning it off mid-season stops check-in for the rest of that season, and you cannot undo it.** Every call, reminder and deadline still to come stops at once — no more check-ins posted, no reserves distributed into seats, no attendance points charged. A call already posted stays in the channel, but its buttons stop recording answers. Because the module cannot be switched on once placements are confirmed, you will not get check-in back before the season ends. Turn it off mid-season only if you mean to run the rest of that season without it.
 
@@ -94,6 +94,8 @@ Each answers at once ("⏳ Setting the RSVP channel for **Division One** to #div
 The check-in call **pings the division's role**, the one set when the division was created. That is the role your drivers need if they want to be told a call has gone out.
 
 > **The bot must be able to post in both channels, and it checks at the time you set them.** If it cannot, the command is refused there and then rather than failing silently three days before a race.
+
+**What each needs.** The check-in channel needs View Channel, Send Messages, Embed Links and Read Message History, since the call is an embed that the bot reads back to redraw after an answer and to lock at the deadline; the attendance channel needs View Channel, Send Messages and Read Message History, since the sheet is posted again and the old one taken down. Either also needs Attach Files while its picture (the check-in call or the attendance sheet) is on. Confirming a season names a division whose channel lacks one, and so is a penalty change that recalculates the season refused, before anything changes, where the attendance or verdicts channel lacks one.
 
 > **A division copied from another does not inherit either channel.** The copy starts with none and nothing warns you at the time — it surfaces later as a season that will not approve. Set them explicitly.
 
@@ -390,7 +392,7 @@ Worth running through before the season is approved.
 | No check-in for a round you moved or re-tracked | The round was moved past its own check-in deadline, so the check-in stayed closed. Check the round's time against your deadline setting |
 | A round where nobody was charged anything | The round was cancelled, or its call never posted — check the log channel, which reports a failed call loudly. A call still inside its deadline can be posted with `/attendance post-check-in` |
 | `/module enable attendance` refused | Results & standings is off, or a season is already running |
-| Attendance switched off by itself, and the channels gone | Results & standings was turned off and the cascade warning confirmed, which takes attendance with it and deletes every division's channels |
+| Attendance switched off by itself | Results & standings was turned off and the cascade warning confirmed, which takes attendance with it. Its settings and every division's channels are kept: switch results & standings on, then attendance, once the season allows it |
 | Check-in stopped mid-season and will not come back | Attendance was switched off, directly or by turning results & standings off. It stays off until the season ends |
 | `/attendance config` on a timing refused | Either the season's placements are confirmed, or the value would put the three out of order. The reply says which |
 | Auto-reserve or auto-sack refused | The other one is set. Set it to `0` first |

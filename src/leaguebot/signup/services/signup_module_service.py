@@ -293,24 +293,41 @@ class SignupModuleService:
             })
         return results
 
-    async def delete_config_on(self, db: aiosqlite.Connection) -> None:
-        """Forget the signup channel and the window state on *db*, committing nothing, so that
-        the module's switch-off saves it together with the flag coming down.
+    async def switch_off_on(self, db: aiosqlite.Connection, *, now: datetime) -> None:
+        """Write the signup module's switch-off on *db*, committing nothing, so that
+        `signup_off_change`'s save carries it with the switch-off's audit: the open window's
+        record is stamped closed at *now*, the configuration's window state is cleared and the
+        module's flag comes down.
 
-        The row holds what names a Discord object — the channel, the button and the
-        closed-status message — and the window's state. A channel can be deleted or given
-        another job while the module is off, so the disable clears it (constitution,
-        Principle X, rules 3 and 6). The time slots and the three question settings are not
-        in this row, and no key joins their tables to it, so nothing cascades: they stand
-        again when the module is next enabled, as the signup specification requires
-        (issue #127). The closed-status message is the one id the disable does not lose: the
-        close kept it, with its channel, among the settings (`closed_notice_of`), so that the
-        first opening after the module is switched back on takes the notice down.
+        **The configuration is kept**, signup channel included (constitution, Principle X,
+        rule 3): so are the time slots and the three question settings, which no key joins to
+        it, and the closed notice's message (`signup_closed_message_id`), which the first opening
+        after the module is switched back on takes down. A channel can be deleted or given
+        another job while the module is off, which the switch-on checks (`kept_channels`).
+
+        What is cleared is the window's state: the row reads the window closed, with no Sign Up
+        button and no close time. The close clears it as a window closes (`set_window_closed_on`),
+        but a switch-off whose close job was discarded never ran it, and a kept row left reading
+        an open window would bring signup back on with one. The window's record is stamped closed
+        with the module's going off, or the next opening would make a second open window, which
+        the schema refuses.
         """
-        await db.execute("DELETE FROM signup_module_config")
+        await db.execute(
+            "UPDATE signup_module_config "
+            "SET signups_open = 0, signup_button_message_id = NULL, close_at = NULL"
+        )
+        await db.execute(
+            "UPDATE signup_windows SET closed_at = ? WHERE closed_at IS NULL",
+            (now.isoformat(),),
+        )
+        await db.execute("UPDATE server_configs SET signup_module_enabled = 0")
 
     async def move_base_role_overwrite(
-        self, guild: discord.Guild, old_role_id: int | None, new_role: discord.Role
+        self,
+        modules: "ModuleService",
+        guild: discord.Guild,
+        old_role_id: int | None,
+        new_role: discord.Role,
     ) -> None:
         """Carry the signup channel's base-role overwrite from *old_role_id* to *new_role*.
 
@@ -321,12 +338,16 @@ class SignupModuleService:
         no longer entitled to. Re-setting the same role touches only the grant: a "remove
         then add" on one role would briefly revoke it, and outright if the grant failed.
 
-        Nothing is done without a signup channel, which exists only while the module is
-        enabled. A refusal from Discord (`discord.HTTPException`) is logged and never raised:
-        Discord refuses an overwrite for reasons that have nothing to do with the setting, and
-        the role the league chose is still the right one to have stored. The channel is
-        repairable by hand.
+        Nothing is done while the module is off, *modules* saying so, or without a signup
+        channel. A switched-off module keeps its channel but holds no permission on it: the base
+        role is read again as it then stands when the switch-on puts them back
+        (`module_switch_settings`). A refusal from Discord (`discord.HTTPException`) is logged
+        and never raised: Discord refuses an overwrite for reasons that have nothing to do with
+        the setting, and the role the league chose is still the right one to have stored. The
+        channel is repairable by hand.
         """
+        if not await modules.is_enabled(SWITCH_KEY):
+            return
         cfg = await self.get_config()
         if cfg is None or cfg.signup_channel_id is None:
             return
@@ -388,7 +409,7 @@ class SignupModuleService:
     ) -> None:
         """Open the window, and record it as a window of the server's active season, on the
         caller's connection, committing nothing: the Sign Up button's message is kept, the
-        previous closed notice forgotten.
+        previous closed notice forgotten (it is taken down by this opening).
 
         The record is what a signup made through this window is kept against (issue #220):
         the tracks it asked times for, and later its close time. A server with no active
@@ -401,11 +422,6 @@ class SignupModuleService:
             "    signup_closed_message_id = NULL "
             "",
             (button_message_id, json.dumps(selected_tracks)),
-        )
-        # The notice the opening takes down is no longer one to find again.
-        await db.execute(
-            "UPDATE signup_module_settings "
-            "SET closed_notice_channel_id = NULL, closed_notice_message_id = NULL"
         )
         season_id = await self._live_season_id(db)
         if season_id is not None:
@@ -446,9 +462,9 @@ class SignupModuleService:
     ) -> None:
         """Record the window closed on the caller's connection, committing nothing: the Sign Up
         button's id and the close time are cleared, *closed_msg_id* is kept so the next opening
-        deletes the notice, and the open window's record is stamped closed at *now*. The notice's
-        channel and id are kept with the module's settings as well, which a switch-off does not
-        forget, so that the next opening still finds the notice (`closed_notice_of`)."""
+        deletes the notice, and the open window's record is stamped closed at *now*. The
+        configuration is the one record of the notice: a switch-off keeps it, so the next
+        opening still finds the notice there."""
         await db.execute(
             "UPDATE signup_module_config "
             "SET signups_open = 0, signup_button_message_id = NULL, "
@@ -461,38 +477,6 @@ class SignupModuleService:
             "UPDATE signup_windows SET closed_at = ? WHERE closed_at IS NULL",
             (now.isoformat(),),
         )
-        if closed_msg_id is not None:
-            await db.execute(
-                "INSERT INTO signup_module_settings "
-                "(id, closed_notice_channel_id, closed_notice_message_id) "
-                "VALUES (1, (SELECT signup_channel_id FROM signup_module_config), ?) "
-                "ON CONFLICT(id) DO UPDATE SET "
-                "closed_notice_channel_id = excluded.closed_notice_channel_id, "
-                "closed_notice_message_id = excluded.closed_notice_message_id",
-                (closed_msg_id,),
-            )
-
-    async def closed_notice_of(self, cfg: SignupModuleConfig) -> int | None:
-        """The id of the "signups are closed" notice standing in the signup channel of *cfg*, or
-        None where none is known.
-
-        The configuration holds it from the close until the next opening. A switch-off forgets
-        the configuration, so after the module is switched back on the notice is read from the
-        module's settings, where the close kept it, if it stands in this channel and no opening
-        has taken it down since.
-        """
-        if cfg.signup_closed_message_id is not None:
-            return cfg.signup_closed_message_id
-        if cfg.signup_channel_id is None:
-            return None
-        async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                "SELECT closed_notice_message_id FROM signup_module_settings "
-                "WHERE closed_notice_channel_id = ? AND closed_notice_message_id IS NOT NULL",
-                (cfg.signup_channel_id,),
-            )
-            row = await cursor.fetchone()
-        return None if row is None else int(row["closed_notice_message_id"])
 
     async def set_close_at_on(
         self, db: aiosqlite.Connection, close_at_iso: str | None
@@ -1204,14 +1188,23 @@ async def bot_packed_on(db: aiosqlite.Connection) -> dict[str, Any]:
         "UPDATE signup_module_config SET signup_channel_id = NULL, "
         "signup_button_message_id = NULL, signup_closed_message_id = NULL"
     )
-    await db.execute(
-        "UPDATE signup_module_settings "
-        "SET closed_notice_channel_id = NULL, closed_notice_message_id = NULL"
-    )
     return {
         CLEARED_WIZARDS: wizards,
         CLEARED_SIGNUP_CHANNEL_ID: None if row is None else row["signup_channel_id"],
     }
+
+
+async def clear_signup_channel_on(db: aiosqlite.Connection) -> int | None:
+    """Clear the signup channel the configuration keeps, on *db*, committing nothing, and give
+    the id it held, None where none was kept: the switch-on's save clears one another setting took
+    while the module was off (`kept_channels`), so that the league sets it again. Nothing else of
+    the configuration is touched."""
+    cursor = await db.execute("SELECT signup_channel_id FROM signup_module_config")
+    row = await cursor.fetchone()
+    if row is None or row["signup_channel_id"] is None:
+        return None
+    await db.execute("UPDATE signup_module_config SET signup_channel_id = NULL")
+    return int(row["signup_channel_id"])
 
 
 async def review_section(

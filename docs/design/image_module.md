@@ -49,9 +49,9 @@ under the name `images` (`architecture.md`, "How modules and core fit together")
 never switched it on has no row and reads as off.
 
 The switch-off clears the flag and nothing else: no configuration row is deleted and no toggle
-reset. This is the exception the constitution grants for configuration that cannot go stale
-(Principle X, rule 6), which the image module claims for the whole of its configuration, the
-portrait settings and the tier colours included. The daily portrait job the configuration arms is
+reset. That is Principle X, rule 6 as every module keeps it: a disable keeps the whole of the
+configuration, the portrait settings and the tier colours included, and re-enabling finds it as it
+stood. The daily portrait job the configuration arms is
 not configuration and is not kept armed: the switch-off removes it and the switch-on arms it again
 ("How a change is carried out", below).
 
@@ -309,9 +309,12 @@ failures"); the forecast asks `_weather_gate`. Results asks the gate for each st
 before composing, and hands the drawing only the championships wanted. The `/images test` previews
 ask the module's switch alone.
 
-`aspect_attaches_files` answers the attachment checks of results' reposting and attendance's
-recalculation; why it does not ask template validity is its docstring's, pinned by
-`test_template_validity_is_deliberately_not_consulted`.
+`aspect_attaches_files` answers the attachment a channel's permissions are judged by: results'
+reposting, attendance's recalculation and each module's channels at a confirmation, each stating
+what its channel needs of the bot and asking the drawing only whether a picture could attach a
+file. `calendar_attaches_files` and `lineup_attaches_files` put the same question for core's two
+channels, which core asks through its protocol. Why it does not ask template validity is its
+docstring's, pinned by `test_template_validity_is_deliberately_not_consulted`.
 
 ### Commanded and scheduled
 

@@ -51,8 +51,11 @@ def sign_up(bot: "LeagueBot") -> None:
 
 def sign_up_to_base_role_changed(bot: "LeagueBot") -> None:
     """Sign signup's move of the signup channel's overwrite up to the hook the base role changed
-    declares, so core never reaches into the signup module itself."""
-    bot.base_role_changed.subscribe(bot.signup_module_service.move_base_role_overwrite)
+    declares, so core never reaches into the signup module itself. It is handed the module
+    service, which answers whether signup is on."""
+    bot.base_role_changed.subscribe(
+        partial(bot.signup_module_service.move_base_role_overwrite, bot.module_service)
+    )
 
 
 def sign_up_to_configuration_confirmed(bot: "LeagueBot") -> None:
@@ -65,10 +68,10 @@ def sign_up_to_configuration_confirmed(bot: "LeagueBot") -> None:
 
 
 def sign_up_to_confirmation_refused(bot: "LeagueBot") -> None:
-    """Sign signup's refusal of a season's approval while its signup channel is unset up to the
-    hook a season's confirmation is refused through, after results': handed the league's modules
-    and signup's service, then the season and which confirmation is judged. Signup checks its own
-    switch."""
+    """Sign signup's refusal of a season's approval, and of its placements review, while its
+    signup channel is unset, gone or unusable up to the hook a season's confirmation is refused
+    through, after results': handed the league's modules and signup's service, then the season,
+    which confirmation is judged and the server. Signup checks its own switch."""
     from leaguebot.signup.services import signup_prerequisites
 
     bot.confirmation_refused.subscribe(partial(
@@ -187,10 +190,12 @@ def sign_up_to_pack(bot: "LeagueBot") -> None:
 
 def sign_up_to_channel_uses_read(bot: "LeagueBot") -> None:
     """Sign signup up to the hook a channel being set is asked of each module through, handed the
-    database's path."""
+    module service, which answers whether signup is on, and the database's path."""
     from leaguebot.signup.services import channel_uses
 
-    bot.channel_uses_read.subscribe(partial(channel_uses.channel_uses, bot.db_path))
+    bot.channel_uses_read.subscribe(
+        partial(channel_uses.channel_uses, bot.module_service, bot.db_path)
+    )
 
 
 def sign_up_to_setting_channels_read(bot: "LeagueBot") -> None:
@@ -396,7 +401,10 @@ def register_change_types(bot: "LeagueBot") -> None:
     )
     bot.change_queue.register(
         setting_change(
-            module_on_signup(modules=bot.module_service, config=bot.config_service)
+            module_on_signup(
+                modules=bot.module_service, config=bot.config_service,
+                channel_uses_read=bot.channel_uses_read,
+            )
         )
     )
     for setting in signup_settings(modules=bot.module_service, signup=bot.signup_module_service):

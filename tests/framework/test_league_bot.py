@@ -273,18 +273,22 @@ def test_every_channel_setting_overtakes_a_stopped_job():
 @pytest.mark.parametrize(
     ("module", "package", "on_writes", "off_writes"),
     [
-        pytest.param("weather", "leaguebot.weather.", {"server_configs"}, {"server_configs"},
-                     id="weather"),
+        pytest.param(
+            "weather", "leaguebot.weather.", {"server_configs", "divisions"}, {"server_configs"},
+            id="weather",
+        ),
         pytest.param(
             "images", "leaguebot.image.", {"image_config", "image_aspect_toggles"},
             {"image_config"}, id="images",
         ),
         pytest.param(
-            "attendance", "leaguebot.attendance.", {"attendance_config"},
+            "attendance", "leaguebot.attendance.",
+            {"attendance_config", "attendance_division_config"},
             {"attendance_config", "attendance_division_config"}, id="attendance",
         ),
         pytest.param(
-            "results", "leaguebot.results.", {"results_module_config"}, None, id="results",
+            "results", "leaguebot.results.",
+            {"results_module_config", "division_results_config"}, None, id="results",
         ),
         pytest.param(
             "signup", "leaguebot.signup.", {"server_configs", "signup_module_config"}, None,
@@ -298,11 +302,16 @@ def test_a_module_s_switch_is_its_own_settings_signed_up_by_the_builder(
     """The builder registers each module's switch-on and switch-off, "module.on:<name>" and
     "module.off:<name>" under the name `/module` offers, once each (#283, S11b and S11c): each is
     the module's own (its check is the module's code) and may write only the tables holding the
-    module's switch and, for images' switch-on, the configuration it creates where missing.
-    Weather's switch is weather's column on the core table `server_configs`; images' is image's
-    own `image_config`; attendance's is `attendance_config`, its switch-off clearing the
-    division channels in `attendance_division_config` too (#283, S11d). Results' switch-on is
-    `results_module_config`; its switch-off is its own change already (`results_off_change`),
+    module's switch, for images' switch-on the configuration it creates where missing, and, for
+    weather's, results' and attendance's switch-on, the tables of the division channels it clears
+    where another setting took one while the module was off (#449). Weather's switch is weather's
+    column on the core table `server_configs`, its switch-on clearing a division's forecast
+    channel in `divisions` too; images' is image's own `image_config`; attendance's is
+    `attendance_config`, its switch-on clearing a division's check-in or attendance channel and
+    its switch-off each division's attendance-sheet message id, both in
+    `attendance_division_config` (#449). Results' switch-on is `results_module_config`, clearing a
+    division's results or standings channel in `division_results_config` too; its switch-off is
+    its own change already (`results_off_change`),
     whose tables are not declared, so only its owner is checked (*off_writes* None). Signup's
     switch-on is signup's column on `server_configs` and the configuration row it creates where
     none stands; its switch-off is its own change already (`signup_off_change`), its tables not
