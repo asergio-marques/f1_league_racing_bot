@@ -1579,13 +1579,12 @@ one that says otherwise below.
   reader of whether a channel can be used as its posting needs (`approval_checks.judged_presence`,
   which `channel_on_server`, the check of a command setting a channel
   (`channel_registry_service.unusable_refusal`), `approval_checks.channel_fault` and signup's
-  `confirmation_refusals` ask) stand aside, reading the switch as off and the
-  channel as present, because a reader that cannot answer must not refuse an amendment, a season or
-  the channel a manager chose. The strict
-  reader beneath it (`approval_checks.channel_presence`) answers only what Discord proves, a
-  channel found, gone, or found and lacking a permission its use needs, and raises on anything
-  else, so that a caller which can refuse for a check that could not be made is not forced to
-  treat it as passed.
+  `confirmation_refusals` ask) stand aside, reading the switch as off and the channel as present,
+  because a reader that cannot answer must not refuse an amendment, a season or the channel a
+  manager chose. The strict reader beneath it (`approval_checks.channel_presence`) answers only
+  what Discord proves, a channel found, gone, or found and lacking a permission its use needs, and
+  raises on anything else, so that a caller which can refuse for a check that could not be made is
+  not forced to treat it as passed.
 - The image module's gate (`ImageDrawing.aspect_wanted`, which every aspect's picture asks but the
   weather forecast's, whose own gate is of the sixth place) answers that the league does not draw the
   aspect, with no line to the log channel, so the text goes out, because a gate that cannot be read
