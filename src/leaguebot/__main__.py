@@ -918,7 +918,8 @@ def register_change_types(bot: LeagueBot) -> None:
     for setting in (
         log_channel_setting(config=bot.config_service, channel_uses_read=bot.channel_uses_read),
         interaction_channel_setting(
-            config=bot.config_service, channel_uses_read=bot.channel_uses_read
+            config=bot.config_service, channel_uses_read=bot.channel_uses_read,
+            drawing=bot.image_drawing,
         ),
         interaction_role_setting(config=bot.config_service),
         admin_role_setting(config=bot.config_service),

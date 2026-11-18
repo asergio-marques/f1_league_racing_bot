@@ -120,12 +120,7 @@ def _settings(hook: AwaitedHook) -> dict[str, Any]:
 @pytest.mark.parametrize(
     "name",
     ["log channel",
-     pytest.param(
-         "interaction channel",
-         marks=pytest.mark.xfail(
-             strict=True, reason="#570: the interaction channel setting takes no drawing"
-         ),
-     ),
+     "interaction channel",
      "hub channel",
      pytest.param("division lineup channel"),
      pytest.param("division calendar channel"),

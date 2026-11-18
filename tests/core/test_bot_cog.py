@@ -1080,7 +1080,6 @@ def _delete_the_channel(bot: Any, channel_id: int) -> None:
         )
     ],
 )
-@pytest.mark.xfail(strict=True, reason="#570: the setting does not judge its channel as it starts")
 async def test_a_channel_setting_is_refused_as_it_starts_where_its_channel_can_no_longer_be_used(
     tmp_path, attribute, column, use, meanwhile, missing
 ):
@@ -2357,10 +2356,6 @@ async def _init(cog, interaction):
     )
 
 
-#: Why a case of a channel the bot cannot use fails until the setting judges the channel.
-_NOT_JUDGED = "#570: the setting does not judge what the bot holds in its channel"
-
-
 async def _refused_site(case: str, tmp_path) -> tuple[MagicMock, MagicMock, str, str]:
     """Set up the refusal *case* and run it: the bot, the interaction, the command as the log
     names it, and a phrase of today's reply: for a setting's refusal, the whole of it."""
@@ -2547,22 +2542,10 @@ def _replied(interaction: MagicMock) -> str:
         "hub-channel already another job",
         "hub-channel already this setting",
         "hub-channel lacks permissions",
-        pytest.param(
-            "log-channel lacks permissions",
-            marks=pytest.mark.xfail(strict=True, reason=_NOT_JUDGED),
-        ),
-        pytest.param(
-            "log-channel lacks view channel",
-            marks=pytest.mark.xfail(strict=True, reason=_NOT_JUDGED),
-        ),
-        pytest.param(
-            "interaction-channel lacks permissions",
-            marks=pytest.mark.xfail(strict=True, reason=_NOT_JUDGED),
-        ),
-        pytest.param(
-            "interaction-channel lacks view channel",
-            marks=pytest.mark.xfail(strict=True, reason=_NOT_JUDGED),
-        ),
+        "log-channel lacks permissions",
+        "log-channel lacks view channel",
+        "interaction-channel lacks permissions",
+        "interaction-channel lacks view channel",
         "log-channel already this setting, lacking permissions",
         "factory-reset without the word",
     ],

@@ -27,7 +27,12 @@ own end before its lane's stopped head is tried again, never beside it — so no
 **The two channels refuse a collision at the ask; the four roles judge "already held" in the save
 alone.** A channel already doing another job is refused outright, and one already holding this
 very setting is refused too, "Nothing was changed" — re-running the command is not a collision
-with something else. Nothing runs beside the save to land a second writer between the check and
+with something else. **A channel the bot cannot use is refused straight after, by the same
+check**: the log channel needs View Channel and Send Messages (`LOG_CHANNEL_NEEDS`), the command
+channel those and Attach Files where a lineup or calendar picture could attach a file
+(`interaction_channel_needs`, asked of the image module's drawing), judged against the league's
+server as it stands, at the ask and again as the change starts, standing aside where Discord
+cannot say. Nothing runs beside the save to land a second writer between the check and
 it, so the check made as the change starts stands. A role given the one it already holds is not a
 collision at all, so it is answered "Nothing changed" by `setting_change`'s own rule for a value
 already held, once the change has run: no refusal, no write, no audit entry, and the hub's
@@ -61,7 +66,8 @@ whether or not `_restyle_hub` did, since it only asks for a change and so cannot
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Mapping
+from functools import partial
 from typing import TYPE_CHECKING, Any
 
 import aiosqlite
@@ -76,6 +82,7 @@ from leaguebot.framework.models.change import (
     Verdict,
 )
 from leaguebot.framework.services.queue.change_types import CheckContext, Step, StepContext
+from leaguebot.core.models.channel_needs import ATTACH, SEND, VIEW, Needs
 from leaguebot.core.services.settings.channel_registry_service import (
     ChannelUse,
     find_channel_use,
@@ -93,6 +100,7 @@ from leaguebot.framework.utils.league_server import league_guild
 
 if TYPE_CHECKING:
     from leaguebot.framework.utils.hooks import AwaitedHook
+    from leaguebot.core.services.modules.image_drawing import ImageDrawing
     from leaguebot.core.services.settings.config_service import ConfigService
     from leaguebot.core.services.drivers.team_role_service import TeamRoleService
 
@@ -118,6 +126,31 @@ _SETTINGS: dict[str, tuple[str, str, str, str, str | None]] = {
     ),
 }
 
+#: What the log channel asks of the bot: to see the channel and write its lines in it. Lines are
+#: plain text, so it asks for no more.
+LOG_CHANNEL_NEEDS: Needs = (VIEW, SEND)
+
+
+async def interaction_channel_needs(drawing: "ImageDrawing") -> Needs:
+    """What the bot's command channel asks of the bot: View Channel and Send Messages, which its
+    replies and the posts a command ends with need, and Attach Files where the image module
+    answers that a lineup or a calendar picture could attach a file (`lineup_attaches_files`,
+    `calendar_attaches_files`).
+
+    A season's reviews post their report and pictures in this channel
+    (`season_review_workflows.confirm_mid_season_placements`, and `draw_and_post` in
+    `season_review_changes`), so a picture on makes the channel one the bot must attach files in.
+    Asked of the *drawing*, as `approval_checks.core_channel_needs` asks it for the two division
+    channels, rather than read from the image module's configuration.
+    """
+    attaches = await drawing.lineup_attaches_files() or await drawing.calendar_attaches_files()
+    return (VIEW, SEND) + ((ATTACH,) if attaches else ())
+
+
+async def _log_channel_needs() -> Needs:
+    return LOG_CHANNEL_NEEDS
+
+
 #: The name of the step, after a role setting's save, that sets the hub's permissions again.
 REAPPLY_HUB = "reapply_hub"
 
@@ -132,12 +165,16 @@ def _mention(column: str, value: int) -> str:
 
 
 def _bot_setting(
-    column: str, config: "ConfigService", channel_uses_read: "AwaitedHook | None" = None
+    column: str,
+    config: "ConfigService",
+    channel_uses_read: "AwaitedHook | None" = None,
+    needs: Callable[[], Awaitable[Needs]] | None = None,
 ) -> Setting:
     """One of the four `/bot` repair settings on *column*, *config* reading and writing it.
 
     A channel setting is handed *channel_uses_read*, the hook the builder makes, which its check
-    asks which module holds the channel already; a role setting is handed none."""
+    asks which module holds the channel already, and *needs*, which says what the channel's use
+    asks of the bot, judged straight after the in-use refusal; a role setting is handed neither."""
     kind_name, command, label, change_type, channel_setting = _SETTINGS[column]
     is_role = channel_setting is None
 
@@ -145,6 +182,7 @@ def _bot_setting(
         value = int(ctx.payload["value"])
         if channel_setting is not None:
             assert channel_uses_read is not None  # a channel setting is built with the hook
+            assert needs is not None  # and with what its channel's use asks of the bot
             use = await find_channel_use(
                 ctx.db_path, value, channel_uses_read=channel_uses_read
             )
@@ -155,6 +193,11 @@ def _bot_setting(
                         same_setting=(use == ChannelUse(channel_setting)),
                     )
                 )
+            unusable = await unusable_refusal(
+                await league_guild(ctx.bot), value, await needs(), ChannelUse(channel_setting)
+            )
+            if unusable is not None:
+                return Verdict.refuse(unusable)
         if await config.get_server_config() is None:
             return Verdict.refuse(_UNCONFIGURED)
         return Verdict.go()
@@ -231,14 +274,18 @@ def _reapply_hub(command: str, config: "ConfigService") -> After:
 
 def log_channel_setting(*, config: "ConfigService", channel_uses_read: "AwaitedHook") -> Setting:
     """`/bot log-channel`: the log channel the bot writes its calculation log to."""
-    return _bot_setting("log_channel_id", config, channel_uses_read)
+    return _bot_setting("log_channel_id", config, channel_uses_read, _log_channel_needs)
 
 
 def interaction_channel_setting(
-    *, config: "ConfigService", channel_uses_read: "AwaitedHook"
+    *, config: "ConfigService", channel_uses_read: "AwaitedHook", drawing: "ImageDrawing"
 ) -> Setting:
-    """`/bot interaction-channel`: the channel the bot accepts commands in."""
-    return _bot_setting("interaction_channel_id", config, channel_uses_read)
+    """`/bot interaction-channel`: the channel the bot accepts commands in. The *drawing* says
+    whether a lineup or calendar picture could attach a file (`interaction_channel_needs`)."""
+    return _bot_setting(
+        "interaction_channel_id", config, channel_uses_read,
+        partial(interaction_channel_needs, drawing),
+    )
 
 
 def interaction_role_setting(*, config: "ConfigService") -> Setting:
@@ -741,11 +788,13 @@ def hub_channel_setting(*, config: "ConfigService", channel_uses_read: "AwaitedH
 __all__ = [
     "GRANT_TO_DRIVERS",
     "BASE_ROLE_CHANGED",
+    "LOG_CHANNEL_NEEDS",
     "REAPPLY_HUB",
     "admin_role_setting",
     "base_role_setting",
     "driver_role_setting",
     "hub_channel_setting",
+    "interaction_channel_needs",
     "interaction_channel_setting",
     "interaction_role_setting",
     "log_channel_setting",
