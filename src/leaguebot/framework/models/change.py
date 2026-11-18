@@ -208,7 +208,9 @@ class StepFailedOnDiscord(Exception):
 
     `notice` is a short clause a job adds to its stop notice, saying what its failure leaves: the
     amendment's check-in call says what is left for the round. The stop notice and the line of a
-    Retry that fails again carry it after the kind of fault.
+    Retry that fails again carry it after the kind of fault. A step of a setting's change that ends
+    on a fault (`Step.on_fault`) has its notice carried by `setting_change` into the failure line,
+    beneath it, and into the member's reply.
 
     `record` is what the failure leaves to be written (it is handed an `aiosqlite.Connection`,
     which a model does not import): the queue runs it on the connection of the

@@ -77,10 +77,12 @@ step writing none. Either way nothing is saved and nothing is audited. **A step 
 something on Discord declares an undo** (`Before.undo`), planned as a job of the change where a
 later step before the save halts or faults, or the save does, last step first, so that nothing is
 half-set (Constitution X, rule 2) and a restart finishes it; a step that ends on a fault part-way
-takes back its own partial work before it raises, and the undo is for work it finished. *Rejected:* an `After` step
-that undoes the switch-on, which would leave the module on for a moment and whose undo is a second
-save that can itself fail; and the check in `check()`, which carries no findings and runs at the ask
-as well.
+takes back its own partial work before it raises, and the undo is for work it finished. Where
+Discord refuses the take-back, the step raises `StepFailedOnDiscord` with a notice of what was left
+and how to put it right: the reply to the member and the failure line carry it. *Rejected:* an
+`After` step that undoes the switch-on, which would leave the module on for a moment and whose undo
+is a second save that can itself fail; and the check in `check()`, which carries no findings and
+runs at the ask as well.
 
 **Recorded twice, in one save, but for a step that carries the line.** The value, its audit entry
 and its line share one save, save where a step after it `carries_line` (the arming of the daily
@@ -107,6 +109,7 @@ import aiosqlite
 from leaguebot.framework.models.change import (
     AuditRecord,
     PlannedStep,
+    StepFailedOnDiscord,
     StepKind,
     StepResult,
     Verdict,
@@ -136,6 +139,10 @@ FOUND = "found"
 #: The key, in a step before the save's result, of a halt: the step found the setting cannot go
 #: ahead, and the value is `{"reply": the member's answer, "reason": what the ⛔ line says}`.
 HALTED = "halted"
+
+#: The key, in the result of a step that ended on a fault, of the notice it left: what it left on
+#: Discord and how to put it right (`StepFailedOnDiscord.notice`), added to the reply.
+LEFT = "left"
 
 #: The key, in the save's result, of the line kept back for a step that carries it.
 _KEPT_LINE = "setting_line"
@@ -191,10 +198,11 @@ class Before:
 
     *undo*, where a step changes something on Discord, is an `ACT` step that takes back what
     *step* did once it has returned. It is planned, as a job of the change, where a later step
-    before the save halts or faults, or the save does; it reads what *step* found from the steps the queue keeps
-    (`StepContext.steps`), never from memory, so that a restart finishes it. Where *step* itself
-    ends on a fault part-way it takes back its own partial work before it raises again: an undo is
-    for finished work only. The undos of the steps that returned run last first.
+    before the save halts or faults, or the save does; it reads what *step* found from the steps
+    the queue keeps (`StepContext.steps`), never from memory, so that a restart finishes it. Where
+    *step* itself ends on a fault part-way it takes back its own partial work before it raises
+    again: an undo is for finished work only. The undos of the steps that returned run last first.
+    Where Discord refuses what an undo takes back, it raises `StepFailedOnDiscord` with a notice.
     """
 
     step: Step
@@ -244,10 +252,22 @@ def _line(named: str, command: str, saved: Saved) -> str:
 def _failed(
     ctx: StepContext, error: BaseException, then: tuple[PlannedStep, ...] = ()
 ) -> StepResult:
-    """A step ended on a fault: its mark, and the failure line; *then* are the undos to run."""
-    return StepResult(
-        result={"failed": True}, lines=(failure_line(ctx.what, ctx.named, error),), then=then
+    """A step ended on a fault: its mark, and the failure line; *then* are the undos to run.
+
+    A step that leaves something on Discord raises `StepFailedOnDiscord` with a *notice* saying
+    what and how to put it right. The line names the kind of fault from the cause the step chained
+    it from, never `StepFailedOnDiscord`, and carries the notice beneath it; the notice is kept in
+    the result as `left`, for the reply to add (`outcome`).
+    """
+    marks: dict[str, Any] = {"failed": True}
+    line = failure_line(
+        ctx.what, ctx.named,
+        error.__cause__ if isinstance(error, StepFailedOnDiscord) and error.__cause__ else error,
     )
+    if isinstance(error, StepFailedOnDiscord) and error.notice:
+        marks[LEFT] = error.notice
+        line = f"{line}\n{error.notice}"
+    return StepResult(result=marks, lines=(line,), then=then)
 
 
 def _undos(befores: Sequence[Before]) -> tuple[PlannedStep, ...]:
@@ -366,15 +386,16 @@ def setting_change(setting: Setting) -> ChangeType:
 
     def outcome(ctx: OutcomeContext) -> str:
         results = {view.name: dict(view.result) for view in ctx.steps if view.result is not None}
+        left = [str(each[LEFT]) for each in results.values() if each.get(LEFT)]
         if any(results.get(name, {}).get("failed") for name in (*before_names, SAVE)):
-            return failure_reply(
-                ctx.what,
-                _not_saved(setting, ctx.payload).format(command=setting.command(ctx.payload)),
+            not_saved = _not_saved(setting, ctx.payload).format(
+                command=setting.command(ctx.payload)
             )
+            return failure_reply(ctx.what, " ".join((not_saved, *left)))
         for name in before_names:
             halted = results.get(name, {}).get(HALTED)
             if halted is not None:
-                return str(halted["reply"])
+                return "\n".join((str(halted["reply"]), *left))
         reply = setting.reply(ctx.payload, results)
         for view in ctx.steps:
             after = setting.after.get(view.name)
@@ -413,6 +434,6 @@ def setting_change(setting: Setting) -> ChangeType:
 
 
 __all__ = [
-    "After", "Before", "FOUND", "HALTED", "NOTHING_SAVED", "RENAMED_OUTCOME", "SAVE", "Saved",
+    "After", "Before", "FOUND", "HALTED", "LEFT", "NOTHING_SAVED", "RENAMED_OUTCOME", "SAVE", "Saved",
     "Setting", "setting_change",
 ]

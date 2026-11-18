@@ -605,8 +605,6 @@ async def test_a_later_step_before_the_save_that_does_not_go_through_takes_back_
 
 
 @pytest.mark.parametrize("left_by", ["the step before the save", "its undo"])
-@pytest.mark.xfail(strict=True, reason="#449: what work before the save leaves on Discord is not "
-                   "told in the reply or the failure line")
 async def test_work_before_the_save_that_leaves_something_says_what_and_how_to_put_it_right(
     env, left_by
 ):
