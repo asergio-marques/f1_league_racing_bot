@@ -55,6 +55,10 @@ stood. The daily portrait job the configuration arms is
 not configuration and is not kept armed: the switch-off removes it and the switch-on arms it again
 ("How a change is carried out", below).
 
+An output is switched to text with the module off but to a picture only with it on: the posting being
+text already, the retreat needs nothing of the module, while the switch to a picture does, so the
+toggle refuses `MODULE_OFF` only where it switches on (`image_settings`).
+
 ### The portrait register
 
 `driver_portraits` is how the bot tells a portrait it obtained from one the league put in its own
@@ -187,12 +191,24 @@ the save, planned only where the save changed something, so that a fault in it l
 saved and the reply says it could not be checked. `image_settings`'s module docstring holds each
 part.
 
+A toggle that switches an output on has a step before the save, `picture_channels_check` (core's,
+`core/services/modules/picture_channels.py`), handed the aspect as the change names it: the channels
+the output posts to are judged with the output counted as a picture, and a channel gone or lacking
+what a picture needs refuses the toggle (`_toggle_refusal`), the output left as text. A toggle that
+switches off hands it nothing, and the step answers at once, judging no channel. The step runs as the
+change starts and not at the ask, so that a channel deleted while the change waited is judged as it
+then stands.
+
 ### The switch on and off
 
 `/module enable images` and `/module disable images` each ask one change built from
 `module_on_images` or `module_off_images` (`module_switch_settings`).
 
-The switch-on is one save: the configuration row and every aspect toggle created where missing, the
+The switch-on first runs the same step for the outputs already on (`enabled_aspects_on`, read on the
+connection the step holds, with `_enable_refusal`): the configuration is kept while the module is
+off, so an output left on has its channels judged before the module is, and a channel failing for
+the lineup and the calendar alike, the command channel, is one line naming both. The module stays
+off where any fails. It is then one save: the configuration row and every aspect toggle created where missing, the
 flag raised and the audit entry written, so a fault anywhere leaves none of it. Where the kept
 configuration asks for daily portraits, a step after the save arms the daily job and carries the
 success line, so that the save stands whatever the arming does, and what a league is told when it
@@ -350,7 +366,9 @@ Image reads core's tables only through core's readers, among them a division's s
 of record shows it (`division_seating`), a round's and a division's context (`round_context`,
 `division_context`), and a driver's name and nationality and whether the league collects one
 (`core/services/drivers/driver_names.py`), which it asks with core's `driver_names_read` hook,
-the one signup answers (`core.md`). The portrait roster reads every driver assigned in the active
+the one signup answers (`core.md`), and the channels an output posts to, through core's
+`picture_channels_check`, which asks the `picture_channels_read` hook (`core.md`) that image does
+not answer, the outputs' channels being the modules' and core's. The portrait roster reads every driver assigned in the active
 season through `active_season_driver_ids`.
 
 ### The hooks image signs up to
@@ -434,4 +452,7 @@ Each of these is held by the docstring named, and pinned by a test where one is 
   `FLAG_COLUMNS` for flags, `image_config_service`), so the generic setter cannot reach
   `module_enabled` or `id`.
 - **`aspect_attaches_files` does not ask template validity** (above).
+- **A picture's channels are judged as if the output were a picture**, Attach Files among the needs
+  whatever the output's switch holds: the step runs while the output is still text, and the drawing
+  is not asked, the step's connection being held (`picture_channels`, `core.md`).
 - **`posting_origin` is required and never inferred** (`render_for_posting`).
