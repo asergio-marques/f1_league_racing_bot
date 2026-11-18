@@ -269,12 +269,12 @@ async def test_render_notices_are_shown_in_the_reply_and_not_repeated_in_the_clo
     assert "⚠️ **Image notices**" in replied
     assert "  • round 12 did not fit" in replied
     if case == "refuses":
-        assert "  **calendar — Pro**\n" in replied
+        assert "  **calendar — Season 7 Pro**\n" in replied
         assert "see them in the log" not in replied
         return
     held = next(n for n, line in enumerate(_logged(cog), 1) if "round 12 did not fit" in line)
     assert (
-        f"  **calendar — Pro** ([see them in the log](https://discord.test/{held}))\n"
+        f"  **calendar — Season 7 Pro** ([see them in the log](https://discord.test/{held}))\n"
         "  • round 12 did not fit"
     ) in replied
     logged = _logged(cog)[-1]
