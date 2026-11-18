@@ -743,11 +743,8 @@ def end_change(
             (user_id,),
         )
         wizard_row = await cursor.fetchone()
-        cursor = await db.execute(
-            "SELECT current_state FROM driver_profiles WHERE discord_user_id = ?", (user_id,)
-        )
-        profile_row = await cursor.fetchone()
-        prior = None if profile_row is None else profile_row["current_state"]
+        prior_state = await drivers().state_of_account_on(db, user_id)
+        prior = None if prior_state is None else prior_state.value
         await drivers().transition_on(db, user_id, DriverState.NOT_SIGNED_UP)
         await signup().end_wizard_on(db, user_id)
         named = member_named(None, int(user_id))
