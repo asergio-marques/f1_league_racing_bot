@@ -177,7 +177,7 @@ folder.
 | Amending a round | `amendment_rules_service`, `round_steps` | nothing: the first judges core's own rules of what an amendment may do (the fields, the round's status, the moment and a mystery round given a circuit alone) and gathers each module's part of the judgement through `amendment_judged`; the second names a round in an amendment's step by the number it bears when read |
 | Season reviews and confirmations | `approval_checks`, `approval_window_service` (`calendar_faults`, what is already behind a season on the day it is approved), `review_sections`, `confirmation_refusals`, `season_fingerprint_service`, `season_review_changes`, `season_review_views`, `season_review_workflows` | `season_review_prompts` |
 | The hub | `hub_service`, `about_service` | `server_configs.hub_message_id` |
-| A module switched on | `kept_channels` (`kept_channels_check`) | nothing: it reads the channels a module kept through the reader its switch-on hands it, asks the registry, through the bot's `channel_uses_read` hook that every module holding channels answers, which are taken, and Discord which are gone or unusable |
+| A module switched on | `kept_channels` (`kept_channels_check`), `picture_channels` (`picture_channels_check`, `core_picture_channels`) | nothing: the first reads the channels a module kept through the reader its switch-on hands it, asks the registry, through the bot's `channel_uses_read` hook that every module holding channels answers, which are taken, and Discord which are gone or unusable; the second reads, through the `picture_channels_read` hook, the channels an output switched to a picture posts to, and asks Discord which are gone or lack what a picture needs |
 | Test mode | `test_mode_service`, `test_roster_service`, `backup_service` | `server_configs.test_mode_active` |
 | Starting over | `pack_service`, `factory_reset_service`, `in_memory_state` | — |
 
@@ -254,7 +254,11 @@ calendar need the image module's answer to build their needs, which is awaited, 
 every module's, so a division's lines read core's first) builds them where it can await, from
 `core_channel_needs`. The lineup and calendar settings' check (`division_settings`) reads the same
 `core_channel_needs`, with the drawing the builder hands `division_channel_settings`, and so cannot
-judge a channel differently from the confirmation. `division_channel_faults` holds no list of
+judge a channel differently from the confirmation. The two channels are named once, in
+`DIVISION_CHANNELS` (`approval_checks`: the column, the label and the key in `core_channel_needs`),
+which the confirmation's fault check and core's picture channels (below) both read, and the second
+takes the needs of each as a picture from `DIVISION_CHANNEL_NEEDS`, with Attach Files, rather than
+asking the drawing, the check that reads them holding a connection and awaiting nothing else. `division_channel_faults` holds no list of
 channels, so the review and the two confirmations cannot disagree about one and
 `season_approval_change` holds none. *Rejected:* the check reading the image module's configuration
 for a switch, which is the module's to answer (`ImageDrawing.calendar_attaches_files` and
@@ -414,6 +418,22 @@ gives the arrangement in "How modules and core fit together" and the invariant t
 in "How a change is carried out"; core_specification.md, "Modules" and "Channels", gives the rules a
 league sees. `live_divisions_on` (`channel_registry_service`) names the divisions of the live
 season, which the registry and the check both read, so that they judge the same channels.
+
+**An output switched to a picture does the same before its save.** The image module's toggle and its
+switch-on run `picture_channels_check` (`core/services/modules/picture_channels.py`) as a step
+before the save. It is handed a reader of the outputs the change switches on, read on the
+connection it holds, and gathers the channels those outputs post to through the
+`picture_channels_read` hook, in the same connection and with `live_divisions_on(db,
+cancelled=False)`, so that a cancelled division's channels are passed over. Core answers for the
+lineup and the calendar alone (`core_picture_channels`: each division's channel, and the command
+channel once for both), and weather, results and attendance each for their own, while on. Each
+channel is judged once, strictly (`channel_presence`), on every need its use has with the output
+counted as a picture (`attaching`, `channel_needs.py`): gone or lacking refuses, and a channel it
+cannot read ends the setting on a fault, nothing saved, which is the rule of Channels in
+core_specification.md and not the stand-aside of a channel being set. The step names no module:
+the image module calls it, never the hook. *Rejected:* asking the image module's drawing for what a
+picture attaches, which awaits where the connection is held (`architecture.md`, "The database"), and
+which would answer the same, the output being counted as a picture.
 
 Each file's docstring holds its change's check, its steps and the reason for each. Three shapes
 recur:
@@ -631,6 +651,7 @@ which each `_sign_up_to_*` docstring states where it matters.
 | `driver_names_read` | A | signup | `approval_checks` (the unsettled signups, named by their latest signup) and `driver_names`, core's reader of how a driver is named and of whether a nationality is collected; the builder hands the hook, and image, results and attendance each ask the reader with it for every picture and ordering that names a driver |
 | `fingerprint_areas_read` | A | weather, results, attendance, signup, image | `season_fingerprint_service` |
 | `channel_uses_read` | A | weather, results, attendance, signup | `channel_registry_service.find_channel_use`, and `kept_channels_check`, which asks it as a module is switched on; weather, results, attendance and signup answer it only while their own switch is on |
+| `picture_channels_read` | A | core, weather, results, attendance | `picture_channels_check`, which the image module runs before an output is switched to a picture and before it is switched on; core answers for the lineup and calendar outputs alone (its own channels and the command channel), and weather, results and attendance answer only while their own switch is on |
 | `setting_channels_read` | A | weather, results, attendance, signup | `factory_reset_service.gather_targets` |
 | `base_role_changed` | A | signup | `bot_settings` (`/bot base-role`'s step) |
 | `driver_turned_down` | A | signup | `driver_changes`, `season_lifecycle_service` |
