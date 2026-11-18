@@ -27,3 +27,12 @@ EMBED: tuple[str, str] = ("embed_links", "Embed Links")
 ATTACH: tuple[str, str] = ("attach_files", "Attach Files")
 MANAGE_CHANNEL: tuple[str, str] = ("manage_channels", "Manage Channel")
 MANAGE_PERMISSIONS: tuple[str, str] = ("manage_roles", "Manage Permissions")
+
+
+def attaching(needs: Needs, attaches: bool) -> Needs:
+    """*needs* with Attach Files added where *attaches*, and not twice where *needs* already
+    holds it. Judging a channel for an output about to be switched to a picture counts the output
+    as one, whatever its switch holds now, so the answer asks for the file a picture attaches."""
+    if attaches and ATTACH not in needs:
+        return needs + (ATTACH,)
+    return needs

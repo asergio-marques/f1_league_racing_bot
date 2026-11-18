@@ -148,7 +148,7 @@ When inviting the bot, grant it the following OAuth2 bot permissions. All are us
 | **View Channels** | Required before any channel operation — the bot must be able to see forecast channels, log channels, and signup wizard channels before it can read or write them |
 | **Send Messages** | Posts weather forecasts to division channels, signup wizard messages to private channels, the hub's panel to the hub, and audit logs to the log channel |
 | **Send Messages in Threads** | Required if any configured channels are threads |
-| **Embed Links** | Posts the signup module info embed (the button drivers click to start a signup), the division lineup and the check-in call |
+| **Embed Links** | Posts the signup module info embed (the button drivers click to start a signup), the division lineup and the check-in call, and is asked of the hub channel |
 | **Attach Files** | Attaches the picture where an output is drawn as an image (the calendar, lineup, session results, standings, attendance sheet, check-in call, weather forecasts, verdicts and verdict banner), in that output's channel only while its picture is on |
 | **Manage Channels** | Creates private signup wizard channels; applies and removes channel permission overwrites for the signup module, the hub and per-driver wizard channels; deletes the channels it created during a `/bot factory-reset` |
 | **Manage Messages** | Deletes the old forecast message when a newer phase supersedes it (`forecast_cleanup_service`); deletes its own messages for `/clean-bot` and `/bot factory-reset` |
@@ -370,14 +370,16 @@ that job is being tried, which tells you to press again once the try has ended.
 |-----------|------|----------|-------------|
 | `interaction_role` | Role | ✅ | The Discord role permitted to use bot commands |
 | `league_admin_role` | Role | ✅ | The Discord role that governs the bot and may undo a league entire |
-| `interaction_channel` | Channel | ✅ | The only channel where bot commands are accepted |
-| `log_channel` | Channel | ✅ | Channel where computation audit logs are posted |
+| `interaction_channel` | Channel | ✅ | The only channel where bot commands are accepted. The bot needs View Channel and Send Messages there, and Attach Files where a lineup or calendar picture is on. A channel lacking any is refused |
+| `log_channel` | Channel | ✅ | Channel where computation audit logs are posted. The bot needs View Channel and Send Messages there. A channel lacking any is refused |
 
 Exempt from the interaction-channel rule, since no channel is configured until it has run — and it accepts Discord's **Administrator** permission, since the league admin role is one of the things it is setting.
 
 **It is refused while a factory reset is still cleaning up**, with a reply to run it again once the clean-up has finished. That refusal goes to the host's log alone, as no server is claimed then.
 
 **Its reply and its log line name all four settings**, the league admin role among them.
+
+**It refuses a channel the bot cannot use.** Where either channel lacks a permission the bot needs there, `/bot init` is refused naming each permission missing and the channel it is missing in, and where both fail it names both, the interaction channel first. Nothing is claimed or saved, and the refusal goes to the host's log alone, as no log channel is set yet. It is judged again as the server is claimed, so a channel that breaks while the command waits refuses it then. A server already configured is answered that it runs once, and neither channel is judged.
 
 **It runs once.** A second `/bot init` on a configured server is refused, not applied — it names the four commands below instead. To move the league to another server, [`/bot pack`](#bot-pack--ready-the-bot-for-another-server) frees this one first.
 
@@ -396,8 +398,8 @@ The team list always holds the **Reserve** team, which has unlimited seats and c
 
 | Command | Parameter | Changes |
 |---|---|---|
-| `/bot log-channel` | `channel` | Where the bot writes its calculation log |
-| `/bot interaction-channel` | `channel` | The only channel where bot commands are accepted |
+| `/bot log-channel` | `channel` | Where the bot writes its calculation log. The bot needs View Channel and Send Messages there |
+| `/bot interaction-channel` | `channel` | The only channel where bot commands are accepted. The bot needs View Channel and Send Messages there, and Attach Files where a lineup or calendar picture is on |
 | `/bot interaction-role` | `role` | The role permitted to use bot commands |
 | `/bot admin-role` | `role` | The role that governs the bot and may undo a league entire |
 
@@ -405,7 +407,7 @@ Each changes **one** setting and leaves everything else exactly as it stands —
 
 > **These are deliberately usable from any channel, and by a server administrator as well as by a league admin.** They exist for when one of the four settings is wrong — a log channel deleted, an interaction channel archived, either role removed by mistake. Requiring the interaction channel or a league role to run them would lock you out of the very failure they repair, and requiring the league admin role would leave a server that has lost it with no way to set one. These five commands are the only place Discord's Administrator permission reaches the bot at all. For the same reason, each of the four may overtake a stopped job at the head of the league's lane — the stopped job stays stopped, but a repair asked behind it need not wait with everything else.
 
-Setting `/bot interaction-role` or `/bot admin-role` to the role it already holds changes nothing: you're told so, it's logged as nothing changed, no audit entry is written, and the hub's permissions are left alone. The two channel commands, by contrast, refuse outright if you give them the channel they already hold.
+Setting `/bot interaction-role` or `/bot admin-role` to the role it already holds changes nothing: you're told so, it's logged as nothing changed, no audit entry is written, and the hub's permissions are left alone. The two channel commands, by contrast, refuse outright if you give them the channel they already hold, and refuse a channel on which the bot lacks a permission it needs, once that is settled: *"❌ The bot is missing permissions it needs in #channel as the bot log channel: Send Messages. Give the bot them there, or pick another channel. Nothing was changed."* Nothing is saved or audited then. The check is made again as the change starts, and a channel deleted meanwhile is refused as no longer on the server. Where the bot cannot tell, because the server is not to be had or Discord answers with an error, the channel is set.
 
 If the bot has never been configured on the server, these refuse and point you at `/bot init`.
 
@@ -446,7 +448,7 @@ The hub is the one channel every member of your league can use the bot from, rat
 
 **Who can see it.** Holders of the league's [base role](#bot-base-role-bot-driver-role--set-the-leagues-two-roles), or every member where you have set none, and holders of the interaction role and the league admin role. Nobody but the bot can post there, so the panel stays in view. Setting the hub replaces the channel's own permissions, so use a channel of its own. Changing the base role or either league role later sets them again. If the base role you set has since been deleted from the server, the hub stays closed to members and the reply says so.
 
-**Moving it** posts the panel in the new channel and then deletes it from the old one, each a job of the change queue, and clears the permissions the bot set in the old one. The hub may not share a channel with anything else the bot posts to. The bot needs **Manage Channel** and **Manage Permissions** on the channel, and refuses before changing anything if it lacks either. A permission Discord refuses is named in the reply and the log channel, and the hub stays set. A panel Discord refuses or cannot post stops the change queue like any post, with Retry and Discard on its notice, and the hub stays set.
+**Moving it** posts the panel in the new channel and then deletes it from the old one, each a job of the change queue, and clears the permissions the bot set in the old one. The hub may not share a channel with anything else the bot posts to. The bot needs View Channel, Send Messages, Embed Links, **Manage Channel** and **Manage Permissions** on the channel, and refuses before changing anything if it lacks any, naming each permission missing, as every command setting a channel does. A permission Discord refuses is named in the reply and the log channel, and the hub stays set. A panel Discord refuses or cannot post stops the change queue like any post, with Retry and Discard on its notice, and the hub stays set.
 
 This is a change on the queue: you are told at once that it is under way ("⏳ Setting **Hub channel** to <#…>. This message will be updated when it is done; if it takes longer, the log channel will say so."), and that message is updated once it has run. Where the permissions cannot be set at all — a fault of the bot's own, not Discord refusing one — the hub is still set, and the reply adds "⚠️ The setting is saved, but the hub's permissions could not be updated.".
 
@@ -908,7 +910,7 @@ and from the gate on completing the season. It is refused while any round of the
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `name` | String | ✅ | Division name |
-| `channel` | Channel | ✅ | Channel where the division's lineup is posted. The bot needs View Channel, Send Messages and Embed Links there, and Attach Files where the lineup is drawn as a picture |
+| `channel` | Channel | ✅ | Channel where the division's lineup is posted. The bot needs View Channel, Send Messages and Embed Links there, and Attach Files where the lineup is drawn as a picture. A channel lacking any is refused |
 
 #### `/division calendar-channel` — Set the calendar posting channel for a division
 *Access: League manager*
@@ -916,7 +918,7 @@ and from the gate on completing the season. It is refused while any round of the
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `name` | String | ✅ | Division name |
-| `channel` | Channel | ✅ | Channel where the division's calendar is posted. The bot needs View Channel and Send Messages there, and Attach Files where the calendar is drawn as a picture |
+| `channel` | Channel | ✅ | Channel where the division's calendar is posted. The bot needs View Channel and Send Messages there, and Attach Files where the calendar is drawn as a picture. A channel lacking any is refused |
 
 > **Both are required at approval**, whatever modules you run. A division missing its lineup or calendar channel, or whose channel has since been deleted from the server or taken a permission the bot needs from it, is named in `/season placements-review` with the command that sets it, the Approve button is withheld, and pressing a button already offered is refused on the same reading. See [`/season placements-review`](#season-placements-review--review-pending-configuration).
 
@@ -926,7 +928,7 @@ A division's other six channels are its modules', each set by that module's own 
 
 > **Each of the eight channel commands says whether it set the channel or moved it.** The reply reads *set to* where the division had no channel for that purpose and *updated to* where it replaced one — worth noticing before the next post lands somewhere you did not expect. The previous channel is recorded in the audit either way.
 
-> **Each of the eight is a setting on the change queue.** It answers at once that it is under way (*"⏳ Setting the lineup channel for **Pro** to #lineups. …"*) and updates that reply once it has run, and asking the same again while the first waits is refused. It is judged again when its turn comes, so the module switched off, the division deleted, the season ended or the channel given another job while it waited refuses it then; a division renamed meanwhile still gets its channel. **It runs past a stopped job**, so a post that stopped the queue for want of its channel — a lineup, a calendar, a forecast, a results post, a check-in call or a sheet — is put right by setting the channel and pressing Retry.
+> **Each of the eight is a setting on the change queue.** It answers at once that it is under way (*"⏳ Setting the lineup channel for **Pro** to #lineups. …"*) and updates that reply once it has run, and asking the same again while the first waits is refused. It is judged again when its turn comes, so the module switched off, the division deleted, the season ended, the channel given another job, a permission the bot needs taken away or the channel deleted while it waited refuses it then; a division renamed meanwhile still gets its channel. **It runs past a stopped job**, so a post that stopped the queue for want of its channel — a lineup, a calendar, a forecast, a results post, a check-in call or a sheet — is put right by setting the channel and pressing Retry.
 
 #### `/division calendar-sync` — Repost a division's calendar
 *Access: League manager*
@@ -1101,6 +1103,8 @@ The module name is the only parameter. A module that needs channels is configure
 
 **Switching `weather`, `results`, `attendance` or `signup` on checks the channels it kept.** Each division's channels the module kept while it was off (the one signup channel, for signup) are looked at before anything is saved, for the season now running. A channel that is **no longer on the server** is kept as it is and named; a channel **given to another setting while the module was off** is cleared from the module and named. Both are listed beneath the reply under *"⚠️ Set these again: each is no longer on the server, or was given to another setting while the module was off:"*, each with the command that sets it again. Of two switched-off modules holding one channel, the first switched back on keeps it. A kept channel the bot **cannot use as the module needs** — it lacks a permission the channel's own command asks for there (View Channel and Send Messages everywhere; Read Message History for the results, standings, verdicts, check-in and attendance channels; Embed Links for the check-in channel; Attach Files where a picture of the module's could be posted; Embed Links, Manage Channel and Manage Permissions on the signup channel; see each command's table below) — **refuses the switch-on**: *"⛔ The module is still off: kept channels are missing permissions the bot needs there: …"*, naming each channel and what it lacks, and saying to give the bot them, delete the channel, or give it to another setting, then run `/module enable …` again. Where Discord cannot answer, or the server is out of reach, the module stays off and the reply says to run the command again. Nothing is saved by a refused or failed switch-on.
 
+**Switching `images` on checks the channels its outputs already on post to.** The configuration is kept while the module is off, so each output left switched on is judged as `/images config toggle` judges one being switched on: every channel it posts to must be on the server and give the bot every permission its use needs, Attach Files included. Where any does not, the switch-on is **refused**: *"⛔ The image module is still off: outputs switched on post to channels that cannot take them:"*, a line to a channel naming the outputs that post there (the bot command channel failing for the lineup and the calendar is one line naming both) and what it lacks or that it is no longer on the server, and saying to give the bot those permissions, set those channels again, or switch those outputs back to text with `/images config toggle`, then run `/module enable images` again. An output left as text has no channel judged. Where the bot cannot tell, the module stays off and the reply says to run the command again. Nothing is saved by a refused switch-on.
+
 **Switching `signup` on then puts the bot's permissions back on its channel, before it saves.** They are set as `/signup channel` sets them, with the league's base role as it stands now, and what you set on the channel by hand beside them stays. If putting them back fails part-way, what was put back is taken back and the module stays off: run `/module enable signup` again. If the save fails after they were put back, they are taken back too. If Discord refuses a take-back, the reply and the log say so: *"Permissions the bot put on the signup channel <#channel> were left there: run `/module enable signup` again, or remove them by hand."* The reply asks you to run `/signup channel` only where no channel is kept.
 
 Ordering and timing constraints:
@@ -1128,7 +1132,7 @@ Historical data is always retained. No module's disable clears its settings, the
 | `attendance` | Nothing. The server-level notice, reminder and deadline timings, every penalty value and every division's check-in and attendance channels are kept while it is off, and switching it on again finds them as they stood, save that each is checked first (see [`/module enable`](#module-enable--enable-a-bot-module)) — whether it went off directly or with `results`. Only the first switch-on writes the packaged values. Every check-in call, reminder and deadline still to come stops at once, for the rest of the season — a call already posted stays where it is, but its buttons no longer record an answer. Each division's attendance sheet stays where it is |
 | `weather` | Nothing. Division forecast channels (checked when it is switched on again), the configured phase deadlines, recorded phase results and forecast messages already posted all survive; its own scheduled jobs — the three forecast phases and the post-race cleanup, for every round still to come — are cancelled, and the result-submission and check-in jobs belonging to the other modules are left running. Where those jobs cannot be removed, the module is off all the same and the reply says so: they do nothing while it is off |
 | `results` | No configuration — channels (checked when it is switched on again), points configurations and season attachments all survive. But where a season is **ACTIVE** it destroys that season's results: every classification recorded, every standing computed from them, and every results and standings message already posted are deleted, and every round still awaiting results, report verdicts or appeal verdicts is closed as having run without results. Every penalty and appeal verdict already announced is removed from the verdicts channel too, with the header above it; auto-sack and auto-reserve announcements stay |
-| `images` | Nothing. It stores only filesystem paths and display preferences, and re-enabling restores the configuration exactly, each aspect on or off as you left it, and the reply to `/module enable images` says so |
+| `images` | Nothing. It stores only filesystem paths and display preferences, and re-enabling restores the configuration exactly, each aspect on or off as you left it, and the reply to `/module enable images` says so. The channels each output left on posts to are judged on re-enabling (see [`/module enable`](#module-enable--enable-a-bot-module)), and an output can be switched back to text while the module is off |
 
 > **Disabling `results` disables `attendance` with it**, where attendance is on. Because that stops every check-in call, reminder and deadline still to come and cannot be undone until the season ends, the bot warns you first and writes nothing until you confirm: you are told what the cascade will take, and the reply that follows names both modules and says that attendance's settings and its division channels are kept. The cascade is recorded in the log channel and audited as `ATTENDANCE_MODULE_CASCADE_DISABLED`.
 
@@ -1195,11 +1199,11 @@ No parameters. Replies to you alone with the Phase 1, Phase 2 and Phase 3 deadli
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `name` | String | ✅ | Division name |
-| `channel` | Channel | ✅ | Channel where weather forecast messages are posted. The bot needs View Channel and Send Messages there, and Attach Files where forecasts are drawn as pictures |
+| `channel` | Channel | ✅ | Channel where weather forecast messages are posted. The bot needs View Channel and Send Messages there, and Attach Files where forecasts are drawn as pictures. A channel lacking any is refused |
 
 Required for every division while the weather module is enabled: approval is refused until each one has a forecast channel, and a division created by `/division duplicate` does not inherit the source division's. For the rest of the module's setup, see [Configuring the weather module](docs/how-to/configuring-the-weather-module.md).
 
-It acts on the season being built or raced, pending completion included, so a forecast channel deleted before the season completes can be repaired. It is refused while the weather module is off (`❌ The Weather module is not enabled.`), for a channel already doing another job, and for the channel the division already has. Like every division channel command it is a change on the queue that runs past a stopped job — see [`/division lineup-channel`](#division-lineup-channel--set-the-lineup-posting-channel-for-a-division).
+It acts on the season being built or raced, pending completion included, so a forecast channel deleted before the season completes can be repaired. It is refused while the weather module is off (`❌ The Weather module is not enabled.`), for a channel already doing another job, for the channel the division already has, and for a channel where the bot lacks a permission it needs. Like every division channel command it is a change on the queue that runs past a stopped job — see [`/division lineup-channel`](#division-lineup-channel--set-the-lineup-posting-channel-for-a-division).
 
 ---
 
@@ -1449,7 +1453,7 @@ All commands below require the signup module to be enabled (`/module enable sign
 
 Applies the channel's permission overwrites: `@everyone` cannot view, the league's base role can view but not send, and the interaction role and the league admin role can view and send. Setting a new signup channel clears **all** overwrites from the previously configured channel, after the new channel's are set. Switching the module off removes the bot's permissions from the channel and keeps it set; switching it on checks the channel and puts them back (see [`/module enable`](#module-enable--enable-a-bot-module)). The signup channel may not be the interaction channel. Where signups are open, the **Driver Signups Are Open!** message with its Sign Up button is posted in the new channel as well, once its permissions are set, so drivers can sign up in it at once. If the stored signup channel has been deleted from the server mid-season, this command replaces it even once the season's configuration is confirmed, and even while the queue is stopped.
 
-**The bot needs both Manage Channels and Manage Roles on the channel**, which Discord shows on a channel as **Manage Channel** and **Manage Permissions**. With either missing on the new channel, or on the old signup channel it is to clear, the command is refused before anything is changed: *"❌ The bot needs **Manage Channel** and **Manage Permissions** on #channel to set who may see it. The signup channel was not changed."* If Discord refuses a change the bot could not foresee, the new channel stands as the signup channel and the reply names what could not be set, to put right by hand. If the move goes through but the bot cannot clear the old channel's permissions, the new channel stands and the reply and the log line name the old channel, which stays locked until you put it right by hand.
+**The bot needs View Channel, Send Messages, Embed Links, Manage Channel and Manage Permissions on the new channel.** With any missing, the command is refused before anything is changed, in the words every command setting a channel uses, each permission missing named: *"❌ The bot is missing permissions it needs in #channel as the signup channel: Embed Links. Give the bot them there, or pick another channel. Nothing was changed."* Setting who may see a channel needs both Manage Channels and Manage Roles, which Discord shows on a channel as **Manage Channel** and **Manage Permissions**, and the old signup channel it is to clear is held to those two alone. With either missing there, the command is refused before anything is changed: *"❌ The bot needs **Manage Channel** and **Manage Permissions** on #channel to set who may see it. The signup channel was not changed."* Where the league's server is not to hand, the permissions cannot be judged or set, and the command fails with nothing changed, telling you to run it again; the other commands setting a channel set it there. If Discord refuses a change the bot could not foresee, the new channel stands as the signup channel and the reply names what could not be set, to put right by hand. If the move goes through but the bot cannot clear the old channel's permissions, the new channel stands and the reply and the log line name the old channel, which stays locked until you put it right by hand.
 
 The two roles the module uses are the league's, set by [`/bot base-role` and `/bot driver-role`](#bot-base-role-bot-driver-role--set-the-leagues-two-roles). The channel and both roles must be set before `/signup open` will run, and — while the signup module is enabled — before a season's configuration can be confirmed. Both roles must also still be on the server, and the driver role must be one the bot can grant.
 
@@ -1628,7 +1632,7 @@ All commands below require the results module to be enabled (`/module enable res
 
 #### Division Channels
 
-The three act on the season being built or raced, pending completion included, so a channel deleted before the season completes can be repaired. Each is refused while the results & standings module is off (`❌ The Results & Standings module is not enabled.`), for a channel already doing another job, and for the channel the division already has. Like every division channel command each is a change on the queue that runs past a stopped job, so a results post stopped for want of its channel is put right by setting it and pressing Retry — see [`/division lineup-channel`](#division-lineup-channel--set-the-lineup-posting-channel-for-a-division).
+The three act on the season being built or raced, pending completion included, so a channel deleted before the season completes can be repaired. Each is refused while the results & standings module is off (`❌ The Results & Standings module is not enabled.`), for a channel already doing another job, for the channel the division already has, and for a channel where the bot lacks a permission it needs. Like every division channel command each is a change on the queue that runs past a stopped job, so a results post stopped for want of its channel is put right by setting it and pressing Retry — see [`/division lineup-channel`](#division-lineup-channel--set-the-lineup-posting-channel-for-a-division).
 
 ##### `/results channel results` — Set the results posting channel for a division
 *Access: League manager · Results & Standings module required*
@@ -1636,7 +1640,7 @@ The three act on the season being built or raced, pending completion included, s
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `name` | String | ✅ | Division name |
-| `channel` | Channel | ✅ | Channel where session results are posted. The bot needs View Channel, Send Messages and Read Message History there, and Attach Files where results are drawn as pictures |
+| `channel` | Channel | ✅ | Channel where session results are posted. The bot needs View Channel, Send Messages and Read Message History there, and Attach Files where results are drawn as pictures. A channel lacking any is refused |
 
 ##### `/results channel standings` — Set the standings posting channel for a division
 *Access: League manager · Results & Standings module required*
@@ -1644,7 +1648,7 @@ The three act on the season being built or raced, pending completion included, s
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `name` | String | ✅ | Division name |
-| `channel` | Channel | ✅ | Channel where standings tables are posted. The bot needs View Channel, Send Messages and Read Message History there, and Attach Files where standings are drawn as pictures |
+| `channel` | Channel | ✅ | Channel where standings tables are posted. The bot needs View Channel, Send Messages and Read Message History there, and Attach Files where standings are drawn as pictures. A channel lacking any is refused |
 
 ##### `/results channel verdicts` — Set the verdicts channel for a division
 *Access: League manager · Results & Standings module required*
@@ -1652,9 +1656,9 @@ The three act on the season being built or raced, pending completion included, s
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `name` | String | ✅ | Division name |
-| `channel` | Channel | ✅ | Channel where penalty and appeal verdicts are announced. The bot needs View Channel, Send Messages and Read Message History there, and Attach Files where verdicts or their banners are drawn as pictures |
+| `channel` | Channel | ✅ | Channel where penalty and appeal verdicts are announced. The bot needs View Channel, Send Messages and Read Message History there, and Attach Files where verdicts or their banners are drawn as pictures. A channel lacking any is refused |
 
-The bot must be able to post in the verdicts channel, or it is refused: `❌ Cannot access that channel. Ensure the bot has permission to post there.`
+A channel where the bot lacks a permission it needs is refused, whichever of the three it is, with each permission missing named and nothing saved: `❌ The bot is missing permissions it needs in #channel as the verdicts channel for **Division**: Send Messages. Give the bot them there, or pick another channel. Nothing was changed.` Where the bot cannot tell, because the server is not to be had or Discord answers with an error, the channel is saved.
 
 Approval is refused until each division has all three, and a division created by `/division duplicate` does not inherit them. For the rest of the module's setup, see [Configuring the results & standings module](docs/how-to/configuring-the-results-module.md).
 
@@ -2256,7 +2260,7 @@ All commands below require the attendance module to be enabled (`/module enable 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `name` | String | ✅ | Division name |
-| `channel` | Channel | ✅ | Channel where check-in calls are posted. The bot needs View Channel, Send Messages, Embed Links and Read Message History there, and Attach Files where the call is drawn with a picture |
+| `channel` | Channel | ✅ | Channel where check-in calls are posted. The bot needs View Channel, Send Messages, Embed Links and Read Message History there, and Attach Files where the call is drawn with a picture. A channel lacking any is refused |
 
 #### `/attendance channel attendance` — Set the attendance logging channel for a division
 *Access: League manager · Attendance module required*
@@ -2264,9 +2268,9 @@ All commands below require the attendance module to be enabled (`/module enable 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `name` | String | ✅ | Division name |
-| `channel` | Channel | ✅ | Channel where the attendance sheet is posted. The bot needs View Channel, Send Messages and Read Message History there, and Attach Files where the sheet is drawn as a picture |
+| `channel` | Channel | ✅ | Channel where the attendance sheet is posted. The bot needs View Channel, Send Messages and Read Message History there, and Attach Files where the sheet is drawn as a picture. A channel lacking any is refused |
 
-Both are required for every division while the attendance module is enabled: approval is refused until each division has both. Each acts on the season being built or raced, pending completion included, so a channel deleted before the season completes can be repaired. Each is refused while the module is off (`❌ The Attendance module is not enabled.`), for a channel the bot cannot post in, for a channel already doing another job, and for the channel the division already has. Like every division channel command each is a change on the queue that runs past a stopped job, so a check-in call or sheet stopped for want of its channel is put right by setting it and pressing Retry — see [`/division lineup-channel`](#division-lineup-channel--set-the-lineup-posting-channel-for-a-division).
+Both are required for every division while the attendance module is enabled: approval is refused until each division has both. Each acts on the season being built or raced, pending completion included, so a channel deleted before the season completes can be repaired. Each is refused while the module is off (`❌ The Attendance module is not enabled.`), for a channel already doing another job, for the channel the division already has, and for a channel where the bot lacks a permission it needs. Like every division channel command each is a change on the queue that runs past a stopped job, so a check-in call or sheet stopped for want of its channel is put right by setting it and pressing Retry — see [`/division lineup-channel`](#division-lineup-channel--set-the-lineup-posting-channel-for-a-division).
 
 > **Each setting below is a change on the queue,** acknowledged at once and updated with the reply it has always given; the rules below are judged again when its turn comes. **Each is recorded with the value it replaced.** A change made with an `/attendance config` command is written to the log channel and to the audit record, each giving the new value and the old. Setting the value a setting already holds changes nothing: the bot says so, writes nothing, and the log channel records that nothing changed.
 
@@ -2430,6 +2434,10 @@ The image module posts bot output as generated PNGs instead of text, by filling 
 Flips that aspect between a generated image and the text the bot has always posted. All nine start disabled the first time the module is switched on; switching it on again keeps each as you left it. It is a **toggle**: run it on an aspect that is off and it comes on, run it again and it goes back to text.
 
 **Switching one on checks its drawings first.** If any drawing that aspect needs is missing or unusable, the command is **refused** — it names each fault, and the aspect stays off. That is deliberate: an aspect switched on over a broken drawing posts nothing at all where your drivers would otherwise have read text, and it withholds your season's approval besides. Switching an aspect **off** is never refused, whatever state its drawings are in: text needs no drawing, so you can always retreat to it.
+
+**Switching one on checks its channels too.** Every channel the output posts to that is set must be on the server and give the bot every permission its use needs there, Attach Files included, counting the output as a picture: the division's lineup channel for the lineup, its calendar channel for the calendar, the bot command channel for both of those, and each other output's channels as its module's commands set out. Where one is gone or lacks a permission the command is **refused** — *"⛔ **Lineup** image output was **not** switched on — channels it posts to cannot take it:"* — with a line for each channel naming it, what it serves and what it lacks (*"no longer on the server"* where it is gone), and saying to give the bot those permissions or set those channels again, then run `/images config toggle` again. The output is still posted as text, and a channel an output left as text posts to is never judged. The channels of a module that is off, of a cancelled division and of a finished season are passed over. Where the bot cannot tell, nothing changes and the reply says to run the command again.
+
+**Switching an output off can be done while the module is off.** Switching one on cannot: the command is refused until `/module enable images` has run. Switching off judges no drawing and no channel.
 
 **A broken drawing only blocks a season if the output that draws it is on.** `/season placements-review` and approval apply the same rule — a fault under a switched-off output is shown as a ⚠️ warning and stops nothing, because nothing would ever post it. Fix it before you switch that output on; the review names it either way so it does not catch you out later.
 

@@ -57,6 +57,7 @@ from tests.support.change_queue import (
     stop_the_league_lane,
     stopped_job,
 )
+from tests.support.channel_faults import answer_attachments, league_server
 from tests.support.season_league import set_module_flag
 from tests.support.settings_league import interaction as member_asks
 from tests.support.settings_league import last_said, unruled
@@ -92,6 +93,16 @@ _ALREADY = (
     f"changed."
 )
 
+#: The refusal #forecasts is given where the bot lacks permissions a forecast needs there, the
+#: permissions it lacks filled in.
+_CANNOT_USE = (
+    f"❌ The bot is missing permissions it needs in <#{CHANNEL_ID}> as the weather forecast "
+    f"channel for **Division 1**: {{missing}}. Give the bot them there, or pick another channel. "
+    f"Nothing was changed."
+)
+
+#: The refusal #forecasts is given where it has been deleted from the server.
+_GONE = f"❌ <#{CHANNEL_ID}> is no longer on the server. Nothing was changed."
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -403,6 +414,73 @@ async def test_a_refused_assignment_writes_nothing(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# A channel the bot cannot use (#570)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "denied,pictures,held,refused",
+    [
+        pytest.param(
+            "send_messages", False, None, _CANNOT_USE.format(missing="Send Messages"),
+            id="send-messages-denied",
+        ),
+        pytest.param(
+            "attach_files", True, None, _CANNOT_USE.format(missing="Attach Files"),
+            id="attach-files-denied-while-weather-draws-pictures",
+        ),
+        pytest.param(
+            "attach_files", False, None, None, id="attach-files-denied-while-weather-draws-none"
+        ),
+        pytest.param(
+            "send_messages", False, "already", _ALREADY,
+            id="send-messages-denied-in-the-channel-already-set",
+        ),
+        pytest.param(
+            "send_messages", False, "clash", _RESULTS_CLASH,
+            id="send-messages-denied-in-a-channel-doing-another-job",
+        ),
+    ],
+)
+async def test_a_channel_the_bot_cannot_use_is_refused_and_recorded(
+    tmp_path, denied, pictures, held, refused
+):
+    """Season 1 is being set up, and its Division 1 has no forecast channel; the league's server
+    holds #forecasts, where the bot holds every permission but one. The manager (id 77) runs
+    `/weather channel` for #forecasts, and the queue runs. Denied Send Messages, which every
+    forecast needs, the command is refused naming Send Messages; denied Attach Files while the
+    image module answers that weather's pictures could attach a file, it is refused naming Attach
+    Files. Where #forecasts is already Division 1's forecast channel, or Division 2's results
+    channel, the bot denied Send Messages there too, the "already" or clash refusal comes first,
+    never the missing-permissions one. Refused, the reply is the refusal word for word, Division 1
+    keeps the forecast channel it had, nothing is audited, and the log channel takes the refusal
+    as its only line. Denied Attach Files while weather draws no picture, Attach Files is not
+    asked for and #forecasts is set."""
+    db_path = await _make_db(tmp_path)
+    if held == "already":
+        await _seed_forecast_channel(db_path, CHANNEL_ID)
+    if held == "clash":
+        await _seed_other_division_results(db_path, CHANNEL_ID)
+    cog = await _make_cog(db_path)
+    league_server(cog.bot, unusable={CHANNEL_ID: (denied,)})
+    answer_attachments(cog.bot.image_drawing, *(("weather",) if pictures else ()))
+    interaction = _interaction(cog)
+
+    await _run(cog, interaction)
+
+    if refused is None:
+        assert _replied(interaction) == (
+            f"✅ Weather forecast channel for **Division 1** set to <#{CHANNEL_ID}>."
+        )
+        assert await _forecast_channel(db_path) == CHANNEL_ID
+        return
+    assert _replied(interaction) == refused
+    assert await _forecast_channel(db_path) == (CHANNEL_ID if held == "already" else None)
+    assert await _audit(db_path) == []
+    assert _lines(cog) == [_refusal_line(refused)]
+
+
+# ---------------------------------------------------------------------------
 # The assignment
 # ---------------------------------------------------------------------------
 
@@ -655,24 +733,34 @@ async def test_the_same_change_asked_again_while_it_waits_is_refused_as_a_repeat
 # ---------------------------------------------------------------------------
 
 
-async def _switch_weather_off(db_path: str) -> None:
+async def _switch_weather_off(db_path: str, bot) -> None:
     await set_module_flag(db_path, "weather", False)
 
 
-async def _delete_the_division(db_path: str) -> None:
+async def _delete_the_division(db_path: str, bot) -> None:
     async with get_connection(db_path) as db:
         await db.execute("DELETE FROM divisions WHERE id = ?", (DIVISION_ID,))
         await db.commit()
 
 
-async def _end_the_season(db_path: str) -> None:
+async def _end_the_season(db_path: str, bot) -> None:
     async with get_connection(db_path) as db:
         await db.execute("UPDATE seasons SET status = 'COMPLETED' WHERE id = ?", (SEASON_ID,))
         await db.commit()
 
 
-async def _claim_the_channel(db_path: str) -> None:
+async def _claim_the_channel(db_path: str, bot) -> None:
     await _seed_other_division_results(db_path, CHANNEL_ID)
+
+
+async def _lose_the_permission(db_path: str, bot) -> None:
+    """The bot is denied Send Messages in #forecasts, which every forecast needs."""
+    league_server(bot, unusable={CHANNEL_ID: ("send_messages",)})
+
+
+async def _delete_the_channel(db_path: str, bot) -> None:
+    """#forecasts is deleted from the server."""
+    league_server(bot, gone=(CHANNEL_ID,))
 
 
 @pytest.mark.parametrize(
@@ -682,25 +770,36 @@ async def _claim_the_channel(db_path: str) -> None:
         pytest.param(_delete_the_division, _NOT_FOUND, id="division_deleted"),
         pytest.param(_end_the_season, _NO_SEASON, id="season_ended"),
         pytest.param(_claim_the_channel, _RESULTS_CLASH, id="channel_claimed"),
+        pytest.param(
+            _lose_the_permission, _CANNOT_USE.format(missing="Send Messages"),
+            id="permission_lost",
+        ),
+        pytest.param(
+            _delete_the_channel, _GONE,
+            id="channel_deleted",
+        ),
     ],
 )
 async def test_a_change_is_refused_as_it_starts_where_its_ask_no_longer_holds(
     tmp_path, meanwhile, refused
 ):
-    """Season 1 is being set up, and its Division 1 has no forecast channel. The manager (id 77)
-    asks for #forecasts, and is acknowledged; before the change runs, as a change waiting ahead
-    of it on the league's lane would, weather is switched off, or Division 1 is deleted, or
-    Season 1 is completed, or #forecasts is made Division 2's results channel. The change judges
-    again as it starts and is refused: Division 1's forecast channel is not written, nothing is
-    audited, the manager's reply becomes the refusal the command gives at the ask, word for word,
-    the log channel takes that refusal as its only line, and the queue is not stopped."""
+    """Season 1 is being set up, and its Division 1 has no forecast channel; the league's server
+    holds #forecasts, the bot holding every permission there. The manager (id 77) asks for
+    #forecasts, and is acknowledged; before the change runs, as a change waiting ahead of it on
+    the league's lane would, weather is switched off, or Division 1 is deleted, or Season 1 is
+    completed, or #forecasts is made Division 2's results channel, or the bot is denied Send
+    Messages in #forecasts, or #forecasts is deleted. The change judges again as it starts and is
+    refused: Division 1's forecast channel is not written, nothing is audited, the manager's reply
+    becomes the refusal the command gives at the ask, word for word, the log channel takes that
+    refusal as its only line, and the queue is not stopped."""
     db_path = await _make_db(tmp_path)
     cog = await _make_cog(db_path)
+    league_server(cog.bot)
     interaction = _interaction(cog)
 
     await _ask(cog, interaction)
     assert acknowledgement(interaction).startswith("⏳ ")
-    await meanwhile(db_path)
+    await meanwhile(db_path, cog.bot)
     await run_queue(cog.bot)
 
     assert _replied(interaction) == refused

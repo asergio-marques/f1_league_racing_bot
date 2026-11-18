@@ -29,6 +29,20 @@ before a first `/bot init` or after a pack, for anyone to clear a stop with.
   above, or this server's own claim, taken first by another save — the narrower "already
   configured" that `check` has not already caught.
 
+**A fourth refusal, the channels, is `check`'s**: the interaction channel and the log channel
+`/bot init` was given must be ones the bot can use (`init_channel_refusals`, the same judgement
+`BotCog.handle_bot_init` makes at the ask, on the interaction's server), judged again as the
+change starts, on the payload's server, where a channel broken or deleted since the ask refuses
+the change and claims nothing. It is `check`'s, never the save's, because it reads Discord, and
+what the save reads is the database alone (`docs/design/architecture.md`, "How a change is
+carried out"). It is judged only where no server holds the league: where this server holds it
+the answer is "already configured", and where another does, the save reports it as it always
+has, neither of them for a channel's sake. The refusal ends the change REFUSED, the member's
+acknowledgement becoming it, and `on_refused` writes it to the host's log alone, as the ones
+above are, there being no log channel of the league's to write to yet; the queue's own line for
+a refusal has nowhere to go for the same reason, and no league channel is judged, for none is
+claimed.
+
 None of the three can be a `Verdict.refuse` from `check`: that path always writes a line to the
 league's log channel (`ChangeQueue._refuse`), which the first two must not reach, there being no
 log channel of this server's league to write to yet. Instead the save reports them for itself, in
@@ -68,12 +82,20 @@ from leaguebot.framework.models.change import (
     Verdict,
 )
 from leaguebot.core.models.server_config import ServerConfig
-from leaguebot.framework.services.queue.change_types import ChangeType, CheckContext, Step, StepContext
+from leaguebot.core.services.settings.bot_settings import init_channel_refusals
+from leaguebot.framework.services.queue.change_types import (
+    ChangeType,
+    CheckContext,
+    RefusedContext,
+    Step,
+    StepContext,
+)
 from leaguebot.framework.services.queue.setting_change import NOTHING_SAVED
 from leaguebot.framework.utils.interaction_errors import failure_reply
-from leaguebot.framework.utils.log_lines import refusal_line, reply_reason
+from leaguebot.framework.utils.log_lines import refusal_line, reply_reason, reply_reasons
 
 if TYPE_CHECKING:
+    from leaguebot.core.services.modules.image_drawing import ImageDrawing
     from leaguebot.core.services.settings.config_service import ConfigService
 
 log = logging.getLogger(__name__)
@@ -130,19 +152,43 @@ def _line_detail(column: str, line_key: str, payload: dict[str, Any], value: int
     return f"{line_key}: {payload[name_key]} ({mention})" if name_key else f"{line_key}: {mention}"
 
 
-def _check(config: "ConfigService") -> Callable[[CheckContext], Awaitable[Verdict]]:
+def _check(
+    config: "ConfigService", drawing: "ImageDrawing"
+) -> Callable[[CheckContext], Awaitable[Verdict]]:
     async def check(ctx: CheckContext) -> Verdict:
-        """"Already configured" alone: this server, asking again, is refused word for word, both
-        at the ask and again as the change starts, in the league's log channel either time.
-        Another server holding the league, and a factory reset cleaning up, are the save's to
-        judge — see the module: a config claimed by a server other than this payload's is not
-        this refusal."""
+        """"Already configured" where this server holds the league, and the two channels where no
+        server does. Both are refused at the ask and again as the change starts: the first word
+        for word in the league's log channel either time, the second to the host's log alone
+        (`on_refused`).
+
+        The channels are judged on the payload's server, by `init_channel_refusals`, only where no
+        server is claimed: another server holding the league, and a factory reset cleaning up,
+        are the save's to judge — see the module: a config claimed by a server other than this
+        payload's is not this refusal, and goes on to the save, which reports it as ever."""
         league_server_id = await config.get_league_server_id()
-        if league_server_id is not None and league_server_id == int(ctx.payload["server_id"]):
-            return Verdict.refuse(ALREADY_CONFIGURED)
-        return Verdict.go()
+        server_id = int(ctx.payload["server_id"])
+        if league_server_id is not None:
+            if league_server_id == server_id:
+                return Verdict.refuse(ALREADY_CONFIGURED)
+            return Verdict.go()
+        refusal = await init_channel_refusals(
+            ctx.bot.get_guild(server_id),
+            interaction_channel_id=int(ctx.payload["interaction_channel_id"]),
+            log_channel_id=int(ctx.payload["log_channel_id"]),
+            drawing=drawing,
+        )
+        return Verdict.go() if refusal is None else Verdict.refuse(refusal)
 
     return check
+
+
+def _on_refused(ctx: RefusedContext) -> tuple[()]:
+    """A refusal of the channels, as the change starts: the host's log alone records it, and no
+    follow-on is owed. "Already configured" is the league's log channel's, the queue's own line,
+    and is not written here as well."""
+    if ctx.reply != ALREADY_CONFIGURED:
+        log.info("%s refused for %s: %s", ctx.what, ctx.actor_id, reply_reasons(ctx.reply))
+    return ()
 
 
 def _doing(_payload: dict[str, Any]) -> str:
@@ -259,21 +305,23 @@ def _outcome(ctx: Any) -> str:
     return f"✅ Bot configuration saved!\n{lines}"
 
 
-def bot_init_change(*, config: "ConfigService") -> ChangeType:
+def bot_init_change(*, config: "ConfigService", drawing: "ImageDrawing") -> ChangeType:
     """The `core.bot_init` change type, for the builder to register, *config* read and written as
-    `_check` and `_save` need it: a service is handed what it needs by whoever builds it, never
+    `_check` and `_save` need it, and *drawing* read as `_check` needs it, to know whether the
+    command channel is to receive pictures: a service is handed what it needs by whoever builds it, never
     looked up on the bot (`docs/design/architecture.md`, "How modules and core fit together")."""
     return ChangeType(
         kind=KIND,
         opening=(PlannedStep(SAVE),),
         steps={SAVE: Step(SAVE, StepKind.SAVE, _save(config), on_fault=_on_fault)},
-        check=_check(config),
+        check=_check(config, drawing),
         key=lambda payload: f"{KIND}|{json.dumps(payload, sort_keys=True)}",
         doing=_doing,
         outcome=_outcome,
         lane=lambda _payload: LEAGUE_LANE,
         writes=("server_configs",),
         on_check_fault=_check_fault_reply,
+        on_refused=_on_refused,
     )
 
 

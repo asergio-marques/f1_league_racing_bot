@@ -383,6 +383,27 @@ def _sign_up_to_division_channel_faults_read(bot: LeagueBot) -> None:
     attendance_wiring.sign_up_to_division_channel_faults_read(bot)
 
 
+def _sign_up_to_picture_channels_read(bot: LeagueBot) -> None:
+    """Make the hook the channels an output about to be a picture posts to are read through, and
+    sign core's part and each module's up to it, each answering the channels of the outputs it
+    posts, with what they need as a picture (`picture_channels_check`, run before an output is
+    switched on and by the image module's own switch-on). Core's part (the lineup and calendar
+    channels, and the bot command channel) is handed the configuration and the image module's
+    drawing, weather, results and attendance the module service, which answers whether each is on,
+    and the drawing; they sign up in the order a division's channels read, core's first. The
+    builder hands it to the image module's settings (architecture.md, "How modules and core fit
+    together")."""
+    from leaguebot.core.services.modules import picture_channels
+
+    bot.picture_channels_read = AwaitedHook()
+    bot.picture_channels_read.subscribe(
+        partial(picture_channels.core_picture_channels, bot.config_service, bot.image_drawing)
+    )
+    weather_wiring.sign_up_to_picture_channels_read(bot)
+    results_wiring.sign_up_to_picture_channels_read(bot)
+    attendance_wiring.sign_up_to_picture_channels_read(bot)
+
+
 def _sign_up_to_fingerprint_areas_read(bot: LeagueBot) -> None:
     """Make the hook a season's fingerprint is taken through, and sign each module's part up to
     it: the rows of that module's own configuration, by area, handed the fingerprint's connection
@@ -861,7 +882,7 @@ def register_change_types(bot: LeagueBot) -> None:
             discard=discard_render,
         )
     )
-    bot.change_queue.register(bot_init_change(config=bot.config_service))
+    bot.change_queue.register(bot_init_change(config=bot.config_service, drawing=bot.image_drawing))
     bot.change_queue.register(
         season_setup_change(seasons=bot.season_service, now=lambda: bot.change_queue.now())
     )
@@ -918,7 +939,8 @@ def register_change_types(bot: LeagueBot) -> None:
     for setting in (
         log_channel_setting(config=bot.config_service, channel_uses_read=bot.channel_uses_read),
         interaction_channel_setting(
-            config=bot.config_service, channel_uses_read=bot.channel_uses_read
+            config=bot.config_service, channel_uses_read=bot.channel_uses_read,
+            drawing=bot.image_drawing,
         ),
         interaction_role_setting(config=bot.config_service),
         admin_role_setting(config=bot.config_service),
@@ -929,7 +951,9 @@ def register_change_types(bot: LeagueBot) -> None:
         driver_role_setting(config=bot.config_service, roles=bot.team_role_service),
         hub_channel_setting(config=bot.config_service, channel_uses_read=bot.channel_uses_read),
         *division_channel_settings(
-            seasons=bot.season_service, channel_uses_read=bot.channel_uses_read
+            seasons=bot.season_service,
+            channel_uses_read=bot.channel_uses_read,
+            drawing=bot.image_drawing,
         ),
         test_mode_nationality_setting(config=bot.config_service),
     ):
@@ -1184,6 +1208,7 @@ async def build(settings: Settings) -> LeagueBot:
 
     _sign_up_to_cancellations(bot)
     _sign_up_to_division_channel_faults_read(bot)
+    _sign_up_to_picture_channels_read(bot)
     _sign_up_to_division_lines_read(bot)
     _sign_up_to_channel_uses_read(bot)
     _sign_up_to_setting_channels_read(bot)

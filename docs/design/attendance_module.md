@@ -533,6 +533,7 @@ Attendance declares no hook of its own. Core declares them and attendance subscr
 | `rounds_called_off`, `cancellation_notices`, `cancellation_steps` | `take_down_called_off_on`, `notices_on`, `take_down_steps`, `read_check_in_steps`, `notify_checkin_steps` | takes down the calls, reads the check-in's record before they come down and plans its own notice |
 | `rounds_deleted`, `divisions_deleted`, `profiles_deleted`, `profiles_merged`, `bot_packed` | `attendance_hooks` | see "The database" |
 | `division_lines_read`, `division_channel_faults_read`, `channel_uses_read`, `setting_channels_read` | `attendance_hooks`, `division_channels` | its channels, read for the reviews, the channel registry (answering nothing while attendance is off) and the factory reset |
+| `picture_channels_read` | `division_channels.picture_channels` | its channels for the RSVP and attendance outputs asked, counted as pictures (needing Attach Files), answering nothing while attendance is off |
 | `fingerprint_areas_read` | `fingerprint_areas.fingerprint_areas` | its channels and its configuration in the season's fingerprint, whatever its switch |
 | `pending_steps_read`, `review_marks_read` | `test_mode_steps.pending_steps`, `review_marks` | a round's check-in for `/test-mode advance` and its review |
 | `placements_confirmed`, `placements_confirmed_steps`, `season_completed`, `season_completed_steps` | `sheet_posting` | plans and defines the opening and the final sheet |
@@ -591,7 +592,8 @@ call's channel is `rsvp` and the attendance sheet's is `attendance`; the attenda
 under "Configuring the attendance module", "Channels", says what each needs. The one thing the
 statement asks of the image module is whether a channel's pictures could attach a file, which the
 drawing answers by its switches and not by a template's state. The confirmation's faults
-(`attendance_hooks.division_channel_faults`) judge both channels by it, and the recalculation's gate
+(`attendance_hooks.division_channel_faults`) judge both channels by it, as does the check of the
+command setting each (`channel_registry_service.unusable_refusal`), and the recalculation's gate
 judges the attendance channel by it and the verdicts channel by results' statement of its needs,
 where the sanction's picture goes, so a verdicts channel the bot cannot attach to is refused up
 front like one it cannot see.

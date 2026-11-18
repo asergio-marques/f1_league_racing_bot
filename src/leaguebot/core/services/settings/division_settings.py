@@ -15,9 +15,13 @@ channel, and the reply and the line name it as it was typed.
 **The refusals are the setting's `check`, made at the ask and again as the change starts**, since
 a change queued ahead of this one may have ended the season, deleted the division or given the
 channel to another job since it was asked: no season live, the division not in it, a channel
-already doing another job, and the channel this very division already has ("Nothing was
-changed"), each in the words the ask gave. A channel already doing another job is judged by the
-channel registry (`channel_registry_service`), the one rule every channel command answers to.
+already doing another job, the channel this very division already has ("Nothing was
+changed"), and a channel the bot lacks a permission in that its use needs, each in the words the
+ask gave. A channel already doing another job is judged by the channel registry
+(`channel_registry_service`), the one rule every channel command answers to, and what the bot
+needs is judged straight after it: `core_channel_needs`, with the *drawing* the builder is handed
+saying whether the picture could attach a file, read by `unusable_refusal` against the league's
+server as it stands when the check runs, standing aside where that cannot be told.
 
 **The save writes the division's column and the audit entry, with the division, together**, the
 audit entry stamped by the queue's clock; the column it replaces is read in the save, never at the
@@ -32,6 +36,8 @@ from typing import TYPE_CHECKING, Any
 
 import aiosqlite
 
+from leaguebot.core.services.modules.image_drawing import ImageDrawing
+from leaguebot.core.services.seasons import approval_checks
 from leaguebot.framework.db.database import sole_row
 from leaguebot.framework.models.change import AuditRecord, Verdict
 from leaguebot.framework.services.queue.change_types import CheckContext
@@ -39,8 +45,10 @@ from leaguebot.core.services.settings.channel_registry_service import (
     ChannelUse,
     find_channel_use,
     refusal,
+    unusable_refusal,
 )
 from leaguebot.framework.services.queue.setting_change import Saved, Setting
+from leaguebot.framework.utils.league_server import league_guild
 
 if TYPE_CHECKING:
     from leaguebot.framework.utils.hooks import AwaitedHook
@@ -78,10 +86,14 @@ def division_not_found(name: str) -> str:
 
 
 def _division_channel(
-    column: str, seasons: "SeasonService", channel_uses_read: "AwaitedHook"
+    column: str,
+    seasons: "SeasonService",
+    channel_uses_read: "AwaitedHook",
+    drawing: ImageDrawing,
 ) -> Setting:
-    """The setting of a division's *column*, *seasons* judging which season is live and
-    *channel_uses_read*, the hook the builder makes, naming the module that holds a channel."""
+    """The setting of a division's *column*, *seasons* judging which season is live,
+    *channel_uses_read*, the hook the builder makes, naming the module that holds a channel, and
+    *drawing*, the image module's, saying whether the channel's picture could attach a file."""
     key, command, label, change_type, read, write = _CHANNELS[column]
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -102,6 +114,14 @@ def _division_channel(
                     f"<#{value}>", use, same_setting=(use == ChannelUse(key, division.name))
                 )
             )
+        unusable = await unusable_refusal(
+            await league_guild(ctx.bot),
+            value,
+            (await approval_checks.core_channel_needs(drawing))[key],
+            ChannelUse(key, division.name),
+        )
+        if unusable is not None:
+            return Verdict.refuse(unusable)
         return Verdict.go()
 
     async def save(db: aiosqlite.Connection, payload: dict[str, Any]) -> Saved:
@@ -154,10 +174,12 @@ def _division_channel(
 
 
 def division_channel_settings(
-    *, seasons: "SeasonService", channel_uses_read: "AwaitedHook"
+    *, seasons: "SeasonService", channel_uses_read: "AwaitedHook", drawing: ImageDrawing
 ) -> tuple[Setting, ...]:
     """The lineup channel's setting and the calendar channel's."""
-    return tuple(_division_channel(column, seasons, channel_uses_read) for column in _CHANNELS)
+    return tuple(
+        _division_channel(column, seasons, channel_uses_read, drawing) for column in _CHANNELS
+    )
 
 
 __all__ = ["NO_SEASON_REFUSAL", "division_channel_settings", "division_not_found"]

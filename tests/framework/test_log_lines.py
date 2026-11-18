@@ -265,3 +265,28 @@ async def test_refuse_forms_its_line_through_record_refusal(monkeypatch):
     assert seen == [
         {"bot": interaction.client, "what": "the “Sign Up” button", "reason": "Signups are closed."}
     ]
+
+
+@pytest.mark.parametrize(
+    "reply,reasons",
+    [
+        pytest.param(
+            "❌ The bot cannot post in <#111>.\n⛔ The bot cannot post in <#333>.",
+            "The bot cannot post in <#111>.; The bot cannot post in <#333>.",
+            id="two-lines",
+        ),
+        pytest.param(
+            "⚠️ This server is already configured.", "This server is already configured.",
+            id="one-line",
+        ),
+        pytest.param("", "", id="empty"),
+    ],
+)
+def test_reply_reasons(reply, reasons):
+    """A refusal naming more than one thing, one to a line (`/bot init`'s two unusable channels),
+    is recorded whole: `reply_reasons` gives a two-line reply whose lines each open with a mark as
+    both lines' reasons, each without its mark, joined by "; "; a one-line reply as its reason
+    alone; and an empty reply as an empty string."""
+    from leaguebot.framework.utils.log_lines import reply_reasons
+
+    assert reply_reasons(reply) == reasons

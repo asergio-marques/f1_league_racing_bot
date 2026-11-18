@@ -93,7 +93,7 @@ Each answers at once ("⏳ Setting the RSVP channel for **Division One** to #div
 
 The check-in call **pings the division's role**, the one set when the division was created. That is the role your drivers need if they want to be told a call has gone out.
 
-> **The bot must be able to post in both channels, and it checks at the time you set them.** If it cannot, the command is refused there and then rather than failing silently three days before a race.
+> **The bot must be able to use both channels, and it checks at the time you set them.** If a permission is lacking, the command is refused there and then, naming each one missing and saving nothing, rather than failing silently three days before a race.
 
 **What each needs.** The check-in channel needs View Channel, Send Messages, Embed Links and Read Message History, since the call is an embed that the bot reads back to redraw after an answer and to lock at the deadline; the attendance channel needs View Channel, Send Messages and Read Message History, since the sheet is posted again and the old one taken down. Either also needs Attach Files while its picture (the check-in call or the attendance sheet) is on. Confirming a season names a division whose channel lacks one, and so is a penalty change that recalculates the season refused, before anything changes, where the attendance or verdicts channel lacks one.
 
@@ -333,7 +333,7 @@ The call is a job of the change queue, so a call Discord refuses, or whose check
 **Find the cause before you post anything.** The entry says what went wrong, and it is nearly always one of two things: the division's check-in channel has been deleted, renamed or had the bot's permissions changed, or Discord refused the message. Posting the call again before you have fixed that just fails a second time.
 
 1. **Read the reason** in the log entry. A connection to Discord that failed is reported like a refusal. Where the post timed out, the entry says the call may have landed all the same: look in the check-in channel first, and if the call is there, delete it before you post again.
-2. **Put the cause right** — usually restoring the channel in `/attendance channel rsvp`, or giving the bot permission to post and embed links there.
+2. **Put the cause right** — usually restoring the channel in `/attendance channel rsvp`, or giving the bot permission to post and embed links there. The command refuses a channel where the bot still lacks a permission, and names it.
 3. **Post the call** with `/attendance post-check-in`, naming the division and the round. The log entry gives you the command with both already filled in, so you can copy it straight out.
 4. **Check the reply.** It is acknowledged as under way and then updated with whether a call is now standing once the queue has run it, not merely that the command was accepted — so a second failure is not mistaken for a success.
 

@@ -50,6 +50,7 @@ import pytest
 from leaguebot.core.cogs.bot_cog import BotCog
 from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.services.settings.config_service import ConfigService
+from tests.support.channel_faults import answer_attachments, league_server, server_holding
 from tests.support.channel_uses import sign_up_channel_uses_read, sign_up_setting_channels_read
 from tests.support.undecorate import undecorate
 
@@ -315,6 +316,168 @@ async def test_bot_init_is_audited_with_the_four_settings(tmp_path):
     assert row["timestamp"] == NOW.isoformat()
 
 
+@pytest.mark.parametrize(
+    "lineup,denied,refusals",
+    [
+        pytest.param(
+            True, {CONFIGURED_CHANNEL: ("attach_files",)},
+            [(CONFIGURED_CHANNEL, "bot command channel", "Attach Files")],
+            id="command-channel-without-attach-files",
+        ),
+        pytest.param(
+            False, {CONFIGURED_LOG: ("send_messages",)},
+            [(CONFIGURED_LOG, "bot log channel", "Send Messages")],
+            id="log-channel-without-send-messages",
+        ),
+        pytest.param(
+            True, {CONFIGURED_CHANNEL: ("attach_files",), CONFIGURED_LOG: ("send_messages",)},
+            [
+                (CONFIGURED_CHANNEL, "bot command channel", "Attach Files"),
+                (CONFIGURED_LOG, "bot log channel", "Send Messages"),
+            ],
+            id="both",
+        ),
+    ],
+)
+async def test_bot_init_refuses_a_channel_the_bot_cannot_use_and_claims_nothing(
+    tmp_path, lineup, denied, refusals
+):
+    """Core spec, Setting the bot up: `/bot init` judges the interaction channel (View Channel,
+    Send Messages, and Attach Files where a lineup or calendar picture is on) and the log channel
+    (View Channel, Send Messages) when asked. No server is claimed; an administrator runs
+    `/bot init` for command channel 111 and log channel 333. Where a lineup picture is on and the
+    bot is denied Attach Files in 111, or is denied Send Messages in 333, or both, they are refused
+    at the ask, each channel the bot cannot use named on its own line, the command channel first,
+    word for word. Nothing is asked of the queue and no server is claimed."""
+    from tests.support.change_queue import change_rows
+
+    db_path = await _make_db(tmp_path)
+    bot = await _queued_bot(db_path)
+    answer_attachments(bot.image_drawing, *(("lineup",) if lineup else ()))
+    cog = BotCog(bot)
+    interaction = _asking(bot, "bot init")
+    interaction.guild = server_holding(unusable=denied)
+
+    await _ask_init(cog, interaction)
+
+    assert _said(interaction) == [
+        "\n".join(_cannot_use(channel_id, use, missing) for channel_id, use, missing in refusals)
+    ]
+    assert await change_rows(db_path) == []
+    assert await bot.config_service.get_league_server_id() is None
+    assert await _audit_rows(db_path) == []
+
+
+@pytest.mark.parametrize(
+    "when,meanwhile",
+    [
+        pytest.param("claim", "unusable", id="unusable"),
+        pytest.param("claim", "deleted", id="deleted"),
+        pytest.param("claim", "both", id="both-as-it-claims"),
+        pytest.param("ask", "both", id="both-when-asked"),
+    ],
+)
+async def test_bot_init_is_refused_as_it_claims_where_a_channel_can_no_longer_be_used(
+    tmp_path, caplog, when, meanwhile
+):
+    """Core spec, Setting the bot up: `/bot init` judges its two channels again as it claims the
+    server, and its refusal goes to the bot host's log alone. No server is claimed; an
+    administrator runs `/bot init` for command channel 111 and log channel 333 on a server whose
+    every channel the bot can use, and is acknowledged. Before the queue runs the claim, the bot
+    is denied Send Messages in 333 (*unusable*), or 333 is deleted (*deleted*), with no picture
+    on; or, with a lineup picture on, the bot is denied Attach Files in 111 and Send Messages in
+    333 (*both-as-it-claims*). The claim is refused: the member's reply becomes the refusal,
+    naming what the bot lacks or that 333 is no longer on the server, word for word, one channel
+    to a line and the command channel first; no server is claimed, nothing is audited, no line
+    goes to any channel, there being no league log channel yet, and the bot host's log records
+    the refusal with every line's reason, the command channel's first, joined by "; ". Where both
+    channels are already unusable when `/bot init` is asked (*both-when-asked*), it is refused
+    there with the same reply and the host's log records the same two reasons."""
+    from tests.support.change_queue import acknowledgement, queued_log_lines, run_queue
+
+    caplog.set_level(logging.INFO, logger="leaguebot")
+    db_path = await _make_db(tmp_path)
+    bot = await _queued_bot(db_path)
+    both = {CONFIGURED_CHANNEL: ("attach_files",), CONFIGURED_LOG: ("send_messages",)}
+    answer_attachments(bot.image_drawing, *(("lineup",) if meanwhile == "both" else ()))
+    league_server(bot, unusable=both if when == "ask" else {})
+    cog = BotCog(bot)
+    interaction = _asking(bot, "bot init")
+    interaction.guild = server_holding(unusable=both if when == "ask" else {})
+
+    await _ask_init(cog, interaction)
+    if when == "claim":
+        assert acknowledgement(interaction).startswith(_INIT_ACKNOWLEDGED)
+    if meanwhile == "unusable":
+        league_server(bot, unusable={CONFIGURED_LOG: ("send_messages",)})
+        refused = _cannot_use(CONFIGURED_LOG, "bot log channel", "Send Messages")
+    elif meanwhile == "deleted":
+        league_server(bot, gone=(CONFIGURED_LOG,))
+        refused = f"❌ <#{CONFIGURED_LOG}> is no longer on the server. Nothing was changed."
+    else:
+        league_server(bot, unusable=both)
+        refused = "\n".join([
+            _cannot_use(CONFIGURED_CHANNEL, "bot command channel", "Attach Files"),
+            _cannot_use(CONFIGURED_LOG, "bot log channel", "Send Messages"),
+        ])
+    await run_queue(bot)
+
+    assert _said(interaction)[-1] == refused
+    assert await bot.config_service.get_league_server_id() is None
+    assert await _audit_rows(db_path) == []
+    assert all(not channel.sent for channel in bot.test_channels.values())
+    assert await queued_log_lines(db_path) == []
+    recorder = (
+        "leaguebot.core.cogs.bot_cog" if when == "ask"
+        else "leaguebot.core.services.settings.bot_init_change"
+    )
+    reasons = "; ".join(_reason(line) for line in refused.splitlines())
+    assert any(
+        record.name == recorder and record.getMessage().endswith(f": {reasons}")
+        for record in caplog.records
+    ), [record.getMessage() for record in caplog.records]
+
+
+@pytest.mark.parametrize("command", ["bot interaction-channel", "bot init"])
+async def test_a_command_channel_lacking_attach_files_is_accepted_where_no_picture_is_on(
+    tmp_path, command
+):
+    """Core spec, Channels: Attach Files is needed only where the league's picture choices could
+    post a picture to the channel. No lineup or calendar picture is on, and the bot holds every
+    permission but Attach Files in the channel chosen as the command channel. The league's server
+    is set up and an administrator runs `/bot interaction-channel` for 556; or no server is
+    claimed and an administrator runs `/bot init` for command channel 111 and log channel 333.
+    Neither is refused: `/bot interaction-channel` sets 556 and answers that it did, and
+    `/bot init` claims the server with 111 as its command channel."""
+    from tests.support.change_queue import run_queue
+
+    db_path = await _make_db(tmp_path)
+    if command == "bot init":
+        channel_id = CONFIGURED_CHANNEL
+    else:
+        await _seed_config(db_path)
+        channel_id = 556
+    bot = await _queued_bot(db_path)
+    answer_attachments(bot.image_drawing)
+    denied = {channel_id: ("attach_files",)}
+    league_server(bot, unusable=denied)
+    cog = BotCog(bot)
+    interaction = _asking(bot, command)
+    interaction.guild = server_holding(unusable=denied)
+
+    if command == "bot init":
+        await _ask_init(cog, interaction)
+    else:
+        await _unwrap(cog.handle_interaction_channel)(cog, interaction, _channel(channel_id))
+    await run_queue(bot)
+
+    if command == "bot init":
+        assert await bot.config_service.get_league_server_id() == SERVER_ID
+    else:
+        assert _said(interaction)[-1] == f"✅ **Interaction channel** set to <#{channel_id}>."
+    assert (await _row(db_path))["interaction_channel_id"] == channel_id
+
+
 async def _init_configured(tmp_path) -> tuple[Any, MagicMock]:
     """Run a first `/bot init` through the queue with the four configured settings, the league
     admin role named "League Admins": the bot and the interaction."""
@@ -382,9 +545,13 @@ async def test_bot_init_is_refused_while_a_factory_reset_is_cleaning_up(tmp_path
     ), [record.getMessage() for record in caplog.records]
 
 
-async def test_bot_init_refuses_a_second_run_and_names_the_four_commands(tmp_path):
-    """The league's server is set up; an administrator runs `/bot init` again. They are refused,
-    in today's words, at the ask: nothing is asked of the queue, and nothing is written."""
+@pytest.mark.parametrize("channels", ["usable", "unusable"])
+async def test_bot_init_refuses_a_second_run_and_names_the_four_commands(tmp_path, channels):
+    """The league's server is set up; an administrator runs `/bot init` again, for channels 901
+    and 902, which the bot can use, or (*unusable*) in both of which it is denied Send Messages,
+    a lineup picture being on. They are refused, in today's words, at the ask: `/bot init` runs
+    once, and on a configured server judges no channel, so the refusal is the same whatever the
+    channels. Nothing is asked of the queue, and nothing is written."""
     from tests.support.change_queue import change_rows
 
     db_path = await _make_db(tmp_path)
@@ -392,6 +559,11 @@ async def test_bot_init_refuses_a_second_run_and_names_the_four_commands(tmp_pat
     bot = await _queued_bot(db_path)
     cog = BotCog(bot)
     interaction = _asking(bot, "bot init")
+    if channels == "unusable":
+        answer_attachments(bot.image_drawing, "lineup")
+        denied = {901: ("send_messages",), 902: ("send_messages",)}
+        interaction.guild = server_holding(unusable=denied)
+        league_server(bot, unusable=denied)
 
     await _unwrap(cog.handle_bot_init)(
         cog, interaction, _role(900), _role(903), _channel(901), _channel(902)
@@ -903,6 +1075,81 @@ async def test_a_setting_command_is_acknowledged_then_answered_and_logged_in_tod
     assert _delivered(bot, log_channel) == [
         f"{_NAMED} | {command} | Success\n  {column}: {_shown(column, new_id)}"
     ]
+
+
+def _lose_send_messages(bot: Any, channel_id: int) -> None:
+    """The bot is denied Send Messages in *channel_id*, which both of the bot's channels need."""
+    league_server(bot, unusable={channel_id: ("send_messages",)})
+
+
+def _delete_the_channel(bot: Any, channel_id: int) -> None:
+    """*channel_id* is deleted from the league's server."""
+    league_server(bot, gone=(channel_id,))
+
+
+@pytest.mark.parametrize(
+    "attribute,column,use,meanwhile,missing",
+    [
+        pytest.param(
+            attribute, column, use, meanwhile, missing, id=f"{column}-{how}"
+        )
+        for attribute, column, use in (
+            ("handle_log_channel", "log_channel_id", "bot log channel"),
+            ("handle_interaction_channel", "interaction_channel_id", "bot command channel"),
+        )
+        for meanwhile, missing, how in (
+            (_lose_send_messages, "Send Messages", "permission_lost"),
+            (_delete_the_channel, None, "channel_deleted"),
+        )
+    ],
+)
+async def test_a_channel_setting_is_refused_as_it_starts_where_its_channel_can_no_longer_be_used(
+    tmp_path, attribute, column, use, meanwhile, missing
+):
+    """Core spec, Channels: a channel's needs are judged again as the change starts. The league's
+    server is set up, holding channel 905, the bot holding every permission there. An
+    administrator runs `/bot log-channel`, or `/bot interaction-channel`, for 905 and is
+    acknowledged; before the change runs, the bot is denied Send Messages in 905
+    (*permission_lost*), or 905 is deleted (*channel_deleted*). The change is refused: the
+    member's reply becomes the refusal, naming what the bot lacks or that 905 is no longer on the
+    server, the column keeps its value, nothing is audited, and the log channel takes the refusal
+    as its one line."""
+    from tests.support.change_queue import acknowledgement, run_queue, text_channel
+
+    db_path = await _make_db(tmp_path)
+    await _seed_config(db_path)
+    bot = await _queued_bot(db_path)
+    bot.test_channels[905] = text_channel(905)
+    league_server(bot)
+    cog = BotCog(bot)
+    command = _WORDS[column][0]
+    interaction = _asking(bot, command[1:])
+    before = (await _row(db_path))[column]
+
+    await _unwrap(getattr(cog, attribute))(cog, interaction, _channel(905))
+    assert acknowledgement(interaction).startswith("⏳ ")
+    meanwhile(bot, 905)
+    await run_queue(bot)
+
+    refused = (
+        _cannot_use(905, use, missing) if missing
+        else "❌ <#905> is no longer on the server. Nothing was changed."
+    )
+    assert _said(interaction)[-1] == refused
+    assert (await _row(db_path))[column] == before
+    assert await _audit_rows(db_path) == []
+    assert _delivered(bot, CONFIGURED_LOG) == [
+        f"⛔ `{command}` refused for {_NAMED} — {_reason(refused)}"
+    ]
+
+
+def _cannot_use(channel_id: int, use: str, missing: str) -> str:
+    """The refusal of *channel_id* as the *use* where the bot lacks *missing* there, word for
+    word."""
+    return (
+        f"❌ The bot is missing permissions it needs in <#{channel_id}> as the {use}: {missing}. "
+        f"Give the bot them there, or pick another channel. Nothing was changed."
+    )
 
 
 @pytest.mark.parametrize(
@@ -2223,18 +2470,53 @@ async def _refused_site(case: str, tmp_path) -> tuple[MagicMock, MagicMock, str,
             "ℹ️ <#905> is already the hub channel. Nothing was changed."
         )
     if case == "hub-channel lacks permissions":
-        channel = _unconfigured_channel()
-        channel.permissions_for.return_value = MagicMock(manage_channels=False, manage_roles=True)
-        await _unwrap(cog.handle_hub_channel)(cog, interaction, channel)
+        league_server(bot, unusable={905: ("manage_channels",)})
+        await _unwrap(cog.handle_hub_channel)(cog, interaction, _unconfigured_channel())
+        return bot, interaction, command, _cannot_use(905, "hub channel", "Manage Channel")
+    if case == "log-channel lacks permissions":
+        league_server(bot, unusable={905: ("send_messages",)})
+        await _unwrap(cog.handle_log_channel)(cog, interaction, _channel(905))
+        return bot, interaction, command, _cannot_use(905, "bot log channel", "Send Messages")
+    if case == "log-channel lacks view channel":
+        league_server(bot, unusable={905: ("view_channel",)})
+        await _unwrap(cog.handle_log_channel)(cog, interaction, _channel(905))
+        return bot, interaction, command, _cannot_use(905, "bot log channel", "View Channel")
+    if case == "interaction-channel lacks permissions":
+        answer_attachments(bot.image_drawing, "calendar")
+        league_server(bot, unusable={905: ("attach_files",)})
+        await _unwrap(cog.handle_interaction_channel)(cog, interaction, _channel(905))
+        return bot, interaction, command, _cannot_use(905, "bot command channel", "Attach Files")
+    if case == "interaction-channel lacks view channel":
+        answer_attachments(bot.image_drawing)
+        league_server(bot, unusable={905: ("view_channel",)})
+        await _unwrap(cog.handle_interaction_channel)(cog, interaction, _channel(905))
+        return bot, interaction, command, _cannot_use(905, "bot command channel", "View Channel")
+    if case == "log-channel already this setting, lacking permissions":
+        league_server(bot, unusable={CONFIGURED_LOG: ("send_messages",)})
+        await _unwrap(cog.handle_log_channel)(cog, interaction, _channel(CONFIGURED_LOG))
         return bot, interaction, command, (
-            "❌ The bot needs **Manage Channel** on <#905> to set who may see the hub. Nothing "
-            "was changed."
+            f"ℹ️ <#{CONFIGURED_LOG}> is already the bot log channel. Nothing was changed."
         )
     if case == "factory-reset without the word":
         await _unwrap(cog.handle_factory_reset)(cog, interaction, "yes")
         return bot, interaction, command, "CONFIRM"
     # The host-only cases.
+    if case == "init channel lacks permissions before init":
+        answer_attachments(bot.image_drawing)
+        guild = server_holding(unusable={902: ("send_messages",)})
+        guild.owner_id = OWNER_ID
+        interaction.guild = guild
+        # A claim asked of the queue is recorded, not run: the refusal is the ask's.
+        bot.change_queue.ask = AsyncMock()
+        await _init(cog, interaction)
+        return bot, interaction, command, _cannot_use(902, "bot log channel", "Send Messages")
     if case == "init on another server":
+        # Both channels named are ones the bot cannot use: the server is refused first.
+        answer_attachments(bot.image_drawing)
+        guild = server_holding(unusable={901: ("send_messages",), 902: ("send_messages",)})
+        guild.owner_id = OWNER_ID
+        guild.id = SERVER_ID + 1
+        interaction.guild = guild
         interaction.guild_id = SERVER_ID + 1
         await _init(cog, interaction)
         return bot, interaction, command, "another server"
@@ -2282,7 +2564,12 @@ def _replied(interaction: MagicMock) -> str:
         "driver-role cannot be granted",
         "hub-channel already another job",
         "hub-channel already this setting",
-        "hub-channel lacks permissions",
+        pytest.param("hub-channel lacks permissions"),
+        pytest.param("log-channel lacks permissions"),
+        pytest.param("log-channel lacks view channel"),
+        pytest.param("interaction-channel lacks permissions"),
+        pytest.param("interaction-channel lacks view channel"),
+        "log-channel already this setting, lacking permissions",
         "factory-reset without the word",
     ],
 )
@@ -2310,6 +2597,7 @@ async def test_a_refusal_of_the_bot_cog_is_recorded_in_the_log_channel(tmp_path,
     "case",
     [
         "init on another server",
+        pytest.param("init channel lacks permissions before init"),
         "log-channel before init",
         "base-role before init",
         "hub-channel before init",
@@ -2327,6 +2615,9 @@ async def test_a_refusal_outside_the_league_goes_to_the_host_log_alone(tmp_path,
     bot, interaction, command, phrase = await _refused_site(case, tmp_path)
 
     assert phrase in _replied(interaction)
+    if case == "init on another server":
+        # Its channels are unusable too, but the server is refused alone, never its channels.
+        assert "missing permissions" not in _replied(interaction)
     bot.output_router.post_log.assert_not_awaited()
     member = re.compile(rf"(?<!\d){OWNER_ID}(?!\d)")
     assert any(

@@ -9,12 +9,12 @@ waits still gets its channel.
 
 **The refusals are the check, in the command's order and words**, made at the ask and again as the
 change starts, since a change ahead of it may have switched results off, ended the season, deleted
-the division or given the channel to another job: the module on; for verdicts, a channel the bot
-may post in (read from the channel as the bot finds it by its id, so a channel gone or one the bot
-has lost its permission in is refused as the command refuses it); a season live; the division in
-it; then the channel free of any other job (`channel_registry_service`), the channel this very
-division already has being refused as "Nothing was changed". Verdicts keeps wordings of its own
-for the division not found and for its reply.
+the division or given the channel to another job: the module on; a season live; the division in
+it; the channel free of any other job (`channel_registry_service`), the channel this very division
+already has being refused as "Nothing was changed"; and last the channel one the bot has the
+permissions the setting's channel needs in (`division_channels.channel_needs`, with the *drawing*
+the builder is handed, judged by `unusable_refusal` against the league's server as it stands when
+the check runs). Verdicts keeps wordings of its own for the division not found and for its reply.
 
 **The save writes the division's column and the audit entry with the division, together**, the
 audit entry stamped by the queue's clock (`division_channels` holds the upserts); the column it
@@ -34,15 +34,17 @@ from typing import TYPE_CHECKING, Any
 from leaguebot.results.models.switch import SWITCH_KEY
 from leaguebot.framework.models.change import AuditRecord, Verdict
 from leaguebot.framework.services.queue.change_types import CheckContext
-from leaguebot.framework.utils.channels import as_text_channel
 from leaguebot.core.services.settings.channel_registry_service import (
     ChannelUse,
     find_channel_use,
     refusal,
+    unusable_refusal,
 )
 from leaguebot.core.services.settings.division_settings import NO_SEASON_REFUSAL, division_not_found
 from leaguebot.framework.services.queue.setting_change import Saved, Setting
+from leaguebot.framework.utils.league_server import league_guild
 from leaguebot.results.services.module.division_channels import (
+    channel_needs,
     set_division_penalty_channel,
     set_division_results_channel,
     set_division_standings_channel,
@@ -52,6 +54,7 @@ if TYPE_CHECKING:
     import aiosqlite
 
     from leaguebot.framework.services.switches.module_service import ModuleService
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
     from leaguebot.core.services.seasons.season_service import SeasonService
     from leaguebot.framework.utils.hooks import AwaitedHook
 
@@ -61,7 +64,6 @@ STANDINGS_CHANNEL = "results.setting.standings_channel"
 VERDICTS_CHANNEL = "results.setting.verdicts_channel"
 
 NOT_ENABLED = "❌ The Results & Standings module is not enabled."
-NO_ACCESS = "❌ Cannot access that channel. Ensure the bot has permission to post there."
 
 
 def verdicts_division_not_found(name: str) -> str:
@@ -79,23 +81,21 @@ def _channel_setting(
     said: Callable[[str, str, int, str], str],
     modules: "ModuleService",
     seasons: "SeasonService",
-    channel_of: Callable[[int], object] | None,
     channel_uses_read: "AwaitedHook",
+    drawing: "ImageDrawing | None",
 ) -> Setting:
     """The setting of the *key* channel (the channel registry's key and the word the command and
     its replies use), *write* its column's upsert, *audit* the entry of the channel moving from
     one to another in a division, *said* the reply's words for a verb, the division as typed, the
-    channel's id and its name. *channel_of*, verdicts' alone, finds a channel by its id, for the
-    bot's access to it to be judged. *channel_uses_read* is core's hook that names the module
-    holding a channel."""
+    channel's id and its name. *channel_uses_read* is core's hook that names the module holding a
+    channel, and *drawing* the image module's, which says whether the channel's graphic could be a
+    picture attaching a file."""
 
     async def check(ctx: CheckContext) -> Verdict:
         payload = ctx.payload
         value = int(payload["value"])
         if not await modules.is_enabled(SWITCH_KEY):
             return Verdict.refuse(NOT_ENABLED)
-        if channel_of is not None and not _may_post(channel_of(value)):
-            return Verdict.refuse(NO_ACCESS)
         season = await seasons.get_setup_or_active_season()
         if season is None:
             return Verdict.refuse(NO_SEASON_REFUSAL)
@@ -107,6 +107,14 @@ def _channel_setting(
             return Verdict.refuse(
                 refusal(f"<#{value}>", use, same_setting=(use == ChannelUse(key, division.name)))
             )
+        unusable = await unusable_refusal(
+            await league_guild(ctx.bot),
+            value,
+            (await channel_needs(drawing))[key],
+            ChannelUse(key, division.name),
+        )
+        if unusable is not None:
+            return Verdict.refuse(unusable)
         return Verdict.go()
 
     async def save(db: "aiosqlite.Connection", payload: dict[str, Any]) -> Saved:
@@ -153,12 +161,6 @@ def _channel_setting(
     )
 
 
-def _may_post(channel: object) -> bool:
-    """Whether the bot finds *channel* and may post in it."""
-    found = as_text_channel(channel)
-    return found is not None and found.permissions_for(found.guild.me).send_messages
-
-
 def typed_channel_audit(channel_type: str) -> Callable[[int | None, int | None, int], AuditRecord]:
     """The audit entry of a results or standings channel moving, which names its type: set here,
     and cleared by the switch-on (*new* None) where another setting took it."""
@@ -201,39 +203,39 @@ def results_channel_settings(
     *,
     modules: "ModuleService",
     seasons: "SeasonService",
-    channel_of: Callable[[int], object],
     channel_uses_read: "AwaitedHook",
+    drawing: "ImageDrawing | None",
 ) -> tuple[Setting, ...]:
     """The results channel's setting, the standings channel's and the verdicts channel's: the
-    module and the season are read through the services handed in, the channel the bot finds
-    by its id through *channel_of*, and the module holding a channel through *channel_uses_read*."""
+    module and the season are read through the services handed in, the module holding a channel
+    through *channel_uses_read*, and whether a graphic could be a picture through *drawing*."""
     return (
         _channel_setting(
             kind=RESULTS_CHANNEL, key="results", said=_mentioned("Results"),
             write=set_division_results_channel, not_found=division_not_found,
-            audit=typed_channel_audit("results"), channel_of=None, modules=modules,
+            audit=typed_channel_audit("results"), modules=modules,
             seasons=seasons,
-            channel_uses_read=channel_uses_read,
+            channel_uses_read=channel_uses_read, drawing=drawing,
         ),
         _channel_setting(
             kind=STANDINGS_CHANNEL, key="standings", said=_mentioned("Standings"),
             write=set_division_standings_channel, not_found=division_not_found,
-            audit=typed_channel_audit("standings"), channel_of=None, modules=modules,
+            audit=typed_channel_audit("standings"), modules=modules,
             seasons=seasons,
-            channel_uses_read=channel_uses_read,
+            channel_uses_read=channel_uses_read, drawing=drawing,
         ),
         _channel_setting(
             kind=VERDICTS_CHANNEL, key="verdicts", said=_named,
             write=set_division_penalty_channel, not_found=verdicts_division_not_found,
             audit=verdicts_channel_audit,
-            channel_of=channel_of, modules=modules, seasons=seasons,
-            channel_uses_read=channel_uses_read,
+            modules=modules, seasons=seasons,
+            channel_uses_read=channel_uses_read, drawing=drawing,
         ),
     )
 
 
 __all__ = [
-    "NOT_ENABLED", "NO_ACCESS", "RESULTS_CHANNEL", "STANDINGS_CHANNEL", "VERDICTS_CHANNEL",
+    "NOT_ENABLED", "RESULTS_CHANNEL", "STANDINGS_CHANNEL", "VERDICTS_CHANNEL",
     "results_channel_settings", "typed_channel_audit", "verdicts_channel_audit",
     "verdicts_division_not_found",
 ]

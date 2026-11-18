@@ -10,11 +10,12 @@ their words and their audit entry.
 
 **The refusals are the check, in the command's order and words**, made at the ask and again as the
 change starts, since a change ahead of it may have switched attendance off, ended the season,
-deleted the division or given the channel to another job: the module on; a channel the bot may post
-in (read from the channel as the bot finds it by its id, so a channel gone or one the bot has lost
-its permission in is refused as the command refuses it); a season live; the division in it; then
-the channel free of any other job (`channel_registry_service`), the channel this very division
-already has being refused as "Nothing was changed".
+deleted the division or given the channel to another job: the module on; a season live; the
+division in it; the channel free of any other job (`channel_registry_service`), the channel this
+very division already has being refused as "Nothing was changed"; and last the channel one the bot
+has the permissions the setting's channel needs in (`division_channels.channel_needs`, with the
+*drawing* the builder is handed, judged by `unusable_refusal` against the league's server as it
+stands when the check runs).
 
 **The save writes the division's column and the audit entry with the division, together**, the
 audit entry stamped by the queue's clock (`division_channels` holds the upserts); the column it
@@ -33,24 +34,27 @@ from typing import TYPE_CHECKING, Any
 
 from leaguebot.attendance.models.switch import SWITCH_KEY
 from leaguebot.attendance.services.settings.division_channels import (
+    channel_needs,
     set_attendance_channel,
     set_rsvp_channel,
 )
 from leaguebot.framework.models.change import AuditRecord, Verdict
 from leaguebot.framework.services.queue.change_types import CheckContext
-from leaguebot.framework.utils.channels import as_text_channel
 from leaguebot.core.services.settings.channel_registry_service import (
     ChannelUse,
     find_channel_use,
     refusal,
+    unusable_refusal,
 )
 from leaguebot.core.services.settings.division_settings import NO_SEASON_REFUSAL
 from leaguebot.framework.services.queue.setting_change import Saved, Setting
+from leaguebot.framework.utils.league_server import league_guild
 
 if TYPE_CHECKING:
     import aiosqlite
 
     from leaguebot.framework.services.switches.module_service import ModuleService
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
     from leaguebot.core.services.seasons.season_service import SeasonService
     from leaguebot.framework.utils.hooks import AwaitedHook
 
@@ -59,7 +63,6 @@ RSVP_CHANNEL = "attendance.setting.rsvp_channel"
 ATTENDANCE_CHANNEL = "attendance.setting.attendance_channel"
 
 NOT_ENABLED = "❌ The Attendance module is not enabled."
-NO_ACCESS = "❌ Cannot access that channel. Ensure the bot has permission to post there."
 
 
 def division_not_found(name: str) -> str:
@@ -76,22 +79,21 @@ def _channel_setting(
     change_type: str,
     modules: "ModuleService",
     seasons: "SeasonService",
-    channel_of: Callable[[int], object],
     channel_uses_read: "AwaitedHook",
+    drawing: "ImageDrawing | None",
 ) -> Setting:
     """The setting of the *key* channel (the channel registry's key, which is also the word of the
     command), *called* the name the acknowledgement gives it (its reply capitalises it), *write*
     its column's upsert and *change_type* the audit entry of the channel moving from one to
-    another in a division. *channel_of* finds a channel by its id, for the bot's access to it to
-    be judged, and *channel_uses_read* is core's hook that names the module holding a channel."""
+    another in a division. *channel_uses_read* is core's hook that names the module holding a
+    channel, and *drawing* the image module's, which says whether the channel's picture could
+    attach a file."""
 
     async def check(ctx: CheckContext) -> Verdict:
         payload = ctx.payload
         value = int(payload["value"])
         if not await modules.is_enabled(SWITCH_KEY):
             return Verdict.refuse(NOT_ENABLED)
-        if not _may_post(channel_of(value)):
-            return Verdict.refuse(NO_ACCESS)
         season = await seasons.get_setup_or_active_season()
         if season is None:
             return Verdict.refuse(NO_SEASON_REFUSAL)
@@ -105,6 +107,14 @@ def _channel_setting(
             return Verdict.refuse(
                 refusal(f"<#{value}>", use, same_setting=(use == ChannelUse(key, division.name)))
             )
+        unusable = await unusable_refusal(
+            await league_guild(ctx.bot),
+            value,
+            (await channel_needs(drawing))[key],
+            ChannelUse(key, division.name),
+        )
+        if unusable is not None:
+            return Verdict.refuse(unusable)
         return Verdict.go()
 
     async def save(db: "aiosqlite.Connection", payload: dict[str, Any]) -> Saved:
@@ -155,38 +165,32 @@ def _channel_setting(
     )
 
 
-def _may_post(channel: object) -> bool:
-    """Whether the bot finds *channel* and may post in it."""
-    found = as_text_channel(channel)
-    return found is not None and found.permissions_for(found.guild.me).send_messages
-
-
 def attendance_channel_settings(
     *,
     modules: "ModuleService",
     seasons: "SeasonService",
-    channel_of: Callable[[int], object],
     channel_uses_read: "AwaitedHook",
+    drawing: "ImageDrawing | None",
 ) -> tuple[Setting, ...]:
     """The RSVP channel's setting and the attendance channel's: the module and the season are read
-    through the services handed in, the channel the bot finds by its id through *channel_of*, and
-    what holds a channel through *channel_uses_read*."""
+    through the services handed in, what holds a channel through *channel_uses_read*, and whether a
+    picture could attach a file through *drawing*."""
     return (
         _channel_setting(
             kind=RSVP_CHANNEL, key="rsvp", called="RSVP", write=set_rsvp_channel,
             change_type="RSVP_CHANNEL_SET", modules=modules, seasons=seasons,
-            channel_of=channel_of, channel_uses_read=channel_uses_read,
+            channel_uses_read=channel_uses_read, drawing=drawing,
         ),
         _channel_setting(
             kind=ATTENDANCE_CHANNEL, key="attendance", called="attendance",
             write=set_attendance_channel, change_type="ATTENDANCE_CHANNEL_SET",
-            modules=modules, seasons=seasons, channel_of=channel_of,
-            channel_uses_read=channel_uses_read,
+            modules=modules, seasons=seasons,
+            channel_uses_read=channel_uses_read, drawing=drawing,
         ),
     )
 
 
 __all__ = [
-    "ATTENDANCE_CHANNEL", "NOT_ENABLED", "NO_ACCESS", "RSVP_CHANNEL",
+    "ATTENDANCE_CHANNEL", "NOT_ENABLED", "RSVP_CHANNEL",
     "attendance_channel_settings", "division_not_found",
 ]

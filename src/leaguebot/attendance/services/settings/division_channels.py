@@ -14,15 +14,16 @@ value back as an integer.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from typing import TYPE_CHECKING
 
 import aiosqlite
 
 from leaguebot.attendance.models.switch import SWITCH_KEY
 from leaguebot.framework.db.database import get_connection
-from leaguebot.core.models.channel_needs import ATTACH, EMBED, READ_HISTORY, SEND, VIEW, Needs
+from leaguebot.core.models.channel_needs import EMBED, READ_HISTORY, SEND, VIEW, Needs, attaching
 from leaguebot.core.services.modules.kept_channels import KeptChannel, KeptReader
+from leaguebot.core.services.modules.picture_channels import PictureChannel
 from leaguebot.core.services.settings.channel_registry_service import (
     ChannelUse,
     DiscordTargets,
@@ -84,6 +85,17 @@ CHANNELS = (
     ("rsvp", "rsvp_channel_id", "RSVP channel", "/attendance channel rsvp"),
     ("attendance", "attendance_channel_id", "attendance channel", "/attendance channel attendance"),
 )
+
+#: The outputs that post to each channel, by its setting: what `channel_needs` asks the image module
+#: whether could attach a file, and what the channels a picture posts to are answered by.
+_ASPECTS = {"rsvp": ("rsvp",), "attendance": ("attendance",)}
+
+#: What each channel needs of the bot, Attach Files aside, by its setting (`channel_needs` gives the
+#: reasons).
+_NEEDS: dict[str, Needs] = {
+    "rsvp": (VIEW, SEND, EMBED, READ_HISTORY),
+    "attendance": (VIEW, SEND, READ_HISTORY),
+}
 
 #: The same channels, by the column that holds each, with their setting.
 _SETTINGS = tuple((column, setting) for setting, column, _label, _command in CHANNELS)
@@ -155,19 +167,62 @@ async def channel_needs(drawing: "ImageDrawing | None") -> dict[str, Needs]:
     Messages and Read Message History, and no embed: it is text or a picture. Each also needs Attach
     Files where the image module answers that its pictures could attach a file
     (`aspect_attaches_files`, a question it answers by its switches and not by the state of a
-    template): `rsvp` for the call, `attendance` for the sheet. With no *drawing*, nothing is drawn
-    and no channel needs Attach Files.
+    template): `rsvp` for the call, `attendance` for the sheet (`_ASPECTS`). With no *drawing*,
+    nothing is drawn and no channel needs Attach Files.
     """
 
-    async def attaches(aspect: str) -> Needs:
-        if drawing is not None and await drawing.aspect_attaches_files(aspect):
-            return (ATTACH,)
-        return ()
+    async def attaches(aspects: Collection[str]) -> bool:
+        return drawing is not None and any([await drawing.aspect_attaches_files(a) for a in aspects])
 
     return {
-        "rsvp": (VIEW, SEND, EMBED, READ_HISTORY) + await attaches("rsvp"),
-        "attendance": (VIEW, SEND, READ_HISTORY) + await attaches("attendance"),
+        setting: attaching(_NEEDS[setting], await attaches(aspects))
+        for setting, aspects in _ASPECTS.items()
     }
+
+
+async def picture_channels(
+    modules: "ModuleService",
+    drawing: "ImageDrawing",
+    *,
+    db: aiosqlite.Connection,
+    divisions: Mapping[int, str],
+    aspects: Collection[str],
+) -> list[PictureChannel]:
+    """The check-in call and attendance channels of each of *divisions* (the live season's, by id,
+    naming each) that are set and that an output among *aspects* posts to, for the check made as an
+    output is switched to a picture (`core/services/modules/picture_channels.py`): by division, then
+    in the order `CHANNELS` gives. Each names the outputs asked that post there (`_ASPECTS`), what
+    the channel needs and Attach Files, as the output counts as a picture whatever its switch holds
+    now, and the command that sets it again.
+
+    Subscribed to core's `picture_channels_read`, which hands the connection, the divisions and the
+    outputs asked. Nothing while the attendance module is off, read on *db*: a switched-off module
+    posts nowhere. Reads only.
+
+    What a channel needs as a picture does not depend on the *drawing*, which is not asked: the
+    hook's connection is the step's, and nothing but it is awaited while it is held (architecture.md,
+    "The database"). The parameter keeps the shape every answer to the hook is built in.
+    """
+    if not divisions or not await modules.is_enabled_on(db, SWITCH_KEY):
+        return []
+    cursor = await db.execute(
+        "SELECT division_id, rsvp_channel_id, attendance_channel_id FROM attendance_division_config "
+        f"WHERE division_id IN ({', '.join('?' * len(divisions))}) ORDER BY division_id",
+        tuple(divisions),
+    )
+    answered: list[PictureChannel] = []
+    for row in await cursor.fetchall():
+        for setting, column, _label, command in CHANNELS:
+            posting = frozenset(_ASPECTS[setting]) & set(aspects)
+            if posting and row[column] is not None and row[column] != "":
+                answered.append(
+                    PictureChannel(
+                        posting, int(row[column]),
+                        ChannelUse(setting, divisions[int(row["division_id"])]), command,
+                        attaching(_NEEDS[setting], True),
+                    )
+                )
+    return answered
 
 
 async def kept_channels(drawing: "ImageDrawing | None") -> KeptReader:

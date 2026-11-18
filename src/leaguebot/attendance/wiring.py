@@ -235,6 +235,20 @@ def sign_up_to_setting_channels_read(bot: "LeagueBot") -> None:
     bot.setting_channels_read.subscribe(partial(division_channels.setting_channels, bot.db_path))
 
 
+def sign_up_to_picture_channels_read(bot: "LeagueBot") -> None:
+    """Sign attendance's channels a picture posts to up to the hook the channels a picture posts to
+    are read through, handed the module service, which answers whether attendance is on, and the
+    image module's drawing."""
+    from leaguebot.attendance.services.settings import division_channels
+
+    bot.picture_channels_read.subscribe(
+        partial(
+            division_channels.picture_channels, bot.module_service,
+            as_image_drawing(bot.image_drawing),
+        )
+    )
+
+
 def sign_up_to_division_channel_faults_read(bot: "LeagueBot") -> None:
     """Sign attendance's lines naming its own channels not set, not on the server or missing a
     permission they need up to the hook a division's channel faults are read through, handed its
@@ -379,8 +393,7 @@ def register_change_types(bot: "LeagueBot") -> None:
         bot.change_queue.register(change)
     for setting in attendance_channel_settings(
         modules=bot.module_service, seasons=bot.season_service,
-        channel_of=lambda channel_id: bot.get_channel(channel_id),
-        channel_uses_read=bot.channel_uses_read,
+        channel_uses_read=bot.channel_uses_read, drawing=as_image_drawing(bot.image_drawing),
     ):
         bot.change_queue.register(setting_change(setting))
 

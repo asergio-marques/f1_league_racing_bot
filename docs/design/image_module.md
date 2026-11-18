@@ -51,9 +51,12 @@ never switched it on has no row and reads as off.
 The switch-off clears the flag and nothing else: no configuration row is deleted and no toggle
 reset. That is Principle X, rule 6 as every module keeps it: a disable keeps the whole of the
 configuration, the portrait settings and the tier colours included, and re-enabling finds it as it
-stood. The daily portrait job the configuration arms is
-not configuration and is not kept armed: the switch-off removes it and the switch-on arms it again
-("How a change is carried out", below).
+stood. The daily portrait job the configuration arms is not configuration and is not kept armed: the
+switch-off removes it and the switch-on arms it again ("How a change is carried out", below).
+
+The toggle refuses `MODULE_OFF` only where it switches an output on (`image_settings`), the
+exception to the module-off rule that `image_module_specification.md`, "Configuration" makes; the
+cog's gate on the module is likewise made only then.
 
 ### The portrait register
 
@@ -187,12 +190,22 @@ the save, planned only where the save changed something, so that a fault in it l
 saved and the reply says it could not be checked. `image_settings`'s module docstring holds each
 part.
 
+A toggle has a step before the save, `picture_channels_check` (core's,
+`core/services/modules/picture_channels.py`), handed the aspect as the change names it only where the
+toggle switches on (`_switched_on`); the rule it enforces is in `image_module_specification.md`,
+"Configuration", under `/images config toggle`, and a refusal is `_toggle_refusal`. The step runs as
+the change starts, not at the ask.
+
 ### The switch on and off
 
 `/module enable images` and `/module disable images` each ask one change built from
 `module_on_images` or `module_off_images` (`module_switch_settings`).
 
-The switch-on is one save: the configuration row and every aspect toggle created where missing, the
+The switch-on first runs the same step for the outputs already on (`enabled_aspects_on`, read on the
+connection the step holds, with `_enable_refusal`): the configuration is kept while the module is
+off, so an output left on has its channels judged before the module is, and a channel failing for
+the lineup and the calendar alike, the command channel, is one line naming both. The module stays
+off where any fails. It is then one save: the configuration row and every aspect toggle created where missing, the
 flag raised and the audit entry written, so a fault anywhere leaves none of it. Where the kept
 configuration asks for daily portraits, a step after the save arms the daily job and carries the
 success line, so that the save stands whatever the arming does, and what a league is told when it
@@ -350,7 +363,9 @@ Image reads core's tables only through core's readers, among them a division's s
 of record shows it (`division_seating`), a round's and a division's context (`round_context`,
 `division_context`), and a driver's name and nationality and whether the league collects one
 (`core/services/drivers/driver_names.py`), which it asks with core's `driver_names_read` hook,
-the one signup answers (`core.md`). The portrait roster reads every driver assigned in the active
+the one signup answers (`core.md`), and the channels an output posts to, through core's
+`picture_channels_check`, which asks the `picture_channels_read` hook (`core.md`) that image does
+not answer, the outputs' channels being the modules' and core's. The portrait roster reads every driver assigned in the active
 season through `active_season_driver_ids`.
 
 ### The hooks image signs up to
@@ -434,4 +449,7 @@ Each of these is held by the docstring named, and pinned by a test where one is 
   `FLAG_COLUMNS` for flags, `image_config_service`), so the generic setter cannot reach
   `module_enabled` or `id`.
 - **`aspect_attaches_files` does not ask template validity** (above).
+- **A picture's channels are judged as if the output were a picture**, Attach Files among the needs
+  whatever the output's switch holds: the step runs while the output is still text, and the drawing
+  is not asked, the step's connection being held (`picture_channels`, `core.md`).
 - **`posting_origin` is required and never inferred** (`render_for_posting`).

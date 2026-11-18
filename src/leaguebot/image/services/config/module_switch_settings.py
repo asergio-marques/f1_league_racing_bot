@@ -7,6 +7,15 @@ settings change does with a value already held and with a fault): `module_on("im
 importing image. `docs/design/architecture.md`, "How modules and core fit together", designs the
 gap this closes: weather's switch (`weather/services/module_switch_settings.py`) is the model.
 
+**The switch-on judges the channels the outputs already on post to, before its save**
+(`picture_channels_check`, a step in `Setting.before`): the configuration is kept while the module
+is off, an output left on in it is a picture the moment the module is on, and its channels are
+judged then as a picture (`core/services/modules/picture_channels.py` says how). One lacking a
+permission its use needs, or gone, leaves the module off with each named and the outputs that post
+there. An output left as text has no channel judged, nor have the channels of a module that is off,
+of a cancelled division or of a finished season; where the bot cannot tell, nothing changes and
+the reply says to run it again.
+
 **The switch-on is one save.** The configuration row and every aspect toggle are created where
 missing (`create_defaults_on`, `INSERT OR IGNORE`s run on the save's own connection and left
 uncommitted so the module stays off until everything below has been written too); the flag is raised and the audit
@@ -24,10 +33,11 @@ left, since an aspect left on is still on and still posts.
 
 **The switch-off is one save: the flag and the audit entry.** It deletes nothing and resets no
 toggle, as Principle X rule 6 asks of every module: a disabled module keeps its configuration
-(FR-004a). No image config value names a Discord channel, role or message, so the switch-on has
-nothing kept to check against the server. The daily portrait job that `pfp_daily` arms is removed in a step
-after that save, which may fail without holding up the queue, and the job reads the module's switch
-as it fires, so one left armed does nothing.
+(FR-004a). No image config value names a Discord channel, role or message, so nothing the module
+keeps is checked against the server; the channels its outputs post to are core's and other
+modules', judged by the switch-on as above. The daily portrait job that `pfp_daily` arms is
+removed in a step after that save, which may fail without holding up the queue, and the job reads
+the module's switch as it fires, so one left armed does nothing.
 
 **The switch-on arms it again.** Where the kept configuration has portraits on with daily updates
 set, a step after the save arms the daily job at the stored time and carries the success line,
@@ -47,13 +57,25 @@ from leaguebot.image.models.switch import SWITCH_KEY
 from leaguebot.framework.models.change import AuditRecord, PlannedStep, Verdict, module_off, module_on
 from leaguebot.framework.services.queue.change_types import CheckContext
 from leaguebot.core.services.modules.hub_service import REFRESH_HUB, hub_refresh_after
+from leaguebot.core.services.modules.picture_channels import (
+    PictureChannel,
+    fault_line,
+    picture_channels_check,
+)
+from leaguebot.core.services.seasons.approval_checks import Presence
 from leaguebot.core.services.seasons.season_lifecycle_service import (
     FROZEN_FOR_COMPLETION_REFUSAL,
     PLACEMENTS_CONFIRMED_REFUSAL,
     modules_frozen_for_completion,
 )
 from leaguebot.framework.services.queue.setting_change import Saved, Setting
-from leaguebot.image.services.config.image_config_service import create_defaults_on, read_config_on
+from leaguebot.framework.utils.hooks import AwaitedHook
+from leaguebot.image.models.image_constants import ASPECT_LABELS, ASPECTS
+from leaguebot.image.services.config.image_config_service import (
+    create_defaults_on,
+    enabled_aspects_on,
+    read_config_on,
+)
 from leaguebot.image.services.config.image_settings import (
     ARM_DAILY,
     DAILY_JOB_NOT_REMOVED_MODULE_OFF,
@@ -92,8 +114,42 @@ def _still_off(_payload: dict[str, Any]) -> str:
     return "The module is still off. Run `/module enable images` again once the fault is cleared."
 
 
+#: The order a refusal names the outputs in: core's two first, as core's answer lays them, then the
+#: rest as the module reports them.
+_NAMED_ORDER = ("lineup", "calendar", *(each for each in ASPECTS if each not in ("lineup", "calendar")))
+
+
+def _enable_refusal(
+    collected: list[tuple[PictureChannel, Presence]], _payload: dict[str, Any]
+) -> dict[str, str]:
+    """The reply and the reason of the switch-on refused because a channel an output already on
+    posts to cannot take a picture: one bullet to a channel, naming every output that posts there
+    (a command channel failing for the lineup and the calendar is one bullet naming both)."""
+    bullets = [
+        "**" + ", ".join(
+            ASPECT_LABELS[each] for each in sorted(channel.aspects, key=_NAMED_ORDER.index)
+        ) + f"** — {fault_line(channel, presence)}"
+        for channel, presence in collected
+    ]
+    reply = (
+        "⛔ The image module is still off: outputs switched on post to channels that cannot take "
+        "them:\n"
+        + "".join(f"• {bullet}\n" for bullet in bullets)
+        + "Give the bot those permissions, set those channels again, or switch those outputs back "
+        f"to text with `/images config toggle`, then run `{_ENABLE_COMMAND}` again."
+    )
+    return {
+        "reply": reply,
+        "reason": "outputs switched on post to channels that cannot take them: " + "; ".join(bullets),
+    }
+
+
 def module_on_images(
-    *, modules: "ModuleService", seasons: "SeasonService", scheduler: "SchedulerService"
+    *,
+    modules: "ModuleService",
+    seasons: "SeasonService",
+    scheduler: "SchedulerService",
+    picture_channels_read: AwaitedHook,
 ) -> Setting:
     """`module.on:images`: the configuration created where missing, the flag and the audit, in
     one save, and the daily portrait job armed after it where the configuration asks for one.
@@ -150,6 +206,13 @@ def module_on_images(
         reply=reply,
         writes=("image_config", "image_aspect_toggles"),
         not_saved=_still_off,
+        before=(
+            picture_channels_check(
+                lambda db, _payload: enabled_aspects_on(db),
+                picture_channels_read=picture_channels_read,
+                refusal=_enable_refusal,
+            ),
+        ),
         after={
             ARM_DAILY: arm_daily(scheduler, lambda _payload: _ENABLE_COMMAND),
             REFRESH_HUB: hub_refresh_after(_ENABLE_COMMAND),

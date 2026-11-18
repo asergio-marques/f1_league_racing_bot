@@ -106,13 +106,17 @@ async def _audit(db_path) -> list[dict]:
         return [dict(r) for r in await cursor.fetchall()]
 
 
-def _channel(channel_id, *, manage=True, send_raises=None, edit_raises=None):
+def _channel(channel_id, *, manage=True, denied=(), send_raises=None, edit_raises=None):
+    """A channel of the server in which the bot holds every permission but Manage Channel and
+    Manage Permissions where not *manage*, and those *denied*, each named as `discord.Permissions`
+    names it (`embed_links`)."""
     channel = MagicMock(spec=discord.TextChannel)
     channel.id = channel_id
     channel.mention = f"<#{channel_id}>"
-    channel.permissions_for = MagicMock(
-        return_value=MagicMock(manage_channels=manage, manage_roles=manage)
-    )
+    permissions = MagicMock(manage_channels=manage, manage_roles=manage)
+    for attribute in denied:
+        setattr(permissions, attribute, False)
+    channel.permissions_for = MagicMock(return_value=permissions)
     channel.edit = AsyncMock(side_effect=edit_raises)
     channel.send = AsyncMock(side_effect=send_raises, return_value=MagicMock(id=NEW_PANEL))
     partial = MagicMock()
@@ -454,19 +458,98 @@ async def test_setting_the_hub_it_already_is_changes_nothing(db_path, manage):
     assert await change_rows(db_path) == []
 
 
-async def test_a_channel_the_bot_cannot_manage_is_refused_before_anything_is_written(db_path):
-    """Refused at the ask in today's words: nothing is written and nothing asked of the queue."""
-    channel = _channel(HUB, manage=False)
+def _cannot_use(missing: str) -> str:
+    """The refusal of 7920 as the hub where the bot lacks *missing* there."""
+    return (
+        f"❌ The bot is missing permissions it needs in <#{HUB}> as the hub channel: {missing}. "
+        f"Give the bot them there, or pick another channel. Nothing was changed."
+    )
+
+
+@pytest.mark.parametrize(
+    "manage,denied,missing",
+    [
+        pytest.param(
+            False, (), "Manage Channel, Manage Permissions", id="no-manage",
+        ),
+        pytest.param(
+            True, ("embed_links",), "Embed Links", id="no-embed-links",
+        ),
+        pytest.param(
+            True, ("send_messages",), "Send Messages", id="no-send-messages",
+        ),
+        pytest.param(
+            True, ("view_channel",), "View Channel", id="no-view-channel",
+        ),
+    ],
+)
+async def test_a_channel_the_bot_cannot_use_as_the_hub_is_refused_before_anything_is_written(
+    db_path, manage, denied, missing
+):
+    """Core spec, The hub: the bot needs View Channel, Send Messages, Embed Links, Manage Channel
+    and Manage Permissions in the hub. The manager points the hub at 7920, where the bot lacks
+    Manage Channel and Manage Permissions (*no-manage*), or Embed Links, Send Messages or View
+    Channel: refused at the ask, naming what the bot lacks in the order the hub needs it, in the
+    words every channel command gives. Nothing is written, nothing touched in 7920, and nothing
+    asked of the queue."""
+    channel = _channel(HUB, manage=manage, denied=denied)
     cog, interaction = await _setup(db_path, channel)
 
     await _run(cog, interaction, channel)
 
-    assert _replied(interaction) == (
-        f"❌ The bot needs **Manage Channel** and **Manage Permissions** on <#{HUB}> to set who "
-        f"may see the hub. Nothing was changed."
-    )
+    assert _replied(interaction) == _cannot_use(missing)
     assert await _stored(db_path) == {"hub_channel_id": None, "hub_message_id": None}
+    channel.edit.assert_not_awaited()
+    channel.send.assert_not_awaited()
     assert await change_rows(db_path) == []
+
+
+def _lose_embed_links(cog, channel) -> None:
+    """The bot is denied Embed Links in *channel*, which the panel needs."""
+    channel.permissions_for.return_value.embed_links = False
+
+
+def _delete_the_channel(cog, channel) -> None:
+    """*channel* is deleted from the server: out of the cache, and a fetch finds it not."""
+    guild = cog.bot.get_guild(SERVER_ID)
+    guild.get_channel = MagicMock(return_value=None)
+    guild.fetch_channel = AsyncMock(
+        side_effect=discord.NotFound(MagicMock(status=404), "Unknown Channel")
+    )
+
+
+@pytest.mark.parametrize(
+    "meanwhile,refused",
+    [
+        pytest.param(_lose_embed_links, _cannot_use("Embed Links"), id="permission_lost"),
+        pytest.param(
+            _delete_the_channel,
+            f"❌ <#{HUB}> is no longer on the server. Nothing was changed.",
+            id="channel_deleted",
+        ),
+    ],
+)
+async def test_a_hub_change_is_refused_as_it_starts_where_its_channel_can_no_longer_be_used(
+    db_path, meanwhile, refused
+):
+    """Core spec, Channels: a channel's needs are judged again as the change starts. The league
+    has no hub; the manager points it at 7920, where the bot holds every permission, and is
+    acknowledged. Before the change runs, the bot is denied Embed Links in 7920
+    (*permission_lost*), or 7920 is deleted (*channel_deleted*). The change is refused: the
+    manager's reply becomes the refusal, no hub channel is written, 7920 is neither permissioned
+    nor given a panel."""
+    channel = _channel(HUB)
+    cog, interaction = await _setup(db_path, channel)
+
+    await undecorate(BotCog.handle_hub_channel)(cog, interaction, channel)
+    assert acknowledgement(interaction).startswith("⏳ ")
+    meanwhile(cog, channel)
+    await run_queue(cog.bot)
+
+    assert _replied(interaction) == refused
+    assert await _stored(db_path) == {"hub_channel_id": None, "hub_message_id": None}
+    channel.edit.assert_not_awaited()
+    channel.send.assert_not_awaited()
 
 
 async def test_a_panel_that_cannot_be_posted_stops_the_queue_and_the_hub_is_kept(db_path):

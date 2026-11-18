@@ -272,6 +272,73 @@ async def test_results_names_each_division_s_missing_or_deleted_channels(tmp_pat
     assert await faults(True, lacking) == {DIVISION_ID: [results_line, standings_line], **am}
 
 
+async def test_results_answers_the_channel_each_output_posts_to_while_on(tmp_path):
+    """Division 11's results channel is 120, its standings channel 121 and its verdicts channel
+    122; Am has only its standings channel 221; Old, not among the divisions handed, has results
+    channel 130. Results on, each channel answers for the output that posts to it, with what its
+    use needs and Attach Files, though the drawing does not yet say a picture attaches a file,
+    and the command that sets it again: Results switched on answers Division 11's 120; Standings
+    answers 121 and Am's 221; Verdicts and Verdict banners together answer the verdicts channel
+    122 once, naming both, and Verdict banners alone answer it for the banners. Only other
+    outputs switched on, or results off, it answers nothing."""
+    from unittest.mock import MagicMock
+
+    from leaguebot.core.models.channel_needs import ATTACH, READ_HISTORY, SEND, VIEW
+    from leaguebot.core.services.modules.picture_channels import PictureChannel
+    from leaguebot.core.services.settings.channel_registry_service import ChannelUse
+    from leaguebot.results.services.module.division_channels import picture_channels
+    from tests.support.channel_faults import answer_attachments
+
+    db_path = await _make_db(tmp_path)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO divisions (id, season_id, name, mention_role_id, tier) "
+            "VALUES (12, 1, 'Am', 1, 12), (13, 1, 'Old', 1, 13)"
+        )
+        await db.execute(
+            "INSERT INTO division_results_config (division_id, results_channel_id, "
+            "standings_channel_id, penalty_channel_id) VALUES (?, 120, 121, '122'), "
+            "(12, NULL, 221, NULL), (13, 130, NULL, NULL)",
+            (DIVISION_ID,),
+        )
+        await db.commit()
+    needs = (VIEW, SEND, READ_HISTORY, ATTACH)
+
+    async def answered(on: bool, *aspects: str) -> list:
+        modules = MagicMock()
+        answer_switch(modules, "results", on)
+        async with get_connection(db_path) as db:
+            found = await picture_channels(
+                modules, answer_attachments(MagicMock()), db=db,
+                divisions={DIVISION_ID: "Division 11", 12: "Am"}, aspects=frozenset(aspects),
+            )
+        return sorted(found, key=lambda channel: channel.channel_id)
+
+    def channel(aspects, channel_id, setting, division, command):
+        return PictureChannel(
+            frozenset(aspects), channel_id, ChannelUse(setting, division), command, needs
+        )
+
+    assert await answered(True, "results") == [
+        channel({"results"}, 120, "results", "Division 11", "/results channel results")
+    ]
+    assert await answered(True, "standings") == [
+        channel({"standings"}, 121, "standings", "Division 11", "/results channel standings"),
+        channel({"standings"}, 221, "standings", "Am", "/results channel standings"),
+    ]
+    assert await answered(True, "verdicts", "verdict_banner") == [
+        channel(
+            {"verdicts", "verdict_banner"}, 122, "verdicts", "Division 11",
+            "/results channel verdicts",
+        )
+    ]
+    assert await answered(True, "verdict_banner") == [
+        channel({"verdict_banner"}, 122, "verdicts", "Division 11", "/results channel verdicts")
+    ]
+    assert await answered(True, "lineup", "weather") == []
+    assert await answered(False, "results", "standings", "verdicts") == []
+
+
 async def test_results_hands_the_review_each_division_s_channel_lines(tmp_path):
     """Division 11 has its results channel 120 and no standings or verdicts channel; Am has its
     standings channel 221 and verdicts channel 222 and no results channel; Club has no results

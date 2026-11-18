@@ -85,7 +85,7 @@ Each answers at once ("⏳ Setting the results channel for **Division One** to #
 
 **All three block a season.** While results & standings is on, a season cannot be approved until every division has all three, and the bot names each division that is missing one. The verdicts channel is the one people forget, because penalties are the last thing on your mind while building a calendar.
 
-**The bot needs View Channel, Send Messages and Read Message History in each of the three**, because it posts a table again and takes the old one down by finding it; and Attach Files in a channel while that channel's aspect (results, standings, verdicts or the verdict banner) draws pictures. Confirming a season, and approving a points amendment with `/results amend review`, is refused up front, naming the channel and the permission it lacks, rather than stopping the queue part-way.
+**The bot needs View Channel, Send Messages and Read Message History in each of the three**, because it posts a table again and takes the old one down by finding it; and Attach Files in a channel while that channel's aspect (results, standings, verdicts or the verdict banner) draws pictures. Each of the three commands refuses a channel lacking one, naming each permission missing and saving nothing. Confirming a season, and approving a points amendment with `/results amend review`, is refused up front, naming the channel and the permission it lacks, rather than stopping the queue part-way.
 
 > **A division copied from another does not inherit any of them.** The copy starts with none and nothing warns you at the time — it surfaces later as a season that will not approve. Set them explicitly.
 
@@ -442,7 +442,7 @@ Work it in this order.
 
 The verdict in your verdicts channel is the only thing that tells a driver *why* their classification changed. A verdict Discord refuses stops the queue, and so does the heading over a round's verdicts, the verdicts waiting behind it, or over its attendance sanction cards where no verdict was announced, the cards waiting behind it. The bot tries again, as text where it was a picture, and you can press **Retry** once the cause is repaired.
 
-1. **Repair the cause.** Usually the verdicts channel has been deleted or the bot's permission to post in it has been taken away. If the channel is gone, set a new one with `/results channel verdicts`, then press **Retry** on the notice.
+1. **Repair the cause.** Usually the verdicts channel has been deleted or the bot's permission to post in it has been taken away. If the channel is gone, set a new one with `/results channel verdicts`, which refuses a channel where the bot still lacks a permission and names it, then press **Retry** on the notice.
 2. **Or let a league admin discard it.** The other verdicts go ahead. The approval's reply and its own `Incomplete` log line (`PENALTY_REVIEW_APPROVED`, `APPEALS_REVIEW_APPROVED` or `RESULT_AMENDED`) name each verdict not announced, with the driver it was owed to. A heading discarded leaves the verdicts or sanction cards beneath none.
 3. **Post a discarded decision yourself**, in that channel, naming the driver, the sanction and the reasoning. There is no command that announces a decided verdict again: a verdict that is discarded is not tried again. The `Incomplete` line in the log channel has the details you need.
 

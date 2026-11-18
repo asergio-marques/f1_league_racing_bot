@@ -1,11 +1,14 @@
 """The image settings as settings on the change queue (#439, slice 7).
 
 Each `/images` command that changes the module's configuration asks one `image.setting.…` change,
-built from a `Setting` below by `setting_change` (`framework/services/queue/setting_change.py`, which holds
-what every settings change does with a value already held and with a fault). The check of each is
-the command's, in today's order and words, run at the ask and again as the change starts, so a
-module switched off, a template broken by a directory set ahead of it or an output whose drawings
-broke meanwhile is taken into account. Every check refuses first where the Image module is off.
+built from a `Setting` below by `setting_change` (`framework/services/queue/setting_change.py`,
+which holds what every settings change does with a value already held and with a fault). The check
+of each is the command's, in today's order and words, run at the ask and again as the change
+starts, so a module switched off, a template broken by a directory set ahead of it or an output
+whose drawings broke meanwhile is taken into account. A switch to a picture is also judged by a
+step of its own before the save, which reads the channels it posts to as the change runs, not at
+the ask. Every check refuses first where the Image module is off, but for the switching of an
+output to text, which is allowed while it is off.
 
 **What a change carries.** Every payload is plain JSON, as the queue stores it: the column or
 aspect it sets and the value as it is stored, validated and normalised at the command (a path
@@ -35,10 +38,17 @@ import dataclasses
 from collections.abc import Awaitable, Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
+from leaguebot.core.services.modules.picture_channels import (
+    PictureChannel,
+    fault_line,
+    picture_channels_check,
+)
+from leaguebot.core.services.seasons.approval_checks import Presence
 from leaguebot.image.models.switch import SWITCH_KEY
 from leaguebot.framework.models.change import AuditRecord, PlannedStep, StepKind, StepResult, Verdict
 from leaguebot.framework.services.queue.change_types import CheckContext, Step, StepContext
 from leaguebot.framework.services.queue.setting_change import NOTHING_SAVED, After, Saved, Setting
+from leaguebot.framework.utils.hooks import AwaitedHook
 from leaguebot.framework.utils.paths import resolve_within_project_root
 from leaguebot.utils.timezones import is_known_zone
 from leaguebot.image.models.image_constants import (
@@ -419,18 +429,47 @@ def _template(modules: "ModuleService", config: "ImageConfigService") -> Setting
     )
 
 
+async def _switched_on(_db: "aiosqlite.Connection", payload: dict[str, Any]) -> frozenset[str]:
+    """The output a toggle switches on: none where it switches one off, which judges nothing."""
+    return frozenset({str(payload["aspect"])}) if payload["enabled"] else frozenset()
+
+
+def _toggle_refusal(
+    collected: list[tuple[PictureChannel, Presence]], payload: dict[str, Any]
+) -> dict[str, str]:
+    """The reply and the reason of a toggle refused because a channel the output posts to cannot
+    take a picture, each channel on a line of its own."""
+    bullets = [fault_line(channel, presence) for channel, presence in collected]
+    reply = (
+        f"⛔ **{ASPECT_LABELS[str(payload['aspect'])]}** image output was **not** switched on — "
+        "channels it posts to cannot take it:\n"
+        + "".join(f"• {bullet}\n" for bullet in bullets)
+        + "Give the bot those permissions there, or set those channels again, then run "
+        "`/images config toggle` again. The output is still posted as text in the meantime."
+    )
+    return {"reply": reply, "reason": "; ".join(bullets)}
+
+
 def _aspect(
-    modules: "ModuleService", config: "ImageConfigService", validity: "ImageValidityService"
+    modules: "ModuleService",
+    config: "ImageConfigService",
+    validity: "ImageValidityService",
+    picture_channels_read: AwaitedHook,
 ) -> Setting:
     """`/images config toggle`: `{"aspect", "enabled"}`, the flip resolved when it was asked.
 
-    Switching an output *off* is never refused: it reverts to text, which needs no drawing at
-    all. Switching one *on* is refused while the drawings behind it are unusable, the output
-    left off, since an output that cannot draw withholds the season's approval and posts nothing
-    where a driver would otherwise have read text. The check is made against the configured
-    directory, so it answers for the files the league actually has, and again as the change
-    starts. An output found already in the state asked for, where two presses raced, changes
-    nothing and says so.
+    Switching an output *off* is never refused, not even while the module is off: it reverts to
+    text, which needs no drawing at all. Switching one *on* is refused while the module is off,
+    or while the drawings behind it are unusable, the output left off, since an output that cannot
+    draw withholds the season's approval and posts nothing where a driver would otherwise have
+    read text. The check is made against the configured directory, so it answers for the files
+    the league actually has, and again as the change starts. An output found already in the state
+    asked for, where two presses raced, changes nothing and says so.
+
+    **Switching one on also judges the channels it posts to** (`picture_channels_check`, a step
+    before the save), as an output counted as a picture: one lacking a permission its use needs,
+    or gone, refuses the switch with each named and the output left off. Where the bot cannot
+    tell, nothing is changed and the reply says to run the command again (*not_saved*).
     """
 
     def label(payload: dict[str, Any]) -> str:
@@ -440,11 +479,11 @@ def _aspect(
         return "on" if payload["enabled"] else "off"
 
     async def check(ctx: CheckContext) -> Verdict:
+        if not ctx.payload["enabled"]:
+            return Verdict.go()
         off = await _module_refusal(modules)
         if off is not None:
             return off
-        if not ctx.payload["enabled"]:
-            return Verdict.go()
         blocking = await aspect_blocking_reasons(
             str(ctx.payload["aspect"]), config=config, validity=validity
         )
@@ -479,6 +518,16 @@ def _aspect(
         save=save,
         reply=reply,
         writes=("image_aspect_toggles",),
+        not_saved=lambda payload: (
+            "The output was not switched on. Run `{command}` again to retry."
+            if payload["enabled"]
+            else NOTHING_SAVED
+        ),
+        before=(
+            picture_channels_check(
+                _switched_on, picture_channels_read=picture_channels_read, refusal=_toggle_refusal
+            ),
+        ),
     )
 
 
@@ -986,8 +1035,10 @@ def image_settings(
     render: "ImageRenderService",
     seasons: "SeasonService",
     scheduler: "SchedulerService",
+    picture_channels_read: AwaitedHook,
 ) -> tuple[Setting, ...]:
-    """Every image setting, built from the services handed in.
+    """Every image setting, built from the services handed in and the hook the channels a picture
+    posts to are read through.
 
     The services are values, never read through the bot (`docs/design/architecture.md`,
     "Composition"), so a setting's check and its steps are testable with doubles.
@@ -996,7 +1047,7 @@ def image_settings(
         _directory(modules),
         _template_directory(modules, config),
         _template(modules, config),
-        _aspect(modules, config, validity),
+        _aspect(modules, config, validity, picture_channels_read),
         _presentation(modules),
         _fastest_lap_colour(modules, config, validity, render, seasons),
         _per_tier(modules, validity),

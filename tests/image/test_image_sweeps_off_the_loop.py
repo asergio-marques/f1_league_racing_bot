@@ -31,6 +31,7 @@ from lxml import etree
 
 from leaguebot.framework.models.change import ChangeOrigin, Verdict
 from leaguebot.framework.services.queue.change_types import CheckContext
+from leaguebot.framework.utils.hooks import AwaitedHook
 from leaguebot.image.services.portraits import driver_portrait_service
 from leaguebot.image.services.render import image_render_service
 from leaguebot.image.services.validity import image_validity_service as validity_module
@@ -66,14 +67,15 @@ def _validity(config: Any) -> ImageValidityService:
 
 
 def _setting(kind: str, config: Any, proposed: Any) -> Any:
-    """The image setting *kind*, the module on and *proposed* the configuration it would make."""
+    """The image setting *kind*, the module on and *proposed* the configuration it would make,
+    handed a hook no module answers."""
     modules = MagicMock()
     answer_switch(modules, "images", True)
     config.candidate_config = AsyncMock(return_value=proposed)
     return next(
         each for each in image_settings(
             modules=modules, config=config, validity=MagicMock(), render=MagicMock(),
-            seasons=MagicMock(), scheduler=MagicMock(),
+            seasons=MagicMock(), scheduler=MagicMock(), picture_channels_read=AwaitedHook(),
         )
         if each.kind == kind
     )

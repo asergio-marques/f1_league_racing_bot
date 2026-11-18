@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 from types import SimpleNamespace
 from typing import Any
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -27,6 +28,7 @@ from leaguebot.core.services.settings.bot_settings import (
 from leaguebot.core.services.settings.channel_registry_service import ChannelUse
 from leaguebot.core.services.settings.division_settings import division_channel_settings
 from leaguebot.framework.utils.hooks import AwaitedHook
+from tests.support.channel_faults import answer_attachments
 from tests.support.switches import switches
 
 CHANNEL = 4040
@@ -82,33 +84,47 @@ def _modules() -> Any:
 
 
 def _forecast_channel(hook: AwaitedHook) -> Any:
-    """Weather's forecast channel setting, built as weather's wiring builds it, with the hook."""
+    """Weather's forecast channel setting, built as weather's wiring builds it, with the hook and
+    a drawing whose pictures attach no file."""
     from leaguebot.weather.services.weather_settings import forecast_channel_setting
 
-    return forecast_channel_setting(modules=_modules(), seasons=_seasons(), channel_uses_read=hook)
+    return forecast_channel_setting(
+        modules=_modules(), seasons=_seasons(), channel_uses_read=hook,
+        drawing=answer_attachments(MagicMock()),
+    )
+
+
+def _division_channels(hook: AwaitedHook) -> tuple[Any, ...]:
+    """Core's lineup and calendar channel settings, built as the builder builds them, with the
+    hook and a drawing whose pictures attach no file."""
+    return division_channel_settings(
+        seasons=_seasons(), channel_uses_read=hook, drawing=answer_attachments(MagicMock())
+    )
 
 
 def _settings(hook: AwaitedHook) -> dict[str, Any]:
-    """Each setting, by name, as a builder: one is built only when its case asks for it."""
-    division_lineup, division_calendar = division_channel_settings(
-        seasons=_seasons(), channel_uses_read=hook
-    )
+    """Each setting, by name, as a builder: one is built only when its case asks for it. The
+    interaction channel's is handed a drawing whose pictures attach no file, as its needs ask."""
     return {
         "log channel": lambda: log_channel_setting(config=_config(), channel_uses_read=hook),
         "interaction channel": lambda: interaction_channel_setting(
-            config=_config(), channel_uses_read=hook
+            config=_config(), channel_uses_read=hook, drawing=answer_attachments(MagicMock())
         ),
         "hub channel": lambda: hub_channel_setting(config=_config(), channel_uses_read=hook),
-        "division lineup channel": lambda: division_lineup,
-        "division calendar channel": lambda: division_calendar,
+        "division lineup channel": lambda: _division_channels(hook)[0],
+        "division calendar channel": lambda: _division_channels(hook)[1],
         "division forecast channel": lambda: _forecast_channel(hook),
     }
 
 
 @pytest.mark.parametrize(
     "name",
-    ["log channel", "interaction channel", "hub channel", "division lineup channel",
-     "division calendar channel", "division forecast channel"],
+    ["log channel",
+     pytest.param("interaction channel"),
+     "hub channel",
+     pytest.param("division lineup channel"),
+     pytest.param("division calendar channel"),
+     pytest.param("division forecast channel")],
 )
 async def test_a_channel_setting_asks_the_hook_it_was_built_with(db_path, name):
     """A channel another module holds is refused by the setting's check, naming that module's use,

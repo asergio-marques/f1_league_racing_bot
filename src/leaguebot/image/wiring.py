@@ -76,6 +76,7 @@ def register_change_types(bot: "LeagueBot") -> None:
                 modules=bot.module_service,
                 seasons=bot.season_service,
                 scheduler=bot.scheduler_service,
+                picture_channels_read=bot.picture_channels_read,
             )
         )
     )
@@ -91,6 +92,7 @@ def register_change_types(bot: "LeagueBot") -> None:
         render=bot.image_render_service,
         seasons=bot.season_service,
         scheduler=bot.scheduler_service,
+        picture_channels_read=bot.picture_channels_read,
     ):
         bot.change_queue.register(setting_change(setting))
 

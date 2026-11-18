@@ -36,6 +36,7 @@ from leaguebot.framework.db.database import get_connection
 from leaguebot.image.cogs.image_cog import ImageCog
 from tests.support import saves
 from tests.support.change_queue import run_queue
+from tests.support.channel_faults import league_server
 from tests.support.image_cog_doubles import (
     assert_one_line,
     assert_one_refusal,
@@ -152,9 +153,10 @@ def _rasteriser_present(monkeypatch):
 
 async def _league(tmp_path, *, modules=("images",)) -> Any:
     """A league with *modules* on and the image configuration's defaults; its bot is
-    `log_bot`'s real-queue form."""
+    `log_bot`'s real-queue form, its server holding every channel with every permission."""
     league = await settings_league(tmp_path, modules=modules)
     log_bot(league)
+    league_server(league.bot)
     return league
 
 

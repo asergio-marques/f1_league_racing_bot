@@ -11,11 +11,20 @@ words: the module on, the configuration not fixed by a confirmed season (a repai
 for it: where the stored signup channel is no longer on the server, the league may replace it
 mid-season), signup configured, the
 channel not doing another job, then the bot's permission on the new channel and on the old one
-it is to clear. Setting who may see a channel needs both Manage Channel and Manage Permissions,
-and the old channel is judged as well as the new so that a move Discord will refuse for the old
-one is refused before anything is saved, not left to strip the old channel of what it holds.
-They are judged here and not in the command because a change ahead on the queue may have taken
-the channel since the command asked.
+it is to clear. The new channel is judged against everything the bot needs of it
+(`channel_needs`: posting there and setting who may see it), in the words every channel check
+gives (`unusable_refusal`), a channel deleted meanwhile refused as no longer on the server. Setting
+who may see a channel needs both Manage Channel and Manage Permissions, and the old channel,
+where it is not the new one, is judged for that pair alone, so that a move Discord will refuse for
+the old one is refused before anything is saved, not left to strip the old channel of what it
+holds. They are judged here and not in the command because a change ahead on the queue may have
+taken the channel since the command asked.
+
+**A server not to hand fails the check rather than standing aside**, where every other channel
+check lets the change go. The signup channel's permissions are set by the change itself, which
+cannot be done without the server; to save the channel and then fail to set them would leave a
+signup channel nobody can sign up in. The check raises, nothing is changed, and the member is told
+to run the command again.
 
 **The overwrites follow the save, the new channel's set first and the old one's cleared last**
 (`SET_PERMISSIONS`, an `After` step carrying the line), so the new channel is tried while the
@@ -56,9 +65,11 @@ from leaguebot.core.services.settings.channel_registry_service import (
     ChannelUse,
     find_channel_use,
     refusal,
+    unusable_refusal,
 )
 from leaguebot.framework.utils.interaction_errors import describe_fault
 from leaguebot.framework.utils.league_server import league_guild
+from leaguebot.signup.services.channel_uses import channel_needs
 from leaguebot.signup.services.information_post import post_information
 from leaguebot.signup.services.signup_module_service import signup_channel_overwrites
 from leaguebot.signup.services.signup_settings import open_to_change
@@ -85,7 +96,7 @@ NOT_CONFIGURED = "❌ Signup module is not configured."
 
 
 def may_not_edit(channel_id: int) -> str:
-    """The refusal of a channel the bot may not set the permissions of."""
+    """The refusal of the old signup channel, which the bot may not set the permissions of."""
     return (
         f"❌ The bot needs **Manage Channel** and **Manage Permissions** on <#{channel_id}> "
         "to set who may see it. The signup channel was not changed."
@@ -93,6 +104,9 @@ def may_not_edit(channel_id: int) -> str:
 
 
 def _may_set_permissions(guild: discord.Guild, channel: discord.TextChannel) -> bool:
+    """Whether the bot may set the permissions of the old signup channel: it holds Manage Channel
+    and Manage Permissions there. The new channel's are judged with the rest of what it needs
+    (`unusable_refusal`)."""
     held = channel.permissions_for(guild.me)
     return bool(held.manage_channels and held.manage_roles)
 
@@ -249,14 +263,14 @@ def channel_setting(
         guild = await league_guild(ctx.bot)
         if guild is None:
             raise RuntimeError("the league's server is not in the cache")
+        unusable = await unusable_refusal(guild, new_id, channel_needs(), ChannelUse("signup"))
+        if unusable is not None:
+            return Verdict.refuse(unusable)
         old_id = held.signup_channel_id
-        judged = [new_id] if old_id is None or old_id == new_id else [new_id, old_id]
-        for channel_id in judged:
-            channel = guild.get_channel(channel_id)
-            if isinstance(channel, discord.TextChannel) and not _may_set_permissions(
-                guild, channel
-            ):
-                return Verdict.refuse(may_not_edit(channel.id))
+        if old_id is not None and old_id != new_id:
+            old = guild.get_channel(old_id)
+            if isinstance(old, discord.TextChannel) and not _may_set_permissions(guild, old):
+                return Verdict.refuse(may_not_edit(old.id))
         return Verdict.go()
 
     async def save(db: "aiosqlite.Connection", payload: dict[str, Any]) -> Saved:

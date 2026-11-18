@@ -172,12 +172,12 @@ folder.
 | Teams and placements | `team_service` (`TeamService`), `placement_service` (`PlacementService`), `team_role_service` (`TeamRoleService`), `template_capacity_service` (`TemplateCapacityService`), `lineup_posting` (`LineupPoster`), `lineup_command` (`lineups_for_command`), `division_seating` (`division_seating`) | the list and the divisions' teams; the seats and placements (`PlacementService`, which posts nothing, reads a team's role through the team-role service it is handed, joins `team_role_configs` in its own queries for the roles a driver's placements carry, reads the driver role from the settings row, and gives and takes roles only through that service's helpers); `team_role_configs` and the helpers that give and take a team's Discord role (`TeamRoleService`); nothing for the capacity guards, which ask the image module's drawing whether its templates could draw a seat (`TemplateCapacityService`); nothing for the lineup's posting, the picture or its text (`LineupPoster`), nor for `/team lineup`'s pictures, which refuse rather than fall back to text (`lineups_for_command`); the seats and who sits in them, read as the lineup of record shows them, for every module that lists who races in a division (`division_seating`: the text lineup, image's lineup, standings and previews, each handing in its own filter on the state of the driver who sits); the portrait roster reads `active_season_driver_ids` beside it, which takes no filter: every driver assigned in the active season, a placement not yet confirmed included, test drivers left out |
 | Drivers | `driver_service` (`DriverService`), `driver_names` | profiles, accounts, memberships, and the state machine; history is written by `season_end_service.write_driver_history_entries_on`; nothing for `driver_names`, which reads a driver's name, username and nationality, and whether the league collects a nationality, from the profile, the accounts, the test-mode fields and signup's hook |
 | A round's timed work | `round_jobs` (`RoundJobs`) | nothing: it is handed the rounds it arms, and reads the live seasons' rounds only to cancel their jobs (`cancel_live_rounds`) |
-| Channels | `channel_registry_service` | nothing: it reads core's channel columns, and the modules' through a hook |
+| Channels | `channel_registry_service` | nothing: it reads core's channel columns, and the modules' through a hook, and asks Discord, through `judged_presence`, whether a channel being set can be used as its needs ask (`unusable_refusal`) |
 | The image module | `image_drawing` (the `ImageDrawing` protocol) | nothing: it declares what core asks |
 | Amending a round | `amendment_rules_service`, `round_steps` | nothing: the first judges core's own rules of what an amendment may do (the fields, the round's status, the moment and a mystery round given a circuit alone) and gathers each module's part of the judgement through `amendment_judged`; the second names a round in an amendment's step by the number it bears when read |
 | Season reviews and confirmations | `approval_checks`, `approval_window_service` (`calendar_faults`, what is already behind a season on the day it is approved), `review_sections`, `confirmation_refusals`, `season_fingerprint_service`, `season_review_changes`, `season_review_views`, `season_review_workflows` | `season_review_prompts` |
 | The hub | `hub_service`, `about_service` | `server_configs.hub_message_id` |
-| A module switched on | `kept_channels` (`kept_channels_check`) | nothing: it reads the channels a module kept through the reader its switch-on hands it, asks the registry, through the bot's `channel_uses_read` hook that every module holding channels answers, which are taken, and Discord which are gone or unusable |
+| A module or an output switched on | `kept_channels` (`kept_channels_check`), `picture_channels` (`picture_channels_check`, `core_picture_channels`) | nothing: the first reads the channels a module kept through the reader its switch-on hands it, asks the registry, through the bot's `channel_uses_read` hook that every module holding channels answers, which are taken, and Discord which are gone or unusable; the second reads, through the `picture_channels_read` hook, the channels an output switched to a picture posts to, and asks Discord which are gone or lack what a picture needs |
 | Test mode | `test_mode_service`, `test_roster_service`, `backup_service` | `server_configs.test_mode_active` |
 | Starting over | `pack_service`, `factory_reset_service`, `in_memory_state` | — |
 
@@ -206,27 +206,64 @@ architecture.md's "How modules and core fit together" has it and holds no rule o
 fetch and answers `PRESENT`, `GONE` or `UNUSABLE` with what the bot lacks there, and raises on any
 answer Discord does not prove, a server error or a bot member it cannot read. `judged_presence`
 stands aside on that raise, the stated exception in architecture.md's "Errors and failures", which
-is what a confirmation wants, and is the strict reader's one caller: it raises so that a caller free
-to refuse on a check it could not make may. The gates before a repost and a recalculation judge from
-the cache alone, through `results_post_service.channel_fault`. Core's own `channel_fault` words the
-confirmation's line, and takes the *needs* its caller hands it, so it holds no list of channels and
-no permission of its own. It also words a channel of no division, the server's, where its division
-name is None, which signup's configuration faults use, so one wording serves the division channels
-and signup's at the configuration. A need is data (`core/models/channel_needs.py`) and each part builds its
-channels' from it in its own service (`channel_needs`: weather's forecast channel, results' three,
-attendance's two), asking the image module's drawing, handed through the module's wiring, only
-whether a picture could attach a file. The alternatives rejected: one table of every channel's needs
-in core, which would hold each module's rule (architecture.md, "What each part may do"); and each
-gate keeping its own list, which lets two gates judge one channel differently.
+is what a confirmation wants. The strict reader raises so that a caller free to refuse on a check it
+could not make may, and the kept-channels check is that caller. Setting one of a division's channels
+judges a channel's needs too, and reads `judged_presence`, so it stands aside as the confirmation
+does, and so do the server's own channels (the log channel, the interaction channel and the hub),
+which judge through `unusable_refusal` straight after the in-use and same-value refusals, at the
+ask and again as the change starts; core_specification.md, "Channels", says what a league sees
+where it cannot tell. The one exception is signup's: its change sets the channel's permissions
+after the save, which needs the server, so its check fails where the server is not to hand rather
+than standing aside (`signup_module.md`, "Settings are `Setting` changes").
+`channel_registry_service.unusable_refusal` is handed the server, the id, the needs and the use, and
+judges through `judged_presence` without owning a need, a permission or a channel of any module. The
+gates before a repost and a recalculation judge from the cache alone, through
+`results_post_service.channel_fault`. Core's own `channel_fault` words the confirmation's line, and
+takes the *needs* its caller hands it, so it holds no list of channels and no permission of its own.
+It also words a channel of no division, the server's, where its division name is None, which
+signup's configuration faults use, so one wording serves the division channels and signup's at the
+configuration. A need is data (`core/models/channel_needs.py`) and each part builds its channels'
+from it in its own service (`channel_needs`: weather's forecast channel, results' three,
+attendance's two, and signup's one in `channel_uses`), asking the image module's drawing, handed
+through the module's wiring, only whether a picture could attach a file (signup's, which has no
+picture, asks nothing). The alternatives rejected: one table of every channel's needs in core, which
+would hold each module's rule (architecture.md, "What each part may do"); and each gate keeping its
+own list, which lets two gates judge one channel differently.
+
+**The server's channels hand their needs from the service that owns the setting.** `hub_service`
+owns `HUB_NEEDS`, the five core_specification.md, "The hub", lists: the bot's own overwrite in the
+hub grants it Embed Links, and the hub is held to the same five needs as the signup channel;
+`bot_settings` owns `LOG_CHANNEL_NEEDS`, `INTERACTION_CHANNEL_NEEDS` (the text needs of the command
+channel) and `interaction_channel_needs(drawing)`, which asks the image module's drawing, as the
+division channels do, whether a lineup or calendar picture attaches a file. `/bot init` judges both
+its channels through `init_channel_refusals`, which words every refusal on a line of its own, the
+command channel first. It is called from two places: the cog, at the ask, against the server the
+command runs in, and `bot_init_change`'s check, against the server in its payload, which runs at the
+ask and again as the change claims the server, because the Discord read belongs in a check and never
+in a save. Both judge only where no server is claimed (core_specification.md, "Setting the bot up",
+says what a configured server and another server are answered); the cog refuses another server's
+claim at the ask, and the save reports it as the change starts, with no channel refusal beside it.
+The change's `on_refused` hook writes the refusal where core_specification.md, "Setting the bot up",
+says, the queue's own line having no league log to go to before the claim. The alternatives
+rejected: judging in the save, which reads the database alone (architecture.md, "How a change is
+carried out"); and judging only at the ask, which leaves a channel broken while the change waits in
+the queue.
 
 **Core's own two channels are named through the same hook as the modules'.** The lineup and the
 calendar need the image module's answer to build their needs, which is awaited, so
 `core_division_channel_faults` (its subscriber of `division_channel_faults_read`, signed up before
 every module's, so a division's lines read core's first) builds them where it can await, from
-`core_channel_needs`. `division_channel_faults` holds no list of channels, so the review and the two
-confirmations cannot disagree about one and `season_approval_change` holds none. *Rejected:* the
-check reading the image module's configuration for a switch, which is the module's to answer
-(`ImageDrawing.calendar_attaches_files` and `lineup_attaches_files`).
+`core_channel_needs`. The lineup and calendar settings' check (`division_settings`) reads the same
+`core_channel_needs`, with the drawing the builder hands `division_channel_settings`, and so cannot
+judge a channel differently from the confirmation. The two channels are named once, in
+`DIVISION_CHANNELS` (`approval_checks`: the column, the label and the key in `core_channel_needs`),
+which the confirmation's fault check and core's picture channels (below) both read, and the second
+takes the needs of each as a picture from `DIVISION_CHANNEL_NEEDS`, with Attach Files, rather than
+asking the drawing, the check that reads them holding a connection and awaiting nothing else. `division_channel_faults` holds no list of
+channels, so the review and the two confirmations cannot disagree about one and
+`season_approval_change` holds none. *Rejected:* the check reading the image module's configuration
+for a switch, which is the module's to answer (`ImageDrawing.calendar_attaches_files` and
+`lineup_attaches_files`).
 
 **The approval's queued check judges what the press judged, whole.** Between the press and the
 queue reaching the approval, any of it can change, and a module's own channel is as likely to be
@@ -239,9 +276,10 @@ order). Asking the hook, not a list of modules' rules, keeps core free of any mo
 
 **Core's models** (`core/models/`) are plain data and the enums the schema ties to: the season's
 status and stage, a division's and a round's status, the driver's state and the dependency table
-(`module_dependencies.py`), and the permissions a saved channel needs (`channel_needs.py`: `Needs`
-and the named permissions, which each part states its channels' needs from). The change queue's
-vocabulary and `Refused` are the framework's models (`framework.md`, "How the code is laid out").
+(`module_dependencies.py`), and the permissions a saved channel needs (`channel_needs.py`: `Needs`,
+the named permissions, which each part states its channels' needs from, and `attaching`, which adds
+Attach Files to them where a picture attaches a file). The change queue's vocabulary and `Refused`
+are the framework's models (`framework.md`, "How the code is laid out").
 
 **Core's helpers** (`core/utils/`) are the tier guards (`channel_guard.py`), the season-stage gate
 (`season_gate.py`), the team choices a command's autocomplete offers (`team_autocomplete.py`),
@@ -382,6 +420,19 @@ gives the arrangement in "How modules and core fit together" and the invariant t
 in "How a change is carried out"; core_specification.md, "Modules" and "Channels", gives the rules a
 league sees. `live_divisions_on` (`channel_registry_service`) names the divisions of the live
 season, which the registry and the check both read, so that they judge the same channels.
+
+**An output switched to a picture does the same before its save.** The image module's toggle and its
+switch-on run `picture_channels_check` (`core/services/modules/picture_channels.py`) as a step
+before the save, handed a reader of the outputs the change switches on. It gathers the channels they
+post to through the `picture_channels_read` hook, in the connection the reader used and with
+`live_divisions_on(db, cancelled=False)`, so that a cancelled division's channels are passed over,
+and judges each distinct (channel, needs) once with `channel_presence`. `core_picture_channels` is
+core's own answer, for the lineup and the calendar alone: each division's channel, and the command
+channel once for both, their needs those of `DIVISION_CHANNEL_NEEDS` and `INTERACTION_CHANNEL_NEEDS`
+with the file a picture attaches added (`attaching`, `channel_needs.py`). Its `drawing` parameter is
+kept for the shape every answer has and is not asked. `architecture.md`, "How modules and core fit
+together", gives the arrangement and why the drawing is not asked; core_specification.md,
+"Channels", the rules a league sees.
 
 Each file's docstring holds its change's check, its steps and the reason for each. Three shapes
 recur:
@@ -599,6 +650,7 @@ which each `_sign_up_to_*` docstring states where it matters.
 | `driver_names_read` | A | signup | `approval_checks` (the unsettled signups, named by their latest signup) and `driver_names`, core's reader of how a driver is named and of whether a nationality is collected; the builder hands the hook, and image, results and attendance each ask the reader with it for every picture and ordering that names a driver |
 | `fingerprint_areas_read` | A | weather, results, attendance, signup, image | `season_fingerprint_service` |
 | `channel_uses_read` | A | weather, results, attendance, signup | `channel_registry_service.find_channel_use`, and `kept_channels_check`, which asks it as a module is switched on; weather, results, attendance and signup answer it only while their own switch is on |
+| `picture_channels_read` | A | core, weather, results, attendance | `picture_channels_check`, which the image module runs before an output is switched to a picture and before it is switched on; core answers for the lineup and calendar outputs alone (its own channels and the command channel), and weather, results and attendance answer only while their own switch is on |
 | `setting_channels_read` | A | weather, results, attendance, signup | `factory_reset_service.gather_targets` |
 | `base_role_changed` | A | signup | `bot_settings` (`/bot base-role`'s step) |
 | `driver_turned_down` | A | signup | `driver_changes`, `season_lifecycle_service` |
@@ -716,6 +768,7 @@ Each is stated where it lives and pinned by the test named. The framework's are 
 | A review's expiry asked twice posts one notice | `season_review_changes.claim_take_down` | `test_a_review_expired_twice_at_once_posts_one_notice` |
 | A season starts on the UTC date of the queue's clock | `season_setup_change`'s docstring | `test_the_start_date_is_the_utc_date` |
 | Every store of league state in memory is cleared by pack and factory reset, or named as holding none | `core/services/upkeep/in_memory_state.py` | `tests/core/test_in_memory_state.py` |
+| `/bot init` judges its two channels again as it claims the server, though the ask judged them | `bot_init_change`'s docstring | `test_bot_init_is_refused_as_it_claims_where_a_channel_can_no_longer_be_used` |
 
 ---
 

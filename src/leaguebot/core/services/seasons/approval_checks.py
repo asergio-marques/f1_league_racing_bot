@@ -23,7 +23,7 @@ from typing import Any, TypeVar
 import discord
 
 from leaguebot.framework.db.database import get_connection
-from leaguebot.core.models.channel_needs import ATTACH, EMBED, SEND, VIEW, Needs
+from leaguebot.core.models.channel_needs import EMBED, SEND, VIEW, Needs, attaching
 from leaguebot.core.models.division import Division
 from leaguebot.core.models.round import Round, RoundLead
 from leaguebot.core.services.seasons.approval_window_service import calendar_faults
@@ -222,18 +222,37 @@ async def channel_fault(
     return None
 
 
+#: What core's two division channels need of the bot as text, by their key in `DIVISION_CHANNELS`:
+#: the lineup, an embed or a picture, View Channel, Send Messages and Embed Links, and the calendar,
+#: text or a picture, View Channel and Send Messages. Attach Files is added where the picture could
+#: attach a file (`core_channel_needs`), and always where the output counts as a picture
+#: (`core/services/modules/picture_channels.py`).
+DIVISION_CHANNEL_NEEDS: dict[str, Needs] = {
+    "lineup": (VIEW, SEND, EMBED),
+    "calendar": (VIEW, SEND),
+}
+
+
 async def core_channel_needs(drawing: ImageDrawing) -> dict[str, Needs]:
-    """What core's two division channels, `lineup` and `calendar`, need of the bot: the lineup,
-    an embed or a picture, View Channel, Send Messages and Embed Links, and the calendar, text or
-    a picture, View Channel and Send Messages. Each also needs Attach Files where the image module
-    answers that the picture could attach a file (`calendar_attaches_files`,
-    `lineup_attaches_files`), which core asks of it rather than read its configuration."""
-    lineup_attaches = await drawing.lineup_attaches_files()
-    calendar_attaches = await drawing.calendar_attaches_files()
+    """What core's two division channels, `lineup` and `calendar`, need of the bot
+    (`DIVISION_CHANNEL_NEEDS`), each also needing Attach Files where the image module answers that
+    the picture could attach a file (`calendar_attaches_files`, `lineup_attaches_files`), which core
+    asks of it rather than read its configuration."""
     return {
-        "lineup": (VIEW, SEND, EMBED) + ((ATTACH,) if lineup_attaches else ()),
-        "calendar": (VIEW, SEND) + ((ATTACH,) if calendar_attaches else ()),
+        "lineup": attaching(DIVISION_CHANNEL_NEEDS["lineup"], await drawing.lineup_attaches_files()),
+        "calendar": attaching(
+            DIVISION_CHANNEL_NEEDS["calendar"], await drawing.calendar_attaches_files()
+        ),
     }
+
+
+#: Core's two division channels, each as (the column of `divisions` holding it, what a league calls
+#: it, its key in `core_channel_needs`, which also names the command `/division {key}-channel`
+#: that sets it): what `core_division_channel_faults` and core's picture channels read them by.
+DIVISION_CHANNELS: tuple[tuple[str, str, str], ...] = (
+    ("lineup_channel_id", "lineup channel", "lineup"),
+    ("calendar_channel_id", "calendar channel", "calendar"),
+)
 
 
 async def core_division_channel_faults(
@@ -265,10 +284,7 @@ async def core_division_channel_faults(
     for division_id, name in divisions.items():
         row = rows.get(division_id)
         lines: list[str] = []
-        for column, label, setting in (
-            ("lineup_channel_id", "lineup channel", "lineup"),
-            ("calendar_channel_id", "calendar channel", "calendar"),
-        ):
+        for column, label, setting in DIVISION_CHANNELS:
             fault = await channel_fault(
                 guild, name, None if row is None else row[column], label,
                 f"/division {setting}-channel", needs[setting],

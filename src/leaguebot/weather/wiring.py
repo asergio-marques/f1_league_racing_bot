@@ -239,6 +239,20 @@ def sign_up_to_division_channel_faults_read(bot: "LeagueBot") -> None:
     )
 
 
+def sign_up_to_picture_channels_read(bot: "LeagueBot") -> None:
+    """Sign weather's forecast channels up to the hook the channels a picture posts to are read
+    through, handed the module service, which answers whether weather is on, and the image
+    module's drawing, which the answer does not ask."""
+    from leaguebot.weather.services import forecast_channel
+
+    bot.picture_channels_read.subscribe(
+        partial(
+            forecast_channel.picture_channels, bot.module_service,
+            as_image_drawing(bot.image_drawing),
+        )
+    )
+
+
 def sign_up_to_fingerprint_areas_read(bot: "LeagueBot") -> None:
     """Sign weather's rows of its own configuration up to the hook a season's fingerprint is taken
     through; it reads its channels by division, as the season service reads them."""
@@ -306,6 +320,7 @@ def register_change_types(bot: "LeagueBot") -> None:
                 modules=bot.module_service,
                 seasons=bot.season_service,
                 channel_uses_read=bot.channel_uses_read,
+                drawing=as_image_drawing(bot.image_drawing),
             )
         )
     )
