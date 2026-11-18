@@ -687,7 +687,7 @@ async def _round_grid(
             ordinal_of: dict[int, int] = {}
             for ordinal, rnd in enumerate(rounds, start=1):
                 ordinal_of[rnd.id] = ordinal
-                mystery = str(rnd.format.value or "").upper().endswith("MYSTERY")
+                mystery = rnd.format is RoundFormat.MYSTERY
                 track_name = None if mystery else (rnd.track_name or None)
                 record = tracks.get(track_name) if track_name else None
                 headings.append(
