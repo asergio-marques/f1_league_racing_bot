@@ -358,12 +358,13 @@ Each module's switch is a change of the module's own, of kind `module.on:<name>`
 `module.off:<name>` (`module_on` and `module_off` in `framework/models/change.py`), which
 `ModuleCog` asks for by that kind.
 
-**A switch-on of a module that keeps channels does its reading before its save.** Weather, results
-and attendance keep their channels while off, so each switch-on is a `Setting` with a step before
+**A switch-on of a module that keeps channels does its reading before its save.** Weather, results,
+attendance and signup keep their channels while off, so each switch-on is a `Setting` with a step before
 the save (`Setting.before`, `framework.md`, "Settings"): `kept_channels_check`
 (`core/services/modules/kept_channels.py`). It takes the reader of the module's own channels that
 each switch-on hands it (`KeptReader`: a connection and the live season's divisions in, the kept
-channels out, awaiting only the connection), asks the registry which are taken (`find_channel_use`,
+channels out, awaiting only the connection; a kept channel is a division's, or the server's, as
+signup's is, and then names no division and is spoken of as "the signup channel"), asks the registry which are taken (`find_channel_use`,
 through the bot's `channel_uses_read` hook, which every module holding channels answers), and
 `channel_presence` which are gone or unusable. `architecture.md` gives the arrangement in "How
 modules and core fit together" and the invariant the reading rests on in "How a change is carried
@@ -586,7 +587,7 @@ which each `_sign_up_to_*` docstring states where it matters.
 | `division_channel_faults_read` | A | core, weather, results, attendance | `approval_checks` (core's own subscriber, `core_division_channel_faults`, names the lineup and calendar channels, and `division_channel_faults` asks for the rest) |
 | `driver_names_read` | A | signup | `approval_checks` (the unsettled signups, named by their latest signup) and `driver_names`, core's reader of how a driver is named and of whether a nationality is collected; the builder hands the hook, and image, results and attendance each ask the reader with it for every picture and ordering that names a driver |
 | `fingerprint_areas_read` | A | weather, results, attendance, signup, image | `season_fingerprint_service` |
-| `channel_uses_read` | A | weather, results, attendance, signup | `channel_registry_service.find_channel_use`, and `kept_channels_check`, which asks it as a module is switched on; weather, results and attendance answer it only while their own switch is on, signup whatever its switch |
+| `channel_uses_read` | A | weather, results, attendance, signup | `channel_registry_service.find_channel_use`, and `kept_channels_check`, which asks it as a module is switched on; weather, results, attendance and signup answer it only while their own switch is on |
 | `setting_channels_read` | A | weather, results, attendance, signup | `factory_reset_service.gather_targets` |
 | `base_role_changed` | A | signup | `bot_settings` (`/bot base-role`'s step) |
 | `driver_turned_down` | A | signup | `driver_changes`, `season_lifecycle_service` |
