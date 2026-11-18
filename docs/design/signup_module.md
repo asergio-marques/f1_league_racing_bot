@@ -612,8 +612,14 @@ driver, and rows and channels held are held off or on.
 
 **Core reads what signup lacks for a season only through the two hooks signup signs up to**
 (`signup_prerequisites`): `confirmation_refusals` refuses a season's approval while the signup
-channel is unset, and `configuration_faults` names every fault of signup's part of the configuration
-(the channel, the league's two roles, judged on the server). Both read signup's switch and hand
+channel is unset, no longer on the server or lacking what the bot needs there, and names the same
+in the placements review (which withholds Approve), and `configuration_faults` names every fault of
+signup's part of the configuration (the channel, the league's two roles, judged on the server). The channel is judged against `channel_needs`, stated once, by core's shared `channel_fault`
+(extended to a channel of no division) and `judged_presence`, so a channel the server could not be
+asked about is not refused and the wording is the one every channel fault is laid in; with no
+server handed, only whether the channel is set is judged. After the configuration is confirmed an
+unusable channel's line says to give the bot the permissions and never to run `/signup channel`,
+which is refused then unless the channel is gone. Both read signup's switch and hand
 nothing while it is off, and neither catches a fault in reading, which reaches the caller's own
 failure path. The approval judges the channel alone, since confirming the configuration already
 judged the roles and fixed them (`signup_prerequisites`' module docstring). Core's season checks

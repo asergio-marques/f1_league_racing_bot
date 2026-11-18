@@ -210,7 +210,9 @@ is what a confirmation wants, and is the strict reader's one caller: it raises s
 to refuse on a check it could not make may. The gates before a repost and a recalculation judge from
 the cache alone, through `results_post_service.channel_fault`. Core's own `channel_fault` words the
 confirmation's line, and takes the *needs* its caller hands it, so it holds no list of channels and
-no permission of its own. A need is data (`core/models/channel_needs.py`) and each part builds its
+no permission of its own. It also words a channel of no division, the server's (signup's), so one
+wording serves the division channels and signup's, and the configuration, the placements review and
+the approval cannot name one channel in two ways. A need is data (`core/models/channel_needs.py`) and each part builds its
 channels' from it in its own service (`channel_needs`: weather's forecast channel, results' three,
 attendance's two), asking the image module's drawing, handed through the module's wiring, only
 whether a picture could attach a file. The alternatives rejected: one table of every channel's needs
@@ -222,7 +224,17 @@ calendar need the image module's answer to build their needs, which is awaited, 
 `core_division_channel_faults` (its subscriber of `division_channel_faults_read`, signed up before
 every module's, so a division's lines read core's first) builds them where it can await, from
 `core_channel_needs`. `division_channel_faults` holds no list of channels, so the review and the two
-confirmations cannot disagree about one and `season_approval_change` holds none. *Rejected:* the
+confirmations cannot disagree about one and `season_approval_change` holds none.
+
+**The approval's queued check judges what the press judged, whole.** Between the press and the
+queue reaching the approval, any of it can change, and a module's own channel is as likely to be
+deleted as a division's. The check therefore reads `confirmation_refused` again, handed the server,
+after the division channels and before the drawing program, and gives the first refusal as the
+press does; a retried save judges through it too (`season_approval_change`'s docstring holds the
+order). Asking the hook, not a list of modules' rules,
+keeps core free of any module's rule. *Rejected:* re-judging only the channels the check already
+names, which leaves a module's refusals (signup's channel, results' points configurations) judged
+only at the press. *Rejected:* the
 check reading the image module's configuration for a switch, which is the module's to answer
 (`ImageDrawing.calendar_attaches_files` and `lineup_attaches_files`).
 
@@ -580,7 +592,7 @@ which each `_sign_up_to_*` docstring states where it matters.
 | `rounds_made_final` | A | results | `season_service` (`end_rounds_awaiting_results_on`, `close_raced_rounds_on`) |
 | `placements_confirmed`, `placements_confirmed_steps` | A, P | results, attendance | `season_approval_change` |
 | `configuration_confirmed` | A | signup | `configuration_confirm_change` |
-| `confirmation_refused` | A | results, signup | `confirmation_refusals` |
+| `confirmation_refused` | A | results, signup | `confirmation_refusals`, which hands every subscriber the season and the server where its caller has one (the press, the placements report and `approval_checks` do, as does the queued check; a caller with none passes None, and a subscriber that needs the server then judges what it can without), and `season_approval_change`, whose check reads it again at the queue |
 | `configuration_faults_read` | A | signup | `approval_checks` |
 | `review_sections_read` | A | signup, attendance, results, weather | `review_sections` |
 | `division_lines_read` | A | results, attendance, weather | `review_sections` |
