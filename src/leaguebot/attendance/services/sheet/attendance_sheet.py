@@ -21,7 +21,7 @@ from leaguebot.framework.utils.hooks import AwaitedHook
 from leaguebot.framework.db.database import get_connection
 from leaguebot.framework.models.change import StepFailedOnDiscord
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
-from leaguebot.core.models.round import RoundStatus
+from leaguebot.core.models.round import RoundFormat, RoundStatus
 from leaguebot.core.services.drivers.driver_service import driver_identities_on
 from leaguebot.core.services.drivers.team_service import TeamService
 from leaguebot.core.services.seasons.season_service import (
@@ -497,7 +497,9 @@ async def _sheet_attachment(
         # The grid: every round the division holds, run or not (FR-016), and what each
         # conferred on each driver. The points are **read** from the record the module
         # persisted — already net of pardons — and never recomputed here (XIV.7).
-        headings, cells = await _round_grid(db_path, division_id, profile_ids, faults=faults)
+        headings, cells, tracks = await _round_grid(
+            db_path, division_id, profile_ids, faults=faults
+        )
         profile_of = {
             int(row["discord_user_id"]): int(row["driver_profile_id"])
             for row in sorted_drivers
@@ -537,11 +539,25 @@ async def _sheet_attachment(
         division_name = await _division_name(db_path, division_id)
         facts = await _round_facts(db_path, round_id)
         round_number = _number_of(facts, round_id)
+        # The heading's season, tier and grand prix (image spec, Attendance), from the same read
+        # as the round. Only a sheet standing after a round names a grand prix: a mystery round's
+        # is the module's own, and a track the registry does not hold names none, the blank
+        # field then reporting itself.
+        mystery = False
+        record = None
+        if facts is not None and occasion.names_a_round:
+            mystery = facts.format is RoundFormat.MYSTERY
+            if not mystery and facts.track_name:
+                record = tracks.get(facts.track_name)
 
         sheet = resolve_drawing(
             division_name=division_name,
             occasion=occasion,
             round_number=round_number,
+            season_number=facts.season_number if facts is not None else None,
+            division_tier=facts.division_tier if facts is not None else None,
+            race_name=getattr(record, "gp_name", None) or None,
+            mystery=mystery,
             records=records,
             display_names=display_names,
             team_names=team_names,
@@ -590,10 +606,12 @@ async def _round_grid(
 ):
     """The sheet's round columns, and the points each round conferred on each driver.
 
-    Returns ``(headings, cells)`` where *headings* is one :class:`RoundHeading` per round the
-    division holds — **every** round, run or not (FR-016), unlike the standings grid which
-    draws only those already run — and *cells* maps a driver profile id to
-    ``{round ordinal: points}``.
+    Returns ``(headings, cells, tracks)`` where *headings* is one :class:`RoundHeading` per round
+    the division holds — **every** round, run or not (FR-016), unlike the standings grid which
+    draws only those already run — *cells* maps a driver profile id to
+    ``{round ordinal: points}``, and *tracks* is the track registry by name, read once here for
+    the headings' flags and handed back for the sheet's grand prix (empty where it could not be
+    read).
 
     The ordinal is the round's place in the calendar, counted from 1, because that is what the
     template's ``round_<z>`` addresses. The *number* drawn on the heading is the round's own
@@ -680,7 +698,7 @@ async def _round_grid(
     except aiosqlite.Error as exc:
         raise _RoundGridUnreadable(str(exc)) from exc
 
-    return headings, cells
+    return headings, cells, tracks
 
 
 async def _seat_teams(
