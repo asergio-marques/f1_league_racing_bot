@@ -18,7 +18,11 @@ from typing import TYPE_CHECKING
 
 from leaguebot.signup.models.switch import SWITCH_KEY
 from leaguebot.core.services.seasons.confirmation_refusals import Confirmation, Refusal
-from leaguebot.core.services.seasons.approval_checks import channel_fault
+from leaguebot.core.services.seasons.approval_checks import (
+    PresenceState,
+    channel_fault,
+    judged_presence,
+)
 from leaguebot.core.utils.channel_guard import league_role_faults
 from leaguebot.signup.services.channel_uses import COMMAND, LABEL, channel_needs
 
@@ -40,26 +44,51 @@ async def confirmation_refusals(
     confirmation: Confirmation,
     guild: discord.Guild | None = None,
 ) -> list[Refusal]:
-    """What signup refuses a season's approval on: its signup channel, unset while signup is on.
-    *guild*, which the hook hands every subscriber, is not read yet.
+    """What signup refuses a season's approval on: its signup channel, unset while signup is on,
+    or, where *guild* (which the hook hands every subscriber, None where the caller has no
+    server) is given, gone from the server or lacking a permission the bot needs there
+    (`channel_needs`), named with what it lacks. A channel the server could not be asked about
+    is not refused (`judged_presence`), a check that cannot tell refusing nothing.
 
     Subscribed to core's `confirmation_refused`, after results'. Signup refuses neither the
     placements review nor the configuration's confirmation here (its configuration faults are read
     through `configuration_faults`), and refuses nothing while it is off or holds no configuration
-    at all. The words are those the approval has always refused with.
+    at all. An unset channel's words are those the approval has always refused with. A confirmed
+    season's `/signup channel` replaces only a channel gone from the server, so an unusable
+    channel's words say to give the bot the permissions and never to set another.
     """
     if confirmation is not Confirmation.APPROVAL:
         return []
     if not await modules.is_enabled(SWITCH_KEY):
         return []
     config = await signup.get_config()
-    if config is None or config.signup_channel_id is not None:
+    if config is None:
         return []
-    return [Refusal(
-        "❌ Season cannot be approved — signup module is enabled but "
-        f"missing required configuration:\n• {_NO_SIGNUP_CHANNEL}",
-        "signup module is enabled but missing required configuration:\n" + _NO_SIGNUP_CHANNEL,
-    )]
+    channel_id = config.signup_channel_id
+    if channel_id is None:
+        return [Refusal(
+            "❌ Season cannot be approved — signup module is enabled but "
+            f"missing required configuration:\n• {_NO_SIGNUP_CHANNEL}",
+            "signup module is enabled but missing required configuration:\n" + _NO_SIGNUP_CHANNEL,
+        )]
+    if guild is None:
+        return []
+    presence = await judged_presence(guild, channel_id, channel_needs())
+    if presence.state is PresenceState.GONE:
+        return [_unusable_channel(f"<#{channel_id}> is no longer on the server — `{COMMAND}`.")]
+    if presence.state is PresenceState.UNUSABLE:
+        return [_unusable_channel(
+            f"<#{channel_id}> is missing permissions the bot needs there: "
+            f"{', '.join(presence.missing)} — give the bot them."
+        )]
+    return []
+
+
+def _unusable_channel(item: str) -> Refusal:
+    """The approval's refusal of a signup channel that is set but cannot be used, laid out as the
+    unset channel's is: a head and the item beneath it, which the log line carries."""
+    reason = f"the signup channel cannot be used:\n• {item}"
+    return Refusal(f"❌ Season cannot be approved — {reason}", reason)
 
 
 async def configuration_faults(

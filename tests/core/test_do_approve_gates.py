@@ -1109,10 +1109,6 @@ async def _gate_2b_signup_channel_unusable(db_path, monkeypatch):
     ), ("`/signup channel`",)
 
 
-#: Why the approval does not yet refuse a signup channel deleted or unusable.
-_SIGNUP_CHANNEL_NOT_JUDGED = "#449: the approval does not judge the signup channel on the server"
-
-
 async def _gate_2d_a_round_already_run(db_path, monkeypatch):
     cog = _cog_with_rounds(db_path, [_round_in(-90)], attendance=False)
     return cog, "dates that have already gone by"
@@ -1146,14 +1142,8 @@ async def _gate_4b_an_image_fault(db_path, monkeypatch):
         _gate_2_no_points_configuration,
         _gate_2a_points_out_of_order,
         pytest.param(_gate_2b_no_signup_channel, id="2b_no_signup_channel"),
-        pytest.param(
-            _gate_2b_signup_channel_gone, id="2b_signup_channel_gone",
-            marks=pytest.mark.xfail(strict=True, reason=_SIGNUP_CHANNEL_NOT_JUDGED),
-        ),
-        pytest.param(
-            _gate_2b_signup_channel_unusable, id="2b_signup_channel_unusable",
-            marks=pytest.mark.xfail(strict=True, reason=_SIGNUP_CHANNEL_NOT_JUDGED),
-        ),
+        pytest.param(_gate_2b_signup_channel_gone, id="2b_signup_channel_gone"),
+        pytest.param(_gate_2b_signup_channel_unusable, id="2b_signup_channel_unusable"),
         _gate_2d_a_round_already_run,
         _gate_3a_an_unusable_team_name,
         _gate_4a_a_lineup_too_small,
