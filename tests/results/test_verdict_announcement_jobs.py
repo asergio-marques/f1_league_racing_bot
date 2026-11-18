@@ -621,7 +621,10 @@ async def test_a_review_s_attendance_sheet_drawn_without_its_graphic_tells_the_l
     queue does not stop, and the log channel is told the fault, as it is for the sheet the sync
     and a season's approval and completion post."""
     league = await review_league(tmp_path, attendance=True)
-    fault = "**Pro** — attendance sheet: the graphic could not be drawn, so it is posted as text"
+    fault = (
+        "Season 1 **Pro** — attendance after round 3: the graphic could not be drawn, so it is "
+        "posted as text"
+    )
     league.attendance.sheet_posted = {
         "new": 9001, "channel_id": 4242, "takes_slot": False, "faults": [fault],
     }

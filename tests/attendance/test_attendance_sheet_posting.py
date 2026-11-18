@@ -723,11 +723,12 @@ def _drawing_that_draws_nothing(fault: str):
 async def test_a_sheet_whose_graphic_falls_back_is_told_as_a_line_of_its_job(
     sheet_db, monkeypatch, fault
 ):
-    """Division 1's sheet after round 3, the images module on. (drawing) the graphic's drawing
-    raises; (track registry) the track registry cannot be read; (teams) the teams cannot be read,
-    and the drawing is then given neither team names nor badges; (none) nothing fails. The sheet
-    posts each time, and the job's result and lines carry one line naming the division and what
-    the graphic fell back from, and none where nothing failed."""
+    """Division 1's sheet after round 3 of season 3, the images module on. (drawing) the graphic's
+    drawing raises; (track registry) the track registry cannot be read; (teams) the teams cannot
+    be read, and the drawing is then given neither team names nor badges; (none) nothing fails.
+    The sheet posts each time, and the job's result and lines carry one line naming the sheet as
+    its notices name it, by season 3, Division 1 and round 3, and what the graphic fell back from,
+    and none where nothing failed."""
     from types import SimpleNamespace
 
     from leaguebot.core.services.drivers.team_service import TeamService
@@ -754,6 +755,9 @@ async def test_a_sheet_whose_graphic_falls_back_is_told_as_a_line_of_its_job(
 
         monkeypatch.setattr(TeamService, "placed_drivers_on", _unreadable)
         monkeypatch.setattr(attendance_drawing, "resolve_drawing", _resolve)
+    async with get_connection(sheet_db) as db:
+        await db.execute("UPDATE seasons SET season_number = 3 WHERE id = 1")
+        await db.commit()
     await _config(sheet_db, prior=None)
     channel = _FakeChannel([])
     guild = _FakeGuild(channel, {111: "Ayrton"})
@@ -779,7 +783,9 @@ async def test_a_sheet_whose_graphic_falls_back_is_told_as_a_line_of_its_job(
         ],
         "none": [],
     }[fault]
-    lines = [f"**Division 1** — attendance sheet: {clause}" for clause in expected]
+    lines = [
+        f"Season 3 **Division 1** — attendance after round 3: {clause}" for clause in expected
+    ]
     result = attendance_sheet.sheet_result(posted)
     assert list(posted.faults) == lines
     assert result.get("faults", []) == lines

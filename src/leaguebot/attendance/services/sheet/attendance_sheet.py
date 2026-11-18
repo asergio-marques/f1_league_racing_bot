@@ -265,7 +265,7 @@ async def post_attendance_sheet(
         raise StepFailedOnDiscord(
             f"the attendance sheet could not be posted: {exc}"
         ).carrying(
-            (*earlier_lines, *await _fault_lines(db_path, division_id, faults), *drawn_lines)
+            (*earlier_lines, *await _fault_lines(db_path, division_id, round_id, occasion, faults), *drawn_lines)
         ) from exc
     finally:
         # Posted or not, the picture has done all it will ever do: a try again posts the text
@@ -279,17 +279,49 @@ async def post_attendance_sheet(
     return PostedSheet(
         message_id=new_message_id, channel_id=channel_id, previous=prior_msg_id,
         takes_slot=occasion.takes_the_live_slot,
-        faults=(*earlier_lines, *await _fault_lines(db_path, division_id, faults), *drawn_lines),
+        faults=(*earlier_lines, *await _fault_lines(db_path, division_id, round_id, occasion, faults), *drawn_lines),
     )
 
 
-async def _fault_lines(db_path: str, division_id: int, faults: list[str]) -> tuple[str, ...]:
-    """The faults the graphic fell back from, each as a line naming the division, for the job that
-    posted the sheet to write beside its result."""
+async def _fault_lines(
+    db_path: str,
+    division_id: int,
+    round_id: int,
+    occasion: ClassificationOccasion,
+    faults: list[str],
+) -> tuple[str, ...]:
+    """The faults the graphic fell back from, each as a line naming the sheet as its notices name
+    it, by its season, its division and its occasion (`_sheet_label`), for the job that posted
+    the sheet to write beside its result: "Season 3 **Pro** — attendance after round 3: …"."""
     if not faults:
         return ()
-    name = await _division_name(db_path, division_id)
-    return tuple(f"**{name}** — attendance sheet: {fault}" for fault in faults)
+    label = _sheet_label(
+        await _division_name(db_path, division_id),
+        await _round_facts(db_path, round_id),
+        occasion,
+        round_id,
+        bold=True,
+    )
+    return tuple(f"{label}: {fault}" for fault in faults)
+
+
+def _sheet_label(
+    division_name: str,
+    facts: RoundFacts | None,
+    occasion: ClassificationOccasion,
+    round_id: int,
+    *,
+    bold: bool = False,
+) -> str:
+    """What the sheet is named in the log, its notices and its fault lines alike (image spec,
+    render notices): its season, its division and its occasion, "Season 3 Pro — attendance after
+    round 3" or "Season 3 Pro — attendance, Final Classification". The season is left out where
+    the round cannot be read, and *bold* sets the division in bold, as a fault line has it."""
+    season = f"Season {facts.season_number} " if facts is not None else ""
+    division = f"**{division_name}**" if bold else division_name
+    if occasion.names_a_round:
+        return f"{season}{division} — attendance after round {_number_of(facts, round_id)}"
+    return f"{season}{division} — attendance, {occasion.label()}"
 
 
 @dataclass(frozen=True)
@@ -573,14 +605,7 @@ async def _sheet_attachment(
             nationality_collected=collected,
         )
 
-        # The sheet is named by its season, its division and its occasion, in the log's notices
-        # and fault lines (image spec, render notices).
-        season = f"Season {facts.season_number} " if facts is not None else ""
-        label = (
-            f"{season}{division_name} — attendance after round {round_number}"
-            if occasion.names_a_round
-            else f"{season}{division_name} — attendance, {occasion.label()}"
-        )
+        label = _sheet_label(division_name, facts, occasion, round_id)
         picture, drawn = await drawing.draw_attendance_sheet(sheet, what=label)
         if lines is not None:
             lines.extend(drawn)
