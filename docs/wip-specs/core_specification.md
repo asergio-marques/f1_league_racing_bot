@@ -85,6 +85,11 @@ it only to place it; the rules governing it belong to its own specification.
     - A channel recorded against a completed or cancelled season shall not be held to this rule.
     - A channel kept by a module that is switched off shall not be held to this rule. Another setting may take it, and the module shall give it up: switching it back on shall clear it from the module and name it as a channel to set again. Of two switched-off modules holding one channel, the first switched back on keeps it. Until then, the module's lines in the placements review may still show a channel another setting has taken. Decided 2026-11-17 (#449), 2026-11-18.
 - Setting one of a division's channels shall say whether it was set for the first time or moved from another channel, so that a manager who meant a fresh assignment notices having moved an existing one. Decided 2026-09-24 (#212).
+- A command setting a channel shall refuse one where the bot lacks a permission that channel's use needs, naming each permission missing in Discord's own words and saying that nothing was changed. Decided 2026-11-18 (#570).
+    - The needs are those the owning specification states: What confirming placements requires for a lineup and a calendar channel, and each module's own specification for its channels. Attach Files is needed only where the league's picture choices, as they stand when the channel is set, could post a picture to it.
+    - The check shall come after the refusals of a channel another setting holds and of the value the setting already holds, so that those are answered in their own terms, and before anything is written, so that a refusal leaves the configuration exactly as it stood. It is recorded as any refusal is.
+    - The check shall be made when the command is asked and again as the change starts. A channel deleted while the change waited shall be refused as no longer on the server.
+    - Where the bot cannot tell, because the server is not to be had or Discord answers with an error, the channel shall not be refused and shall be set.
 
 ### The hub
 - The hub is the one channel every member of the league may use. A league need not set one.
