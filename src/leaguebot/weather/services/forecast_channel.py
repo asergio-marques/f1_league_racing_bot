@@ -9,15 +9,16 @@ module for the channel's faults through core's `division_channel_faults_read` ho
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
 import aiosqlite
 
 from leaguebot.weather.models.switch import SWITCH_KEY
 from leaguebot.framework.db.database import get_connection, sole_row, tuple_rows_in
-from leaguebot.core.models.channel_needs import ATTACH, SEND, VIEW, Needs
+from leaguebot.core.models.channel_needs import SEND, VIEW, Needs, attaching
 from leaguebot.core.services.modules.kept_channels import KeptChannel, KeptReader
+from leaguebot.core.services.modules.picture_channels import PictureChannel
 from leaguebot.core.services.seasons.approval_checks import channel_fault
 from leaguebot.core.services.settings.channel_registry_service import ChannelUse, DiscordTargets
 
@@ -31,6 +32,11 @@ _COMMAND = "/weather channel"
 
 #: The one output the forecast channel posts, as the image module names it.
 FORECAST_ASPECT = "weather"
+
+#: What a forecast posted as text needs of the bot, View Channel and Send Messages: a forecast is a
+#: post and not an embed, and is not reposted, so Embed Links and Read Message History are not
+#: asked. Attach Files is added where the picture could attach a file (`channel_needs`).
+_FORECAST_NEEDS: Needs = (VIEW, SEND)
 
 
 async def set_division_forecast_channel(
@@ -99,8 +105,7 @@ async def channel_needs(drawing: "ImageDrawing") -> Needs:
     pictures could attach a file (`aspect_attaches_files`, a question it answers by its switches
     and not by the state of a template). A forecast is a post and not an embed, and is not
     reposted, so Embed Links and Read Message History are not asked."""
-    attaches = await drawing.aspect_attaches_files(FORECAST_ASPECT)
-    return (VIEW, SEND) + ((ATTACH,) if attaches else ())
+    return attaching(_FORECAST_NEEDS, await drawing.aspect_attaches_files(FORECAST_ASPECT))
 
 
 async def kept_channels(drawing: "ImageDrawing") -> KeptReader:
@@ -152,6 +157,41 @@ async def division_channel_faults(
         )
         found[division_id] = [fault] if fault else []
     return found
+
+
+async def picture_channels(
+    modules: "ModuleService",
+    drawing: "ImageDrawing",
+    *,
+    db: aiosqlite.Connection,
+    divisions: Mapping[int, str],
+    aspects: Collection[str],
+) -> list[PictureChannel]:
+    """The forecast channel of each of *divisions* (the live season's, by id, naming each) that is
+    set, for the check made as the `weather` output is switched to a picture
+    (`core/services/modules/picture_channels.py`), with what a forecast needs and Attach Files, as
+    the output counts as a picture whatever its switch holds now; in division id order.
+
+    Subscribed to core's `picture_channels_read`, which hands the connection, the divisions and the
+    outputs asked. Nothing unless `weather` is among them and the weather module is on, read on
+    *db*: a switched-off module posts nowhere. Reads only.
+
+    What a forecast needs as a picture does not depend on the *drawing*, which is not asked: the
+    hook's connection is the step's, and nothing but it is awaited while it is held (architecture.md,
+    "The database"). The parameter keeps the shape every answer to the hook is built in.
+    """
+    if FORECAST_ASPECT not in aspects or not await modules.is_enabled_on(db, SWITCH_KEY):
+        return []
+    needs = attaching(_FORECAST_NEEDS, True)
+    channels = await forecast_channels_on(db, list(divisions))
+    return [
+        PictureChannel(
+            frozenset({FORECAST_ASPECT}), channel, ChannelUse(FORECAST_ASPECT, divisions[division_id]),
+            _COMMAND, needs,
+        )
+        for division_id, channel in sorted(channels.items())
+        if channel is not None
+    ]
 
 
 async def channel_uses(

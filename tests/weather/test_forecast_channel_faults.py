@@ -8,8 +8,6 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
 from leaguebot.framework.db.database import get_connection, run_migrations
 from tests.support.channel_faults import answer_attachments, server_holding
 from tests.support.switches import answer_switch
@@ -72,7 +70,6 @@ async def test_weather_names_each_division_s_missing_or_deleted_forecast_channel
     assert await faults(True, server_holding(unusable={110: ("embed_links",)}), "weather") == am
 
 
-@pytest.mark.xfail(strict=True, reason="#570: weather answers no channel for a picture switched on")
 async def test_weather_answers_its_forecast_channels_with_the_forecast_counted_as_a_picture_while_on(
     tmp_path,
 ):
