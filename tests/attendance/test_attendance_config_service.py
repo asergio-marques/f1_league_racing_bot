@@ -230,9 +230,6 @@ async def test_a_division_with_no_config_reads_as_none(tmp_path):
     assert await service.get_division_config(DIVISION_ID) is None
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#570: attendance answers no channel for a picture switched on"
-)
 async def test_attendance_answers_the_channel_each_output_posts_to_while_on(tmp_path):
     """Division 1's check-in call channel is 410 and its attendance channel 411; Am has only its
     attendance channel 421; Old, not among the divisions handed, has check-in call channel 430.
