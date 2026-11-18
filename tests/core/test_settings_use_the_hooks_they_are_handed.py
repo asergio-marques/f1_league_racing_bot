@@ -84,10 +84,14 @@ def _modules() -> Any:
 
 
 def _forecast_channel(hook: AwaitedHook) -> Any:
-    """Weather's forecast channel setting, built as weather's wiring builds it, with the hook."""
+    """Weather's forecast channel setting, built as weather's wiring builds it, with the hook and
+    a drawing whose pictures attach no file."""
     from leaguebot.weather.services.weather_settings import forecast_channel_setting
 
-    return forecast_channel_setting(modules=_modules(), seasons=_seasons(), channel_uses_read=hook)
+    return forecast_channel_setting(
+        modules=_modules(), seasons=_seasons(), channel_uses_read=hook,
+        drawing=answer_attachments(MagicMock()),
+    )
 
 
 def _division_channels(hook: AwaitedHook) -> tuple[Any, ...]:
@@ -112,8 +116,12 @@ def _settings(hook: AwaitedHook) -> dict[str, Any]:
     }
 
 
-#: Why the lineup and calendar cases fail until their settings are built with the drawing.
-_NOT_YET_DRAWN = "#570: the lineup and calendar settings are not yet built with the image module's drawing"
+#: Why the lineup, calendar and forecast cases fail until their settings are built with the
+#: drawing.
+_NOT_YET_DRAWN = (
+    "#570: the lineup, calendar and forecast channel settings are not yet built with the image "
+    "module's drawing"
+)
 
 
 @pytest.mark.parametrize(
@@ -125,7 +133,9 @@ _NOT_YET_DRAWN = "#570: the lineup and calendar settings are not yet built with 
      pytest.param(
          "division calendar channel", marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_DRAWN)
      ),
-     "division forecast channel"],
+     pytest.param(
+         "division forecast channel", marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_DRAWN)
+     )],
 )
 async def test_a_channel_setting_asks_the_hook_it_was_built_with(db_path, name):
     """A channel another module holds is refused by the setting's check, naming that module's use,
