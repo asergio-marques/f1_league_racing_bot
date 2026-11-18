@@ -71,7 +71,7 @@ The command answers at once ("⏳ Setting the weather forecast channel for **Div
 
 **This is the thing that blocks a season.** While weather is on, a season cannot be approved until every division has a forecast channel, and the bot names the ones that are missing.
 
-**The bot needs View Channel and Send Messages in it, and Attach Files while the weather aspect draws pictures.** Confirming a season names a division whose forecast channel lacks one, with the permission, as it names a channel that is gone.
+**The bot needs View Channel and Send Messages in it, and Attach Files while the weather aspect draws pictures.** `/weather channel` refuses a channel lacking one, naming each permission missing and saving nothing, and confirming a season names a division whose forecast channel has since lost one, with the permission, as it names a channel that is gone.
 
 Each forecast also **pings the division's role**, the one set when the division was created. That is the role your drivers need if they want to be told a forecast has arrived. The role is notified whether the forecast is posted as text or as a picture. A forecast too long for one message goes out in parts, and a part Discord refuses stops the change queue until a league admin presses Retry or Discard (see [When a job stops the queue](configuring-the-core-bot.md#when-a-job-stops-the-queue)); if a division's forecast channel is changed later, an old forecast still comes down from the channel it was posted in.
 

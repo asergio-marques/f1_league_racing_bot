@@ -93,7 +93,7 @@ Each answers at once ("⏳ Setting the RSVP channel for **Division One** to #div
 
 The check-in call **pings the division's role**, the one set when the division was created. That is the role your drivers need if they want to be told a call has gone out.
 
-> **The bot must be able to post in both channels, and it checks at the time you set them.** If it cannot, the command is refused there and then rather than failing silently three days before a race.
+> **The bot must be able to use both channels, and it checks at the time you set them.** If a permission is lacking, the command is refused there and then, naming each one missing and saving nothing, rather than failing silently three days before a race.
 
 **What each needs.** The check-in channel needs View Channel, Send Messages, Embed Links and Read Message History, since the call is an embed that the bot reads back to redraw after an answer and to lock at the deadline; the attendance channel needs View Channel, Send Messages and Read Message History, since the sheet is posted again and the old one taken down. Either also needs Attach Files while its picture (the check-in call or the attendance sheet) is on. Confirming a season names a division whose channel lacks one, and so is a penalty change that recalculates the season refused, before anything changes, where the attendance or verdicts channel lacks one.
 

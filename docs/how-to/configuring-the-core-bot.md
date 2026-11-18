@@ -425,7 +425,7 @@ The bot posts nothing to a channel you have not named. Two channels are yours to
 
 They are set **per division**, so a league with three divisions sets three of each. Each answers at once ("⏳ Setting the lineup channel for **Pro** to #pro-lineup. …") and updates that reply once it has run. It is judged again as it starts — a division deleted, a season ended or a channel taken by another job meanwhile refuses it then — and a division renamed meanwhile still gets its channel.
 
-The bot needs permissions in each channel, and a channel can take away what the server gave it. The lineup channel needs View Channel, Send Messages and Embed Links, and the calendar channel View Channel and Send Messages; either also needs Attach Files while its picture is on. Each module's guide names what its own channels need.
+The bot needs permissions in each channel, and a channel can take away what the server gave it. The lineup channel needs View Channel, Send Messages and Embed Links, and the calendar channel View Channel and Send Messages; either also needs Attach Files while its picture is on. **A command that sets a channel checks this when you run it**, and again as it starts: it refuses a channel where the bot lacks any, naming each permission missing and changing nothing, so you give the bot them there or pick another channel. Where the bot cannot tell, because Discord does not answer, the channel is saved. Each module's guide names what its own channels need.
 
 The other six belong to modules, and each is set by its module's own command. Set the ones whose module you turned on in step 2:
 
