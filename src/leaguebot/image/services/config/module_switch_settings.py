@@ -104,6 +104,7 @@ def module_on_images(
         return Verdict.go()
 
     async def save(db: "aiosqlite.Connection", _payload: dict[str, Any]) -> Saved:
+        had_config = await read_config_on(db) is not None
         await create_defaults_on(db)
         await db.execute("UPDATE image_config SET module_enabled = 1")
         kept = await read_config_on(db)
@@ -113,7 +114,10 @@ def module_on_images(
             audits=(
                 AuditRecord(change_type="IMAGE_MODULE_ENABLED", old_value={}, new_value={}),
             ),
-            result={"daily_time": kept.pfp_daily_time} if kept is not None and daily else {},
+            result={
+                "had_config": had_config,
+                **({"daily_time": kept.pfp_daily_time} if kept is not None and daily else {}),
+            },
             then=(PlannedStep(ARM_DAILY),) * daily + (PlannedStep(REFRESH_HUB),),
         )
 
