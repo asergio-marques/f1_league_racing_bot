@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING
 
 import aiosqlite
 
+from leaguebot.attendance.models.switch import SWITCH_KEY
 from leaguebot.framework.db.database import get_connection
 from leaguebot.core.models.channel_needs import ATTACH, EMBED, READ_HISTORY, SEND, VIEW, Needs
 from leaguebot.core.services.settings.channel_registry_service import (
@@ -28,6 +29,7 @@ from leaguebot.core.services.settings.channel_registry_service import (
 )
 
 if TYPE_CHECKING:
+    from leaguebot.framework.services.switches.module_service import ModuleService
     from leaguebot.image.services.render.image_drawing import ImageDrawing
 
 
@@ -87,16 +89,19 @@ _SETTINGS = tuple((column, setting) for setting, column, _label, _command in CHA
 
 
 async def channel_uses(
-    db_path: str, *, channel_id: int, divisions: Mapping[int, str]
+    modules: "ModuleService", db_path: str, *, channel_id: int, divisions: Mapping[int, str]
 ) -> list[ChannelUse]:
     """The check-in call and attendance channels of those of *divisions* (the live season's, by
     id, naming each) that are *channel_id*, each as the use of it, naming its division, in that
-    order; empty where none is.
+    order; empty where none is, and always where the attendance module is off.
 
     Subscribed to core's `channel_uses_read`, which asks it as a channel is set, so that a
-    channel does one job. Asked no switch: a channel attendance holds is held whether attendance
-    is on or off. Reads only.
+    channel does one job. A switched-off module answers for none of its channels, which it keeps:
+    another setting may take one, and the module clears it when it is switched on again
+    (`core/services/modules/kept_channels.py`). Reads only.
     """
+    if not await modules.is_enabled(SWITCH_KEY):
+        return []
     uses: list[ChannelUse] = []
     async with get_connection(db_path) as db:
         for column, setting in _SETTINGS:

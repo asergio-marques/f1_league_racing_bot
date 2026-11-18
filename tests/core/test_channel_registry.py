@@ -203,7 +203,6 @@ _OWNING_MODULE = {
 }
 
 
-@pytest.mark.xfail(strict=True, reason="#449: a switched-off module still holds its channels")
 @pytest.mark.parametrize("setting", sorted(_OWNING_MODULE))
 async def test_a_switched_off_module_s_channel_is_free_to_another_setting(db_path, setting):
     """Channel 500 kept as Pro's *setting* while its module is switched off: the module answers

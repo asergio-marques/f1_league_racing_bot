@@ -219,10 +219,12 @@ def sign_up_to_division_lines_read(bot: "LeagueBot") -> None:
 
 def sign_up_to_channel_uses_read(bot: "LeagueBot") -> None:
     """Sign attendance up to the hook a channel being set is asked of each module through,
-    handed the database's path."""
+    handed the module service, which answers whether attendance is on, and the database's path."""
     from leaguebot.attendance.services.settings import division_channels
 
-    bot.channel_uses_read.subscribe(partial(division_channels.channel_uses, bot.db_path))
+    bot.channel_uses_read.subscribe(
+        partial(division_channels.channel_uses, bot.module_service, bot.db_path)
+    )
 
 
 def sign_up_to_setting_channels_read(bot: "LeagueBot") -> None:
