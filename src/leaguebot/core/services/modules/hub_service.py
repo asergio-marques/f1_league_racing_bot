@@ -28,6 +28,11 @@ own, as the signup channel's do, and are applied again whenever one of the three
 A base role that is set but has been deleted from the server keeps the hub **closed**, and says
 so: opening it to every member would read a deleted role as a league that chose to have none.
 
+**What the hub asks of the bot is `HUB_NEEDS`, judged when `/bot hub-channel` is asked and again as
+the change starts** (`bot_settings.hub_channel_setting`): a channel the bot lacks any of it in is
+refused before anything is saved, so a hub is never set that the bot cannot post its panel in or
+close to the members.
+
 **The panel is refreshed, never assumed.** `refresh_panel` edits the panel in place where it
 stands and posts it again where it has been deleted, keeping the new message's id. That is one
 job, "edit, or post again where gone", because the panel standing is the hub's own rule and the
@@ -73,6 +78,14 @@ from leaguebot.framework.services.queue.change_types import (
     Step,
     StepContext,
 )
+from leaguebot.core.models.channel_needs import (
+    EMBED,
+    MANAGE_CHANNEL,
+    MANAGE_PERMISSIONS,
+    SEND,
+    VIEW,
+    Needs,
+)
 from leaguebot.core.services.settings.config_service import ConfigService
 from leaguebot.framework.services.queue.setting_change import After
 from leaguebot.framework.services.posting.standing_post_handler import edit_standing, post_standing
@@ -89,6 +102,7 @@ __all__ = [
     "HubOptions",
     "HubPanelView",
     "CUSTOM_ID_PREFIX",
+    "HUB_NEEDS",
     "offered_options",
     "render_panel",
     "refresh_panel",
@@ -102,6 +116,12 @@ __all__ = [
 
 #: Every hub button's custom id starts so; the option's key follows.
 CUSTOM_ID_PREFIX = "hub:"
+
+#: What the hub asks of the bot in its channel, in the order a refusal names it: to see the channel
+#: and post the panel in it (View Channel, Send Messages); Embed Links, which the bot's own
+#: overwrite there grants it for the panel (`apply_hub_permissions`); and to set who may see the
+#: channel and who may post (Manage Channel, Manage Permissions), which that same call needs.
+HUB_NEEDS: Needs = (VIEW, SEND, EMBED, MANAGE_CHANNEL, MANAGE_PERMISSIONS)
 
 PANEL_HEADING = "🏁 **League hub**"
 PANEL_EMPTY = "Nothing is offered here yet."
