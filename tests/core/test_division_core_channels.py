@@ -59,6 +59,7 @@ from tests.support.change_queue import (
     stop_the_league_lane,
     stopped_job,
 )
+from tests.support.channel_faults import answer_attachments, league_server
 from tests.support.season_league import set_module_flag
 from tests.support.settings_league import interaction as member_asks
 from tests.support.settings_league import last_said, unruled
@@ -243,6 +244,20 @@ _NO_SEASON = (
     "start one with `/season setup`."
 )
 
+#: The refusal #notices is given where the bot lacks permissions its use needs there, the use and
+#: the permissions it lacks filled in.
+_CANNOT_USE = (
+    f"❌ The bot is missing permissions it needs in <#{CHANNEL_ID}> as the {{which}} channel for "
+    f"**Division 1**: {{missing}}. Give the bot them there, or pick another channel. Nothing was "
+    f"changed."
+)
+
+#: The refusal #notices is given where it has been deleted from the server.
+_GONE = f"❌ <#{CHANNEL_ID}> is no longer on the server. Nothing was changed."
+
+#: Why a test fails until setting a channel judges whether the bot can use it.
+_NOT_JUDGED = "#570: setting a lineup or calendar channel does not yet judge whether the bot can use it"
+
 
 # ---------------------------------------------------------------------------
 # What both hold to
@@ -419,20 +434,30 @@ async def test_the_channel_is_set_while_the_queue_is_stopped_on_another_job(tmp_
 # ---------------------------------------------------------------------------
 
 
-async def _delete_the_division(db_path: str) -> None:
+async def _delete_the_division(db_path: str, bot) -> None:
     async with get_connection(db_path) as db:
         await db.execute("DELETE FROM divisions WHERE id = ?", (DIVISION_ID,))
         await db.commit()
 
 
-async def _end_the_season(db_path: str) -> None:
+async def _end_the_season(db_path: str, bot) -> None:
     async with get_connection(db_path) as db:
         await db.execute("UPDATE seasons SET status = 'COMPLETED' WHERE id = ?", (SEASON_ID,))
         await db.commit()
 
 
-async def _claim_the_channel(db_path: str) -> None:
+async def _claim_the_channel(db_path: str, bot) -> None:
     await _seed_other_division_lineup(db_path, CHANNEL_ID)
+
+
+async def _lose_the_permission(db_path: str, bot) -> None:
+    """The bot is denied Send Messages in #notices, which both channels need."""
+    league_server(bot, unusable={CHANNEL_ID: ("send_messages",)})
+
+
+async def _delete_the_channel(db_path: str, bot) -> None:
+    """#notices is deleted from the server."""
+    league_server(bot, gone=(CHANNEL_ID,))
 
 
 @pytest.mark.parametrize("which", ALL)
@@ -446,25 +471,37 @@ async def _claim_the_channel(db_path: str) -> None:
         ),
         pytest.param("season_ended", _end_the_season, _NO_SEASON, id="season_ended"),
         pytest.param("channel_claimed", _claim_the_channel, _IN_USE, id="channel_claimed"),
+        pytest.param(
+            "permission_lost", _lose_the_permission,
+            _CANNOT_USE.format(which="{which}", missing="Send Messages"),
+            id="permission_lost", marks=pytest.mark.xfail(strict=True, reason=_NOT_JUDGED),
+        ),
+        pytest.param(
+            "channel_deleted", _delete_the_channel, _GONE,
+            id="channel_deleted", marks=pytest.mark.xfail(strict=True, reason=_NOT_JUDGED),
+        ),
     ],
 )
 async def test_a_change_is_refused_as_it_starts_where_its_ask_no_longer_holds(
     tmp_path, which, case, meanwhile, refused
 ):
-    """Season 1 is being set up, and its Division 1 has no channel. The manager (id 77) asks for
-    #notices, and is acknowledged; before the change runs, as a change waiting ahead of it on the
-    league's lane would, Division 1 is deleted, or Season 1 is completed, or #notices is made
-    Division 2's lineup channel. The change judges again as it starts and is refused: Division 1's
-    channel is not written, nothing is audited, the manager's reply becomes the refusal the
-    command gives at the ask, word for word, and the log channel takes that refusal as its only
-    line."""
+    """Season 1 is being set up, and its Division 1 has no channel; the league's server holds
+    #notices, the bot holding every permission there. The manager (id 77) asks for #notices, and
+    is acknowledged; before the change runs, as a change waiting ahead of it on the league's lane
+    would, Division 1 is deleted, or Season 1 is completed, or #notices is made Division 2's
+    lineup channel, or the bot is denied Send Messages in #notices, or #notices is deleted. The
+    change judges again as it starts and is refused: Division 1's channel is not written, nothing
+    is audited, the manager's reply becomes the refusal the command gives at the ask, word for
+    word, and the log channel takes that refusal as its only line."""
     db_path = await _make_db(tmp_path)
     cog = await _make_cog(db_path)
+    league_server(cog.bot)
     interaction = _interaction(cog, which)
+    refused = refused.format(which=which)
 
     await _ask(cog, which, interaction)
     assert acknowledgement(interaction).startswith("⏳ ")
-    await meanwhile(db_path)
+    await meanwhile(db_path, cog.bot)
     await run_queue(cog.bot)
 
     assert _replied(interaction) == refused
@@ -647,19 +684,24 @@ async def test_every_channel_command_here_audits_its_ids_as_integers(tmp_path, w
         "a_channel_doing_another_job",
         "another_divisions_results_channel",
         "the_channel_already_set",
+        pytest.param(
+            "a_channel_the_bot_cannot_use",
+            marks=pytest.mark.xfail(strict=True, reason=_NOT_JUDGED),
+        ),
     ],
 )
 async def test_every_channel_command_refusal_is_recorded(tmp_path, which, case):
     """Division 1 of a season being set up, and a text channel #notices. The manager (id 77) runs
-    /division lineup-channel or calendar-channel and is refused at the ask in five cases: with no
+    /division lineup-channel or calendar-channel and is refused at the ask in six cases: with no
     season live, there being no division to hang the setting on; naming Division 9, which does not
     exist; giving #notices while it is already the lineup channel of Division 2, a channel serving
     one purpose across the whole server; giving #notices while it is already the results channel
-    of Division 2, a setting of another kind and another module; and giving #notices while it is
-    already this very channel of Division 1. The manager gets today's reply word for word and
-    nothing else, the setting is not written and nothing is audited, and the log channel gets
-    exactly one line, "⛔ `/division …-channel` refused for Manager (`<@77>`) — " and the reply's
-    first line, without its mark."""
+    of Division 2, a setting of another kind and another module; giving #notices while it is
+    already this very channel of Division 1; and giving #notices where the bot lacks a permission
+    the channel's use needs, Embed Links for the lineup and Send Messages for the calendar. The
+    manager gets the reply word for word and nothing else, the setting is not written and nothing
+    is audited, and the log channel gets exactly one line, "⛔ `/division …-channel` refused for
+    Manager (`<@77>`) — " and the reply's first line, without its mark."""
     db_path = await _make_db(tmp_path, season=case != "no_season")
     name = "Division 9" if case == "an_unknown_division" else "Division 1"
     if case == "a_channel_doing_another_job":
@@ -677,8 +719,14 @@ async def test_every_channel_command_refusal_is_recorded(tmp_path, which, case):
         "other setting first.",
         "the_channel_already_set": f"ℹ️ <#{CHANNEL_ID}> is already the {which} channel for "
         "**Division 1**. Nothing was changed.",
+        "a_channel_the_bot_cannot_use": _CANNOT_USE.format(
+            which=which, missing="Embed Links" if which == "lineup" else "Send Messages"
+        ),
     }[case]
     cog = await _make_cog(db_path)
+    if case == "a_channel_the_bot_cannot_use":
+        denied = "embed_links" if which == "lineup" else "send_messages"
+        league_server(cog.bot, unusable={CHANNEL_ID: (denied,)})
     interaction = _interaction(cog, which)
 
     await _run(cog, which, interaction, name=name)
@@ -692,3 +740,44 @@ async def test_every_channel_command_refusal_is_recorded(tmp_path, which, case):
     assert _lines(cog) == [
         f"⛔ `/{COMMAND_NAMES[which]}` refused for {NAMED} — {reason}"
     ]
+
+
+# ---------------------------------------------------------------------------
+# Attach Files is asked only where the graphic could be a picture (#570)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("which", ALL)
+@pytest.mark.parametrize(
+    "attaches",
+    [
+        pytest.param(True, id="picture-attaches-a-file",
+                     marks=pytest.mark.xfail(strict=True, reason=_NOT_JUDGED)),
+        pytest.param(False, id="no-picture"),
+    ],
+)
+async def test_attach_files_is_asked_only_where_the_graphic_could_be_a_picture(
+    tmp_path, which, attaches
+):
+    """Division 1 of a season being set up, with no channel; the league's server holds #notices,
+    where the bot holds every permission but Attach Files. The image module answers that the
+    division's lineup or calendar (whichever is being set) could post as a picture attaching a
+    file, or that it could not. The manager (id 77) runs /division lineup-channel or
+    calendar-channel for #notices, and the queue runs. Where the picture attaches a file, the
+    command is refused naming Attach Files, the channel is not written and nothing is audited;
+    where it does not, Attach Files is not asked for and the channel is set."""
+    db_path = await _make_db(tmp_path)
+    cog = await _make_cog(db_path)
+    league_server(cog.bot, unusable={CHANNEL_ID: ("attach_files",)})
+    answer_attachments(cog.bot.image_drawing, *((which,) if attaches else ()))
+    interaction = _interaction(cog, which)
+
+    await _run(cog, which, interaction)
+
+    if attaches:
+        assert _replied(interaction) == _CANNOT_USE.format(which=which, missing="Attach Files")
+        assert await _channel_column(db_path, CORE_COLUMNS[which]) is None
+        assert await _audit_rows(db_path) == []
+    else:
+        assert _replied(interaction) == f"✅ {LABELS[which]} for **Division 1** set to <#{CHANNEL_ID}>."
+        assert await _channel_column(db_path, CORE_COLUMNS[which]) == CHANNEL_ID

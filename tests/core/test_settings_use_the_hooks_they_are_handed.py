@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 from types import SimpleNamespace
 from typing import Any
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -27,6 +28,7 @@ from leaguebot.core.services.settings.bot_settings import (
 from leaguebot.core.services.settings.channel_registry_service import ChannelUse
 from leaguebot.core.services.settings.division_settings import division_channel_settings
 from leaguebot.framework.utils.hooks import AwaitedHook
+from tests.support.channel_faults import answer_attachments
 from tests.support.switches import switches
 
 CHANNEL = 4040
@@ -88,27 +90,42 @@ def _forecast_channel(hook: AwaitedHook) -> Any:
     return forecast_channel_setting(modules=_modules(), seasons=_seasons(), channel_uses_read=hook)
 
 
+def _division_channels(hook: AwaitedHook) -> tuple[Any, ...]:
+    """Core's lineup and calendar channel settings, built as the builder builds them, with the
+    hook and a drawing whose pictures attach no file."""
+    return division_channel_settings(
+        seasons=_seasons(), channel_uses_read=hook, drawing=answer_attachments(MagicMock())
+    )
+
+
 def _settings(hook: AwaitedHook) -> dict[str, Any]:
     """Each setting, by name, as a builder: one is built only when its case asks for it."""
-    division_lineup, division_calendar = division_channel_settings(
-        seasons=_seasons(), channel_uses_read=hook
-    )
     return {
         "log channel": lambda: log_channel_setting(config=_config(), channel_uses_read=hook),
         "interaction channel": lambda: interaction_channel_setting(
             config=_config(), channel_uses_read=hook
         ),
         "hub channel": lambda: hub_channel_setting(config=_config(), channel_uses_read=hook),
-        "division lineup channel": lambda: division_lineup,
-        "division calendar channel": lambda: division_calendar,
+        "division lineup channel": lambda: _division_channels(hook)[0],
+        "division calendar channel": lambda: _division_channels(hook)[1],
         "division forecast channel": lambda: _forecast_channel(hook),
     }
 
 
+#: Why the lineup and calendar cases fail until their settings are built with the drawing.
+_NOT_YET_DRAWN = "#570: the lineup and calendar settings are not yet built with the image module's drawing"
+
+
 @pytest.mark.parametrize(
     "name",
-    ["log channel", "interaction channel", "hub channel", "division lineup channel",
-     "division calendar channel", "division forecast channel"],
+    ["log channel", "interaction channel", "hub channel",
+     pytest.param(
+         "division lineup channel", marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_DRAWN)
+     ),
+     pytest.param(
+         "division calendar channel", marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_DRAWN)
+     ),
+     "division forecast channel"],
 )
 async def test_a_channel_setting_asks_the_hook_it_was_built_with(db_path, name):
     """A channel another module holds is refused by the setting's check, naming that module's use,
