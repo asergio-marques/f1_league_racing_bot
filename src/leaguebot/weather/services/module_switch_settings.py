@@ -59,6 +59,7 @@ from leaguebot.core.services.seasons.season_lifecycle_service import (
 )
 from leaguebot.framework.services.queue.setting_change import After, Saved, Setting
 from leaguebot.core.services.modules.kept_channels import (
+    division_of,
     found_in,
     kept_channels_check,
     named_reply,
@@ -127,14 +128,14 @@ def module_on_weather(
             AuditRecord(change_type="MODULE_ENABLE", old_value={}, new_value={"module": "weather"})
         ]
         for each in taken:
-            old_id = await set_division_forecast_channel(db, each.division_id, None)
+            old_id = await set_division_forecast_channel(db, division_of(each), None)
             if old_id is not None:
                 audits.append(
                     AuditRecord(
                         "DIVISION_CHANNEL_SET",
                         {"channel_type": "weather", "channel_id": old_id},
                         {"channel_type": "weather", "channel_id": None},
-                        each.division_id,
+                        division_of(each),
                     )
                 )
         return Saved(

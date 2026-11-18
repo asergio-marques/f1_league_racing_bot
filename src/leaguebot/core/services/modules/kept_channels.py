@@ -63,13 +63,15 @@ SET_AGAIN = (
 
 @dataclass(frozen=True)
 class KeptChannel:
-    """A channel a module kept for a division of the live season: *setting* is its key in
-    `SETTING_LABELS`, *label* what a league calls it and *command* the command that sets it again,
-    and *needs* what the module asks of the bot there."""
+    """A channel a module kept, for a division of the live season or for the server: *setting* is
+    its key in `SETTING_LABELS`, *label* what a league calls it and *command* the command that sets
+    it again, and *needs* what the module asks of the bot there. A channel of the server (signup's)
+    has no division: *division_id* and *division_name* are `None`, and the words call it "the
+    {label}"."""
 
     setting: str
-    division_id: int
-    division_name: str
+    division_id: int | None
+    division_name: str | None
     channel_id: int
     label: str
     command: str
@@ -82,7 +84,7 @@ class Taken:
     clear."""
 
     setting: str
-    division_id: int
+    division_id: int | None
     channel_id: int
 
 
@@ -91,7 +93,18 @@ class Taken:
 KeptReader = Callable[[aiosqlite.Connection, Mapping[int, str]], Awaitable[list[KeptChannel]]]
 
 
+def division_of(taken: Taken) -> int:
+    """The division of a channel a module kept for a division: its save clears it there. Raises
+    where the channel is the server's, which a module that keeps only division channels never
+    reads, so that what cannot happen is not narrowed away."""
+    if taken.division_id is None:
+        raise ValueError(f"the kept {taken.setting} channel names no division")
+    return taken.division_id
+
+
 def _whose(kept: KeptChannel) -> str:
+    if kept.division_name is None:
+        return f"the {kept.label}"
     return f"**{kept.division_name}**'s {kept.label}"
 
 
@@ -174,7 +187,11 @@ def found_in(payload: Mapping[str, Any]) -> tuple[list[str], list[Taken], list[s
     return (
         list(found.get("named") or ()),
         [
-            Taken(str(each["setting"]), int(each["division_id"]), int(each["channel_id"]))
+            Taken(
+                str(each["setting"]),
+                None if each["division_id"] is None else int(each["division_id"]),
+                int(each["channel_id"]),
+            )
             for each in found.get("taken") or ()
         ],
         list(found.get("details") or ()),
@@ -190,6 +207,6 @@ def named_reply(reply: str, named: list[str]) -> str:
 
 
 __all__ = [
-    "CHECK_KEPT", "KeptChannel", "KeptReader", "SET_AGAIN", "Taken", "found_in",
+    "CHECK_KEPT", "KeptChannel", "KeptReader", "SET_AGAIN", "Taken", "division_of", "found_in",
     "kept_channels_check", "named_reply",
 ]

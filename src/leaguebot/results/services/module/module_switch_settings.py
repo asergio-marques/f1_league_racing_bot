@@ -50,6 +50,7 @@ from leaguebot.core.services.modules.hub_service import REFRESH_HUB, hub_refresh
 from leaguebot.core.services.seasons.season_lifecycle_service import PLACEMENTS_CONFIRMED_REFUSAL
 from leaguebot.framework.services.queue.setting_change import After, Saved, Setting
 from leaguebot.core.services.modules.kept_channels import (
+    division_of,
     found_in,
     kept_channels_check,
     named_reply,
@@ -164,9 +165,9 @@ def module_on_results(
         ]
         for each in taken:
             write, audit = _CLEARS[each.setting]
-            old_id = await write(db, each.division_id, None)
+            old_id = await write(db, division_of(each), None)
             if old_id is not None:
-                audits.append(audit(old_id, None, each.division_id))
+                audits.append(audit(old_id, None, division_of(each)))
         return Saved(
             changed=True,
             audits=tuple(audits),
