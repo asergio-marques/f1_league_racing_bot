@@ -539,8 +539,6 @@ async def test_a_restart_between_a_step_before_the_save_and_the_save_still_hands
 LEFT = "Something was left on Discord: run `/dummy set` again, or remove it by hand."
 
 
-@pytest.mark.xfail(strict=True, reason="#449: a step before the save takes no undo, and a save "
-                   "that faults takes nothing back")
 async def test_a_save_that_faults_after_a_step_before_it_takes_that_step_back(env):
     """A step before the save (signup's permissions put back on its channel) declares an undo and
     returns, finding 2; the save then raises. The undo runs, reading what the step found from the

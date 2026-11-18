@@ -75,9 +75,9 @@ goes on. A step may instead end the setting refused (`HALTED`): its result gives
 reason, no `SAVE` is planned, and the one line, a ⛔ refusal, is formed here from the reason, the
 step writing none. Either way nothing is saved and nothing is audited. **A step that changes
 something on Discord declares an undo** (`Before.undo`), planned as a job of the change where a
-later step before the save halts or faults, last step first, so that nothing is half-set (Constitution
-X, rule 2) and a restart finishes it; a step that ends on a fault part-way takes back its own
-partial work before it raises, and the undo is for work it finished. *Rejected:* an `After` step
+later step before the save halts or faults, or the save does, last step first, so that nothing is
+half-set (Constitution X, rule 2) and a restart finishes it; a step that ends on a fault part-way
+takes back its own partial work before it raises, and the undo is for work it finished. *Rejected:* an `After` step
 that undoes the switch-on, which would leave the module on for a moment and whose undo is a second
 save that can itself fail; and the check in `check()`, which carries no findings and runs at the ask
 as well.
@@ -191,7 +191,7 @@ class Before:
 
     *undo*, where a step changes something on Discord, is an `ACT` step that takes back what
     *step* did once it has returned. It is planned, as a job of the change, where a later step
-    before the save halts or faults; it reads what *step* found from the steps the queue keeps
+    before the save halts or faults, or the save does; it reads what *step* found from the steps the queue keeps
     (`StepContext.steps`), never from memory, so that a restart finishes it. Where *step* itself
     ends on a fault part-way it takes back its own partial work before it raises again: an undo is
     for finished work only. The undos of the steps that returned run last first.
@@ -392,7 +392,10 @@ def setting_change(setting: Setting) -> ChangeType:
             for before in setting.before
             if before.undo is not None
         },
-        SAVE: Step(SAVE, StepKind.SAVE, save, describe=describe, on_fault=_failed),
+        SAVE: Step(
+            SAVE, StepKind.SAVE, save, describe=describe,
+            on_fault=lambda ctx, error: _failed(ctx, error, _undos(setting.before)),
+        ),
         **{name: _after_step(after) for name, after in setting.after.items()},
     }
     return ChangeType(
