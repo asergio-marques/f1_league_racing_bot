@@ -715,6 +715,7 @@ def _drawing_that_draws_nothing(fault: str):
 
 @pytest.mark.parametrize("fault", [
     "drawing",
+    "drawing at the final",
     "track registry",
     "teams",
     "round unreadable",
@@ -725,7 +726,8 @@ async def test_a_sheet_whose_graphic_falls_back_is_told_as_a_line_of_its_job(
     sheet_db, monkeypatch, fault
 ):
     """Division 1's sheet after round 3 of season 3, the images module on. (drawing) the graphic's
-    drawing raises; (track registry) the track registry cannot be read; (teams) the teams cannot
+    drawing raises; (drawing at the final) so it does for the sheet at the season's end, whose line
+    names the occasion in place of the round; (track registry) the track registry cannot be read; (teams) the teams cannot
     be read, and the drawing is then given neither team names nor badges; (round unreadable) the
     round, and with it its season, cannot be read from the database; (none) nothing fails. The
     sheet posts each time, and the job's result and lines carry one line naming the sheet as its
@@ -772,11 +774,19 @@ async def test_a_sheet_whose_graphic_falls_back_is_told_as_a_line_of_its_job(
     with in_a_job():
         posted = await post_attendance_sheet(
             SimpleNamespace(db_path=sheet_db), guild, sheet_db, round_id=3, division_id=7,
-            drawing=_drawing_that_draws_nothing(fault),
+            drawing=_drawing_that_draws_nothing(
+                "drawing" if fault == "drawing at the final" else fault
+            ),
+            occasion=_occasion(
+                "SEASON_FINAL" if fault == "drawing at the final" else "AFTER_ROUND"
+            ),
         )
 
     assert posted is not None and channel.sent_content is not None
     expected = {
+        "drawing at the final": [
+            "the graphic could not be drawn, so the sheet is posted as text: template unreadable"
+        ],
         "drawing": [
             "the graphic could not be drawn, so the sheet is posted as text: template unreadable"
         ],
@@ -793,10 +803,11 @@ async def test_a_sheet_whose_graphic_falls_back_is_told_as_a_line_of_its_job(
         ],
         "none": [],
     }[fault]
-    season = "" if fault == "round unreadable" else "Season 3 "
-    lines = [
-        f"{season}**Division 1** — attendance after round 3: {clause}" for clause in expected
-    ]
+    named = {
+        "round unreadable": "**Division 1** — attendance after round 3",
+        "drawing at the final": "Season 3 **Division 1** — attendance, Final Classification",
+    }.get(fault, "Season 3 **Division 1** — attendance after round 3")
+    lines = [f"{named}: {clause}" for clause in expected]
     result = attendance_sheet.sheet_result(posted)
     assert list(posted.faults) == lines
     assert result.get("faults", []) == lines
