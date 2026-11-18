@@ -64,7 +64,7 @@ If your server has no season yet, set one up first — a preview draws your own 
 
 The calendar is the one to start with because it needs the least: no teams, no drivers, no round number. The lineup, the results, the standings, the attendance sheet and the verdict also need a team beyond Reserve, and every kind but the calendar and the lineup needs a round number as well. If a preview refuses, it names exactly which of those is missing — a wrong division name, a round the division does not have, or a team list with nothing but Reserve in it.
 
-Switching the module on does not change anything the bot posts yet. The first time you switch it on, all nine kinds of output start off and stay off until you turn them on, which is step 6. Switching it on again later finds them as you left them: any you had on are still on, and the reply says so. `/images config view` shows which.
+The first time you switch the module on, it changes nothing the bot posts yet: all nine kinds of output start off and stay off until you turn them on, which is step 6. Switching it on again later finds them as you left them: any you had on are still on and post pictures again, and the reply says so. `/images config view` shows which.
 
 > If you get a message about Inkscape instead of a picture, stop and sort that out. Nothing below will work until you do.
 
