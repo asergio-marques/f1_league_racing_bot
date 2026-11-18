@@ -116,22 +116,12 @@ def _settings(hook: AwaitedHook) -> dict[str, Any]:
     }
 
 
-#: Why the lineup, calendar and forecast cases fail until their settings are built with the
-#: drawing.
-_NOT_YET_DRAWN = (
-    "#570: the lineup, calendar and forecast channel settings are not yet built with the image "
-    "module's drawing"
-)
-
-
 @pytest.mark.parametrize(
     "name",
     ["log channel", "interaction channel", "hub channel",
      "division lineup channel",
      "division calendar channel",
-     pytest.param(
-         "division forecast channel", marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_DRAWN)
-     )],
+     "division forecast channel"],
 )
 async def test_a_channel_setting_asks_the_hook_it_was_built_with(db_path, name):
     """A channel another module holds is refused by the setting's check, naming that module's use,

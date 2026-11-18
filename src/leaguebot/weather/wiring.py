@@ -306,6 +306,7 @@ def register_change_types(bot: "LeagueBot") -> None:
                 modules=bot.module_service,
                 seasons=bot.season_service,
                 channel_uses_read=bot.channel_uses_read,
+                drawing=as_image_drawing(bot.image_drawing),
             )
         )
     )

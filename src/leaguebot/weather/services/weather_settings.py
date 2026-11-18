@@ -18,7 +18,9 @@ check, in the command's order and words, made at the ask and again as the change
 change ahead of it may have switched weather off, ended the season, deleted the division or given
 the channel to another job: the module on, a season live, the division in it, then the channel
 free of any other job (`channel_registry_service`), the channel this very division already has
-being refused as "Nothing was changed". The save writes the division's column and the audit
+being refused as "Nothing was changed", and last the channel one the bot has the permissions a
+forecast needs in (`forecast_channel.channel_needs`, with the *drawing* the builder is handed,
+judged by `unusable_refusal` against the league's server as it stands when the check runs). The save writes the division's column and the audit
 entry with the division, together, the audit entry stamped by the queue's clock; the column it
 replaces is read in the save, never at the ask, so a change waiting behind another for the same
 division records what that one left, and its reply reads "set" or "updated" by it.
@@ -36,10 +38,12 @@ from leaguebot.core.services.settings.channel_registry_service import (
     ChannelUse,
     find_channel_use,
     refusal,
+    unusable_refusal,
 )
 from leaguebot.core.services.settings.division_settings import NO_SEASON_REFUSAL, division_not_found
 from leaguebot.framework.services.queue.setting_change import Saved, Setting
-from leaguebot.weather.services.forecast_channel import set_division_forecast_channel
+from leaguebot.framework.utils.league_server import league_guild
+from leaguebot.weather.services.forecast_channel import channel_needs, set_division_forecast_channel
 from leaguebot.weather.services.weather_config_service import (
     deadline_refusal,
     get_weather_pipeline_config,
@@ -50,6 +54,7 @@ if TYPE_CHECKING:
     import aiosqlite
 
     from leaguebot.framework.services.switches.module_service import ModuleService
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
     from leaguebot.core.services.seasons.season_service import SeasonService
     from leaguebot.framework.utils.hooks import AwaitedHook
 
@@ -132,9 +137,11 @@ def forecast_channel_setting(
     modules: "ModuleService",
     seasons: "SeasonService",
     channel_uses_read: "AwaitedHook",
+    drawing: "ImageDrawing",
 ) -> Setting:
     """The forecast channel setting: the module and the season are read through the services
-    handed in, and the module holding a channel through *channel_uses_read*, core's hook."""
+    handed in, the module holding a channel through *channel_uses_read*, core's hook, and whether
+    the forecast could be a picture attaching a file through *drawing*, the image module's."""
 
     async def check(ctx: CheckContext) -> Verdict:
         payload = ctx.payload
@@ -154,6 +161,14 @@ def forecast_channel_setting(
                     f"<#{value}>", use, same_setting=(use == ChannelUse("weather", division.name))
                 )
             )
+        unusable = await unusable_refusal(
+            await league_guild(ctx.bot),
+            value,
+            await channel_needs(drawing),
+            ChannelUse("weather", division.name),
+        )
+        if unusable is not None:
+            return Verdict.refuse(unusable)
         return Verdict.go()
 
     async def save(db: "aiosqlite.Connection", payload: dict[str, Any]) -> Saved:

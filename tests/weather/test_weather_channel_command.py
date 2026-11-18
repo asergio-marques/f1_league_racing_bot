@@ -104,10 +104,6 @@ _CANNOT_USE = (
 #: The refusal #forecasts is given where it has been deleted from the server.
 _GONE = f"❌ <#{CHANNEL_ID}> is no longer on the server. Nothing was changed."
 
-#: Why a test fails until setting the forecast channel judges whether the bot can use it.
-_NOT_JUDGED = "#570: setting the forecast channel does not yet judge whether the bot can use it"
-
-
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
 # ---------------------------------------------------------------------------
@@ -428,12 +424,10 @@ async def test_a_refused_assignment_writes_nothing(tmp_path):
         pytest.param(
             "send_messages", False, None, _CANNOT_USE.format(missing="Send Messages"),
             id="send-messages-denied",
-            marks=pytest.mark.xfail(strict=True, reason=_NOT_JUDGED),
         ),
         pytest.param(
             "attach_files", True, None, _CANNOT_USE.format(missing="Attach Files"),
             id="attach-files-denied-while-weather-draws-pictures",
-            marks=pytest.mark.xfail(strict=True, reason=_NOT_JUDGED),
         ),
         pytest.param(
             "attach_files", False, None, None, id="attach-files-denied-while-weather-draws-none"
@@ -778,11 +772,11 @@ async def _delete_the_channel(db_path: str, bot) -> None:
         pytest.param(_claim_the_channel, _RESULTS_CLASH, id="channel_claimed"),
         pytest.param(
             _lose_the_permission, _CANNOT_USE.format(missing="Send Messages"),
-            id="permission_lost", marks=pytest.mark.xfail(strict=True, reason=_NOT_JUDGED),
+            id="permission_lost",
         ),
         pytest.param(
             _delete_the_channel, _GONE,
-            id="channel_deleted", marks=pytest.mark.xfail(strict=True, reason=_NOT_JUDGED),
+            id="channel_deleted",
         ),
     ],
 )
