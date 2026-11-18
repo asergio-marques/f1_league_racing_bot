@@ -1184,12 +1184,14 @@ async def test_a_switch_on_whose_kept_channels_cannot_be_checked_leaves_the_modu
     ("verdicts", "attach_files", "Attach Files", ("verdicts",)),
     ("rsvp", "embed_links", "Embed Links", ()),
     ("attendance", "read_message_history", "Read Message History", ()),
+    ("attendance", "send_messages", "Send Messages", ()),
 ])
 async def test_a_switch_on_finding_a_kept_channel_the_bot_cannot_use_leaves_the_module_off_and_names_the_way_out(
     tmp_path, setting, denied, missing, pictures
 ):
     """Pro's kept channel is missing one permission its module needs of it (for the verdicts
-    channel, Attach Files, with the verdict pictures on). The module stays off; the reply names
+    channel, Attach Files, with the verdict pictures on; for the attendance channel, also Send
+    Messages alone, a channel the bot can see but not post in). The module stays off; the reply names
     Pro's channel and what it lacks, and the three ways out; the one line is a refusal naming the
     same, and no failure; nothing is audited, nothing stops the queue, and Pro's channel is still
     held."""
