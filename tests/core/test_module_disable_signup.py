@@ -980,7 +980,7 @@ async def test_a_save_that_faults_after_the_restore_takes_the_permissions_back(
     league's Add Reactions exactly and every other to no overwrite, 3009 is never touched, and
     signup stays off. Where Discord takes them all back, the reply says the module is still off and
     nothing is said to be left; where it refuses to take off @everyone's, the reply and the failure
-    line name the signup channel and what to do."""
+    line name the signup channel and what to do, and no log line names `StepFailedOnDiscord`."""
     league, channel = await _off_with_the_channel_kept(tmp_path)
     targets = list(await _wanted(league))
     base_role = league.guild.get_role(BASE_ROLE)
@@ -1005,7 +1005,9 @@ async def test_a_save_that_faults_after_the_restore_takes_the_permissions_back(
         assert "were left there" not in reply
     else:
         assert LEFT in reply
-        assert any(line.startswith("❌") and LEFT in line for line in await _log_lines(league))
+        lines = await _log_lines(league)
+        assert any(line.startswith("❌") and LEFT in line for line in lines)
+        assert not any("StepFailedOnDiscord" in line for line in lines)
 
 
 async def test_a_restore_run_again_after_a_stop_takes_back_to_the_first_record(tmp_path):
