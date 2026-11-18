@@ -277,7 +277,7 @@ judged, a round amended or its timed work armed again, a round's timed work read
 a division or a season cancelled, a round's results made final, placements confirmed, a season's
 approval saved, a season's configuration confirmed, a review gathering its lines, the placements
 review gathering each division's lines, a division's channel faults read, a channel's uses read as a
-command sets it or as a module is switched on (answered only while the module is on), the factory reset gathering the channels each module holds, a round's drawn phases
+command sets it or as a module is switched on (weather, results and attendance answer it only while the module is on, signup whatever its switch), the factory reset gathering the channels each module holds, a round's drawn phases
 read, a driver's signup name, username and nationality read for a season, with whether a nationality
 is collected, which the modules that draw a driver ask through core's reader, the divisions a
 driver's accounts raced in read, a driver's standing in a division read for the season's history, a
