@@ -641,7 +641,9 @@ class ImageDrawing:
         nobody signed up for (`SwitchNotSignedUp`) is not one, being a fault in the bot's assembly,
         and is raised, as `aspect_wanted` raises it.
         """
-        what = image_rsvp_post.describe(division_name=division_name, round_number=round_number)
+        what = image_rsvp_post.describe(
+            season_number=season_number, division_name=division_name, round_number=round_number
+        )
         try:
             if not await self.aspect_wanted(RSVP_ASPECT, RSVP_TEMPLATE_KEY):
                 return None, ()
@@ -682,10 +684,10 @@ class ImageDrawing:
         and the lines saying what the drawing had to report.
 
         The gate already asked through `attendance_wanted`, and *what* naming the sheet the lines
-        pertain to ("Pro — attendance after round 3"). The lines are the render's notices and the
-        fault of a picture that was due and not drawn, headed by the toggle's name; the caller
-        writes them in its own save (architecture.md, "Errors and failures"). The sheet's rows are
-        its caller's, resolved in *drawing*.
+        pertain to ("Season 3 Pro — attendance after round 3"). The lines are the render's notices
+        and the fault of a picture that was due and not drawn, headed by the toggle's name; the
+        caller writes them in its own save (architecture.md, "Errors and failures"). The sheet's
+        rows are its caller's, resolved in *drawing*.
 
         The catch-all is around the drawing alone, a graphic riding on a post (architecture.md,
         "A catch-all error handler", place 6): a fault in any of it is a line, never a break in
@@ -819,7 +821,8 @@ class ImageDrawing:
         own template, so that a sound qualifying template still draws while a faulty race
         template falls back to text) and found the picture due. The drawing is rendered, and its
         render's notices and the problem of a picture that was due and not drawn are handed back
-        as lines headed by the toggle's name. None for the file where the render posts no image.
+        as lines headed by the toggle's name and naming the session by its season, division and
+        round (image spec, render notices). None for the file where the render posts no image.
 
         A fault in resolving the directories or building the fill is raised, for the post to name
         as the reason the text stands; a switch nobody signed up for (`SwitchNotSignedUp`) is
@@ -828,7 +831,11 @@ class ImageDrawing:
         import discord
 
         decision = await image_results_post.render_png(self._config, self._renderer, drawing)
-        what = f"{drawing.division_name} round {drawing.round_number} — {drawing.session_name}"
+        season = f"Season {drawing.season_number} " if drawing.season_number is not None else ""
+        what = (
+            f"{season}{drawing.division_name} round {drawing.round_number}"
+            f" — {drawing.session_name}"
+        )
         lines = image_results_post.lines_of(what, decision)
         if not decision.posts_image:
             return None, lines

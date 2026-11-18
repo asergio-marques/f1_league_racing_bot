@@ -295,6 +295,66 @@ async def test_produce_standings_includes_heading_and_label(tmp_path):
     assert "Final Results" in content
 
 
+
+@pytest.mark.parametrize(
+    ("occasion", "subject"),
+    [
+        ("AFTER_ROUND", "Season 2 Beta round 3"),
+        ("SEASON_FINAL", "Season 2 Beta — Final Classification"),
+    ],
+    ids=["after-round", "season-final"],
+)
+async def test_the_standings_pictures_are_named_for_the_season_the_division_and_the_round(
+    tmp_path, occasion, subject
+):
+    """Season 2's division Beta, its round 3 raced, with the standings pictures switched on. The
+    drawing is asked to name the pictures, in the log's notices and fault lines, by the season,
+    the division and the round they stand after, or by the season, the division and the occasion
+    where they stand after no round (image spec, render notices)."""
+    from leaguebot.core.models.classification_occasion import ClassificationOccasion
+    from leaguebot.framework.db.database import run_migrations, get_connection
+    from leaguebot.image.services.aspects.image_standings_post import StandingsDrawn
+    from leaguebot.results.services.publishing.results_post_service import produce_standings
+
+    db_path = str(tmp_path / "test.db")
+    await run_migrations(db_path)
+    async with get_connection(db_path) as db:
+        season_id = (await db.execute(
+            "INSERT INTO seasons (start_date, status, season_number) "
+            "VALUES ('2026-01-01', 'ACTIVE', 2)"
+        )).lastrowid
+        division_id = (await db.execute(
+            "INSERT INTO divisions (season_id, name, mention_role_id) VALUES (?, 'Beta', 777)",
+            (season_id,),
+        )).lastrowid
+        round_id = (await db.execute(
+            "INSERT INTO rounds (division_id, round_number, format, status, scheduled_at) "
+            "VALUES (?, 3, 'NORMAL', 'FINAL', '2026-06-01T18:00:00+00:00')",
+            (division_id,),
+        )).lastrowid
+        await db.commit()
+
+    drawing = MagicMock()
+    drawing.aspect_wanted = AsyncMock(return_value=True)
+    drawing.draw_standings = AsyncMock(return_value=StandingsDrawn(applicable=False))
+    channel = AsyncMock()
+    channel.send = AsyncMock(return_value=MagicMock(id=8888))
+    guild = MagicMock()
+    guild.get_member.return_value = None
+    guild.get_role.return_value = None
+
+    with patch(
+        "leaguebot.results.services.publishing.standings_drawing_composer.build_drawings",
+        new=AsyncMock(return_value=(MagicMock(), MagicMock())),
+    ), in_a_job():
+        await produce_standings(
+            db_path, division_id, round_id, 3, "Silverstone", channel, [], [], guild, False,
+            "Final Results", drawing=drawing, driver_names_read=AwaitedHook(),
+            occasion=ClassificationOccasion[occasion],
+        )
+
+    assert drawing.draw_standings.await_args.kwargs["subject"] == subject
+
 # ---------------------------------------------------------------------------
 # Standings composition — T018
 #

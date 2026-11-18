@@ -26,7 +26,7 @@ from dataclasses import dataclass, field
 from typing import Mapping, Sequence
 
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
-from leaguebot.image.models.image_constants import MYSTERY_DATUM
+from leaguebot.image.models.image_constants import MYSTERY_DATUM, MYSTERY_GRAND_PRIX
 
 ATTENDANCE_TEMPLATE_KEY = "attendance_template"
 
@@ -249,6 +249,7 @@ def resolve_drawing(
     season_number: str | int | None = None,
     race_name: str | None = None,
     nationality_collected: bool = True,
+    mystery: bool = False,
 ) -> AttendanceDrawing:
     """Resolve every value an attendance sheet draws.
 
@@ -262,6 +263,9 @@ def resolve_drawing(
 
     *team_keys* holds the shorthand of each driver's team, keyed as *team_names* is, which the
     team's artwork is found by apart from the full name drawn (#381).
+
+    *mystery* says the sheet stands after a round of the mystery format, which is named as the
+    module's own grand prix for it in place of *race_name*, so no builder holds the literal.
     """
     if not records:
         raise AttendanceDataError(
@@ -311,7 +315,7 @@ def resolve_drawing(
         names_a_race=occasion.names_a_round,
         division_tier=None if division_tier is None else str(division_tier),
         season_number=None if season_number is None else str(season_number),
-        race_name=race_name,
+        race_name=MYSTERY_GRAND_PRIX if mystery else race_name,
         # Both thresholds off is the functionality switched off, which is a configured
         # absence: the block leaves whole and nothing is reported (XIV.4).
         limit_label=limit[0] if limit else None,

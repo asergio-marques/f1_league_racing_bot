@@ -113,7 +113,7 @@ async def grid_db(tmp_path):
 @pytest.mark.asyncio
 async def test_the_grid_draws_every_round_the_division_holds_run_or_not(grid_db):
     """FR-016 — unlike the standings grid, which draws only rounds already run."""
-    headings, _ = await attendance_sheet._round_grid(grid_db, 7, [501, 502])
+    headings, _, _ = await attendance_sheet._round_grid(grid_db, 7, [501, 502])
     assert [h.ordinal for h in headings] == [1, 2, 3, 4]
     assert [h.number for h in headings] == ["1", "2", "3", "4"]
 
@@ -125,7 +125,7 @@ async def test_a_round_heading_carries_the_country_its_circuit_is_run_in(grid_db
     044 FR-012 — the **country** is the datum the heading's flag resolves by, so the mystery
     round is drawn from the mystery datum in its country as well as its track.
     """
-    headings, _ = await attendance_sheet._round_grid(grid_db, 7, [501])
+    headings, _, _ = await attendance_sheet._round_grid(grid_db, 7, [501])
     assert headings[1].track == "Mystery"
     assert [h.country for h in headings] == [
         "United Kingdom",
@@ -137,7 +137,7 @@ async def test_a_round_heading_carries_the_country_its_circuit_is_run_in(grid_db
 
 @pytest.mark.asyncio
 async def test_the_cells_carry_the_points_each_round_conferred(grid_db):
-    _, cells = await attendance_sheet._round_grid(grid_db, 7, [501, 502])
+    _, cells, _ = await attendance_sheet._round_grid(grid_db, 7, [501, 502])
     assert cells[501][1] == 2
     assert cells[501][2] == 0
 
@@ -147,14 +147,14 @@ async def test_an_unfinalised_round_and_a_zero_round_are_the_same_picture(grid_d
     """``points_awarded`` is NULL before finalisation and 0 after a fully pardoned round."""
     from leaguebot.image.services.aspects.image_attendance_service import cell_text
 
-    _, cells = await attendance_sheet._round_grid(grid_db, 7, [501, 502])
+    _, cells, _ = await attendance_sheet._round_grid(grid_db, 7, [501, 502])
     assert cell_text(cells[502][1]) == ""   # NULL — not yet finalised
     assert cell_text(cells[501][2]) == ""   # 0 — conferred nothing
 
 
 @pytest.mark.asyncio
 async def test_a_driver_with_no_record_for_a_round_simply_has_no_cell(grid_db):
-    _, cells = await attendance_sheet._round_grid(grid_db, 7, [502])
+    _, cells, _ = await attendance_sheet._round_grid(grid_db, 7, [502])
     assert 3 not in cells.get(502, {})
 
 
@@ -172,7 +172,7 @@ async def test_the_grid_is_raised_rather_than_drawn_empty_on_an_unreadable_datab
 
 @pytest.mark.asyncio
 async def test_the_grid_needs_no_drivers_to_list_its_rounds(grid_db):
-    headings, cells = await attendance_sheet._round_grid(grid_db, 7, [])
+    headings, cells, _ = await attendance_sheet._round_grid(grid_db, 7, [])
     assert len(headings) == 4
     assert cells == {}
 

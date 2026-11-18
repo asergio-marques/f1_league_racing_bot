@@ -214,10 +214,10 @@ async def test_a_retried_calendar_sync_posts_the_text(tmp_path, monkeypatch):
     logged = [*league.bot.log_channel.sent, *await queued_log_lines(league.db_path)]
     named = [line for line in logged if notice in line]
     assert len(named) == 1, logged
-    assert "calendar" in named[0].lower() and "Pro" in named[0], named[0]
+    assert "| Image render notices — calendar — Season 3 Pro:\n" in named[0], named[0]
     held = league.bot.log_channel.sent.index(named[0]) + 1
     assert (
-        f"  **calendar — Pro** ([see them in the log](https://discord.test/{held}))\n"
+        f"  **calendar — Season 3 Pro** ([see them in the log](https://discord.test/{held}))\n"
         f"  • {notice}"
     ) in _outcome(interaction)
 

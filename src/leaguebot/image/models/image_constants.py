@@ -461,6 +461,10 @@ MYSTERY_ASSET_NAME = "mystery.svg"
 #: The datum a mystery round's flag, and a mystery check-in round's track, resolve by.
 MYSTERY_DATUM = "Mystery"
 
+#: The grand prix a mystery round is named as, its track being concealed until it is run
+#: (image spec, "A round of the mystery format").
+MYSTERY_GRAND_PRIX = "Mystery Grand Prix"
+
 #: The reserved filename standing in for a driver who stated no nationality in particular
 #: (Constitution XIV.13). Reserved in the flag directory. `Other` is a *value* a driver
 #: chose, not an absence: a driver recording no nationality at all is drawn with no flag

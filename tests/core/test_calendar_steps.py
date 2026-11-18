@@ -400,7 +400,7 @@ def _notices_told(league: Any) -> str:
     [held] = [n for n, line in enumerate(league.bot.log_channel.sent, 1) if NOTICE in line]
     return (
         "\n\n⚠️ **Image notices**\n"
-        f"  **calendar — Pro** ([see them in the log](https://discord.test/{held}))\n"
+        f"  **calendar — Season 3 Pro** ([see them in the log](https://discord.test/{held}))\n"
         f"  • {NOTICE}"
     )
 
@@ -421,11 +421,11 @@ async def test_a_drawn_calendar_s_notices_reach_the_log_once_in_its_posting_job(
     """Season 3 being raced with the images module on; the drawing the builder handed the calendar
     job draws Pro's calendar as a PNG with one notice, round 12 not fitting. Pro's round 3, Pro, or
     season 3 is cancelled, and Pro's calendar is posted again as a picture. The queue does not
-    stop; the log channel holds the notice once, in one line naming the calendar and Pro, which
-    the posting job carries among its own lines (Constitution XIV.4; the owner's decision on #288:
-    code inside a job never calls `post_log`). The admin's reply ends in one "Image notices"
-    section listing the notice under `calendar — Pro`, linked to that message (image spec,
-    Calendar)."""
+    stop; the log channel holds the notice once, in one line naming the calendar, season 3 and
+    Pro, which the posting job carries among its own lines (Constitution XIV.4; the owner's
+    decision on #288: code inside a job never calls `post_log`). The admin's reply ends in one
+    "Image notices" section listing the notice under `calendar — Season 3 Pro`, linked to that
+    message (image spec, Calendar)."""
     from tests.support.change_queue import queued_log_lines
 
     league = await ongoing_league(tmp_path, images=True)
@@ -442,7 +442,7 @@ async def test_a_drawn_calendar_s_notices_reach_the_log_once_in_its_posting_job(
     logged = [*league.bot.log_channel.sent, *await queued_log_lines(league.db_path)]
     named = [line for line in logged if NOTICE in line]
     assert len(named) == 1, logged
-    assert "calendar" in named[0].lower() and "Pro" in named[0], named[0]
+    assert "| Image render notices — calendar — Season 3 Pro:\n" in named[0], named[0]
     told = reply(interaction)
     assert told.count("⚠️ **Image notices**") == 1, told
     assert _notices_told(league) in told, told
@@ -456,9 +456,9 @@ async def test_a_refused_calendar_s_notices_reach_the_log_once_when_it_is_retrie
     cancelled, and Pro's calendar channel refuses every send, the picture and then the text, so
     the queue stops at the calendar's posting job. The channel is let accept, and a Retry posts the
     calendar: the queue runs to the end, and the log channel holds the notice once, in one line
-    naming the calendar and Pro, never lost with the refused try. The admin's reply, after the
-    Retry, still lists the notice under `calendar — Pro`, linked to that message (image spec,
-    Calendar)."""
+    naming the calendar, season 3 and Pro, never lost with the refused try. The admin's reply,
+    after the Retry, still lists the notice under `calendar — Season 3 Pro`, linked to that
+    message (image spec, Calendar)."""
     from tests.support.change_queue import queued_log_lines
 
     league = await ongoing_league(tmp_path, images=True)
@@ -479,7 +479,7 @@ async def test_a_refused_calendar_s_notices_reach_the_log_once_when_it_is_retrie
     logged = [*league.bot.log_channel.sent, *await queued_log_lines(league.db_path)]
     named = [line for line in logged if NOTICE in line]
     assert len(named) == 1, logged
-    assert "calendar" in named[0].lower() and "Pro" in named[0], named[0]
+    assert "| Image render notices — calendar — Season 3 Pro:\n" in named[0], named[0]
     told = reply(interaction)
     assert told.count("⚠️ **Image notices**") == 1, told
     assert _notices_told(league) in told, told
@@ -525,3 +525,16 @@ async def test_a_calendar_the_league_does_not_draw_is_posted_as_text_with_no_lin
     assert posted.startswith(calendar_heading("Pro")), posted
     assert "posted as text" not in reply(interaction)
     assert not any("posted as text" in line for line in league.bot.log_channel.sent)
+
+
+@pytest.mark.parametrize("season_number,drawn", [
+    (3, "calendar — Season 3 Pro"),
+    (None, "calendar — Pro"),
+], ids=["season known", "season unknown"])
+def test_the_calendar_is_named_by_its_season_and_division(season_number, drawn):
+    """Pro's calendar of season 3 is named, in its notices' log line and the reply listing them,
+    by its season and its division (image spec, render notices); where the season's number is
+    unknown, it is left out."""
+    from leaguebot.core.services.rounds.calendar_post_service import _drawn_as
+
+    assert _drawn_as("Pro", season_number) == drawn

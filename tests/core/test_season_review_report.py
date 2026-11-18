@@ -1249,7 +1249,9 @@ async def test_a_switched_on_calendar_and_lineup_are_asked_as_pictures_in_place_
     replaces the section's text rather than standing beside it. With the image module on and
     Pro's calendar and lineup pictures switched on, the review asks the queue for Pro's calendar
     and then its lineup as pictures, each carrying the section's text it stands in for (posted
-    only where Discord refuses the picture); the report itself carries neither text."""
+    only where Discord refuses the picture); the report itself carries neither text. Each is named
+    as its notices are headed in the log: the calendar with season 4 and Pro, the lineup with Pro
+    alone (image spec, Calendar and Lineup)."""
     cog = _cog(db_path, images=True)
     _pictures_wanted(monkeypatch, cog)
 
@@ -1260,6 +1262,7 @@ async def test_a_switched_on_calendar_and_lineup_are_asked_as_pictures_in_place_
         ("calendar", DIVISION_ID), ("lineup", DIVISION_ID),
     ]
     calendar, lineup = pictures
+    assert (calendar["name"], lineup["name"]) == ("Season 4 Pro calendar", "Pro lineup")
     assert "Round 1: NORMAL @ Silverstone" in calendar["text"]
     assert "*(no drivers assigned)*" in lineup["text"]
     assert "Round 1: NORMAL @ Silverstone" not in _public(messages)

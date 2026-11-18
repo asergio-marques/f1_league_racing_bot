@@ -39,10 +39,12 @@ RSVP_TEMPLATE_KEY = "rsvp_template"
 RSVP_TOGGLE_NAME = "Check-in call image"
 
 
-def describe(*, division_name: str, round_number) -> str:
+def describe(*, season_number: Any, division_name: str, round_number: Any) -> str:
     """What a line names, so a manager can find the call it pertains to: the round as a league
-    reads it, "check-in call of round 3 in **Pro**"."""
-    return f"check-in call of round {round_number} in **{division_name}**"
+    reads it, with its season and its division (image spec, render notices), "check-in call of
+    round 3 in Season 3 **Pro**", the season left out only where its number is unknown."""
+    season = f"Season {season_number} " if season_number is not None else ""
+    return f"check-in call of round {round_number} in {season}**{division_name}**"
 
 
 def fault(what: str, detail: str) -> str:

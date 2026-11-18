@@ -401,9 +401,12 @@ def _fallen_back_to_text_line(ctx: StepContext, division_name: str, problem: str
     )
 
 
-def _drawn_as(division_name: str) -> str:
-    """What the calendar's log line, and the reply listing its notices, call the picture."""
-    return f"calendar — {division_name}"
+def _drawn_as(division_name: str, season_number: int | None) -> str:
+    """What the calendar's log line, and the reply listing its notices, call the picture: the
+    season and the division it is of (image spec, render notices), the season left out only where
+    its number is unknown."""
+    season = f"Season {season_number} " if season_number is not None else ""
+    return f"calendar — {season}{division_name}"
 
 
 def _notices_index(
@@ -419,15 +422,21 @@ def _notices_index(
 
 
 def _posting_lines(
-    ctx: StepContext, division_name: str, posting: CalendarPosting, *, text_stands: bool
+    ctx: StepContext,
+    division_name: str,
+    season_number: int | None,
+    posting: CalendarPosting,
+    *,
+    text_stands: bool,
 ) -> tuple[str, ...]:
     """The `post_calendar` job's lines for what the picture drawn came back with: the notices as
-    one line naming the calendar and its division, which is where they reach the log channel (the
-    drawing writes none itself), and where the text stands in its place, the line saying so."""
+    one line naming the calendar, its season and its division, which is where they reach the log
+    channel (the drawing writes none itself), and where the text stands in its place, the line
+    saying so."""
     lines: tuple[str, ...] = ()
     if posting.notices:
         lines += (drawn_notices_line(
-            ctx.named, ctx.what, _drawn_as(division_name), posting.notices
+            ctx.named, ctx.what, _drawn_as(division_name, season_number), posting.notices
         ),)
     if text_stands and posting.problem is not None:
         lines += (_fallen_back_to_text_line(ctx, division_name, str(posting.problem)),)
@@ -519,20 +528,22 @@ def calendar_steps(seasons: "SeasonService", drawing: ImageDrawing) -> dict[str,
             raise stop.carrying(
                 earlier + (
                     () if refused is None
-                    else _posting_lines(ctx, division.name, refused, text_stands=True)
+                    else _posting_lines(
+                        ctx, division.name, season_number, refused, text_stands=True
+                    )
                 ),
                 notices=kept.notices + drawn,
                 linked=_notices_index(kept, earlier, drawn),
             ) from stop.__cause__
         lines = earlier + _posting_lines(
-            ctx, division.name, posting, text_stands=posting.fell_back
+            ctx, division.name, season_number, posting, text_stands=posting.fell_back
         )
         return StepResult(
             result={
                 "division": division.name,
                 "problem": posting.problem,
                 RESULT_NOTICES: [*kept.notices, *posting.notices],
-                RESULT_DRAWN: _drawn_as(division.name),
+                RESULT_DRAWN: _drawn_as(division.name, season_number),
                 "rejected": posting.problem is not None and posting.message_id is None,
                 "posted_as_image": posting.posted_as_image,
                 "new": posting.message_id,

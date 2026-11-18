@@ -715,19 +715,24 @@ def _drawing_that_draws_nothing(fault: str):
 
 @pytest.mark.parametrize("fault", [
     "drawing",
+    "drawing at the final",
     "track registry",
     "teams",
+    "round unreadable",
     "none",
 ])
 @pytest.mark.asyncio
 async def test_a_sheet_whose_graphic_falls_back_is_told_as_a_line_of_its_job(
     sheet_db, monkeypatch, fault
 ):
-    """Division 1's sheet after round 3, the images module on. (drawing) the graphic's drawing
-    raises; (track registry) the track registry cannot be read; (teams) the teams cannot be read,
-    and the drawing is then given neither team names nor badges; (none) nothing fails. The sheet
-    posts each time, and the job's result and lines carry one line naming the division and what
-    the graphic fell back from, and none where nothing failed."""
+    """Division 1's sheet after round 3 of season 3, the images module on. (drawing) the graphic's
+    drawing raises; (drawing at the final) so it does for the sheet at the season's end, whose line
+    names the occasion in place of the round; (track registry) the track registry cannot be read; (teams) the teams cannot
+    be read, and the drawing is then given neither team names nor badges; (round unreadable) the
+    round, and with it its season, cannot be read from the database; (none) nothing fails. The
+    sheet posts each time, and the job's result and lines carry one line naming the sheet as its
+    notices name it, by season 3, Division 1 and round 3, and what the graphic fell back from, and
+    none where nothing failed; a round that cannot be read costs the line its season alone."""
     from types import SimpleNamespace
 
     from leaguebot.core.services.drivers.team_service import TeamService
@@ -754,6 +759,14 @@ async def test_a_sheet_whose_graphic_falls_back_is_told_as_a_line_of_its_job(
 
         monkeypatch.setattr(TeamService, "placed_drivers_on", _unreadable)
         monkeypatch.setattr(attendance_drawing, "resolve_drawing", _resolve)
+    if fault == "round unreadable":
+        async def _round_unreadable(*_args, **_kwargs):
+            raise aiosqlite.OperationalError("round unreadable")
+
+        monkeypatch.setattr(attendance_sheet, "_round_facts", _round_unreadable)
+    async with get_connection(sheet_db) as db:
+        await db.execute("UPDATE seasons SET season_number = 3 WHERE id = 1")
+        await db.commit()
     await _config(sheet_db, prior=None)
     channel = _FakeChannel([])
     guild = _FakeGuild(channel, {111: "Ayrton"})
@@ -761,11 +774,19 @@ async def test_a_sheet_whose_graphic_falls_back_is_told_as_a_line_of_its_job(
     with in_a_job():
         posted = await post_attendance_sheet(
             SimpleNamespace(db_path=sheet_db), guild, sheet_db, round_id=3, division_id=7,
-            drawing=_drawing_that_draws_nothing(fault),
+            drawing=_drawing_that_draws_nothing(
+                "drawing" if fault == "drawing at the final" else fault
+            ),
+            occasion=_occasion(
+                "SEASON_FINAL" if fault == "drawing at the final" else "AFTER_ROUND"
+            ),
         )
 
     assert posted is not None and channel.sent_content is not None
     expected = {
+        "drawing at the final": [
+            "the graphic could not be drawn, so the sheet is posted as text: template unreadable"
+        ],
         "drawing": [
             "the graphic could not be drawn, so the sheet is posted as text: template unreadable"
         ],
@@ -777,9 +798,16 @@ async def test_a_sheet_whose_graphic_falls_back_is_told_as_a_line_of_its_job(
             "the teams could not be read, so they are drawn without names or badges: "
             "teams unreadable"
         ],
+        "round unreadable": [
+            "the graphic could not be drawn, so the sheet is posted as text: round unreadable"
+        ],
         "none": [],
     }[fault]
-    lines = [f"**Division 1** — attendance sheet: {clause}" for clause in expected]
+    named = {
+        "round unreadable": "**Division 1** — attendance after round 3",
+        "drawing at the final": "Season 3 **Division 1** — attendance, Final Classification",
+    }.get(fault, "Season 3 **Division 1** — attendance after round 3")
+    lines = [f"{named}: {clause}" for clause in expected]
     result = attendance_sheet.sheet_result(posted)
     assert list(posted.faults) == lines
     assert result.get("faults", []) == lines
@@ -842,3 +870,64 @@ async def test_the_sheet_reads_the_placements_once_for_names_and_shorthands(
     assert drawn["team_names"] == {111: "Ferrari"}
     assert drawn["team_keys"] == {111: "FER"}
     assert list(posted.faults) == []
+
+
+# ── What the sheet is named and drawn for (image spec, Attendance) ───────────
+
+
+@pytest.mark.parametrize("occasion_name,track,named,grand_prix", [
+    ("AFTER_ROUND", "Silverstone Circuit",
+     "Season 3 Division 1 — attendance after round 3", "British Grand Prix"),
+    ("AFTER_ROUND", None,
+     "Season 3 Division 1 — attendance after round 3", "Mystery Grand Prix"),
+    ("AFTER_ROUND", "Nowhere Ring",
+     "Season 3 Division 1 — attendance after round 3", None),
+    ("SEASON_OPENING", "Silverstone Circuit",
+     "Season 3 Division 1 — attendance, Opening Classification", None),
+    ("SEASON_FINAL", "Silverstone Circuit",
+     "Season 3 Division 1 — attendance, Final Classification", None),
+], ids=["after round 3 at Silverstone", "after a mystery round 3", "after round 3 at a track "
+        "the registry does not hold", "opening", "final"])
+@pytest.mark.asyncio
+async def test_the_sheet_is_drawn_and_named_for_its_season_division_and_occasion(
+    sheet_db, monkeypatch, occasion_name, track, named, grand_prix
+):
+    """Division 1 of season 3, of tier 2, its sheet drawn with the images module on: after round 3
+    at Silverstone, after round 3 run as a mystery round, after round 3 at a track the registry
+    does not hold, at the season's opening, or at its end. The sheet is drawn with its season and
+    its tier, and with its grand prix where it stands after a round: the registry's for
+    Silverstone, "Mystery Grand Prix" for the mystery round, and none for the unknown track or at
+    a season boundary (image spec, Attendance and "A round of the mystery format"). The drawing is
+    asked to name the sheet, in the log's notices and fault lines, by the season, the division
+    and the occasion (image spec, render notices)."""
+    from types import SimpleNamespace
+
+    from leaguebot.core.services.drivers import driver_names
+
+    async def _empty(*_args, **_kwargs):
+        return {}
+
+    monkeypatch.setattr(driver_names, "read_driver_names", _empty)
+    monkeypatch.setattr(driver_names, "read_driver_nationalities", _empty)
+    async with get_connection(sheet_db) as db:
+        await db.execute("UPDATE seasons SET season_number = 3 WHERE id = 1")
+        await db.execute("UPDATE divisions SET tier = 2 WHERE id = 7")
+        await db.execute(
+            "UPDATE rounds SET format = ?, track_name = ? WHERE id = 3",
+            ("NORMAL" if track else "MYSTERY", track),
+        )
+        await db.commit()
+    await _config(sheet_db, prior=None)
+    channel = _FakeChannel([])
+    guild = _FakeGuild(channel, {111: "Ayrton"})
+    drawing = _drawing_that_draws_nothing("none")
+
+    with in_a_job():
+        await post_attendance_sheet(
+            SimpleNamespace(db_path=sheet_db), guild, sheet_db, round_id=3, division_id=7,
+            occasion=_occasion(occasion_name), drawing=drawing,
+        )
+
+    [sheet], asked = drawing.draw_attendance_sheet.await_args
+    assert asked["what"] == named
+    assert (sheet.season_number, sheet.division_tier, sheet.race_name) == ("3", "2", grand_prix)

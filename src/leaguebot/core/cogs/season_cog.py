@@ -638,8 +638,11 @@ class SeasonCog(commands.Cog):
                     f"@ {r.track_name or 'Mystery'} \u2014 {discord_ts(r.scheduled_at)}"
                 )
             if draws_calendar:
+                # Named with its season as the image spec's render notices are; the lineup
+                # names its division alone (image spec, Lineup).
                 pictures.append({
-                    "name": f"{div.name} calendar", "division_id": div.id,
+                    "name": f"Season {season.season_number} {div.name} calendar",
+                    "division_id": div.id,
                     "kind": "calendar", "text": "\n".join(cal_lines),
                     "season_number": season.season_number or None,
                 })

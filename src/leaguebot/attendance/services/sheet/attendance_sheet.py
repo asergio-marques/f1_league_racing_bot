@@ -21,10 +21,11 @@ from leaguebot.framework.utils.hooks import AwaitedHook
 from leaguebot.framework.db.database import get_connection
 from leaguebot.framework.models.change import StepFailedOnDiscord
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
-from leaguebot.core.models.round import RoundStatus
+from leaguebot.core.models.round import RoundFormat, RoundStatus
 from leaguebot.core.services.drivers.driver_service import driver_identities_on
 from leaguebot.core.services.drivers.team_service import TeamService
 from leaguebot.core.services.seasons.season_service import (
+    RoundFacts,
     division_on,
     division_rounds_in_order_on,
     round_facts_on,
@@ -263,9 +264,11 @@ async def post_attendance_sheet(
         log.warning("post_attendance_sheet: failed to post sheet for division %s: %s", division_id, exc)
         raise StepFailedOnDiscord(
             f"the attendance sheet could not be posted: {exc}"
-        ).carrying(
-            (*earlier_lines, *await _fault_lines(db_path, division_id, faults), *drawn_lines)
-        ) from exc
+        ).carrying((
+            *earlier_lines,
+            *await _fault_lines(db_path, division_id, round_id, occasion, faults),
+            *drawn_lines,
+        )) from exc
     finally:
         # Posted or not, the picture has done all it will ever do: a try again posts the text
         # and never the image, so nothing reads this file again.
@@ -278,17 +281,60 @@ async def post_attendance_sheet(
     return PostedSheet(
         message_id=new_message_id, channel_id=channel_id, previous=prior_msg_id,
         takes_slot=occasion.takes_the_live_slot,
-        faults=(*earlier_lines, *await _fault_lines(db_path, division_id, faults), *drawn_lines),
+        faults=(
+            *earlier_lines,
+            *await _fault_lines(db_path, division_id, round_id, occasion, faults),
+            *drawn_lines,
+        ),
     )
 
 
-async def _fault_lines(db_path: str, division_id: int, faults: list[str]) -> tuple[str, ...]:
-    """The faults the graphic fell back from, each as a line naming the division, for the job that
-    posted the sheet to write beside its result."""
+async def _fault_lines(
+    db_path: str,
+    division_id: int,
+    round_id: int,
+    occasion: ClassificationOccasion,
+    faults: list[str],
+) -> tuple[str, ...]:
+    """The faults the graphic fell back from, each as a line naming the sheet as its notices name
+    it, by its season, its division and its occasion (`_sheet_label`), for the job that posted
+    the sheet to write beside its result: "Season 3 **Pro** — attendance after round 3: …". A
+    round that cannot be read is named without its season."""
     if not faults:
         return ()
-    name = await _division_name(db_path, division_id)
-    return tuple(f"**{name}** — attendance sheet: {fault}" for fault in faults)
+    # A round that cannot be read at this moment costs the line its season, never the sheet its
+    # post or its result: the faults are still told, and the read's error goes to the host's log.
+    try:
+        facts = await _round_facts(db_path, round_id)
+    except aiosqlite.Error:
+        log.warning(
+            "post_attendance_sheet: round %s could not be read, so the sheet's fault lines are "
+            "written without its season", round_id, exc_info=True,
+        )
+        facts = None
+    label = _sheet_label(
+        await _division_name(db_path, division_id), facts, occasion, round_id, bold=True
+    )
+    return tuple(f"{label}: {fault}" for fault in faults)
+
+
+def _sheet_label(
+    division_name: str,
+    facts: RoundFacts | None,
+    occasion: ClassificationOccasion,
+    round_id: int,
+    *,
+    bold: bool = False,
+) -> str:
+    """What the sheet is named in the log, its notices and its fault lines alike (image spec,
+    render notices): its season, its division and its occasion, "Season 3 Pro — attendance after
+    round 3" or "Season 3 Pro — attendance, Final Classification". The season is left out where
+    the round cannot be read, and *bold* sets the division in bold, as a fault line has it."""
+    season = f"Season {facts.season_number} " if facts is not None else ""
+    division = f"**{division_name}**" if bold else division_name
+    if occasion.names_a_round:
+        return f"{season}{division} — attendance after round {_number_of(facts, round_id)}"
+    return f"{season}{division} — attendance, {occasion.label()}"
 
 
 @dataclass(frozen=True)
@@ -496,7 +542,9 @@ async def _sheet_attachment(
         # The grid: every round the division holds, run or not (FR-016), and what each
         # conferred on each driver. The points are **read** from the record the module
         # persisted — already net of pardons — and never recomputed here (XIV.7).
-        headings, cells = await _round_grid(db_path, division_id, profile_ids, faults=faults)
+        headings, cells, tracks = await _round_grid(
+            db_path, division_id, profile_ids, faults=faults
+        )
         profile_of = {
             int(row["discord_user_id"]): int(row["driver_profile_id"])
             for row in sorted_drivers
@@ -534,12 +582,27 @@ async def _sheet_attachment(
             )
 
         division_name = await _division_name(db_path, division_id)
-        round_number = await _round_number(db_path, round_id)
+        facts = await _round_facts(db_path, round_id)
+        round_number = _number_of(facts, round_id)
+        # The heading's season, tier and grand prix (image spec, Attendance), from the same read
+        # as the round. Only a sheet standing after a round names a grand prix: a mystery round's
+        # is the module's own, and a track the registry does not hold names none, the blank
+        # field then reporting itself.
+        mystery = False
+        record = None
+        if facts is not None and occasion.names_a_round:
+            mystery = facts.format is RoundFormat.MYSTERY
+            if not mystery and facts.track_name:
+                record = tracks.get(facts.track_name)
 
         sheet = resolve_drawing(
             division_name=division_name,
             occasion=occasion,
             round_number=round_number,
+            season_number=facts.season_number if facts is not None else None,
+            division_tier=facts.division_tier if facts is not None else None,
+            race_name=getattr(record, "gp_name", None) or None,
+            mystery=mystery,
             records=records,
             display_names=display_names,
             team_names=team_names,
@@ -555,11 +618,7 @@ async def _sheet_attachment(
             nationality_collected=collected,
         )
 
-        label = (
-            f"{division_name} — attendance after round {round_number}"
-            if occasion.names_a_round
-            else f"{division_name} — attendance, {occasion.label()}"
-        )
+        label = _sheet_label(division_name, facts, occasion, round_id)
         picture, drawn = await drawing.draw_attendance_sheet(sheet, what=label)
         if lines is not None:
             lines.extend(drawn)
@@ -585,10 +644,12 @@ async def _round_grid(
 ):
     """The sheet's round columns, and the points each round conferred on each driver.
 
-    Returns ``(headings, cells)`` where *headings* is one :class:`RoundHeading` per round the
-    division holds — **every** round, run or not (FR-016), unlike the standings grid which
-    draws only those already run — and *cells* maps a driver profile id to
-    ``{round ordinal: points}``.
+    Returns ``(headings, cells, tracks)`` where *headings* is one :class:`RoundHeading` per round
+    the division holds — **every** round, run or not (FR-016), unlike the standings grid which
+    draws only those already run — *cells* maps a driver profile id to
+    ``{round ordinal: points}``, and *tracks* is the track registry by name, read once here for
+    the headings' flags and handed back for the sheet's grand prix (empty where it could not be
+    read).
 
     The ordinal is the round's place in the calendar, counted from 1, because that is what the
     template's ``round_<z>`` addresses. The *number* drawn on the heading is the round's own
@@ -639,7 +700,7 @@ async def _round_grid(
             ordinal_of: dict[int, int] = {}
             for ordinal, rnd in enumerate(rounds, start=1):
                 ordinal_of[rnd.id] = ordinal
-                mystery = str(rnd.format.value or "").upper().endswith("MYSTERY")
+                mystery = rnd.format is RoundFormat.MYSTERY
                 track_name = None if mystery else (rnd.track_name or None)
                 record = tracks.get(track_name) if track_name else None
                 headings.append(
@@ -675,7 +736,7 @@ async def _round_grid(
     except aiosqlite.Error as exc:
         raise _RoundGridUnreadable(str(exc)) from exc
 
-    return headings, cells
+    return headings, cells, tracks
 
 
 async def _seat_teams(
@@ -722,7 +783,12 @@ async def _division_name(db_path: str, division_id: int) -> str:
     return division.name if division and division.name else f"Division {division_id}"
 
 
-async def _round_number(db_path: str, round_id: int) -> str:
+async def _round_facts(db_path: str, round_id: int) -> RoundFacts | None:
+    """*round_id* with its division's and its season's facts, or None where it is gone."""
     async with get_connection(db_path) as db:
-        facts = await round_facts_on(db, round_id)
+        return await round_facts_on(db, round_id)
+
+
+def _number_of(facts: RoundFacts | None, round_id: int) -> str:
+    """The round's number as a sheet names it, its id where the round cannot be read."""
     return str(facts.round_number) if facts and facts.round_number else str(round_id)

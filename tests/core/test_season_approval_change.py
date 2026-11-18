@@ -1175,8 +1175,9 @@ async def test_the_approval_s_reply_names_a_calendar_s_notices_and_not_its_fallb
     told = reply(press)
     assert told.count("⚠️ **Image notices**") == 1, told
     assert "\n\n⚠️ **Image notices**\n" in told, told
+    am_calendar = "calendar — Season 3 Am"
     assert (
-        f"  **calendar — Am** ([see them in the log]({_link(notice, 'calendar — Am')}))\n"
+        f"  **{am_calendar}** ([see them in the log]({_link(notice, am_calendar)}))\n"
         f"  • {notice}"
     ) in told, told
     assert (
@@ -1185,7 +1186,7 @@ async def test_the_approval_s_reply_names_a_calendar_s_notices_and_not_its_fallb
     ) in told, told
     assert "Calendar images" not in told
     assert "the template has no rows" not in told
-    assert "calendar — Pro" not in told
+    assert "calendar — Season 3 Pro" not in told
     assert not [line for line in _log_lines(league)
                 if "| /season placements-review |" in line
                 and (notice in line or lineup_notice in line or "the template has no rows" in line)]
