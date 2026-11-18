@@ -356,7 +356,8 @@ async def test_the_signup_module_lacks_only_its_channel_while_it_is_on(enabled, 
     configuration at all, or off with the channel unset. Signup's refusals are read through the
     hook a season's confirmation is refused through, as signup's wiring signs them up: a season's
     approval is refused only while signup is on and its channel unset, in today's words, word for
-    word; and signup refuses neither the review nor the configuration's confirmation."""
+    word; signup refuses the review only while its channel is unset, naming `/signup channel` and
+    `/season placements-review`, and never the configuration's confirmation."""
     from leaguebot.core.services.seasons.confirmation_refusals import Confirmation, read_refusals
     from tests.support.review_workflows import (
         sign_up_confirmation_refused,
@@ -373,8 +374,15 @@ async def test_the_signup_module_lacks_only_its_channel_while_it_is_on(enabled, 
 
     approval = await read_refusals(bot.confirmation_refused, SEASON_ID, Confirmation.APPROVAL)
     assert [(r.message, r.reason) for r in approval] == refused
-    for other in (Confirmation.REVIEW, Confirmation.CONFIGURATION):
-        assert await read_refusals(bot.confirmation_refused, SEASON_ID, other) == []
+    review = await read_refusals(bot.confirmation_refused, SEASON_ID, Confirmation.REVIEW)
+    if refused:
+        assert len(review) == 1 and review[0].reason is None
+        for words in ("No signup channel is set", "/signup channel", "/season placements-review"):
+            assert words in review[0].message, words
+    else:
+        assert review == []
+    configuration = Confirmation.CONFIGURATION
+    assert await read_refusals(bot.confirmation_refused, SEASON_ID, configuration) == []
 
 
 def test_core_names_no_signup_setting():
