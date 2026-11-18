@@ -29,6 +29,7 @@ from leaguebot.core.services.settings.channel_registry_service import (
     ChannelUse,
     channel_refusal,
     find_channel_use,
+    live_divisions_on,
     refusal,
 )
 from leaguebot.core.models.channel_needs import ATTACH, EMBED, SEND, VIEW
@@ -265,6 +266,30 @@ async def test_a_finished_seasons_channel_is_free_again(db_path, status):
     await _set(db_path, "results", 500, division_id=division_id)
 
     assert await _find(db_path, 500) is None
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#570: live_divisions_on takes no cancelled= to pass over cancelled divisions"
+)
+async def test_live_divisions_pass_over_cancelled_divisions_only_when_asked(db_path):
+    """The live season's divisions, cancelled ones included, as the registry guards them; asked
+    with `cancelled=False`, a division cancelled in the running season is passed over, which is
+    what a picture switched on judges. A finished season's division is never among them."""
+    finished = await _season(db_path, status="COMPLETED")
+    await _division(db_path, finished, "Old")
+    live = await _season(db_path, status="ACTIVE")
+    pro = await _division(db_path, live, "Pro")
+    am = await _division(db_path, live, "Am")
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE divisions SET status = 'CANCELLED' WHERE id = ?", (am,))
+        await db.commit()
+
+    async with get_connection(db_path) as db:
+        guarded = await live_divisions_on(db)
+        judged = await live_divisions_on(db, cancelled=False)
+
+    assert guarded == {pro: "Pro", am: "Am"}
+    assert judged == {pro: "Pro"}
 
 
 # ── Ignoring the setting being written ────────────────────────────────────
