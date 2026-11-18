@@ -346,6 +346,10 @@ _NOT_JUDGED = "#570: /signup channel does not judge the new channel against ever
             "new", ("send_messages",), "Send Messages", id="new-no-send-messages",
             marks=pytest.mark.xfail(strict=True, reason=_NOT_JUDGED),
         ),
+        pytest.param(
+            "new", ("view_channel",), "View Channel", id="new-no-view-channel",
+            marks=pytest.mark.xfail(strict=True, reason=_NOT_JUDGED),
+        ),
         pytest.param("old", ("manage_roles",), None, id="old-only-manage-channels"),
         pytest.param("old", ("manage_channels",), None, id="old-only-manage-roles"),
     ],

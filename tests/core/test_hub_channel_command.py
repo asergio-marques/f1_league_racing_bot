@@ -487,6 +487,12 @@ def _cannot_use(missing: str) -> str:
                 strict=True, reason="#570: a hub lacking Send Messages is not refused"
             ),
         ),
+        pytest.param(
+            True, ("view_channel",), "View Channel", id="no-view-channel",
+            marks=pytest.mark.xfail(
+                strict=True, reason="#570: a hub lacking View Channel is not refused"
+            ),
+        ),
     ],
 )
 async def test_a_channel_the_bot_cannot_use_as_the_hub_is_refused_before_anything_is_written(
@@ -494,10 +500,10 @@ async def test_a_channel_the_bot_cannot_use_as_the_hub_is_refused_before_anythin
 ):
     """Core spec, The hub: the bot needs View Channel, Send Messages, Embed Links, Manage Channel
     and Manage Permissions in the hub. The manager points the hub at 7920, where the bot lacks
-    Manage Channel and Manage Permissions (*no-manage*), or Embed Links, or Send Messages: refused
-    at the ask, naming what the bot lacks in the order the hub needs it, in the words every
-    channel command gives. Nothing is written, nothing touched in 7920, and nothing asked of the
-    queue."""
+    Manage Channel and Manage Permissions (*no-manage*), or Embed Links, Send Messages or View
+    Channel: refused at the ask, naming what the bot lacks in the order the hub needs it, in the
+    words every channel command gives. Nothing is written, nothing touched in 7920, and nothing
+    asked of the queue."""
     channel = _channel(HUB, manage=manage, denied=denied)
     cog, interaction = await _setup(db_path, channel)
 
