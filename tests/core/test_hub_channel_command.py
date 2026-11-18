@@ -471,9 +471,6 @@ def _cannot_use(missing: str) -> str:
     [
         pytest.param(
             False, (), "Manage Channel, Manage Permissions", id="no-manage",
-            marks=pytest.mark.xfail(
-                strict=True, reason="#570: a hub without the Manage pair is refused in the old words"
-            ),
         ),
         pytest.param(
             True, ("embed_links",), "Embed Links", id="no-embed-links",

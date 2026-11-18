@@ -54,7 +54,6 @@ from leaguebot.core.utils.channel_guard import (
 )
 from leaguebot.framework.utils.league_bot import LeagueBot
 from leaguebot.framework.utils.interaction_errors import describe, describe_fault, report_failure
-from leaguebot.framework.utils.league_server import guild_of
 from leaguebot.framework.utils.log_lines import lane_name, refuse
 
 #: Waits for the catch-up after a restart before a command answered off the change queue acts.
@@ -402,14 +401,13 @@ class BotCog(commands.Cog):
         """Point the hub at *channel*: ask the change queue for `bot_settings.hub_channel_setting`.
 
         The channel already doing another job, or already the hub, is judged here first, so a
-        manager re-running it for the hub's own value still reads "Nothing was changed" rather
-        than a permission refusal that happens to be true as well. The missing-permission refusal
-        has nothing to do with a value already held, so it is judged next, before the change is
-        even asked for, as a driver role Discord will not let the bot grant is judged before
-        `/bot driver-role` asks for its own. The channel-in-use and the unconfigured-server
-        refusals are the setting's own `check` as well, run again as the change starts, since a
-        change queued ahead of this one might have claimed the channel for something else since
-        it was asked; what follows the save is `setting_change`'s and `bot_settings`'s.
+        manager re-running it for the hub's own value still reads "Nothing was changed". What the
+        bot holds in the channel (`HUB_NEEDS`) is not judged here: it is the setting's own
+        `check`, which the queue runs at the ask and again as the change starts, straight after
+        the in-use refusal. The unconfigured-server refusal is judged here and by the `check`
+        as well, since a change queued ahead of this one might have claimed the channel for
+        something else, or left the server unconfigured, since it was asked; what follows the
+        save is `setting_change`'s and `bot_settings`'s.
         """
         from leaguebot.core.services.settings.channel_registry_service import ChannelUse, find_channel_use, refusal
 
@@ -420,25 +418,6 @@ class BotCog(commands.Cog):
             await refuse(
                 interaction,
                 refusal(channel.mention, use, same_setting=(use == ChannelUse("hub"))),
-                what=describe(interaction),
-            )
-            return
-
-        guild = guild_of(interaction)
-        perms = channel.permissions_for(guild.me)
-        missing = [
-            name
-            for name, held in (
-                ("Manage Channel", perms.manage_channels),
-                ("Manage Permissions", perms.manage_roles),
-            )
-            if not held
-        ]
-        if missing:
-            await refuse(
-                interaction,
-                f"❌ The bot needs {' and '.join(f'**{m}**' for m in missing)} on "
-                f"{channel.mention} to set who may see the hub. Nothing was changed.",
                 what=describe(interaction),
             )
             return
