@@ -22,9 +22,8 @@ channel a league has since repurposed.
 **Only the overwrites the bot applied are cleared, and by a job after the switch-off**
 (`clear_overwrites`, planned by `switch_off`, so a switch-off that is refused or discarded leaves
 the channel as the module needs it). `/signup channel` sets five: everyone, the bot, the base role, the
-interaction role and, since #116, the league admin role. The first four are what is reverted.
-The admin role's is left standing, an allow for a role that already governs the league (#372,
-closed as won't fix). A league that has added its own overwrites to that channel keeps them,
+interaction role and, since #116, the league admin role. All five are cleared, the admin role's
+among them (#449). A league that has added its own overwrites to that channel keeps them,
 because the bot did not put them there and removing them would be the module reaching outside
 itself on the way out.
 
@@ -624,13 +623,13 @@ def _cleared(channel: Any) -> list[Any]:
 
 
 async def test_the_overwrites_the_bot_applied_are_cleared(tmp_path):
-    """Everyone's, the bot's, the base role's and the interaction role's are reverted by the
-    switch-off's `clear_overwrites` job, after `switch_off` and not before. The league admin
-    role's, which `/signup channel` sets too, is left (#372)."""
+    """Everyone's, the bot's, the base role's, the interaction role's and the league admin
+    role's are reverted by the switch-off's `clear_overwrites` job, after `switch_off` and not
+    before: the admin role's, which `/signup channel` sets too, is cleared with the rest."""
     league = await _league(tmp_path)
     await league.write("UPDATE server_configs SET base_role_id = ?", BASE_ROLE)
     channel = _signup_channel(league)
-    interaction_role = (await league.bot.config_service.get_server_config()).interaction_role_id
+    config = await league.bot.config_service.get_server_config()
 
     await _switch_off(league)
 
@@ -640,7 +639,8 @@ async def test_the_overwrites_the_bot_applied_are_cleared(tmp_path):
 
     guild = league.guild
     assert set(_cleared(channel)) == {
-        guild.default_role, guild.me, guild.get_role(BASE_ROLE), guild.get_role(interaction_role),
+        guild.default_role, guild.me, guild.get_role(BASE_ROLE),
+        guild.get_role(config.interaction_role_id), guild.get_role(config.league_admin_role_id),
     }
     assert [job["name"] for job in await _off_jobs(league)] == [
         "switch_off", "disarm_timers", "clear_overwrites",
@@ -660,18 +660,23 @@ async def test_a_league_with_no_base_role_reverts_the_rest(tmp_path):
 
 
 async def test_a_base_role_that_has_been_deleted_is_stepped_over(tmp_path):
-    """Its overwrite went with it, and the others still need reverting."""
+    """Its overwrite went with it, and the other four still need reverting: everyone's, the
+    bot's, the interaction role's and the league admin role's."""
     league = await _league(tmp_path)
     await league.write("UPDATE server_configs SET base_role_id = ?", BASE_ROLE)
     league.roles_gone.add(BASE_ROLE)
     channel = _signup_channel(league)
-    interaction_role = (await league.bot.config_service.get_server_config()).interaction_role_id
+    config = await league.bot.config_service.get_server_config()
 
     await _switch_off(league)
     await run_queue(league.bot)
 
-    assert league.guild.get_role(interaction_role) in _cleared(channel)
-    assert len(_cleared(channel)) == 3
+    guild = league.guild
+    assert set(_cleared(channel)) == {
+        guild.default_role, guild.me,
+        guild.get_role(config.interaction_role_id), guild.get_role(config.league_admin_role_id),
+    }
+    assert len(_cleared(channel)) == 4
 
 
 async def test_a_server_with_no_configuration_row_reverts_the_rest(tmp_path):
