@@ -59,6 +59,7 @@ from tests.support.change_queue import (
     stop_the_league_lane,
     stopped_job,
 )
+from tests.support.season_league import set_module_flag
 from tests.support.settings_league import interaction as member_asks
 from tests.support.settings_league import last_said, unruled
 from tests.support.undecorate import undecorate
@@ -207,7 +208,9 @@ async def _seed_other_division_lineup(db_path: str, channel_id: int) -> None:
 
 async def _seed_other_division_results(db_path: str, channel_id: int) -> None:
     """Give Division 2 (id 12), of the same season, *channel_id* as its results channel, written
-    where `/results channel results` writes it."""
+    where `/results channel results` writes it, with results on: a module that is off holds no
+    channel."""
+    await set_module_flag(db_path, "results", True)
     async with get_connection(db_path) as db:
         await db.execute(
             "INSERT OR IGNORE INTO divisions (id, season_id, name, tier, mention_role_id) "
