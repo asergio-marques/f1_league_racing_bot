@@ -1226,6 +1226,25 @@ async def test_an_output_may_be_switched_off_while_the_module_is_off(tmp_path):
     ]
 
 
+async def test_an_output_may_not_be_switched_on_while_the_module_is_off(tmp_path):
+    """The image module switched off with the Calendar off: `/images config toggle Calendar` is
+    refused because the module is off, the Calendar stays off, nothing is audited and one "⛔"
+    line names the command."""
+    league = await _league(tmp_path)
+    await switch(league.bot, ("images",), on=False)
+
+    asked = await _toggle()(league)
+    await run_queue(league.bot)
+
+    assert last_said(asked) == (
+        "❌ The Image module is not enabled. Use `/module enable images` first."
+    )
+    assert await _rows(league.db_path, CALENDAR_SWITCH) == [(0,)]
+    assert await audit_rows(league.db_path) == []
+    [line] = await log_lines(league)
+    assert line.startswith(_refused("`/images config toggle`"))
+
+
 @pytest.mark.parametrize(
     ("method", "command", "column", "label", "setup", "state"),
     [
