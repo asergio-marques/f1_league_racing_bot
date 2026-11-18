@@ -31,6 +31,15 @@ a step of its own, marked done before the permissions are put back, so that a re
 after a stop reads the first record: what a take-back restores is what stood before the first
 attempt, not what the stop left. The channel the check named, or none kept, is skipped.
 
+**The permissions are then put back, a step before the save** (`RESTORE_PERMISSIONS`, with the
+undo `TAKE_BACK_PERMISSIONS`): the recorded prior overwrite of each target, merged with the wanted
+one, so what a league set by hand and the bot sets nothing for stands. A fault part-way takes back
+what it set before it raises, and the switch-on stays off ("run it again"); where the save then
+faults, the undo takes back all of it. Where Discord refuses a take-back, the failure line and the
+reply say that permissions were left on the channel, and what to do. **A stop between two targets**
+leaves some set and the step not done: it runs again from the start and takes back, on a fault,
+to the first record.
+
 **The flag is signup's own column on core's table, `server_configs.signup_module_enabled`**
 (architecture.md, "The database"; `OWN_COLUMNS` in `tests/repository/test_architecture_rules.py`),
 as weather's is.
@@ -48,7 +57,8 @@ the switch asks for that itself rather than the command doing it after every pre
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+import logging
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
 import discord
@@ -64,7 +74,12 @@ from leaguebot.framework.models.change import (
     Verdict,
     module_on,
 )
-from leaguebot.framework.services.queue.change_types import CheckContext, Step, StepContext
+from leaguebot.framework.services.queue.change_types import (
+    CheckContext,
+    Step,
+    StepContext,
+    StepView,
+)
 from leaguebot.framework.services.queue.setting_change import Before
 from leaguebot.framework.utils.league_server import league_guild
 from leaguebot.core.services.modules.kept_channels import (
@@ -90,11 +105,19 @@ if TYPE_CHECKING:
 
     from leaguebot.core.services.settings.config_service import ConfigService
     from leaguebot.framework.services.switches.module_service import ModuleService
+    from leaguebot.framework.utils.league_bot import LeagueBot
     from leaguebot.framework.utils.hooks import AwaitedHook
+
+log = logging.getLogger(__name__)
 
 #: The name of the step, before the save, that records the bot's permissions on the signup channel
 #: as they stand, and as they are to be put back.
 RECORD_PERMISSIONS = "record_permissions"
+
+#: The name of the step, before the save, that puts the bot's permissions on the signup channel,
+#: and of its undo, which takes them back where the save does not go through.
+RESTORE_PERMISSIONS = "restore_permissions"
+TAKE_BACK_PERMISSIONS = "take_back_permissions"
 
 #: The kinds of target the record names: @everyone, the bot's own member, and a role by its id.
 EVERYONE, BOT, ROLE = "everyone", "bot", "role"
@@ -110,6 +133,83 @@ def _pair(overwrite: discord.PermissionOverwrite) -> dict[str, int]:
 
 def _still_off(_payload: dict[str, Any]) -> str:
     return "The module is still off. Run `/module enable signup` again once the fault is cleared."
+
+
+async def _signup_channel(
+    bot: "LeagueBot", channel_id: int
+) -> tuple[discord.Guild, discord.TextChannel]:
+    """The league's server and its signup channel *channel_id*, through `league_guild`; raises
+    `StepFailedOnDiscord` where the server is out of the bot's reach or the channel is not on it."""
+    guild = await league_guild(bot)
+    if guild is None:
+        raise StepFailedOnDiscord("the league's server is out of the bot's reach")
+    channel = guild.get_channel(channel_id)
+    if not isinstance(channel, discord.TextChannel):
+        raise StepFailedOnDiscord(f"the signup channel {channel_id} is not on the server")
+    return guild, channel
+
+
+def _recorded(steps: Sequence[StepView]) -> dict[str, Any] | None:
+    """What the record step found, or None where it skipped: no channel is kept, or the check
+    named it."""
+    found = next((view.result for view in steps if view.name == RECORD_PERMISSIONS), None) or {}
+    return None if found.get("skip") or "targets" not in found else found
+
+
+def _target_of(
+    guild: discord.Guild, entry: dict[str, Any]
+) -> discord.Role | discord.Member | None:
+    """The role or member a record's *entry* names on *guild*, None where it is gone."""
+    kind = entry["kind"]
+    if kind == EVERYONE:
+        return guild.default_role
+    if kind == BOT:
+        return guild.me
+    return guild.get_role(int(entry["id"]))
+
+
+def _overwrite(pair: dict[str, int]) -> discord.PermissionOverwrite:
+    return discord.PermissionOverwrite.from_pair(
+        discord.Permissions(pair["allow"]), discord.Permissions(pair["deny"])
+    )
+
+
+def _left(channel_id: int) -> str:
+    """What the league is told of permissions the bot put on its signup channel and could not take
+    off again."""
+    return (
+        f"Permissions the bot put on the signup channel <#{channel_id}> were left there: "
+        f"run `{_ENABLE_COMMAND}` again, or remove them by hand."
+    )
+
+
+async def _take_back(
+    guild: discord.Guild,
+    channel: discord.TextChannel,
+    record: dict[str, Any],
+    applied: Sequence[int],
+) -> bool:
+    """Set each of the record's targets at the indices *applied* back to what stood before the
+    first record (none, where it held no overwrite), and say whether every one went back. A target
+    that cannot is logged, and the rest are still taken back."""
+    every = True
+    for index in applied:
+        entry = record["targets"][index]
+        try:
+            target = _target_of(guild, entry)
+            if target is None:
+                raise LookupError(f"the {entry['kind']} {entry['id']} is not on the server")
+            prior = entry["prior"]
+            await channel.set_permissions(
+                target, overwrite=None if prior is None else _overwrite(prior)
+            )
+        except Exception:
+            log.exception(
+                "could not take back the bot's permissions for %s on the signup channel %s",
+                entry["kind"], record["channel_id"],
+            )
+            every = False
+    return every
 
 
 def _record_permissions(config: "ConfigService") -> Before:
@@ -131,12 +231,7 @@ def _record_permissions(config: "ConfigService") -> Before:
         if row is None or row["signup_channel_id"] is None or checked.get("named"):
             return StepResult(result={"skip": True})
         channel_id = int(row["signup_channel_id"])
-        guild = await league_guild(ctx.bot)
-        if guild is None:
-            raise StepFailedOnDiscord("the league's server is out of the bot's reach")
-        channel = guild.get_channel(channel_id)
-        if not isinstance(channel, discord.TextChannel):
-            raise StepFailedOnDiscord(f"the signup channel {channel_id} is not on the server")
+        guild, channel = await _signup_channel(ctx.bot, channel_id)
         wanted = signup_channel_overwrites(guild, await config.get_server_config())
         targets: list[dict[str, Any]] = []
         for target, overwrite in wanted.items():
@@ -153,6 +248,88 @@ def _record_permissions(config: "ConfigService") -> Before:
         return StepResult(result={"channel_id": channel_id, "targets": targets})
 
     return Before(Step(RECORD_PERMISSIONS, StepKind.ACT, run))
+
+
+def _restore_permissions() -> Before:
+    """The step that puts the bot's permissions on the signup channel back, and its undo.
+
+    For each target in the record (`_record_permissions`) it sets the overwrite the channel held
+    (`prior`) merged with the permissions `/signup channel` sets (`wanted`): a permission the
+    league set by hand and the bot sets nothing for stands. It does nothing where the record
+    skipped, and returns `{"applied": [the indices of the targets set]}`.
+
+    **A fault part-way takes back its own partial work** before it raises again, for the undo
+    below is for finished work only: each target set is set back to `prior`. Where all went back it
+    raises the fault itself, and the switch-on says the module is still off; where Discord refuses
+    one it raises `StepFailedOnDiscord` from the fault with the notice that permissions were left
+    on the channel (`_left`), which the failure line and the reply carry.
+
+    **A stop part-way** (a restart between two targets) leaves some targets set and the step not
+    done: it runs again from the start, reading the record the record step marked done before it,
+    so it sets every target again and takes back, on a fault, to what stood before the first
+    attempt, never to what the stop left.
+
+    **The undo** (`TAKE_BACK_PERMISSIONS`) runs only where the save does not go through, and sets
+    each target the step reports applied back to `prior`, raising with the same notice where any is
+    missing or refused."""
+
+    async def run(ctx: StepContext) -> StepResult:
+        record = _recorded(ctx.steps)
+        if record is None:
+            return StepResult(result={"skip": True})
+        guild, channel = await _signup_channel(ctx.bot, int(record["channel_id"]))
+        resolved = [(_target_of(guild, entry), entry) for entry in record["targets"]]
+        if any(target is None for target, _entry in resolved):
+            raise StepFailedOnDiscord(
+                "a role the bot sets a signup permission for is not on the server"
+            )
+        applied: list[int] = []
+        try:
+            for index, (target, entry) in enumerate(resolved):
+                merged = (
+                    discord.PermissionOverwrite()
+                    if entry["prior"] is None
+                    else _overwrite(entry["prior"])
+                )
+                merged.update(
+                    **{name: value for name, value in _overwrite(entry["wanted"]) if value is not None}
+                )
+                assert target is not None
+                await channel.set_permissions(target, overwrite=merged)
+                applied.append(index)
+        except Exception as error:
+            if not await _take_back(guild, channel, record, applied):
+                raise StepFailedOnDiscord(
+                    "the bot's permissions on the signup channel could not all be taken back",
+                    notice=_left(int(record["channel_id"])),
+                ) from error
+            raise
+        return StepResult(result={"applied": applied})
+
+    async def undo(ctx: StepContext) -> StepResult:
+        record = _recorded(ctx.steps)
+        restored = next(
+            (view.result for view in ctx.steps if view.name == RESTORE_PERMISSIONS), None
+        ) or {}
+        applied = restored.get("applied") or []
+        if record is None or not applied:
+            return StepResult(result={"skip": True})
+        notice = _left(int(record["channel_id"]))
+        try:
+            guild, channel = await _signup_channel(ctx.bot, int(record["channel_id"]))
+        except StepFailedOnDiscord as error:
+            raise StepFailedOnDiscord(error.reason, notice=notice) from error
+        if not await _take_back(guild, channel, record, applied):
+            raise StepFailedOnDiscord(
+                "the bot's permissions on the signup channel could not all be taken back",
+                notice=notice,
+            )
+        return StepResult(result={"taken_back": applied})
+
+    return Before(
+        Step(RESTORE_PERMISSIONS, StepKind.ACT, run),
+        undo=Step(TAKE_BACK_PERMISSIONS, StepKind.ACT, undo),
+    )
 
 
 def module_on_signup(
@@ -232,9 +409,10 @@ def module_on_signup(
                 kept_channels, command=_ENABLE_COMMAND, channel_uses_read=channel_uses_read
             ),
             _record_permissions(config),
+            _restore_permissions(),
         ),
         after={REFRESH_HUB: hub_refresh_after(_ENABLE_COMMAND)},
     )
 
 
-__all__ = ["RECORD_PERMISSIONS", "module_on_signup"]
+__all__ = ["RECORD_PERMISSIONS", "RESTORE_PERMISSIONS", "TAKE_BACK_PERMISSIONS", "module_on_signup"]

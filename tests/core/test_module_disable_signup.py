@@ -416,8 +416,6 @@ async def test_disabling_signup_keeps_both_roles(tmp_path):
     assert "base role and driver role" in updated_reply(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason="#449: the switch-off forgets the signup channel, and the "
-                   "switch-on puts no permission back")
 async def test_time_slots_and_settings_stand_again_after_a_re_enable(tmp_path):
     """Nothing the league configured goes (issue #127, #449). The slots and the three question
     settings live in tables no key joins to the configuration row, so nothing but the rule keeps
@@ -886,8 +884,6 @@ async def _enables(league: SeasonLeague) -> list[dict[str, Any]]:
 
 @pytest.mark.parametrize("league_own", [False, True],
                          ids=["nothing standing", "the league's own standing"])
-@pytest.mark.xfail(strict=True, reason="#449: the switch-on puts no permission back on the kept "
-                   "signup channel")
 async def test_switching_signup_back_on_puts_the_permissions_back_with_the_current_base_role(
     tmp_path, league_own
 ):
@@ -920,8 +916,6 @@ async def test_switching_signup_back_on_puts_the_permissions_back_with_the_curre
     assert given == expected
 
 
-@pytest.mark.xfail(strict=True, reason="#449: the switch-on puts no permission back on the kept "
-                   "signup channel, and so takes none back")
 async def test_a_restore_discord_refuses_part_way_leaves_signup_off_and_takes_back_what_it_set(
     tmp_path
 ):
@@ -950,8 +944,6 @@ async def test_a_restore_discord_refuses_part_way_leaves_signup_off_and_takes_ba
     assert "were left there" not in reply
 
 
-@pytest.mark.xfail(strict=True, reason="#449: the switch-on puts no permission back on the kept "
-                   "signup channel, and tells nothing it leaves there")
 async def test_a_restore_that_cannot_take_back_what_it_set_says_so(tmp_path):
     """As above, Discord refuses the third target's permissions, and refuses too to take off the
     first's (@everyone's). Signup stays off; the reply, and the failure line beneath its ❌, name
@@ -973,8 +965,6 @@ async def test_a_restore_that_cannot_take_back_what_it_set_says_so(tmp_path):
     [("goes through", False), ("is refused", False), ("goes through", True)],
     ids=["goes through", "is refused", "goes through over the league's own"],
 )
-@pytest.mark.xfail(strict=True, reason="#449: the switch-on puts no permission back on the kept "
-                   "signup channel, and a save that fails takes none back")
 async def test_a_save_that_faults_after_the_restore_takes_the_permissions_back(
     tmp_path, take_back, league_own
 ):
