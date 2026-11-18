@@ -415,6 +415,46 @@ async def test_bot_init_is_refused_as_it_claims_where_a_channel_can_no_longer_be
     ), [record.getMessage() for record in caplog.records]
 
 
+@pytest.mark.parametrize("command", ["bot interaction-channel", "bot init"])
+async def test_a_command_channel_lacking_attach_files_is_accepted_where_no_picture_is_on(
+    tmp_path, command
+):
+    """Core spec, Channels: Attach Files is needed only where the league's picture choices could
+    post a picture to the channel. No lineup or calendar picture is on, and the bot holds every
+    permission but Attach Files in the channel chosen as the command channel. The league's server
+    is set up and an administrator runs `/bot interaction-channel` for 556; or no server is
+    claimed and an administrator runs `/bot init` for command channel 111 and log channel 333.
+    Neither is refused: `/bot interaction-channel` sets 556 and answers that it did, and
+    `/bot init` claims the server with 111 as its command channel."""
+    from tests.support.change_queue import run_queue
+
+    db_path = await _make_db(tmp_path)
+    if command == "bot init":
+        channel_id = CONFIGURED_CHANNEL
+    else:
+        await _seed_config(db_path)
+        channel_id = 556
+    bot = await _queued_bot(db_path)
+    answer_attachments(bot.image_drawing)
+    denied = {channel_id: ("attach_files",)}
+    league_server(bot, unusable=denied)
+    cog = BotCog(bot)
+    interaction = _asking(bot, command)
+    interaction.guild = server_holding(unusable=denied)
+
+    if command == "bot init":
+        await _ask_init(cog, interaction)
+    else:
+        await _unwrap(cog.handle_interaction_channel)(cog, interaction, _channel(channel_id))
+    await run_queue(bot)
+
+    if command == "bot init":
+        assert await bot.config_service.get_league_server_id() == SERVER_ID
+    else:
+        assert _said(interaction)[-1] == f"✅ **Interaction channel** set to <#{channel_id}>."
+    assert (await _row(db_path))["interaction_channel_id"] == channel_id
+
+
 async def _init_configured(tmp_path) -> tuple[Any, MagicMock]:
     """Run a first `/bot init` through the queue with the four configured settings, the league
     admin role named "League Admins": the bot and the interaction."""
