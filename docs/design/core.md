@@ -362,8 +362,8 @@ and attendance keep their channels while off, so each switch-on is a `Setting` w
 the save (`Setting.before`, `framework.md`, "Settings"): `kept_channels_check`
 (`core/services/modules/kept_channels.py`). It takes the reader of the module's own channels that
 each switch-on hands it (`KeptReader`: a connection and the live season's divisions in, the kept
-channels out, awaiting only the connection), asks the registry which are taken and the hook which
-are gone or unusable. `architecture.md`, "How modules and core fit together", gives the arrangement
+channels out, awaiting only the connection), asks the registry, through the module's channel-uses
+hook, which are taken, and `channel_presence` which are gone or unusable. `architecture.md`, "How modules and core fit together", gives the arrangement
 and the invariant the reading rests on; core_specification.md, "Modules" and "Channels", the rules a
 league sees. `live_divisions_on`
 (`channel_registry_service`) names the divisions of the live season, which the registry and the
