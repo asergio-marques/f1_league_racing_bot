@@ -2493,6 +2493,12 @@ async def _refused_site(case: str, tmp_path) -> tuple[MagicMock, MagicMock, str,
         await _init(cog, interaction)
         return bot, interaction, command, _cannot_use(902, "bot log channel", "Send Messages")
     if case == "init on another server":
+        # Both channels named are ones the bot cannot use: the server is refused first.
+        answer_attachments(bot.image_drawing)
+        guild = server_holding(unusable={901: ("send_messages",), 902: ("send_messages",)})
+        guild.owner_id = OWNER_ID
+        guild.id = SERVER_ID + 1
+        interaction.guild = guild
         interaction.guild_id = SERVER_ID + 1
         await _init(cog, interaction)
         return bot, interaction, command, "another server"
