@@ -184,9 +184,10 @@ class BotCog(commands.Cog):
         An unconfigured server is refused here, to the host's log alone, before the change is
         even asked for: there is no log channel of the league's to record a refusal in, and
         there being none is not itself a member's command to refuse through the queue. Every
-        other refusal — a channel already doing another job, or already this setting — is
-        `Setting.check`'s, run at the ask and again as the change starts, and recorded in the
-        league's log channel as any other refusal is. The write, the audit entry and the line
+        other refusal — a channel already doing another job, or already this setting, and then
+        a channel the bot lacks a permission in that its use needs — is `Setting.check`'s, run at
+        the ask and again as the change starts, and recorded in the league's log channel as any
+        other refusal is. The write, the audit entry and the line
         once it has run are `setting_change`'s and `bot_settings`'s: the change overtakes a stop
         elsewhere on the league's lane, so a stopped job there cannot lock a league out of
         repairing these.
