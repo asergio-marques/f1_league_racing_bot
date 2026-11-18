@@ -2075,6 +2075,26 @@ async def test_a_manager_s_cancellation_ends_the_signup_tells_the_driver_and_hol
     assert "✅ Signup cancelled." in _told_admin(submitted)
 
 
+async def test_a_league_manager_may_cancel_their_own_signup(tmp_path):
+    """League manager Admin (77) is signing up too, their signup awaiting review. Admin runs
+    `/signup cancel` of themselves and submits the form with no reason. Nothing refuses it:
+    when the queue runs, Admin is Not Signed Up, one `SIGNUP_CANCEL` audit entry by Admin names
+    Admin as the driver, and Admin is told the signup was cancelled (signup spec, Wizard flow:
+    a league manager may cancel their own signup)."""
+    league = await _league(tmp_path)
+    await signing_up(league, REVIEWER, state="PENDING_ADMIN_APPROVAL")
+
+    submitted = await _cancel(league, None, user_id=REVIEWER)
+    await run_queue(league.bot)
+
+    assert await _driver_state(league, REVIEWER) == "NOT_SIGNED_UP"
+    [entry] = await _cancel_audits(league)
+    assert entry["actor_id"] == REVIEWER
+    assert entry["old_value"] == {"state": "PENDING_ADMIN_APPROVAL", "discord_user_id": str(REVIEWER)}
+    assert _refusal_lines(league) == []
+    assert "✅ Signup cancelled." in _told_admin(submitted)
+
+
 async def _approved_meanwhile(league: SeasonLeague) -> None:
     await league.write(
         "UPDATE driver_profiles SET current_state = 'UNASSIGNED' WHERE discord_user_id = ?",
