@@ -3109,6 +3109,8 @@ Each phase's message **supersedes** the previous one: the earlier forecast is de
 
 All forecast messages go to each division forecast channel, on a message mentioning that division's role. The mention notifies the role whether the forecast is posted as text or as a picture. A forecast too long for one message is posted in parts, and every part is recorded with it and deleted with it, from the channel it was posted in, even after the division's forecast channel has been changed. Computation logs go to the server log channel.
 
+**Amending a round withdraws its forecasts, and says so.** Where an amendment withdraws a forecast already posted, the forecast channel gets a notice that the round's forecasts no longer stand and that an updated one follows. It begins by mentioning the division's role and notifies that role alone, as a forecast does, so the drivers the forecast reached learn it is withdrawn; a division with no role set gets the notice with no mention, notifying nobody. It is posted as text whatever the image toggle says. Where no forecast was withdrawn, no notice is posted.
+
 **Mystery rounds.** No weather is generated for a Mystery round — nothing is drawn, nothing is
 computed, and nothing is logged. At the Phase 1 horizon your drivers still get a message: a fixed
 notice telling them the weather is not pre-generated and will be set by the game at race time. It
