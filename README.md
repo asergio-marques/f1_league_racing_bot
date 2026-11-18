@@ -148,7 +148,7 @@ When inviting the bot, grant it the following OAuth2 bot permissions. All are us
 | **View Channels** | Required before any channel operation — the bot must be able to see forecast channels, log channels, and signup wizard channels before it can read or write them |
 | **Send Messages** | Posts weather forecasts to division channels, signup wizard messages to private channels, the hub's panel to the hub, and audit logs to the log channel |
 | **Send Messages in Threads** | Required if any configured channels are threads |
-| **Embed Links** | Posts the signup module info embed (the button drivers click to start a signup), the division lineup and the check-in call |
+| **Embed Links** | Posts the signup module info embed (the button drivers click to start a signup), the division lineup and the check-in call, and is asked of the hub channel |
 | **Attach Files** | Attaches the picture where an output is drawn as an image (the calendar, lineup, session results, standings, attendance sheet, check-in call, weather forecasts, verdicts and verdict banner), in that output's channel only while its picture is on |
 | **Manage Channels** | Creates private signup wizard channels; applies and removes channel permission overwrites for the signup module, the hub and per-driver wizard channels; deletes the channels it created during a `/bot factory-reset` |
 | **Manage Messages** | Deletes the old forecast message when a newer phase supersedes it (`forecast_cleanup_service`); deletes its own messages for `/clean-bot` and `/bot factory-reset` |
@@ -370,14 +370,16 @@ that job is being tried, which tells you to press again once the try has ended.
 |-----------|------|----------|-------------|
 | `interaction_role` | Role | ✅ | The Discord role permitted to use bot commands |
 | `league_admin_role` | Role | ✅ | The Discord role that governs the bot and may undo a league entire |
-| `interaction_channel` | Channel | ✅ | The only channel where bot commands are accepted |
-| `log_channel` | Channel | ✅ | Channel where computation audit logs are posted |
+| `interaction_channel` | Channel | ✅ | The only channel where bot commands are accepted. The bot needs View Channel and Send Messages there, and Attach Files where a lineup or calendar picture is on. A channel lacking any is refused |
+| `log_channel` | Channel | ✅ | Channel where computation audit logs are posted. The bot needs View Channel and Send Messages there. A channel lacking any is refused |
 
 Exempt from the interaction-channel rule, since no channel is configured until it has run — and it accepts Discord's **Administrator** permission, since the league admin role is one of the things it is setting.
 
 **It is refused while a factory reset is still cleaning up**, with a reply to run it again once the clean-up has finished. That refusal goes to the host's log alone, as no server is claimed then.
 
 **Its reply and its log line name all four settings**, the league admin role among them.
+
+**It refuses a channel the bot cannot use.** Where either channel lacks a permission the bot needs there, `/bot init` is refused naming each permission missing and the channel it is missing in, and where both fail it names both, the interaction channel first. Nothing is claimed or saved, and the refusal goes to the host's log alone, as no log channel is set yet. It is judged again as the server is claimed, so a channel that breaks while the command waits refuses it then. A server already configured is answered that it runs once, and neither channel is judged.
 
 **It runs once.** A second `/bot init` on a configured server is refused, not applied — it names the four commands below instead. To move the league to another server, [`/bot pack`](#bot-pack--ready-the-bot-for-another-server) frees this one first.
 
@@ -396,8 +398,8 @@ The team list always holds the **Reserve** team, which has unlimited seats and c
 
 | Command | Parameter | Changes |
 |---|---|---|
-| `/bot log-channel` | `channel` | Where the bot writes its calculation log |
-| `/bot interaction-channel` | `channel` | The only channel where bot commands are accepted |
+| `/bot log-channel` | `channel` | Where the bot writes its calculation log. The bot needs View Channel and Send Messages there |
+| `/bot interaction-channel` | `channel` | The only channel where bot commands are accepted. The bot needs View Channel and Send Messages there, and Attach Files where a lineup or calendar picture is on |
 | `/bot interaction-role` | `role` | The role permitted to use bot commands |
 | `/bot admin-role` | `role` | The role that governs the bot and may undo a league entire |
 
@@ -405,7 +407,7 @@ Each changes **one** setting and leaves everything else exactly as it stands —
 
 > **These are deliberately usable from any channel, and by a server administrator as well as by a league admin.** They exist for when one of the four settings is wrong — a log channel deleted, an interaction channel archived, either role removed by mistake. Requiring the interaction channel or a league role to run them would lock you out of the very failure they repair, and requiring the league admin role would leave a server that has lost it with no way to set one. These five commands are the only place Discord's Administrator permission reaches the bot at all. For the same reason, each of the four may overtake a stopped job at the head of the league's lane — the stopped job stays stopped, but a repair asked behind it need not wait with everything else.
 
-Setting `/bot interaction-role` or `/bot admin-role` to the role it already holds changes nothing: you're told so, it's logged as nothing changed, no audit entry is written, and the hub's permissions are left alone. The two channel commands, by contrast, refuse outright if you give them the channel they already hold.
+Setting `/bot interaction-role` or `/bot admin-role` to the role it already holds changes nothing: you're told so, it's logged as nothing changed, no audit entry is written, and the hub's permissions are left alone. The two channel commands, by contrast, refuse outright if you give them the channel they already hold, and refuse a channel on which the bot lacks a permission it needs, once that is settled: *"❌ The bot is missing permissions it needs in #channel as the log channel: Send Messages. Give the bot them there, or pick another channel. Nothing was changed."* Nothing is saved or audited then. The check is made again as the change starts, and a channel deleted meanwhile is refused as no longer on the server. Where the bot cannot tell, because the server is not to be had or Discord answers with an error, the channel is set.
 
 If the bot has never been configured on the server, these refuse and point you at `/bot init`.
 
@@ -446,7 +448,7 @@ The hub is the one channel every member of your league can use the bot from, rat
 
 **Who can see it.** Holders of the league's [base role](#bot-base-role-bot-driver-role--set-the-leagues-two-roles), or every member where you have set none, and holders of the interaction role and the league admin role. Nobody but the bot can post there, so the panel stays in view. Setting the hub replaces the channel's own permissions, so use a channel of its own. Changing the base role or either league role later sets them again. If the base role you set has since been deleted from the server, the hub stays closed to members and the reply says so.
 
-**Moving it** posts the panel in the new channel and then deletes it from the old one, each a job of the change queue, and clears the permissions the bot set in the old one. The hub may not share a channel with anything else the bot posts to. The bot needs **Manage Channel** and **Manage Permissions** on the channel, and refuses before changing anything if it lacks either. A permission Discord refuses is named in the reply and the log channel, and the hub stays set. A panel Discord refuses or cannot post stops the change queue like any post, with Retry and Discard on its notice, and the hub stays set.
+**Moving it** posts the panel in the new channel and then deletes it from the old one, each a job of the change queue, and clears the permissions the bot set in the old one. The hub may not share a channel with anything else the bot posts to. The bot needs View Channel, Send Messages, Embed Links, **Manage Channel** and **Manage Permissions** on the channel, and refuses before changing anything if it lacks any, naming each permission missing, as every command setting a channel does. A permission Discord refuses is named in the reply and the log channel, and the hub stays set. A panel Discord refuses or cannot post stops the change queue like any post, with Retry and Discard on its notice, and the hub stays set.
 
 This is a change on the queue: you are told at once that it is under way ("⏳ Setting **Hub channel** to <#…>. This message will be updated when it is done; if it takes longer, the log channel will say so."), and that message is updated once it has run. Where the permissions cannot be set at all — a fault of the bot's own, not Discord refusing one — the hub is still set, and the reply adds "⚠️ The setting is saved, but the hub's permissions could not be updated.".
 
@@ -1449,7 +1451,7 @@ All commands below require the signup module to be enabled (`/module enable sign
 
 Applies the channel's permission overwrites: `@everyone` cannot view, the league's base role can view but not send, and the interaction role and the league admin role can view and send. Setting a new signup channel clears **all** overwrites from the previously configured channel, after the new channel's are set. Switching the module off removes the bot's permissions from the channel and keeps it set; switching it on checks the channel and puts them back (see [`/module enable`](#module-enable--enable-a-bot-module)). The signup channel may not be the interaction channel. Where signups are open, the **Driver Signups Are Open!** message with its Sign Up button is posted in the new channel as well, once its permissions are set, so drivers can sign up in it at once. If the stored signup channel has been deleted from the server mid-season, this command replaces it even once the season's configuration is confirmed, and even while the queue is stopped.
 
-**The bot needs both Manage Channels and Manage Roles on the channel**, which Discord shows on a channel as **Manage Channel** and **Manage Permissions**. With either missing on the new channel, or on the old signup channel it is to clear, the command is refused before anything is changed: *"❌ The bot needs **Manage Channel** and **Manage Permissions** on #channel to set who may see it. The signup channel was not changed."* If Discord refuses a change the bot could not foresee, the new channel stands as the signup channel and the reply names what could not be set, to put right by hand. If the move goes through but the bot cannot clear the old channel's permissions, the new channel stands and the reply and the log line name the old channel, which stays locked until you put it right by hand.
+**The bot needs View Channel, Send Messages, Embed Links, Manage Channel and Manage Permissions on the new channel.** With any missing, the command is refused before anything is changed, in the words every command setting a channel uses, each permission missing named: *"❌ The bot is missing permissions it needs in #channel as the signup channel: Embed Links. Give the bot them there, or pick another channel. Nothing was changed."* Setting who may see a channel needs both Manage Channels and Manage Roles, which Discord shows on a channel as **Manage Channel** and **Manage Permissions**, and the old signup channel it is to clear is held to those two alone. With either missing there, the command is refused before anything is changed: *"❌ The bot needs **Manage Channel** and **Manage Permissions** on #channel to set who may see it. The signup channel was not changed."* Where the league's server is not to hand, the permissions cannot be judged or set, and the command fails with nothing changed, telling you to run it again; the other commands setting a channel set it there. If Discord refuses a change the bot could not foresee, the new channel stands as the signup channel and the reply names what could not be set, to put right by hand. If the move goes through but the bot cannot clear the old channel's permissions, the new channel stands and the reply and the log line name the old channel, which stays locked until you put it right by hand.
 
 The two roles the module uses are the league's, set by [`/bot base-role` and `/bot driver-role`](#bot-base-role-bot-driver-role--set-the-leagues-two-roles). The channel and both roles must be set before `/signup open` will run, and — while the signup module is enabled — before a season's configuration can be confirmed. Both roles must also still be on the server, and the driver role must be one the bot can grant.
 
