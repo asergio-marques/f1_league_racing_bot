@@ -264,9 +264,11 @@ async def post_attendance_sheet(
         log.warning("post_attendance_sheet: failed to post sheet for division %s: %s", division_id, exc)
         raise StepFailedOnDiscord(
             f"the attendance sheet could not be posted: {exc}"
-        ).carrying(
-            (*earlier_lines, *await _fault_lines(db_path, division_id, round_id, occasion, faults), *drawn_lines)
-        ) from exc
+        ).carrying((
+            *earlier_lines,
+            *await _fault_lines(db_path, division_id, round_id, occasion, faults),
+            *drawn_lines,
+        )) from exc
     finally:
         # Posted or not, the picture has done all it will ever do: a try again posts the text
         # and never the image, so nothing reads this file again.
@@ -279,7 +281,11 @@ async def post_attendance_sheet(
     return PostedSheet(
         message_id=new_message_id, channel_id=channel_id, previous=prior_msg_id,
         takes_slot=occasion.takes_the_live_slot,
-        faults=(*earlier_lines, *await _fault_lines(db_path, division_id, round_id, occasion, faults), *drawn_lines),
+        faults=(
+            *earlier_lines,
+            *await _fault_lines(db_path, division_id, round_id, occasion, faults),
+            *drawn_lines,
+        ),
     )
 
 
