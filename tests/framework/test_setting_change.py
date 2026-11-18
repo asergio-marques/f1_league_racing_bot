@@ -449,7 +449,6 @@ async def test_a_step_before_the_save_runs_first_and_hands_the_save_what_it_foun
     assert await _value(env) == 6
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_BEFORE)
 async def test_a_step_before_the_save_that_halts_ends_the_setting_refused(env):
     """A step before the save that finds the setting cannot go ahead (a kept channel the bot
     cannot use) ends it refused: no save is planned, nothing is saved or audited, the member is

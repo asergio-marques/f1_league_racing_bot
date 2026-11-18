@@ -67,7 +67,9 @@ kept channels checked before it is switched on. The change opens with the first 
 next, the save after the last, so the queue carries the order and a restart resumes it. A fault in
 one ends the setting as a fault in the save does: nothing is saved, no `SAVE` is planned, the
 member is told so and to run it again (`NOTHING_SAVED`), one failure line is written and the lane
-goes on. *Rejected:* an `After` step that undoes the switch-on, which would leave the module on for
+goes on. A step may instead end the setting refused (`HALTED`): its result gives the reply and the
+reason, no `SAVE` is planned, and the one line, a ⛔ refusal, is formed here from the reason, the
+step writing none. Either way nothing is saved and nothing is audited. *Rejected:* an `After` step that undoes the switch-on, which would leave the module on for
 a moment and whose undo is a second save that can itself fail; and the check in `check()`, which
 carries no findings and runs at the ask as well.
 
@@ -108,6 +110,7 @@ from leaguebot.framework.services.queue.change_types import (
     StepContext,
 )
 from leaguebot.framework.utils.interaction_errors import failure_line, failure_reply
+from leaguebot.framework.utils.log_lines import refusal_line
 
 #: What a fault in a setting's save, or in its check as it comes up to run, says became of it.
 #: `{command}` is the command to run again.
@@ -115,6 +118,10 @@ NOTHING_SAVED = "Nothing was saved. Run `{command}` again to retry."
 
 #: The name of the step that saves the setting.
 SAVE = "save"
+
+#: The key, in a step before the save's result, of a halt: the step found the setting cannot go
+#: ahead, and the value is `{"reply": the member's answer, "reason": what the ⛔ line says}`.
+HALTED = "halted"
 
 #: The key, in the save's result, of the line kept back for a step that carries it.
 _KEPT_LINE = "setting_line"
@@ -268,12 +275,20 @@ def _after_step(after: After) -> Step:
 def _before_step(before: Before, following: str) -> Step:
     """*before*'s step as the change runs it: ending on a fault, and planning the step *following*.
 
-    A step's own `then` stays, and the next step of the setting follows it.
+    A step's own `then` stays, and the next step of the setting follows it. A step that returns
+    `HALTED` ends the setting refused: no step follows, and the one line, a refusal, is formed here
+    from its reason, the step returning no lines of its own.
     """
     inner = before.step
 
     async def run(ctx: StepContext) -> StepResult:
         result = await inner.run(ctx)
+        halted = result.result.get(HALTED)
+        if halted is not None:
+            return StepResult(
+                result={HALTED: halted},
+                lines=(refusal_line(ctx.named, ctx.what, halted["reason"]),),
+            )
         return dataclasses.replace(result, then=(*result.then, PlannedStep(following)))
 
     return dataclasses.replace(inner, run=run, on_fault=_failed)
@@ -313,6 +328,10 @@ def setting_change(setting: Setting) -> ChangeType:
                 ctx.what,
                 _not_saved(setting, ctx.payload).format(command=setting.command(ctx.payload)),
             )
+        for name in before_names:
+            halted = results.get(name, {}).get(HALTED)
+            if halted is not None:
+                return str(halted["reply"])
         reply = setting.reply(ctx.payload, results)
         for view in ctx.steps:
             after = setting.after.get(view.name)
@@ -345,6 +364,6 @@ def setting_change(setting: Setting) -> ChangeType:
 
 
 __all__ = [
-    "After", "Before", "NOTHING_SAVED", "RENAMED_OUTCOME", "SAVE", "Saved", "Setting",
+    "After", "Before", "HALTED", "NOTHING_SAVED", "RENAMED_OUTCOME", "SAVE", "Saved", "Setting",
     "setting_change",
 ]
