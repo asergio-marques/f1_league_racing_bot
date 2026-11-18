@@ -119,10 +119,11 @@ PERMISSIONS_LEFT = (
     "Permissions the bot set on the signup channel <#{channel_id}> could not be removed: "
     "remove them by hand."
 )
-#: The same, for the log line `clear_overwrites` writes after the switch-off's own. A follow-up
-#: to that line's outcome, not a second one: the module is off and its line says Success, so this
-#: one takes the notice's place in the job line (as `drawn_notices_line` does) rather than an
-#: outcome's.
+#: The same, for the log line `clear_overwrites` writes. A notice beside the switch-off's outcome
+#: line, never a second outcome: the module is off and that line says Success, so this one takes
+#: the notice's place in the job line (as `drawn_notices_line` does) rather than an outcome's. It
+#: comes before the outcome line when the window was open, since `clear_overwrites` runs ahead of
+#: `off_line`, and after it otherwise, the outcome then being `switch_off`'s own.
 PERMISSIONS_LEFT_LINE = (
     "Permissions left on the signup channel <#{channel_id}>: remove them by hand."
 )
@@ -240,8 +241,9 @@ def signup_off_change(
     async def clear_overwrites(ctx: StepContext) -> StepResult:
         """Clear what `/signup channel` applied to the signup channel: everyone's, the bot's, the
         base role's, the interaction role's and the league admin role's. Each is tried on its own
-        and a refusal logged and told, never raised: the line names the channel as a follow-up to the
-        switch-off's Success (`PERMISSIONS_LEFT_LINE`), never a second outcome."""
+        and a refusal logged and told, never raised: the line names the channel as a notice beside
+        the switch-off's Success line (`PERMISSIONS_LEFT_LINE`), before it when the window was open
+        and after it otherwise, never a second outcome."""
         guild = await league_guild(ctx.bot)
         channel = None if guild is None else guild.get_channel(int(ctx.step_payload["channel_id"]))
         if guild is None or not isinstance(channel, discord.TextChannel):

@@ -716,20 +716,23 @@ async def test_a_discarded_switch_off_leaves_the_overwrites_standing(tmp_path, m
     assert "still on" in updated_reply(interaction)
 
 
-async def test_a_permissions_failure_does_not_fail_the_disable(tmp_path):
+@pytest.mark.parametrize("open_window", [False, True], ids=["window-closed", "window-open"])
+async def test_a_permissions_failure_does_not_fail_the_disable(tmp_path, open_window):
     """A module left half-disabled is worse than a channel with a stale overwrite: one is
     repairable by hand, the other needs the toggle run again in a state it may refuse. Discord
-    refuses every overwrite change on the signup channel: the manager is answered with an
-    under-way line, the module still on; once the queue has run, the module is off and the
-    acknowledgement says it is disabled; the acknowledgement and a log line name the signup channel
-    (620) and say to remove the bot's permissions there by hand, the line a follow-up to the
-    switch-off's Success and never an Incomplete of its own."""
-    league = await _league(tmp_path)
-    refusing = _channel(set_permissions_fails=True)
-    finding = league.guild.get_channel.side_effect
-    league.guild.get_channel = MagicMock(
-        side_effect=lambda cid: refusing if int(cid) == LEAGUE_SIGNUP_CHANNEL else finding(cid)
+    refuses every overwrite change on the signup channel, with the window closed and with it open:
+    the manager is answered with an under-way line, the module still on; once the queue has run,
+    the module is off and the acknowledgement says it is disabled; the acknowledgement and a log
+    line name the signup channel (620) and say to remove the bot's permissions there by hand. That
+    line is a notice beside the switch-off's Success line, never an Incomplete of its own: after
+    the Success line with the window closed, and before it with the window open, where clearing
+    the permissions runs ahead of the line that records the switch-off."""
+    league = await _league(tmp_path, open_window=open_window)
+    # An open window's channel already stands, holding the Sign Up button the close takes down.
+    refusing = (
+        league.guild.get_channel(LEAGUE_SIGNUP_CHANNEL) if open_window else _signup_channel(league)
     )
+    refusing.set_permissions = AsyncMock(side_effect=RuntimeError("missing permissions"))
 
     interaction = await _switch_off(league)
 
@@ -743,12 +746,17 @@ async def test_a_permissions_failure_does_not_fail_the_disable(tmp_path):
     named = f"<#{LEAGUE_SIGNUP_CHANNEL}>"
     assert named in updated_reply(interaction) and "by hand" in updated_reply(interaction)
     lines = await _log_lines(league)
-    assert any(
-        f"| /module disable signup | Permissions left on the signup channel {named}: remove them "
-        "by hand." in line
-        for line in lines
-    )
+    notices = [
+        index for index, line in enumerate(lines)
+        if f"| /module disable signup | Permissions left on the signup channel {named}: remove "
+        "them by hand." in line
+    ]
+    successes = [
+        index for index, line in enumerate(lines) if "| /module disable signup | Success" in line
+    ]
+    assert len(notices) == 1 and len(successes) == 1
     assert not any("Incomplete" in line for line in lines)
+    assert (notices[0] < successes[0]) == open_window
 
 
 async def test_a_league_with_no_signup_channel_reverts_nothing(tmp_path):
