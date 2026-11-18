@@ -66,11 +66,6 @@ def _validity(config: Any) -> ImageValidityService:
     return ImageValidityService(service, MagicMock(), MagicMock())
 
 
-#: Why a test building an image setting fails until the settings are handed the hook a switch-on
-#: reads the channels of its pictures through.
-NO_HOOK_YET = "#570: the image settings are handed no picture_channels_read hook yet"
-
-
 def _setting(kind: str, config: Any, proposed: Any) -> Any:
     """The image setting *kind*, the module on and *proposed* the configuration it would make,
     handed a hook no module answers."""
@@ -111,7 +106,6 @@ async def test_a_validity_sweep_leaves_the_loop_answering(monkeypatch, method, s
     assert held.calls == [(config,)]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_HOOK_YET)
 async def test_the_template_directory_check_leaves_the_loop_answering(monkeypatch):
     """`/images config template-directory`'s check surveys the folder in a worker thread, on the
     configuration it would make and the outputs switched on, and goes ahead on what it found."""
@@ -130,7 +124,6 @@ async def test_the_template_directory_check_leaves_the_loop_answering(monkeypatc
     assert held.calls == [(proposed, toggles)]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_HOOK_YET)
 async def test_the_template_check_leaves_the_loop_answering(monkeypatch):
     """`/images config template`'s check parses the one template named in a worker thread, on
     the configuration it would make, and goes ahead on what it found."""
@@ -289,17 +282,8 @@ FAILING = [
 ]
 
 
-#: The entry points that build an image setting, and so are handed the hook.
-BUILDS_A_SETTING = {"template-directory-check", "template-check"}
-
-
 @pytest.mark.parametrize("install,expected", [
-    pytest.param(
-        *c[1:], id=c[0],
-        marks=[pytest.mark.xfail(strict=True, reason=NO_HOOK_YET)]
-        if c[0] in BUILDS_A_SETTING else [],
-    )
-    for c in FAILING
+    pytest.param(*c[1:], id=c[0]) for c in FAILING
 ])
 async def test_a_fault_in_the_thread_crosses_back_with_nothing_it_parsed(
     monkeypatch, tmp_path, install, expected

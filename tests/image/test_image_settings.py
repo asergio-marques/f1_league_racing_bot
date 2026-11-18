@@ -1025,8 +1025,6 @@ async def test_an_output_toggle_found_already_switched_when_it_runs_changes_noth
 # Switching an output on checks the channels it posts to (#570, slice 3)
 # ---------------------------------------------------------------------------
 
-#: Why the switch-on tests below fail until the check before the save lands.
-CHANNELS_NOT_JUDGED = "#570: switching an output on judges none of the channels it posts to"
 #: The bot command channel, which the season's review posts the lineup and calendar in.
 COMMAND = INTERACTION_CHANNEL_ID
 #: Pro's lineup channel, and its standings channel where results keeps its channels.
@@ -1077,7 +1075,6 @@ def _no_channel(label: str, *bullets: str) -> str:
     )
 
 
-@pytest.mark.xfail(strict=True, reason=CHANNELS_NOT_JUDGED)
 @pytest.mark.parametrize(
     ("label", "aspect", "modules", "season", "server", "bullets"),
     [
@@ -1189,7 +1186,6 @@ async def test_switching_an_output_off_judges_no_channel(tmp_path):
     guild.fetch_channel.assert_not_called()
 
 
-@pytest.mark.xfail(strict=True, reason=CHANNELS_NOT_JUDGED)
 @pytest.mark.parametrize("cause", ["a channel's fetch fails", "the server is out of reach"])
 async def test_a_switch_on_that_cannot_tell_saves_nothing_and_says_to_run_it_again(
     tmp_path, cause
