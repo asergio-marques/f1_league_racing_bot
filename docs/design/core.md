@@ -207,7 +207,7 @@ fetch and answers `PRESENT`, `GONE` or `UNUSABLE` with what the bot lacks there,
 answer Discord does not prove, a server error or a bot member it cannot read. `judged_presence`
 stands aside on that raise, the stated exception in architecture.md's "Errors and failures", which
 is what a confirmation wants. The strict reader raises so that a caller free to refuse on a check it could not make may, and
-the kept-channels check is that caller. Setting a channel judges a channel's needs too, and
+the kept-channels check is that caller. Setting one of a division's channels judges a channel's needs too, and
 reads `judged_presence`, so it stands aside as the confirmation does; core_specification.md,
 "Channels", says what a league sees where it cannot tell.
 `channel_registry_service.unusable_refusal` is handed the server, the id, the needs and the use,
