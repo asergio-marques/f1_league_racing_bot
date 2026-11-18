@@ -1,5 +1,6 @@
-"""A server to judge a division's channels upon, and a drawing saying which pictures attach a file,
-for the tests of each module's channel faults.
+"""A server to judge a division's channels upon, a bot whose league server it is, and a drawing
+saying which pictures attach a file, for the tests of each module's channel faults and of the
+commands that set a channel.
 
 A channel is looked for in the server's cache and then fetched, a fetch answering NotFound being
 the one proof it is gone and one Discord refuses the bot proving it unusable, lacking View
@@ -53,6 +54,16 @@ def server_holding(
     guild = MagicMock()
     guild.get_channel = MagicMock(side_effect=_get)
     guild.fetch_channel = AsyncMock(side_effect=_fetch)
+    return guild
+
+
+def league_server(bot: Any, **server: Any) -> Any:
+    """Make *bot*'s league server one holding its channels as `server_holding` is told by
+    *server*, found by `bot.get_guild` whatever the id asked, and return it. Called again
+    mid-test, it replaces the server, so a channel can change between a command's ask and the
+    change queue's run of it."""
+    guild = server_holding(**server)
+    bot.get_guild = MagicMock(return_value=guild)
     return guild
 
 
