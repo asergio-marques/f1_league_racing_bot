@@ -3,7 +3,7 @@ one change on the queue, and the sheet is its `post_sheet` job, which posts the 
 the deletion of the one it replaces as a job after it. A sheet Discord refuses stops the queue
 rather than being put on the old retry queue.
 
-The league is `ongoing_league`'s with attendance on: season 7 being raced, Pro (21) with its
+The league is `ongoing_league`'s with attendance on: season 3 being raced, Pro (21) with its
 attendance channel 604, its round 1 final. No attendance threshold is set, so the sync owes no
 sanction and its one post is Pro's sheet.
 """
@@ -346,8 +346,8 @@ async def test_a_sheet_s_render_fault_is_named_as_the_attendance_sheet_image(tmp
     and the image module's render of Pro's sheet fails on a template fault. Alex runs
     `/attendance sync` for Pro from round 1: the sheet posts once, as text with no picture, and
     the queue runs to the end; the log channel gives the fault on one line headed "⚠️ Attendance
-    sheet image", the name `/images config toggle` offers, naming Pro and round 1, and nothing in
-    the log calls it a results image."""
+    sheet image", the name `/images config toggle` offers, naming season 3, Pro and round 1, and
+    nothing in the log calls it a results image."""
     from leaguebot.image.models.image_module import Problem, RenderOutcome
     from leaguebot.image.services.aspects.image_attendance_post import (
         ATTENDANCE_ASPECT,
@@ -374,8 +374,8 @@ async def test_a_sheet_s_render_fault_is_named_as_the_attendance_sheet_image(tmp
     assert league.channel(SHEET).files[-1] is None
     log = await _said(league)
     [line] = [line for line in log.splitlines() if SHEET_RENDER_FAULT in line]
-    assert line.startswith("⚠️ Attendance sheet image — "), line
-    assert "Pro" in line and "round 1" in line.lower(), line
+    named = "⚠️ Attendance sheet image — Season 3 Pro — attendance after round 1"
+    assert line.startswith(named), line
     assert "Results image" not in log, log
 
 
@@ -388,7 +388,7 @@ async def test_a_sheet_s_render_notices_reach_the_log_once_naming_the_round(tmp_
     and the image module's render of Pro's sheet is drawn with one notice, a flag falling back.
     Alex runs `/attendance sync` for Pro from round 1: the sheet posts once, as a picture, and the
     queue runs to the end; the log channel carries the notice once, in a block whose heading
-    names Pro and round 1, and no block without a heading carries it a second time."""
+    names season 3, Pro and round 1, and no block without a heading carries it a second time."""
     from leaguebot.image.models.image_module import RenderNotice, RenderOutcome
     from leaguebot.image.services.aspects.image_attendance_post import (
         ATTENDANCE_ASPECT,
@@ -421,7 +421,7 @@ async def test_a_sheet_s_render_notices_reach_the_log_once_naming_the_round(tmp_
     assert log.count(SHEET_NOTICE) == 1, log
     [block] = [message for message in league.bot.log_channel.sent if SHEET_NOTICE in message]
     heading = block.splitlines()[0]
-    assert "Pro" in heading and "round 1" in heading.lower(), block
+    assert "Season 3 Pro — attendance after round 1" in heading, block
 
 
 async def test_a_refused_sheet_s_render_notices_reach_the_log_once_when_it_is_retried(tmp_path):

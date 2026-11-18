@@ -682,10 +682,10 @@ class ImageDrawing:
         and the lines saying what the drawing had to report.
 
         The gate already asked through `attendance_wanted`, and *what* naming the sheet the lines
-        pertain to ("Pro — attendance after round 3"). The lines are the render's notices and the
-        fault of a picture that was due and not drawn, headed by the toggle's name; the caller
-        writes them in its own save (architecture.md, "Errors and failures"). The sheet's rows are
-        its caller's, resolved in *drawing*.
+        pertain to ("Season 3 Pro — attendance after round 3"). The lines are the render's notices
+        and the fault of a picture that was due and not drawn, headed by the toggle's name; the
+        caller writes them in its own save (architecture.md, "Errors and failures"). The sheet's
+        rows are its caller's, resolved in *drawing*.
 
         The catch-all is around the drawing alone, a graphic riding on a post (architecture.md,
         "A catch-all error handler", place 6): a fault in any of it is a line, never a break in

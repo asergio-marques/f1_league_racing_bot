@@ -25,6 +25,7 @@ from leaguebot.core.models.round import RoundStatus
 from leaguebot.core.services.drivers.driver_service import driver_identities_on
 from leaguebot.core.services.drivers.team_service import TeamService
 from leaguebot.core.services.seasons.season_service import (
+    RoundFacts,
     division_on,
     division_rounds_in_order_on,
     round_facts_on,
@@ -534,7 +535,8 @@ async def _sheet_attachment(
             )
 
         division_name = await _division_name(db_path, division_id)
-        round_number = await _round_number(db_path, round_id)
+        facts = await _round_facts(db_path, round_id)
+        round_number = _number_of(facts, round_id)
 
         sheet = resolve_drawing(
             division_name=division_name,
@@ -555,10 +557,13 @@ async def _sheet_attachment(
             nationality_collected=collected,
         )
 
+        # The sheet is named by its season, its division and its occasion, in the log's notices
+        # and fault lines (image spec, render notices).
+        season = f"Season {facts.season_number} " if facts is not None else ""
         label = (
-            f"{division_name} — attendance after round {round_number}"
+            f"{season}{division_name} — attendance after round {round_number}"
             if occasion.names_a_round
-            else f"{division_name} — attendance, {occasion.label()}"
+            else f"{season}{division_name} — attendance, {occasion.label()}"
         )
         picture, drawn = await drawing.draw_attendance_sheet(sheet, what=label)
         if lines is not None:
@@ -722,7 +727,12 @@ async def _division_name(db_path: str, division_id: int) -> str:
     return division.name if division and division.name else f"Division {division_id}"
 
 
-async def _round_number(db_path: str, round_id: int) -> str:
+async def _round_facts(db_path: str, round_id: int) -> RoundFacts | None:
+    """*round_id* with its division's and its season's facts, or None where it is gone."""
     async with get_connection(db_path) as db:
-        facts = await round_facts_on(db, round_id)
+        return await round_facts_on(db, round_id)
+
+
+def _number_of(facts: RoundFacts | None, round_id: int) -> str:
+    """The round's number as a sheet names it, its id where the round cannot be read."""
     return str(facts.round_number) if facts and facts.round_number else str(round_id)

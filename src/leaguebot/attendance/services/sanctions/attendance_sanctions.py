@@ -268,5 +268,7 @@ async def sync_hint(db_path: str, division_id: int, round_id: int) -> str:
     """`sync_hint_text` of the division and the round, read."""
     return sync_hint_text(
         await attendance_sheet._division_name(db_path, division_id),
-        await attendance_sheet._round_number(db_path, round_id),
+        attendance_sheet._number_of(
+            await attendance_sheet._round_facts(db_path, round_id), round_id
+        ),
     )

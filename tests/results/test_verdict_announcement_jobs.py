@@ -688,8 +688,8 @@ async def test_a_review_s_refused_attendance_sheet_s_notice_reaches_the_log_once
     back. Pro's attendance channel refuses every send (Missing Access). Alex approves round 3's
     reports and the queue stops at the attendance sheet; the channel is let accept and a Retry
     posts the sheet as text. The queue runs to the end, and the log channel carries the notice
-    once, in a line naming the sheet drawn (Pro, attendance after the round), never lost with the
-    refused try."""
+    once, in a line naming the sheet drawn (season 1, Pro, attendance after the round), never lost
+    with the refused try."""
     from leaguebot.image.services.render.image_drawing import ImageDrawing
 
     picture = tmp_path / "sheet.png"
@@ -733,7 +733,7 @@ async def test_a_review_s_refused_attendance_sheet_s_notice_reaches_the_log_once
     await run_queue(league.bot)
     assert await stopped_at(league) == "attendance_sheet"
     [what] = asked
-    assert what.startswith("Pro — attendance after round "), what
+    assert what.startswith("Season 1 Pro — attendance after round "), what
     league.channel(ATTENDANCE_CHANNEL).send_fails = None
     await retry_job(league.bot)
 

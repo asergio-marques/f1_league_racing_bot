@@ -842,3 +842,44 @@ async def test_the_sheet_reads_the_placements_once_for_names_and_shorthands(
     assert drawn["team_names"] == {111: "Ferrari"}
     assert drawn["team_keys"] == {111: "FER"}
     assert list(posted.faults) == []
+
+
+# ── What the sheet is named and drawn for (image spec, Attendance) ───────────
+
+
+@pytest.mark.parametrize("occasion_name,named", [
+    ("AFTER_ROUND", "Season 3 Division 1 — attendance after round 3"),
+    ("SEASON_OPENING", "Season 3 Division 1 — attendance, Opening Classification"),
+    ("SEASON_FINAL", "Season 3 Division 1 — attendance, Final Classification"),
+], ids=["after round 3", "opening", "final"])
+@pytest.mark.asyncio
+async def test_the_sheet_is_drawn_and_named_for_its_season_division_and_occasion(
+    sheet_db, monkeypatch, occasion_name, named
+):
+    """Division 1 of season 3, its sheet drawn with the images module on: after round 3, at the
+    season's opening, or at its end. The drawing is asked to name the sheet, in the log's notices
+    and fault lines, by the season, the division and the occasion (image spec, render notices)."""
+    from types import SimpleNamespace
+
+    from leaguebot.core.services.drivers import driver_names
+
+    async def _empty(*_args, **_kwargs):
+        return {}
+
+    monkeypatch.setattr(driver_names, "read_driver_names", _empty)
+    monkeypatch.setattr(driver_names, "read_driver_nationalities", _empty)
+    async with get_connection(sheet_db) as db:
+        await db.execute("UPDATE seasons SET season_number = 3 WHERE id = 1")
+        await db.commit()
+    await _config(sheet_db, prior=None)
+    channel = _FakeChannel([])
+    guild = _FakeGuild(channel, {111: "Ayrton"})
+    drawing = _drawing_that_draws_nothing("none")
+
+    with in_a_job():
+        await post_attendance_sheet(
+            SimpleNamespace(db_path=sheet_db), guild, sheet_db, round_id=3, division_id=7,
+            occasion=_occasion(occasion_name), drawing=drawing,
+        )
+
+    assert drawing.draw_attendance_sheet.await_args.kwargs["what"] == named
