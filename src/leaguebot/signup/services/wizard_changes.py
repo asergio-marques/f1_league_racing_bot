@@ -891,6 +891,9 @@ def end_change(
                 "signup channel and no review panel, and the season's placements could not be "
                 "confirmed"
             )
+        # Keyed on the reason, not the state: only a rejection is certain to be of a signup
+        # awaiting review. A withdrawal or a cancellation may end any signup under way, so
+        # the plain text below, which is true of them all, serves them.
         if ctx.step_payload["reason"] == REJECTED:
             return (
                 f"<@{ctx.step_payload['user_id']}> would stay awaiting review, and the "
