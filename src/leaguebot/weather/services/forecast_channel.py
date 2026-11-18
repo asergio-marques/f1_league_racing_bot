@@ -128,15 +128,19 @@ async def division_channel_faults(
 
 
 async def channel_uses(
-    db_path: str, *, channel_id: int, divisions: Mapping[int, str]
+    modules: "ModuleService", db_path: str, *, channel_id: int, divisions: Mapping[int, str]
 ) -> list[ChannelUse]:
     """The weather use of *channel_id* by each of *divisions* (the live season's, by id, naming
-    each) whose forecast channel it is, in division id order; empty where none is.
+    each) whose forecast channel it is, in division id order; empty where none is, and always
+    where the weather module is off.
 
     Subscribed to core's `channel_uses_read`, which asks it as a channel is set, so that a channel
-    does one job. Asked no switch: a channel weather holds is held whether weather is on or off.
-    Reads only.
+    does one job. A switched-off module answers for none of its channels, which it keeps: another
+    setting may take one, and the module clears it when it is switched on again
+    (`core/services/modules/kept_channels.py`). Reads only.
     """
+    if not await modules.is_enabled(SWITCH_KEY):
+        return []
     async with get_connection(db_path) as db:
         channels = await forecast_channels_on(db, list(divisions))
     return [

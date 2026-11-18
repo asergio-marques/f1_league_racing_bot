@@ -339,9 +339,10 @@ def _sign_up_to_division_lines_read(bot: LeagueBot) -> None:
 
 def _sign_up_to_channel_uses_read(bot: LeagueBot) -> None:
     """Make the hook a channel being set is asked of each module through, so that a channel does
-    one job, and sign each module up to it, handed the database's path: the uses of the channel its
-    settings hold in the live season, in the order a division's channels read (weather, results,
-    attendance, then signup's own). The builder hands it to every command that sets a channel
+    one job, and sign each module up to it, handed the database's path (and, for a module that
+    answers only while it is on, the module service): the uses of the channel its settings hold in
+    the live season, in the order a division's channels read (weather, results, attendance, then
+    signup's own). The builder hands it to every command that sets a channel
     (architecture.md, "How modules and core fit together")."""
     bot.channel_uses_read = AwaitedHook()
     weather_wiring.sign_up_to_channel_uses_read(bot)
