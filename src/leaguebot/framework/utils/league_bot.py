@@ -174,10 +174,12 @@ class LeagueBot(commands.Bot):
     #: The moment a channel is being set, which the registry asks of each module so that a channel
     #: does one job: each module signs up a function handing back the uses of the channel its own
     #: settings hold in the live season, as `ChannelUse`s, given the channel (the database's path
-    #: is bound as it signs up), whatever its switch. The builder makes it and signs them up in
-    #: the order a division's channels read (weather, results, attendance, signup), and hands it to
-    #: every command that sets a channel, so that core's registry reads no module's table
-    #: (architecture.md, "A hook core declares is a list of subscribers").
+    #: is bound as it signs up), only while its module is on: a switched-off module's channels
+    #: are free to another setting, and its switch-on claims them again (`kept_channels`). The
+    #: builder makes it and signs them up in the order a division's channels read (weather,
+    #: results, attendance, signup), and hands it to every command that sets a channel, so that
+    #: core's registry reads no module's table (architecture.md, "A hook core declares is a list
+    #: of subscribers").
     channel_uses_read: AwaitedHook
     #: The moment the factory reset gathers the channels it cleans up: each module signs up a
     #: function handing back, as `DiscordTargets`, every channel it holds in any season (the
