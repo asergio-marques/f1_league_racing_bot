@@ -25,8 +25,6 @@ from leaguebot.framework.services.queue.setting_change import HALTED
 from leaguebot.framework.utils.hooks import AwaitedHook
 from tests.support.channel_faults import answer_attachments, league_server
 
-NOT_YET = "#570: core answers no picture channels and no check judges them before the switch"
-
 SERVER_ID = 4242
 COMMAND_CHANNEL = 90
 
@@ -77,7 +75,6 @@ async def _core_answer(db_path: str, aspects: set[str]) -> list:
         )
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_core_answers_its_channels_only_for_the_lineup_and_calendar_outputs(tmp_path):
     """Lineup, Calendar and Results switched on together: core answers each handed division's
     lineup channel (Pro's 11, Am's 21) with what a lineup needs and Attach Files, Pro's calendar
@@ -173,7 +170,6 @@ def _answered(channel_id: int, setting: str, division: str | None, command: str,
     )
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_the_check_refuses_naming_what_each_channel_lacks_and_each_channel_gone(tmp_path):
     """Lineup switched on, Pro's lineup channel 11 lacking Embed Links, the bot command channel
     90 lacking Attach Files, Pro's calendar channel 12 deleted and Am's lineup channel 21 fine:
@@ -214,7 +210,6 @@ async def test_the_check_refuses_naming_what_each_channel_lacks_and_each_channel
     )
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 @pytest.mark.parametrize("status", ["SETUP", "ACTIVE"])
 async def test_cancelled_divisions_and_finished_seasons_are_passed_over(tmp_path, status):
     """The live season in setup or running holds Pro, Am and Dropped, cancelled; a completed
@@ -235,7 +230,6 @@ async def test_cancelled_divisions_and_finished_seasons_are_passed_over(tmp_path
     assert HALTED not in result.result
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 @pytest.mark.parametrize(
     ("aspects", "answers"),
     [
@@ -260,7 +254,6 @@ async def test_nothing_of_discord_is_read_where_no_output_is_switched_on_or_no_c
     bot.get_guild.assert_not_called()
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 @pytest.mark.parametrize("cause", ["no server to ask", "the server answers with an error"])
 async def test_a_check_that_cannot_be_made_ends_on_a_fault(tmp_path, cause):
     """Lineup switched on, Pro's lineup channel 11 answered: where the league's server is out of
