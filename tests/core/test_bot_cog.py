@@ -2364,7 +2364,7 @@ async def _refused_site(case: str, tmp_path) -> tuple[MagicMock, MagicMock, str,
     queued = case.startswith(("log-channel", "interaction-channel")) or case in (
         "init already configured", "base-role fixed for the season", "driver-role cannot be granted",
         "hub-channel already another job", "hub-channel already this setting",
-        "hub-channel lacks permissions",
+        pytest.param("hub-channel lacks permissions"),
     )
     if queued:
         # A setting asks the change queue, whose check refuses at the ask: the bot the entry
@@ -2540,10 +2540,10 @@ def _replied(interaction: MagicMock) -> str:
         "hub-channel already another job",
         "hub-channel already this setting",
         "hub-channel lacks permissions",
-        "log-channel lacks permissions",
-        "log-channel lacks view channel",
-        "interaction-channel lacks permissions",
-        "interaction-channel lacks view channel",
+        pytest.param("log-channel lacks permissions"),
+        pytest.param("log-channel lacks view channel"),
+        pytest.param("interaction-channel lacks permissions"),
+        pytest.param("interaction-channel lacks view channel"),
         "log-channel already this setting, lacking permissions",
         "factory-reset without the word",
     ],
@@ -2572,7 +2572,7 @@ async def test_a_refusal_of_the_bot_cog_is_recorded_in_the_log_channel(tmp_path,
     "case",
     [
         "init on another server",
-        "init channel lacks permissions before init",
+        pytest.param("init channel lacks permissions before init"),
         "log-channel before init",
         "base-role before init",
         "hub-channel before init",

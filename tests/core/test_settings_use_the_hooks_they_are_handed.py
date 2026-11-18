@@ -120,7 +120,7 @@ def _settings(hook: AwaitedHook) -> dict[str, Any]:
 @pytest.mark.parametrize(
     "name",
     ["log channel",
-     "interaction channel",
+     pytest.param("interaction channel"),
      "hub channel",
      pytest.param("division lineup channel"),
      pytest.param("division calendar channel"),
