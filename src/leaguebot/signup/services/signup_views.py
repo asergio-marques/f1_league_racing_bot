@@ -71,6 +71,20 @@ _BUTTON_OF = {"reject": "Reject", "request_changes": "Request Changes"}
 _NOTHING_DONE = {"reject": "Nothing was rejected", "request_changes": "No changes were requested"}
 
 
+def reason_pending_for(discord_user_id: str | int) -> str | None:
+    """The button ("Reject" or "Request Changes", as the log channel names it) whose reason a
+    manager still has to type for the driver *discord_user_id*, or None where no manager awaits one.
+
+    Read from memory, so it is for the commands that ask, never for a queued change's check, which
+    reads the database and the queue alone; and it knows nothing of a restart, which drops every
+    pending reason.
+    """
+    for entry in _PENDING_REASONS.values():
+        if str(entry["discord_user_id"]) == str(discord_user_id):
+            return _BUTTON_OF[entry["action"]]
+    return None
+
+
 def clear_pending_reasons() -> None:
     """Drop every pending reason and cancel its five-minute lapse, so none fires after.
 
