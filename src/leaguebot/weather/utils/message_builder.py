@@ -60,7 +60,7 @@ PHASE_DESCRIPTIONS = {
 
 def _role_prefix(division_role_id: int | None) -> str:
     """The division's role mention and a space, or nothing where the division has no role: a
-    forecast for it names no one rather than the role `<@&0>`."""
+    post for it names no one rather than the role `<@&0>`."""
     return f"<@&{division_role_id}> " if division_role_id else ""
 
 
