@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
 from leaguebot.framework.db.database import get_connection, run_migrations
 from tests.support.channel_faults import answer_attachments, server_holding
 from tests.support.switches import answer_switch
