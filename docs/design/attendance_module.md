@@ -259,7 +259,8 @@ a league is told.
 | `attendance.check_in.clean_up` | the `rsvp_cleanup` timer, the restart, `/test-mode advance` | `plan`, `delete_message` for each message, `mark_cleared` |
 | `attendance.check_in.answer` | a press of a button, the maintainer's form | `save_answer` (or `save_answers`), `redraw` |
 | `attendance.sync` | `/attendance sync` | the reserve's capacity, one save, the roles, the cards, lineups and sheets, the closing line |
-| `attendance.setting.<name>` for the five settings that are not penalties, `attendance.setting.rsvp_channel`, `attendance.setting.attendance_channel`, `module.on:attendance`, `module.off:attendance` | the commands | one save: the value, its audit entry and its log line |
+| `attendance.setting.<name>` for the five settings that are not penalties, `attendance.setting.rsvp_channel`, `attendance.setting.attendance_channel`, `module.off:attendance` | the commands | one save: the value, its audit entry and its log line |
+| `module.on:attendance` | `/module enable attendance` | before it, `check_kept_channels`; then one save: the flag, the clear of each channel another setting took, and the audit entries |
 | `attendance.setting.no_rsvp_penalty`, `attendance.setting.absent_penalty`, `attendance.setting.no_show_penalty` | the commands | the Reserve capacity, one save (the value, the season's recalculation and the sanctions it owes), then the roles, cards, lineups, sheets and deletions the sync's jobs make |
 
 Attendance also contributes jobs to changes core owns, through the hooks of a round amended, a
@@ -531,7 +532,7 @@ Attendance declares no hook of its own. Core declares them and attendance subscr
 | `amendment_steps`, `amendment_step_failure` | `check_in_amendment.amendment_steps`, `check_in_failure` | the steps an amendment asks of the check-in, and its words for one left undone, so that core's outcome names none of them; the entry point signs the hook up, weather then attendance |
 | `rounds_called_off`, `cancellation_notices`, `cancellation_steps` | `take_down_called_off_on`, `notices_on`, `take_down_steps`, `read_check_in_steps`, `notify_checkin_steps` | takes down the calls, reads the check-in's record before they come down and plans its own notice |
 | `rounds_deleted`, `divisions_deleted`, `profiles_deleted`, `profiles_merged`, `bot_packed` | `attendance_hooks` | see "The database" |
-| `division_lines_read`, `division_channel_faults_read`, `channel_uses_read`, `setting_channels_read` | `attendance_hooks`, `division_channels` | its channels, read for the reviews, the channel registry and the factory reset |
+| `division_lines_read`, `division_channel_faults_read`, `channel_uses_read`, `setting_channels_read` | `attendance_hooks`, `division_channels` | its channels, read for the reviews, the channel registry (answering nothing while attendance is off) and the factory reset |
 | `fingerprint_areas_read` | `fingerprint_areas.fingerprint_areas` | its channels and its configuration in the season's fingerprint, whatever its switch |
 | `pending_steps_read`, `review_marks_read` | `test_mode_steps.pending_steps`, `review_marks` | a round's check-in for `/test-mode advance` and its review |
 | `placements_confirmed`, `placements_confirmed_steps`, `season_completed`, `season_completed_steps` | `sheet_posting` | plans and defines the opening and the final sheet |
@@ -571,6 +572,17 @@ filtered by the placements (`placed_drivers_on`), so that a driver holding a sea
 with no placement row there is refused as not a member
 (`test_the_seat_read_through_core_judges_a_driver_as_the_old_join_did`,
 `test_both_seat_joins_read_the_drivers_core_s_reader_seats`).
+
+### The channels attendance keeps while it is off
+
+`division_channels.CHANNELS` is the one table of the two channels (setting, column, label, command),
+public because `attendance_hooks` reads it across files for the confirmation's faults. The
+switch-on's reader (`kept_channels`) reads it too, and the registry's answer its columns. A
+switched-off module keeps its channels and answers for none of them (`channel_uses` asks the
+switch), so another setting may take one; the switch-on's step before its save
+(`check_kept_channels`, `core.md`, "Each module's switch is a change of the module's own") finds it,
+and the save clears it through the column's own writer (`set_rsvp_channel`, `set_attendance_channel`),
+audited as that setting's change. The reader asks `channel_needs` as the check runs.
 
 ### What attendance's channels need of the bot
 

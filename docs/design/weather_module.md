@@ -88,6 +88,14 @@ fires in between is dropped, which is why the removal can follow the flag
 (`module_switch_settings`' docstring, `tests/weather/test_weather_module_gate.py`). What a
 switch-off keeps is the weather specification's opening rules.
 
+The switch-on runs a step before its save, `kept_channels_check` (`core.md`, "Each module's switch
+is a change of the module's own"), handed `forecast_channel.kept_channels`, a reader that asks
+`channel_needs` of the drawing as the check runs, so that a picture switched on meanwhile counts.
+The save raises the flag and, for a forecast channel another setting took while weather was off,
+clears it through `set_division_forecast_channel`, which takes `None` for that, with the audit entry
+of the channel's own setting. `_LABEL` and `_COMMAND` are the one statement of how the channel is
+named and set again, which the confirmation's faults and the check both use.
+
 ### Who writes each table
 
 | Table | Written by | What it writes |
@@ -104,6 +112,7 @@ switch-off keeps is the weather specification's opening rules.
 | `sessions.phase2_slot_type` | `phase2_service`; `phase_withdrawal` | written with the draw; cleared with the withdrawal |
 | `divisions.forecast_channel_id` | `forecast_channel` (`set_division_forecast_channel`) | the channel, in the setting's save |
 | `server_configs.weather_module_enabled` | `module_switch_settings` | the flag, naming only it |
+| `divisions.forecast_channel_id` | `module_switch_settings` (through `set_division_forecast_channel`) | cleared at a switch-on, where another setting took the channel meanwhile |
 
 Every writer works on the connection it is handed and commits nothing: a draw is handed the queue's
 save, an amendment's withdrawal the amendment's, a setting's write the setting's.
@@ -257,7 +266,8 @@ directions are `Setting`s built by `setting_change`, which holds what every sett
 with a value already held and with a fault. Their checks run as the command is answered and again as
 the change starts. The forecast channel's setting is handed core's `channel_uses_read` hook, as
 results' and attendance's are, so that it asks which job a channel already does without importing
-the module that holds the answer.
+the module that holds the answer. A module off answers it for none of its channels (it asks its own
+switch), so while weather is off another setting may take the forecast channel it keeps.
 
 ### The steps weather plans for an amendment
 
@@ -427,7 +437,7 @@ together" has a module sign up, through `wiring.py`.
 | `season_end_steps` | `forecast_changes.season_end_steps` | the deletion of forecasts left standing at the season's end, and `flush_forecasts`, each with its words |
 | `test_mode_flushed` | `forecast_changes.test_mode_flushed_on` | hands back the `flush_forecasts` job |
 | `rounds_deleted`, `bot_packed` | `forecast_cleanup_service` | see "The database" |
-| `division_lines_read`, `division_channel_faults_read`, `channel_uses_read`, `setting_channels_read` | `forecast_channel` | its channel, read for the reviews, the channel registry and the factory reset |
+| `division_lines_read`, `division_channel_faults_read`, `channel_uses_read`, `setting_channels_read` | `forecast_channel` | its channel, read for the reviews, the channel registry (answering nothing while weather is off) and the factory reset |
 | `review_sections_read` | `weather_config_service.review_section` | its section of a season review |
 | `fingerprint_areas_read` | `fingerprint_areas.fingerprint_areas` | its channels and horizons in the season's fingerprint, whatever its switch |
 | `pending_steps_read`, `review_marks_read` | `test_mode_steps` | a round's forecasts for `/test-mode advance` and its review |

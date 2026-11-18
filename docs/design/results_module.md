@@ -268,7 +268,7 @@ must write all or nothing; the posts follow it. A step marked † cannot be disc
 |---|---|---|
 | `results.setting.config_*` (seven), `results.setting.amend_*` (four), `results.setting.reserves` | the `/results config` and `/results amend` commands that change a value, `/results reserves toggle` | a `Setting`: **the value and its audit entry** (`core.md`, "A league's settings") |
 | `results.setting.results_channel`, `standings_channel`, `verdicts_channel` | `/results channel …` | a `Setting` that overtakes a stopped job (`Setting.repairs_the_bot`) |
-| `module.on:results` | core's `/module enable results` | a `Setting`: **the flag and the audit entry**; then the hub's refresh and the sweep armed, each an `After` step |
+| `module.on:results` | core's `/module enable results` | a `Setting`: before it, `check_kept_channels`; then **the flag, the clear of each channel another setting took, and the audit entries**; then the hub's refresh and the sweep armed, each an `After` step |
 | `module.off:results` | core's `/module disable results` | **`switch_off`**: the season erased, the flag down, attendance off where cascaded, the rounds waiting on results closed; `disarm_sweep`; one `take_down` for each message or channel; **`close`** |
 | `results.rounds.sync`, `results.standings.sync` | `/results rounds sync`, `/results standings sync` | each round's posts, each followed by the deletion of what it replaces; `close`. Repeatable |
 | `results.amend.open` | `/results rounds amend` | `delete_stale`, the channel made and recorded, `post_opening`, the first prompt, `arm_lapse` |
@@ -581,6 +581,19 @@ and the log lines the router delivers.
 
 Answers to `architecture.md`, "How modules and core fit together".
 
+### The channels results keeps while it is off
+
+`division_channels._CHANNELS` is the one table of the three channels: each one's column, its setting,
+its label, its command and what the review shows where it is unset. The review's lines, the
+confirmation's faults, the registry's answer and the switch-on's reader (`kept_channels`) are all
+read from it, so that a channel added to it is judged by all four. A switched-off module keeps its channels and
+answers for none of them (`channel_uses` asks the switch); another setting may take one, and the
+switch-on's step before its save (`check_kept_channels`, `core.md`, "Each module's switch is a change
+of the module's own") finds it, and the save clears it through the column's own writer, audited as the
+setting's own change. The reader asks `channel_needs` as the check runs, not as the switch-on is
+built. The placements-review lines of an off module may show a channel it has yielded, until it is
+switched on and clears it.
+
 ### The hooks results signs up to
 
 Results declares no hook, and calls none of core's list hooks: where results ends a round as not
@@ -605,7 +618,7 @@ held or turns itself off, it hands core's writer the hook (`cancellation_notices
 | `divisions_raced_read` | `results_purge_service.divisions_raced_on` | reads the divisions a driver's accounts raced in |
 | `test_mode_turned_on` | `season_points_service.seed_test_configs_on` | seeds the test configurations where the core specification's "Entering and leaving it" says, whatever results' switch, through the writers `/results config` uses, and hands back the names and the audit entries as a `TestModePart` |
 | `review_sections_read` | `season_points_service.review_section` | results' section of a season review |
-| `division_lines_read`, `division_channel_faults_read`, `channel_uses_read`, `setting_channels_read` | `division_channels.division_lines`, `division_channel_faults`, `channel_uses`, `setting_channels` | a division's channels, read for the reviews, the channel registry and the factory reset |
+| `division_lines_read`, `division_channel_faults_read`, `channel_uses_read`, `setting_channels_read` | `division_channels.division_lines`, `division_channel_faults`, `channel_uses`, `setting_channels` | a division's channels, read for the reviews, the channel registry (answering nothing while results is off) and the factory reset |
 | `fingerprint_areas_read` | `fingerprint_areas.fingerprint_areas` | results' configuration in the season's fingerprint |
 | `round_leads_read` | `round_start.submission_leads` | answers the submission's lead for every round, whatever results' switch ("The round's `results` job") |
 | `round_armed` | `round_start.round_armed` | answers the submission's lead for an amended round, whatever results' switch |
