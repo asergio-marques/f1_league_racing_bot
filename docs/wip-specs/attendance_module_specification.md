@@ -22,7 +22,7 @@
 - <NEW COMMAND> An "attendance channel rsvp" command will be made available to league managers, which shall have as input a division name and a channel on which RSVP polls shall be posted by the bot.
     - If a RSVP channel is not configured for a division in the placements review, then the season will fail validation.
     - Each division's RSVP channel will be displayed in the placements review much alike other division channels like results, standings, weather, etc.
-    - The RSVP channel shall be one the bot can post an embed in: View Channel, Send Messages and Embed Links, and Attach Files where the check-in call could be posted with a picture.
+    - The RSVP channel shall be one the bot can post an embed in: View Channel, Send Messages, Embed Links and Read Message History, since the call is read back to redraw it after an answer and to take its buttons off at the deadline, and Attach Files where the check-in call could be posted with a picture.
 - <NEW COMMAND> An "attendance channel attendance" command will be made available to league managers, which shall have as input a division name and a channel on which attendance for each one of the rounds will be posted by the bot.
     - If an attendance channel is not configured for a division in the placements review, then the season will fail validation.
     - Each division's attendance channel will be displayed in the placements review much alike other division channels like results, standings, weather, etc.

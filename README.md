@@ -152,7 +152,7 @@ When inviting the bot, grant it the following OAuth2 bot permissions. All are us
 | **Attach Files** | Attaches the picture where an output is drawn as an image (the calendar, lineup, session results, standings, attendance sheet, check-in call, weather forecasts, verdicts and verdict banner), in that output's channel only while its picture is on |
 | **Manage Channels** | Creates private signup wizard channels; applies and removes channel permission overwrites for the signup module, the hub and per-driver wizard channels; deletes the channels it created during a `/bot factory-reset` |
 | **Manage Messages** | Deletes the old forecast message when a newer phase supersedes it (`forecast_cleanup_service`); deletes its own messages for `/clean-bot` and `/bot factory-reset` |
-| **Read Message History** | Reads back through a channel to find its own messages, for `/clean-bot` and `/bot factory-reset`, and to post again and take down what it posted in the results, standings, verdicts and attendance channels |
+| **Read Message History** | Reads back through a channel to find its own messages, for `/clean-bot` and `/bot factory-reset`, and to post again and take down what it posted in the results, standings, verdicts and attendance channels, and to read the check-in call back to redraw it |
 | **Manage Roles** | Grants the driver role on signup approval; grants/revokes division and team roles on driver placement, unassignment, and sacking |
 | **Mention @everyone, @here, and All Roles** | Pings the division role in a division's weather forecast messages (phase 1–3), in the check-in call (posted again when an amendment calls for it) and in the attendance cancellation notice, and the interaction role when a round's results submission channel opens. Required when those roles are not set to "Allow anyone to @mention this role" (the typical default for private league roles) |
 
@@ -2235,7 +2235,7 @@ All commands below require the attendance module to be enabled (`/module enable 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `name` | String | ✅ | Division name |
-| `channel` | Channel | ✅ | Channel where check-in calls are posted. The bot needs View Channel, Send Messages and Embed Links there, and Attach Files where the call is drawn with a picture |
+| `channel` | Channel | ✅ | Channel where check-in calls are posted. The bot needs View Channel, Send Messages, Embed Links and Read Message History there, and Attach Files where the call is drawn with a picture |
 
 #### `/attendance channel attendance` — Set the attendance logging channel for a division
 *Access: League manager · Attendance module required*
