@@ -237,7 +237,10 @@ async def test_a_guild_the_bot_is_not_in_opens_nothing(tmp_path):
     assert await _submissions(league) == []
     stopped = await stopped_job(league.db_path)
     assert stopped is not None and stopped["name"] == "create_channel"
-    assert "stopped at job #2: creating the results submission channel of round 3" in league.log()
+    assert (
+        f"stopped at job #{stopped['id']}: creating the results submission channel of round 3"
+        in league.log()
+    )
 
 
 async def test_a_results_channel_since_deleted_opens_nothing(tmp_path):
