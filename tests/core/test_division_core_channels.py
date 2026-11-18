@@ -329,7 +329,9 @@ async def test_the_manager_is_told_which_channel_was_assigned(tmp_path, which, s
     """Division 1 of a season being set up, with no channel. The bot either has no league server
     to ask, or asks one whose lookup of #notices fails with a server error. The manager runs
     /division lineup-channel or calendar-channel for #notices and the queue runs: a check that
-    cannot be made does not refuse, so the manager is told the channel was set, and it is."""
+    cannot be made does not refuse, so the manager is told the channel was set, and where the
+    server answered with an error, it is. That the channel is written with no server to ask is
+    test_the_core_pair_write_their_own_column's."""
     db_path = await _make_db(tmp_path)
     cog = await _make_cog(db_path)
     if server == "server-answers-with-an-error":
@@ -341,7 +343,8 @@ async def test_the_manager_is_told_which_channel_was_assigned(tmp_path, which, s
     assert _replied(interaction) == (
         f"✅ {LABELS[which]} for **Division 1** set to <#{CHANNEL_ID}>."
     )
-    assert await _channel_column(db_path, CORE_COLUMNS[which]) == CHANNEL_ID
+    if server == "server-answers-with-an-error":
+        assert await _channel_column(db_path, CORE_COLUMNS[which]) == CHANNEL_ID
 
 
 @pytest.mark.parametrize("which", ALL)
