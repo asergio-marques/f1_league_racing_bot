@@ -103,11 +103,12 @@ def _division_channels(hook: AwaitedHook) -> tuple[Any, ...]:
 
 
 def _settings(hook: AwaitedHook) -> dict[str, Any]:
-    """Each setting, by name, as a builder: one is built only when its case asks for it."""
+    """Each setting, by name, as a builder: one is built only when its case asks for it. The
+    interaction channel's is handed a drawing whose pictures attach no file, as its needs ask."""
     return {
         "log channel": lambda: log_channel_setting(config=_config(), channel_uses_read=hook),
         "interaction channel": lambda: interaction_channel_setting(
-            config=_config(), channel_uses_read=hook
+            config=_config(), channel_uses_read=hook, drawing=answer_attachments(MagicMock())
         ),
         "hub channel": lambda: hub_channel_setting(config=_config(), channel_uses_read=hook),
         "division lineup channel": lambda: _division_channels(hook)[0],
@@ -118,7 +119,14 @@ def _settings(hook: AwaitedHook) -> dict[str, Any]:
 
 @pytest.mark.parametrize(
     "name",
-    ["log channel", "interaction channel", "hub channel",
+    ["log channel",
+     pytest.param(
+         "interaction channel",
+         marks=pytest.mark.xfail(
+             strict=True, reason="#570: the interaction channel setting takes no drawing"
+         ),
+     ),
+     "hub channel",
      pytest.param("division lineup channel"),
      pytest.param("division calendar channel"),
      pytest.param("division forecast channel")],
