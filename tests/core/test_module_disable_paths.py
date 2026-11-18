@@ -508,8 +508,7 @@ async def test_re_enabling_signup_keeps_a_standing_row(tmp_path):
 
 @pytest.mark.parametrize("kept", [
     pytest.param(False, id="no channel kept"),
-    pytest.param(True, id="a channel kept", marks=pytest.mark.xfail(
-        strict=True, reason="#449: the switch-on asks for /signup channel with one kept")),
+    pytest.param(True, id="a channel kept"),
 ])
 async def test_enabling_signup_names_the_three_commands_that_follow(tmp_path, kept):
     """A module enabled with nothing configured does nothing at all, and these are the

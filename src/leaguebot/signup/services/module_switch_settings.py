@@ -17,6 +17,10 @@ finds the channel and settings as they stood, and checks that channel first
 (`kept_channels_check`, handed `channel_uses.kept_channels`): the bare row this creates where none
 exists is what the module needs to be usable, not a reset of what is there.
 
+**The reply asks for `/signup channel` only where no channel stands after the save**: the check's
+heading asks for one it named (gone or another setting's, cleared), so it is not asked for twice,
+and a kept channel that is usable is not asked for at all.
+
 **The check before the save names a kept channel that is gone, or that another setting took while
 the module was off, and refuses one the bot cannot use** (`core/services/modules/kept_channels.py`
 holds the words): the save clears a taken one through `clear_signup_channel_on`, audited as the
@@ -369,6 +373,8 @@ def module_on_signup(
                 audits.append(
                     AuditRecord("SIGNUP_CHANNEL_SET", {"channel_id": old_id}, {"channel_id": None})
                 )
+        cursor = await db.execute("SELECT signup_channel_id FROM signup_module_config")
+        kept = await cursor.fetchone()
         server_cfg = await config.get_server_config_on(db)
         return Saved(
             changed=True,
@@ -376,6 +382,7 @@ def module_on_signup(
             details=tuple(details),
             result={
                 "named": named,
+                "channel_kept": kept is not None and kept["signup_channel_id"] is not None,
                 "base_role_set": server_cfg is not None and server_cfg.base_role_id is not None,
                 "driver_role_set": server_cfg is not None and server_cfg.driver_role_id is not None,
             },
@@ -385,7 +392,7 @@ def module_on_signup(
     def reply(_payload: dict[str, Any], results: Mapping[str, dict[str, Any]]) -> str:
         saved = results["save"]
         named = saved["named"]
-        steps = [] if named else ["  • `/signup channel <channel>`"]
+        steps = [] if named or saved["channel_kept"] else ["  • `/signup channel <channel>`"]
         if not saved["base_role_set"]:
             steps.append("  • `/bot base-role <role>`")
         if not saved["driver_role_set"]:
