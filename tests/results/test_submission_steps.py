@@ -4,8 +4,9 @@ A round's submission channel, an amendment's channel and the prompts posted in t
 of a change, so a refusal stops the queue with Retry and Discard rather than leaving a manager
 waiting on a prompt that never came.
 
-- **`create_channel`** (an `ACT`) creates a text channel in the category of the channel the
-  dialogue names beside it, which for a submission and an amendment is the interaction channel. The dialogue hands it the `record` that saves the channel's id with the job's mark.
+- **`create_channel`** (an `ACT`) creates a text channel in the category of the channel its
+  payload names (`beside_channel_id`): for a submission and an amendment, the interaction channel.
+  The dialogue hands it the `record` that saves the channel's id with the job's mark.
   A channel created whose save then fails is kept on the failure, and the next try deletes it
   before creating another, so a retry leaves no second channel.
 - A creation Discord refuses stops the queue, naming the permission the bot lacks.
