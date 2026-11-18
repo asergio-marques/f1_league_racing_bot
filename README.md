@@ -148,7 +148,7 @@ When inviting the bot, grant it the following OAuth2 bot permissions. All are us
 | **View Channels** | Required before any channel operation — the bot must be able to see forecast channels, log channels, and signup wizard channels before it can read or write them |
 | **Send Messages** | Posts weather forecasts to division channels, signup wizard messages to private channels, the hub's panel to the hub, and audit logs to the log channel |
 | **Send Messages in Threads** | Required if any configured channels are threads |
-| **Embed Links** | Posts the signup module info embed (the button drivers click to start a signup), the division lineup, the check-in call and the hub's panel |
+| **Embed Links** | Posts the signup module info embed (the button drivers click to start a signup), the division lineup and the check-in call |
 | **Attach Files** | Attaches the picture where an output is drawn as an image (the calendar, lineup, session results, standings, attendance sheet, check-in call, weather forecasts, verdicts and verdict banner), in that output's channel only while its picture is on |
 | **Manage Channels** | Creates private signup wizard channels; applies and removes channel permission overwrites for the signup module, the hub and per-driver wizard channels; deletes the channels it created during a `/bot factory-reset` |
 | **Manage Messages** | Deletes the old forecast message when a newer phase supersedes it (`forecast_cleanup_service`); deletes its own messages for `/clean-bot` and `/bot factory-reset` |

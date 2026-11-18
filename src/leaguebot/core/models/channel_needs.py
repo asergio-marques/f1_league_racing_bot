@@ -9,8 +9,7 @@ channels' in its own services, from the named permissions here.
 **Where each answer comes from.** View Channel and Send Messages are asked of every channel the
 bot posts in. Read Message History is asked where the bot reposts and takes down what it posted
 (results, standings, verdicts and the attendance sheet), which finds its last post with it. Embed
-Links is asked where the bot posts an embed (the lineup, the check-in call, the hub and the signup
-post). Attach Files is asked where the image module could attach a file to the posting, which the
+Links is asked where the bot posts an embed (the lineup, the check-in call and the signup post). Attach Files is asked where the image module could attach a file to the posting, which the
 module answers by aspect (`ImageDrawing.aspect_attaches_files`). Manage Channel and Manage
 Permissions are asked where the bot sets who may see the channel (the hub, the signup channel).
 No permission to mention is asked of any channel.
