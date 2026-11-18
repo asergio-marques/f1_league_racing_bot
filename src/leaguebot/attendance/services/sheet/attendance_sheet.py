@@ -292,15 +292,22 @@ async def _fault_lines(
 ) -> tuple[str, ...]:
     """The faults the graphic fell back from, each as a line naming the sheet as its notices name
     it, by its season, its division and its occasion (`_sheet_label`), for the job that posted
-    the sheet to write beside its result: "Season 3 **Pro** — attendance after round 3: …"."""
+    the sheet to write beside its result: "Season 3 **Pro** — attendance after round 3: …". A
+    round that cannot be read is named without its season."""
     if not faults:
         return ()
+    # A round that cannot be read at this moment costs the line its season, never the sheet its
+    # post or its result: the faults are still told, and the read's error goes to the host's log.
+    try:
+        facts = await _round_facts(db_path, round_id)
+    except aiosqlite.Error:
+        log.warning(
+            "post_attendance_sheet: round %s could not be read, so the sheet's fault lines are "
+            "written without its season", round_id, exc_info=True,
+        )
+        facts = None
     label = _sheet_label(
-        await _division_name(db_path, division_id),
-        await _round_facts(db_path, round_id),
-        occasion,
-        round_id,
-        bold=True,
+        await _division_name(db_path, division_id), facts, occasion, round_id, bold=True
     )
     return tuple(f"{label}: {fault}" for fault in faults)
 

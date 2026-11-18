@@ -717,6 +717,7 @@ def _drawing_that_draws_nothing(fault: str):
     "drawing",
     "track registry",
     "teams",
+    "round unreadable",
     "none",
 ])
 @pytest.mark.asyncio
@@ -725,10 +726,11 @@ async def test_a_sheet_whose_graphic_falls_back_is_told_as_a_line_of_its_job(
 ):
     """Division 1's sheet after round 3 of season 3, the images module on. (drawing) the graphic's
     drawing raises; (track registry) the track registry cannot be read; (teams) the teams cannot
-    be read, and the drawing is then given neither team names nor badges; (none) nothing fails.
-    The sheet posts each time, and the job's result and lines carry one line naming the sheet as
-    its notices name it, by season 3, Division 1 and round 3, and what the graphic fell back from,
-    and none where nothing failed."""
+    be read, and the drawing is then given neither team names nor badges; (round unreadable) the
+    round, and with it its season, cannot be read from the database; (none) nothing fails. The
+    sheet posts each time, and the job's result and lines carry one line naming the sheet as its
+    notices name it, by season 3, Division 1 and round 3, and what the graphic fell back from, and
+    none where nothing failed; a round that cannot be read costs the line its season alone."""
     from types import SimpleNamespace
 
     from leaguebot.core.services.drivers.team_service import TeamService
@@ -755,6 +757,11 @@ async def test_a_sheet_whose_graphic_falls_back_is_told_as_a_line_of_its_job(
 
         monkeypatch.setattr(TeamService, "placed_drivers_on", _unreadable)
         monkeypatch.setattr(attendance_drawing, "resolve_drawing", _resolve)
+    if fault == "round unreadable":
+        async def _round_unreadable(*_args, **_kwargs):
+            raise aiosqlite.OperationalError("round unreadable")
+
+        monkeypatch.setattr(attendance_sheet, "_round_facts", _round_unreadable)
     async with get_connection(sheet_db) as db:
         await db.execute("UPDATE seasons SET season_number = 3 WHERE id = 1")
         await db.commit()
@@ -781,10 +788,14 @@ async def test_a_sheet_whose_graphic_falls_back_is_told_as_a_line_of_its_job(
             "the teams could not be read, so they are drawn without names or badges: "
             "teams unreadable"
         ],
+        "round unreadable": [
+            "the graphic could not be drawn, so the sheet is posted as text: round unreadable"
+        ],
         "none": [],
     }[fault]
+    season = "" if fault == "round unreadable" else "Season 3 "
     lines = [
-        f"Season 3 **Division 1** — attendance after round 3: {clause}" for clause in expected
+        f"{season}**Division 1** — attendance after round 3: {clause}" for clause in expected
     ]
     result = attendance_sheet.sheet_result(posted)
     assert list(posted.faults) == lines
