@@ -227,7 +227,8 @@ work and restarts"), each a timer in memory and no change on the queue:
   typing a reason about, as the specification's "Wizard flow" has it. That refusal reads memory,
   so it is made at the ask and at the form's submit and never in the change's check, which reads
   only the database and the queue. A restart drops the pending reason unrecorded;
-  `clear_pending_reasons` drops every entry and cancels every lapse on `/bot pack` and `/bot factory-reset` (`in_memory_state_cleared`;
+  `clear_pending_reasons` drops every entry and cancels every lapse on `/bot pack` and
+  `/bot factory-reset` (`in_memory_state_cleared`;
   `test_a_reset_cancels_every_pending_lapse_and_none_fires_after`);
 - **`/signup close`'s confirmation** (`ConfirmCloseView`, five minutes), whose cancel and lapse are
   recorded and whose asking records nothing.
@@ -381,7 +382,9 @@ correction choice is judged against the press's time, carried in its payload, ag
 
 Each saving job writes what its step changes and its audit and lines in one save, on the
 connection the queue hands it, and a job that posts records its id in the save that marks it done.
-Three of the shape's consequences:
+A person's decision on a signup writes its audit entry in the save that moves the driver, the prior
+state read in that save and the driver named in the entry's values, as the audit table has no
+subject column. Three of the shape's consequences:
 
 - **The window is open only once its message is up:** `post_info`'s record opens it, and
   `post_closed`'s record closes it and moves the season on (`window_changes`' module docstring), so
@@ -454,7 +457,7 @@ the drop would leave):
 
 | Job | Change | Dropped, it would leave | Pinned by |
 |---|---|---|---|
-| `end` | `signup.end` | a driver mid-correction never ended, or one awaiting review left so, with the season's placements unconfirmable | `test_ending_a_signup_cannot_be_discarded` |
+| `end` | `signup.end` | a driver mid-correction never ended, or one awaiting review left so, with the season's placements unconfirmable | `test_ending_a_signup_cannot_be_discarded`, `test_ending_a_signup_awaiting_review_cannot_be_discarded` |
 | `arm_inactivity` | `signup.answer` | a signup that never times out | `test_rearming_the_24_hours_cannot_be_discarded` |
 | `commit` | `signup.submit` | a signup never submitted | `test_a_correction_s_commit_cannot_be_discarded` |
 | `post_panel` | `signup.panel` | a driver awaiting approval with no panel | `test_the_review_panel_s_post_cannot_be_discarded` |
