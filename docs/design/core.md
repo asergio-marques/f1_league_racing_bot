@@ -218,7 +218,7 @@ may do"); and each gate keeping its own list, which lets two gates judge one cha
 calendar need the image module's answer to build their needs, which is awaited, so
 `core_division_channel_faults` (its subscriber of `division_channel_faults_read`, signed up before
 every module's, so a division's lines read core's first) builds them where it can await, from
-`core_channel_needs`. `confirmation_faults` holds no list of channels, so the review and the two
+`core_channel_needs`. `division_channel_faults` holds no list of channels, so the review and the two
 confirmations cannot disagree about one and `season_approval_change` is untouched. *Rejected:* the
 check reading the image module's configuration for a switch, which is the module's to answer
 (`ImageDrawing.calendar_attaches_files` and `lineup_attaches_files`).
@@ -567,7 +567,7 @@ which each `_sign_up_to_*` docstring states where it matters.
 | `configuration_faults_read` | A | signup | `approval_checks` |
 | `review_sections_read` | A | signup, attendance, results, weather | `review_sections` |
 | `division_lines_read` | A | results, attendance, weather | `review_sections` |
-| `division_channel_faults_read` | A | core, weather, results, attendance | `approval_checks` (core's own subscriber, `core_division_channel_faults`, names the lineup and calendar channels, and `confirmation_faults` asks for the rest) |
+| `division_channel_faults_read` | A | core, weather, results, attendance | `approval_checks` (core's own subscriber, `core_division_channel_faults`, names the lineup and calendar channels, and `division_channel_faults` asks for the rest) |
 | `driver_names_read` | A | signup | `approval_checks` (the unsettled signups, named by their latest signup) and `driver_names`, core's reader of how a driver is named and of whether a nationality is collected; the builder hands the hook, and image, results and attendance each ask the reader with it for every picture and ordering that names a driver |
 | `fingerprint_areas_read` | A | weather, results, attendance, signup, image | `season_fingerprint_service` |
 | `channel_uses_read` | A | weather, results, attendance, signup | `channel_registry_service.find_channel_use` |
