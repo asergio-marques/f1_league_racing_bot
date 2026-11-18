@@ -112,9 +112,6 @@ _CANNOT_USE = (
 #: The refusal a channel is given where it has been deleted from the server.
 _GONE = f"❌ <#{CHANNEL_ID}> is no longer on the server. Nothing was changed."
 
-#: Why a test fails until setting an attendance channel judges whether the bot can use it.
-_NOT_JUDGED = "#570: setting an attendance channel does not yet judge whether the bot can use it"
-
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -475,7 +472,6 @@ REFUSAL_CASES = [
             "attendance": _CANNOT_USE.format(label="attendance", missing="Read Message History"),
         },
         id="cannot-use",
-        marks=pytest.mark.xfail(strict=True, reason=_NOT_JUDGED),
     ),
     pytest.param("no-season", _NO_SEASON, id="no-season"),
     pytest.param("unknown-division", _not_found("Division 9"), id="unknown-division"),
@@ -554,8 +550,7 @@ async def test_every_refusal_of_a_channel_command_is_recorded(tmp_path, which, c
 @pytest.mark.parametrize(
     "attaches",
     [
-        pytest.param(True, id="picture-attaches-a-file",
-                     marks=pytest.mark.xfail(strict=True, reason=_NOT_JUDGED)),
+        pytest.param(True, id="picture-attaches-a-file"),
         pytest.param(False, id="no-picture"),
     ],
 )
@@ -817,11 +812,9 @@ def _meanwhile_cases():
                 which, _lose_access,
                 _CANNOT_USE.format(label=REFUSAL_LABELS[which], missing="Send Messages"),
                 id=f"{which}-access_lost",
-                marks=pytest.mark.xfail(strict=True, reason=_NOT_JUDGED),
             ),
             pytest.param(
                 which, _delete_the_channel, _GONE, id=f"{which}-channel_deleted",
-                marks=pytest.mark.xfail(strict=True, reason=_NOT_JUDGED),
             ),
         ]
     return cases

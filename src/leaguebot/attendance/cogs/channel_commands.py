@@ -12,7 +12,6 @@ from leaguebot.attendance.models.switch import SWITCH_KEY
 from leaguebot.attendance.cogs.attendance_group import CHANNEL_GROUP, AttendanceSubgroup
 from leaguebot.attendance.services.settings.channel_settings import (
     ATTENDANCE_CHANNEL,
-    NO_ACCESS,
     NOT_ENABLED,
     RSVP_CHANNEL,
     division_not_found,
@@ -43,31 +42,26 @@ class ChannelCommands(AttendanceSubgroup):
         """Ask the change queue to set a division's RSVP or attendance channel, for the two
         commands below.
 
-        Each checks the module first in its own words, not `_module_gate`'s, then refuses a
-        channel the bot cannot post in.
+        Each checks the module first in its own words, not `_module_gate`'s.
 
         **The live season's division**: a division's channels belong to the season being built or
         raced, and an archived one's no longer matter. Pending completion is live, so a channel
         lost before the season completes may be repaired. The command finds the division from the
         name typed, since the change is for it by its id (`attendance_channel_settings`).
 
-        **A channel does one job** (`channel_registry_service`, judged by the setting's `check`),
-        as the queue is asked and again as the change starts, so a refusal leaves the
-        configuration exactly as it stood — the value the setting already holds included. The
-        queue's acknowledgement is the command's response, so nothing is deferred; the queue
-        writes the channel and its audit entry, its ids as integers, in one save and answers and
-        logs after it.
+        **A channel does one job, and the bot must be able to use it** (`channel_registry_service`,
+        judged by the setting's `check`), as the queue is asked and again as the change starts, so
+        a refusal leaves the configuration exactly as it stood — the value the setting already
+        holds included. The command judges neither: it holds no verdict on the channel's
+        permissions of its own. The queue's acknowledgement is the command's response, so nothing
+        is deferred; the queue writes the channel and its audit entry, its ids as integers, in one
+        save and answers and logs after it.
 
         Every refusal is recorded: `refuse` answers and writes one line naming the command, which
         is read from the interaction.
         """
         if not await self.bot.module_service.is_enabled(SWITCH_KEY):
             await refuse(interaction, NOT_ENABLED, what=describe(interaction))
-            return
-
-        guild = interaction.guild
-        if guild is None or not channel.permissions_for(guild.me).send_messages:
-            await refuse(interaction, NO_ACCESS, what=describe(interaction))
             return
 
         season = await self.bot.season_service.get_setup_or_active_season()
