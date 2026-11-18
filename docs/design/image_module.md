@@ -51,13 +51,12 @@ never switched it on has no row and reads as off.
 The switch-off clears the flag and nothing else: no configuration row is deleted and no toggle
 reset. That is Principle X, rule 6 as every module keeps it: a disable keeps the whole of the
 configuration, the portrait settings and the tier colours included, and re-enabling finds it as it
-stood. The daily portrait job the configuration arms is
-not configuration and is not kept armed: the switch-off removes it and the switch-on arms it again
-("How a change is carried out", below).
+stood. The daily portrait job the configuration arms is not configuration and is not kept armed: the
+switch-off removes it and the switch-on arms it again ("How a change is carried out", below).
 
-The toggle refuses `MODULE_OFF` only where it switches an output on (`image_settings`), the exception
-to the module-off rule that `image_module_specification.md`, "Configuration" makes; the cog's gate on the module
-is likewise made only then.
+The toggle refuses `MODULE_OFF` only where it switches an output on (`image_settings`), the
+exception to the module-off rule that `image_module_specification.md`, "Configuration" makes; the
+cog's gate on the module is likewise made only then.
 
 ### The portrait register
 
