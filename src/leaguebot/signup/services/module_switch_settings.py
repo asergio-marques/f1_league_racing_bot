@@ -23,6 +23,14 @@ holds the words): the save clears a taken one through `clear_signup_channel_on`,
 channel's own change (`SIGNUP_CHANNEL_SET`, from the channel to none), with a line beneath the
 Success line. The channel is the server's, not a division's, so it is "the signup channel".
 
+**The bot's permissions on the channel are recorded before the save** (`RECORD_PERMISSIONS`): for
+each target `/signup channel` sets one on (`signup_channel_overwrites`, read as the league's roles
+stand now, so a base role changed while signup was off is the one put back), the overwrite it holds
+there now and the one wanted. The record changes nothing on Discord, so it declares no undo. It is
+a step of its own, marked done before the permissions are put back, so that a restore run again
+after a stop reads the first record: what a take-back restores is what stood before the first
+attempt, not what the stop left. The channel the check named, or none kept, is skipped.
+
 **The flag is signup's own column on core's table, `server_configs.signup_module_enabled`**
 (architecture.md, "The database"; `OWN_COLUMNS` in `tests/repository/test_architecture_rules.py`),
 as weather's is.
@@ -43,10 +51,24 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
+import discord
+
 from leaguebot.signup.models.switch import SWITCH_KEY
-from leaguebot.framework.models.change import AuditRecord, PlannedStep, Verdict, module_on
-from leaguebot.framework.services.queue.change_types import CheckContext
+from leaguebot.framework.db.database import get_connection
+from leaguebot.framework.models.change import (
+    AuditRecord,
+    PlannedStep,
+    StepFailedOnDiscord,
+    StepKind,
+    StepResult,
+    Verdict,
+    module_on,
+)
+from leaguebot.framework.services.queue.change_types import CheckContext, Step, StepContext
+from leaguebot.framework.services.queue.setting_change import Before
+from leaguebot.framework.utils.league_server import league_guild
 from leaguebot.core.services.modules.kept_channels import (
+    CHECK_KEPT,
     found_in,
     kept_channels_check,
     named_reply,
@@ -58,7 +80,10 @@ from leaguebot.core.services.seasons.season_lifecycle_service import (
 )
 from leaguebot.framework.services.queue.setting_change import Saved, Setting
 from leaguebot.signup.services.channel_uses import kept_channels
-from leaguebot.signup.services.signup_module_service import clear_signup_channel_on
+from leaguebot.signup.services.signup_module_service import (
+    clear_signup_channel_on,
+    signup_channel_overwrites,
+)
 
 if TYPE_CHECKING:
     import aiosqlite
@@ -67,11 +92,67 @@ if TYPE_CHECKING:
     from leaguebot.framework.services.switches.module_service import ModuleService
     from leaguebot.framework.utils.hooks import AwaitedHook
 
+#: The name of the step, before the save, that records the bot's permissions on the signup channel
+#: as they stand, and as they are to be put back.
+RECORD_PERMISSIONS = "record_permissions"
+
+#: The kinds of target the record names: @everyone, the bot's own member, and a role by its id.
+EVERYONE, BOT, ROLE = "everyone", "bot", "role"
+
 _ENABLE_COMMAND = "/module enable signup"
+
+
+def _pair(overwrite: discord.PermissionOverwrite) -> dict[str, int]:
+    """*overwrite* as the two numbers Discord holds it as, to keep in a step's result."""
+    allow, deny = overwrite.pair()
+    return {"allow": allow.value, "deny": deny.value}
 
 
 def _still_off(_payload: dict[str, Any]) -> str:
     return "The module is still off. Run `/module enable signup` again once the fault is cleared."
+
+
+def _record_permissions(config: "ConfigService") -> Before:
+    """The step that records, before the save, what is to be put on the signup channel and what
+    stands there: `{"channel_id", "targets": [{"kind": `EVERYONE`, `BOT` or `ROLE`, "id": the
+    role's, None for the other two, which the server names itself, "prior": the overwrite held
+    now, None where there is none, "wanted": the overwrite `/signup channel` sets}]}`, in the order `signup_channel_overwrites` gives the targets, or `{"skip": True}` where
+    no channel is kept or the check named the one that is (gone, or another setting's), which is
+    set again by hand. It reaches the server through `league_guild` and raises where the server or
+    the channel is missing. It changes nothing on Discord, and so declares no undo."""
+
+    async def run(ctx: StepContext) -> StepResult:
+        checked = next(
+            (view.result or {} for view in ctx.steps if view.name == CHECK_KEPT), {}
+        )
+        async with get_connection(ctx.db_path) as db:
+            cursor = await db.execute("SELECT signup_channel_id FROM signup_module_config")
+            row = await cursor.fetchone()
+        if row is None or row["signup_channel_id"] is None or checked.get("named"):
+            return StepResult(result={"skip": True})
+        channel_id = int(row["signup_channel_id"])
+        guild = await league_guild(ctx.bot)
+        if guild is None:
+            raise StepFailedOnDiscord("the league's server is out of the bot's reach")
+        channel = guild.get_channel(channel_id)
+        if not isinstance(channel, discord.TextChannel):
+            raise StepFailedOnDiscord(f"the signup channel {channel_id} is not on the server")
+        wanted = signup_channel_overwrites(guild, await config.get_server_config())
+        targets: list[dict[str, Any]] = []
+        for target, overwrite in wanted.items():
+            held = channel.overwrites_for(target)
+            kind = (
+                EVERYONE if target is guild.default_role else BOT if target is guild.me else ROLE
+            )
+            targets.append({
+                "kind": kind,
+                "id": target.id if kind == ROLE else None,
+                "prior": None if held.is_empty() else _pair(held),
+                "wanted": _pair(overwrite),
+            })
+        return StepResult(result={"channel_id": channel_id, "targets": targets})
+
+    return Before(Step(RECORD_PERMISSIONS, StepKind.ACT, run))
 
 
 def module_on_signup(
@@ -150,9 +231,10 @@ def module_on_signup(
             kept_channels_check(
                 kept_channels, command=_ENABLE_COMMAND, channel_uses_read=channel_uses_read
             ),
+            _record_permissions(config),
         ),
         after={REFRESH_HUB: hub_refresh_after(_ENABLE_COMMAND)},
     )
 
 
-__all__ = ["module_on_signup"]
+__all__ = ["RECORD_PERMISSIONS", "module_on_signup"]

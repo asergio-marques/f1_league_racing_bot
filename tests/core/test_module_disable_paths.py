@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import os
 from datetime import datetime, timezone
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -445,6 +446,16 @@ def _kept_channel_on_the_server(league) -> None:
     channel.permissions_for = MagicMock(return_value=discord.Permissions.all())
     guild = MagicMock()
     guild.get_channel = MagicMock(side_effect=lambda cid: channel if int(cid) == 620 else None)
+    # The switch-on records each role it puts a permission on by its id.
+    roles: dict[int, Any] = {}
+
+    def _role(role_id: int) -> Any:
+        if role_id not in roles:
+            roles[role_id] = MagicMock(spec=discord.Role)
+            roles[role_id].id = role_id
+        return roles[role_id]
+
+    guild.get_role = MagicMock(side_effect=_role)
     channel.guild = guild
     league.bot.get_guild = MagicMock(return_value=guild)
 
