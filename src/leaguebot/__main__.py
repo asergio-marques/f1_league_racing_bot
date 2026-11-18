@@ -861,7 +861,7 @@ def register_change_types(bot: LeagueBot) -> None:
             discard=discard_render,
         )
     )
-    bot.change_queue.register(bot_init_change(config=bot.config_service))
+    bot.change_queue.register(bot_init_change(config=bot.config_service, drawing=bot.image_drawing))
     bot.change_queue.register(
         season_setup_change(seasons=bot.season_service, now=lambda: bot.change_queue.now())
     )

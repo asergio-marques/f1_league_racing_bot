@@ -369,7 +369,6 @@ async def test_bot_init_refuses_a_channel_the_bot_cannot_use_and_claims_nothing(
 
 
 @pytest.mark.parametrize("meanwhile", ["unusable", "deleted"])
-@pytest.mark.xfail(strict=True, reason="#570: /bot init does not judge its two channels as it claims")
 async def test_bot_init_is_refused_as_it_claims_where_a_channel_can_no_longer_be_used(
     tmp_path, caplog, meanwhile
 ):
