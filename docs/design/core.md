@@ -210,9 +210,9 @@ is what a confirmation wants, and is the strict reader's one caller: it raises s
 to refuse on a check it could not make may. The gates before a repost and a recalculation judge from
 the cache alone, through `results_post_service.channel_fault`. Core's own `channel_fault` words the
 confirmation's line, and takes the *needs* its caller hands it, so it holds no list of channels and
-no permission of its own. It also words a channel of no division, the server's (signup's), so one
-wording serves the division channels and signup's, and the configuration, the placements review and
-the approval cannot name one channel in two ways. A need is data (`core/models/channel_needs.py`) and each part builds its
+no permission of its own. It also words a channel of no division, the server's, where its division
+name is None, which signup's configuration faults use, so one wording serves the division channels
+and signup's at the configuration. A need is data (`core/models/channel_needs.py`) and each part builds its
 channels' from it in its own service (`channel_needs`: weather's forecast channel, results' three,
 attendance's two), asking the image module's drawing, handed through the module's wiring, only
 whether a picture could attach a file. The alternatives rejected: one table of every channel's needs
