@@ -113,11 +113,18 @@ SWITCHED_OFF = (
     "are the league's base role and driver role. The permissions the bot set on the channel are "
     "removed, and put back when the module is switched on again."
 )
-#: What a permission Discord would not remove from the signup channel leaves, for the reply and the
-#: line, with the channel named.
+#: What a permission Discord would not remove from the signup channel leaves, for the reply, with
+#: the channel named.
 PERMISSIONS_LEFT = (
     "Permissions the bot set on the signup channel <#{channel_id}> could not be removed: "
     "remove them by hand."
+)
+#: The same, for the log line `clear_overwrites` writes after the switch-off's own. A follow-up
+#: to that line's outcome, not a second one: the module is off and its line says Success, so this
+#: one takes the notice's place in the job line (as `drawn_notices_line` does) rather than an
+#: outcome's.
+PERMISSIONS_LEFT_LINE = (
+    "Permissions left on the signup channel <#{channel_id}>: remove them by hand."
 )
 
 #: What a close that went wrong in the signup channel leaves, one sentence each, for the reply and
@@ -233,7 +240,8 @@ def signup_off_change(
     async def clear_overwrites(ctx: StepContext) -> StepResult:
         """Clear what `/signup channel` applied to the signup channel: everyone's, the bot's, the
         base role's, the interaction role's and the league admin role's. Each is tried on its own
-        and a refusal logged and told, never raised."""
+        and a refusal logged and told, never raised: the line names the channel as a follow-up to the
+        switch-off's Success (`PERMISSIONS_LEFT_LINE`), never a second outcome."""
         guild = await league_guild(ctx.bot)
         channel = None if guild is None else guild.get_channel(int(ctx.step_payload["channel_id"]))
         if guild is None or not isinstance(channel, discord.TextChannel):
@@ -263,10 +271,9 @@ def signup_off_change(
                 left = True
         if not left:
             return StepResult()
-        said = PERMISSIONS_LEFT.format(channel_id=int(ctx.step_payload["channel_id"]))
+        said = PERMISSIONS_LEFT_LINE.format(channel_id=int(ctx.step_payload["channel_id"]))
         return StepResult(
-            result={"left": True},
-            lines=(f"{ctx.named} | /module disable signup | Incomplete\n  failed_step: {said}",),
+            result={"left": True}, lines=(f"{ctx.named} | /module disable signup | {said}",),
         )
 
     async def off_line(_db: aiosqlite.Connection, ctx: StepContext) -> StepResult:

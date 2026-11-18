@@ -722,7 +722,8 @@ async def test_a_permissions_failure_does_not_fail_the_disable(tmp_path):
     refuses every overwrite change on the signup channel: the manager is answered with an
     under-way line, the module still on; once the queue has run, the module is off and the
     acknowledgement says it is disabled; the acknowledgement and a log line name the signup channel
-    (620) and say to remove the bot's permissions there by hand."""
+    (620) and say to remove the bot's permissions there by hand, the line a follow-up to the
+    switch-off's Success and never an Incomplete of its own."""
     league = await _league(tmp_path)
     refusing = _channel(set_permissions_fails=True)
     finding = league.guild.get_channel.side_effect
@@ -741,7 +742,13 @@ async def test_a_permissions_failure_does_not_fail_the_disable(tmp_path):
     assert "disabled" in updated_reply(interaction)
     named = f"<#{LEAGUE_SIGNUP_CHANNEL}>"
     assert named in updated_reply(interaction) and "by hand" in updated_reply(interaction)
-    assert any(named in line and "by hand" in line for line in await _log_lines(league))
+    lines = await _log_lines(league)
+    assert any(
+        f"| /module disable signup | Permissions left on the signup channel {named}: remove them "
+        "by hand." in line
+        for line in lines
+    )
+    assert not any("Incomplete" in line for line in lines)
 
 
 async def test_a_league_with_no_signup_channel_reverts_nothing(tmp_path):
