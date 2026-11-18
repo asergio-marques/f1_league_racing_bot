@@ -580,32 +580,35 @@ def _meanwhile(league: SeasonLeague, state: str) -> None:
 
 
 @pytest.mark.xfail(strict=True, reason=LAPSE_READS_NO_STATE)
+@pytest.mark.parametrize("button,label", NEGATIVE, ids=NEGATIVE_IDS)
 @pytest.mark.parametrize(
     "state",
     [pytest.param("NOT_SIGNED_UP", id="driver-withdrew"),
      pytest.param("UNASSIGNED", id="another-manager-approved")],
 )
 async def test_a_reason_that_lapses_after_the_signup_moved_on_says_so(
-    tmp_path, monkeypatch, state
+    tmp_path, monkeypatch, state, button, label
 ):
-    """Manager 77 presses Reject on Kimi's panel and types no reason; before the five minutes run
-    out Kimi withdraws (Not Signed Up), or another manager approves him (Unassigned). When they
-    run out, the manager is told, and the one lapse line says, that the signup has moved on since
-    he pressed Reject and nothing was rejected, never that it still awaits review. Nothing is
-    asked of the queue and Kimi stays as he was left."""
+    """Manager 77 presses Reject, or Request Changes, on Kimi's panel and types no reason; before
+    the five minutes run out Kimi withdraws (Not Signed Up), or another manager approves him
+    (Unassigned). When they run out, the manager is told, and the one lapse line says, that the
+    signup has moved on since he pressed the button and nothing was rejected, or no changes were
+    requested, never that it still awaits review. Nothing is asked of the queue and Kimi stays as
+    he was left."""
     monkeypatch.setattr(arc, "_REASON_LAPSE_SECONDS", 0)
     league = await _league(tmp_path)
 
-    press = await _press(league, "reject_button")
+    press = await _press(league, button)
     _meanwhile(league, state)
     await _PENDING_REASONS[(KIMI_CHANNEL, REVIEWER)]["lapse"]
 
+    nothing_done = "nothing was rejected" if label == "Reject" else "no changes were requested"
     told = _sent(press)[-1]
-    assert "moved on" in told and "nothing was rejected" in told.lower(), told
+    assert "moved on" in told and nothing_done in told.lower(), told
     assert "still awaits review" not in told, told
     lapsed = [line for line in _lines(league) if line.startswith("⌛")]
     assert len(lapsed) == 1, _lines(league)
-    assert "moved on" in lapsed[0] and "nothing was rejected" in lapsed[0].lower(), lapsed[0]
+    assert "moved on" in lapsed[0] and nothing_done in lapsed[0].lower(), lapsed[0]
     assert "still awaits review" not in lapsed[0], lapsed[0]
     await _nothing_asked(league)
     assert await _driver_state(league) == state
