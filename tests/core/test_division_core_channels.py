@@ -691,7 +691,7 @@ async def test_every_channel_command_here_audits_its_ids_as_integers(tmp_path, w
         "a_channel_doing_another_job",
         "another_divisions_results_channel",
         "the_channel_already_set",
-        "a_channel_the_bot_cannot_use",
+        pytest.param("a_channel_the_bot_cannot_use"),
         "a_channel_doing_another_job_the_bot_cannot_use",
         "the_channel_already_set_the_bot_cannot_use",
     ],

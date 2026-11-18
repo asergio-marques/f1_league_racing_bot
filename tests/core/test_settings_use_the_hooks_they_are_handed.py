@@ -119,9 +119,9 @@ def _settings(hook: AwaitedHook) -> dict[str, Any]:
 @pytest.mark.parametrize(
     "name",
     ["log channel", "interaction channel", "hub channel",
-     "division lineup channel",
-     "division calendar channel",
-     "division forecast channel"],
+     pytest.param("division lineup channel"),
+     pytest.param("division calendar channel"),
+     pytest.param("division forecast channel")],
 )
 async def test_a_channel_setting_asks_the_hook_it_was_built_with(db_path, name):
     """A channel another module holds is refused by the setting's check, naming that module's use,
