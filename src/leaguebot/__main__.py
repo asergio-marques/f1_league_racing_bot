@@ -814,6 +814,7 @@ def register_change_types(bot: LeagueBot) -> None:
             placements_confirmed_steps=bot.placements_confirmed_steps,
             division_channel_faults_read=bot.division_channel_faults_read,
             fingerprint_areas_read=bot.fingerprint_areas_read,
+            confirmation_refused=bot.confirmation_refused,
             rasteriser_fault=bot.image_drawing.rasteriser_fault,
             season_approved=bot.season_approved,
             now=lambda: bot.change_queue.now(),

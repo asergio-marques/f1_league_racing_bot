@@ -256,21 +256,10 @@ _REFUSALS = {
     ),
 }
 
-#: The changes the approval does not yet judge again as it comes up to run.
-_NOT_JUDGED_AT_THE_QUEUE = {
-    "a signup channel deleted":
-        "#449: the approval's queued check does not re-run the modules' refusals",
-}
-
 
 def _cases(changes: Any) -> list[Any]:
-    """*changes*' names, in order, each the queue does not yet judge again marked to fail."""
-    return [
-        pytest.param(change, marks=pytest.mark.xfail(
-            strict=True, reason=_NOT_JUDGED_AT_THE_QUEUE[change]))
-        if change in _NOT_JUDGED_AT_THE_QUEUE else change
-        for change in sorted(changes)
-    ]
+    """*changes*' names, in order."""
+    return sorted(changes)
 
 
 async def _league_for(
