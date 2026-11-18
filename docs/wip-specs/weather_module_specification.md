@@ -3,6 +3,7 @@
 - The weather module may be disabled via a "module disable" command akin to other modules. May only be used by league admins.
 - The weather module is disabled by default.
 - The weather module shall not be enabled once the season's placements have been confirmed. It may be enabled while the server holds no active season, or while its season's placements are yet to be first confirmed.
+- Enabling the weather module shall check each division's forecast channel it kept while disabled, as the core specification's Modules section says: one no longer on the server, or given to another setting meanwhile, shall be named for the league to set again, and the latter cleared from the module; one the bot cannot post in, take its own posts down from, or attach a file to where a forecast picture could be posted so, shall keep the module disabled, the reply naming what it lacks. Decided 2026-11-17 (#449).
 - Upon being disabled, all scheduled weather jobs for the server shall be cancelled. Forecast messages already posted, phase results already recorded, division forecast channels and the configured phase deadlines shall all be retained.
 - Weather module activation status shall be displayed in the configuration review and the placements review.
 - This module must work with the fake driver rosters used in test mode.

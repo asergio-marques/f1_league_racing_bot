@@ -9,7 +9,8 @@
     - A check-in call already posted shall not be withdrawn, but its buttons shall record no further answer.
     - The attendance sheet standing in each division shall not be taken down. Decided 2026-11-13.
     - The season's scheduled work shall not be destroyed by the disabling, so that nothing is lost that only confirming a season's placements could create again.
-- Disabling the attendance module shall keep its settings and each division's check-in and attendance channels, whether it is disabled directly or with the results & standings module, and enabling it again shall find them as they stood. Only the first time it is enabled shall it start from the values given below. Decided 2026-09-25 (#282).
+- Disabling the attendance module shall keep its settings and each division's check-in and attendance channels, whether it is disabled directly or with the results & standings module, and enabling it again shall find them as they stood, save the check of those channels below. Only the first time it is enabled shall it start from the values given below. Decided 2026-09-25 (#282).
+- Enabling the attendance module shall check each division's check-in and attendance channels it kept while disabled, as the core specification's Modules section says: one no longer on the server, or given to another setting meanwhile, shall be named for the league to set again, and the latter cleared from the module; one the bot cannot use as the module needs, which includes reading its history, shall keep the module disabled, the reply naming what it lacks. Decided 2026-11-17 (#449).
 - Attendance module activation status shall be displayed in the configuration review and the placements review.
 - This module must work with the fake driver rosters used in test mode.
 
