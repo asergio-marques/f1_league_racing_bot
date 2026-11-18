@@ -142,7 +142,8 @@ async def test_the_round_start_asks_and_the_queue_opens_the_channel_with_its_ope
 
 async def test_the_round_moves_off_not_run_in_the_open_s_save(tmp_path):
     """Discord refuses to create round 3's channel (Missing Permissions). The queue stops at the
-    channel's creation, and round 3 is already awaiting results: its move off NOT_RUN was saved
+    channel's creation, its notice in the log channel naming the Manage Channels permission the
+    bot needs (#456), and round 3 is already awaiting results: its move off NOT_RUN was saved
     with the mark of the job before it, `start_round`. No submission is recorded, and no penalty
     review is asked."""
     league = await _league(tmp_path)
@@ -153,6 +154,7 @@ async def test_the_round_moves_off_not_run_in_the_open_s_save(tmp_path):
 
     job = await stopped_job(league.db_path)
     assert job is not None and job["name"] == "create_channel"
+    assert "Manage Channels" in league.log()
     assert await _status(league) == "AWAITING_RESULTS"
     [change] = await _open_changes(league)
     [start] = [step for step in await step_rows(league.db_path, change["id"])
