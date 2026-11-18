@@ -57,6 +57,21 @@ _EDIT_IN_PLACE = (
 )
 
 
+# ── What a line names the call ────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("season_number,named", [
+    (3, "check-in call of round 4 in Season 3 **Pro**"),
+    (None, "check-in call of round 4 in **Pro**"),
+], ids=["season known", "season unknown"])
+def test_a_line_names_the_call_by_its_round_season_and_division(season_number, named):
+    """Pro's round 4 of season 3 is named by its round, its season and its division (image spec,
+    render notices); where the season's number is unknown, it is left out."""
+    assert image_rsvp_post.describe(
+        season_number=season_number, division_name="Pro", round_number=4
+    ) == named
+
+
 # ── The drawing never breaks the call ─────────────────────────────────────
 
 

@@ -525,3 +525,16 @@ async def test_a_calendar_the_league_does_not_draw_is_posted_as_text_with_no_lin
     assert posted.startswith(calendar_heading("Pro")), posted
     assert "posted as text" not in reply(interaction)
     assert not any("posted as text" in line for line in league.bot.log_channel.sent)
+
+
+@pytest.mark.parametrize("season_number,drawn", [
+    (3, "calendar — Season 3 Pro"),
+    (None, "calendar — Pro"),
+], ids=["season known", "season unknown"])
+def test_the_calendar_is_named_by_its_season_and_division(season_number, drawn):
+    """Pro's calendar of season 3 is named, in its notices' log line and the reply listing them,
+    by its season and its division (image spec, render notices); where the season's number is
+    unknown, it is left out."""
+    from leaguebot.core.services.rounds.calendar_post_service import _drawn_as
+
+    assert _drawn_as("Pro", season_number) == drawn
