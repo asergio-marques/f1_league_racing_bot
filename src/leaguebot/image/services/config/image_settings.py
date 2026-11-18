@@ -5,7 +5,8 @@ built from a `Setting` below by `setting_change` (`framework/services/queue/sett
 what every settings change does with a value already held and with a fault). The check of each is
 the command's, in today's order and words, run at the ask and again as the change starts, so a
 module switched off, a template broken by a directory set ahead of it or an output whose drawings
-broke meanwhile is taken into account. Every check refuses first where the Image module is off.
+broke meanwhile is taken into account. Every check refuses first where the Image module is off, but for the switching of an
+output to text, which is allowed while it is off.
 
 **What a change carries.** Every payload is plain JSON, as the queue stores it: the column or
 aspect it sets and the value as it is stored, validated and normalised at the command (a path
@@ -424,12 +425,12 @@ def _aspect(
 ) -> Setting:
     """`/images config toggle`: `{"aspect", "enabled"}`, the flip resolved when it was asked.
 
-    Switching an output *off* is never refused: it reverts to text, which needs no drawing at
-    all. Switching one *on* is refused while the drawings behind it are unusable, the output
-    left off, since an output that cannot draw withholds the season's approval and posts nothing
-    where a driver would otherwise have read text. The check is made against the configured
-    directory, so it answers for the files the league actually has, and again as the change
-    starts. An output found already in the state asked for, where two presses raced, changes
+    Switching an output *off* is never refused, not even while the module is off: it reverts to
+    text, which needs no drawing at all. Switching one *on* is refused while the module is off,
+    or while the drawings behind it are unusable, the output left off, since an output that cannot
+    draw withholds the season's approval and posts nothing where a driver would otherwise have
+    read text. The check is made against the configured directory, so it answers for the files
+    the league actually has, and again as the change starts. An output found already in the state asked for, where two presses raced, changes
     nothing and says so.
     """
 
@@ -440,11 +441,11 @@ def _aspect(
         return "on" if payload["enabled"] else "off"
 
     async def check(ctx: CheckContext) -> Verdict:
+        if not ctx.payload["enabled"]:
+            return Verdict.go()
         off = await _module_refusal(modules)
         if off is not None:
             return off
-        if not ctx.payload["enabled"]:
-            return Verdict.go()
         blocking = await aspect_blocking_reasons(
             str(ctx.payload["aspect"]), config=config, validity=validity
         )

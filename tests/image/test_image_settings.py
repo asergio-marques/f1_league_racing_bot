@@ -1219,9 +1219,6 @@ async def test_a_switch_on_that_cannot_tell_saves_nothing_and_says_to_run_it_aga
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#570: an output cannot be switched to text while the module is off"
-)
 async def test_an_output_may_be_switched_off_while_the_module_is_off(tmp_path):
     """The Calendar on and the image module then switched off: `/images config toggle Calendar`
     is acknowledged as switching it off and, once run, switches it off, said as today, with one

@@ -335,15 +335,15 @@ class ConfigCommands(ImageSubgroup):
         # already expired the token (404 Unknown interaction) with the toggle written.
         await interaction.response.defer(ephemeral=True)
 
-        if not await self._module_gate(interaction):
-            return
-
         # The flip is resolved here, from the state read now (image :180): the change asked is
-        # the state opposite the one the member saw. Switching *off* is always allowed, the
-        # output reverting to text. Switching *on* is refused while the drawings behind it are
-        # unusable, the output left off; the setting's check makes that refusal at the ask and
-        # again as the change starts.
+        # the state opposite the one the member saw. Switching *off* is always allowed, even
+        # while the module is off: the output reverts to text. Switching *on* needs the module
+        # on, and is refused while the drawings behind it are unusable or a channel it posts to
+        # cannot take it, the output left off; the setting's check makes the first refusal at
+        # the ask and again as the change starts.
         enabled = not await self._config_service.is_aspect_enabled(aspect.value)
+        if enabled and not await self._module_gate(interaction):
+            return
         await self.bot.change_queue.ask(
             ASPECT,
             {"aspect": aspect.value, "enabled": enabled},
