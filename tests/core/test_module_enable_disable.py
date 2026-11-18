@@ -1191,18 +1191,19 @@ async def test_a_switch_on_finding_a_kept_channel_the_bot_cannot_use_leaves_the_
 ):
     """Pro's kept channel is missing one permission its module needs of it (for the verdicts
     channel, Attach Files, with the verdict pictures on; for the attendance channel, also Send
-    Messages alone, a channel the bot can see but not post in). The module stays off; the reply names
-    Pro's channel and what it lacks, and the three ways out; the one line is a refusal naming the
-    same, and no failure; nothing is audited, nothing stops the queue, and Pro's channel is still
-    held."""
+    Messages alone, a channel the bot can see but not post in), and Am's kept channel was deleted
+    while the module was off. The module stays off; the reply names Pro's channel and what it
+    lacks, and the three ways out, and does not name Am's; the one line is a refusal naming the
+    same, and no failure; nothing is audited, nothing stops the queue, and Pro's and Am's channels
+    are still held, Am's for the next switch-on to name."""
     from tests.support.change_queue import stopped_job
     from tests.support.channel_faults import server_holding
     from tests.support.settings_league import last_said, log_lines
 
     module, *_rest = _KEPT[setting]
     label = _KEPT[setting][3]
-    guild = (server_holding(forbidden=(PRO_CHANNEL,)) if denied == "forbidden"
-             else server_holding(unusable={PRO_CHANNEL: (denied,)}))
+    guild = (server_holding(gone=(AM_CHANNEL,), forbidden=(PRO_CHANNEL,)) if denied == "forbidden"
+             else server_holding(gone=(AM_CHANNEL,), unusable={PRO_CHANNEL: (denied,)}))
     league, cog, pro = await _switched_off_league(tmp_path, setting, guild=guild, pictures=pictures)
     audits_before = await _audit(league.db_path)
 
@@ -1226,6 +1227,7 @@ async def test_a_switch_on_finding_a_kept_channel_the_bot_cannot_use_leaves_the_
     assert await _audit(league.db_path) == audits_before
     assert await stopped_job(league.db_path) is None
     assert await _kept(league.db_path, setting, pro) == PRO_CHANNEL
+    assert await _kept(league.db_path, setting, pro + 1) == AM_CHANNEL  # Am, added after Pro
 
 
 @pytest.mark.xfail(strict=True, reason=NOT_YET_KEPT)
