@@ -41,9 +41,9 @@ from leaguebot.core.services.seasons.approval_checks import (
     Presence,
     PresenceState,
     channel_presence,
-    core_channel_needs,
+    DIVISION_CHANNEL_NEEDS,
 )
-from leaguebot.core.services.settings.bot_settings import interaction_channel_needs
+from leaguebot.core.services.settings.bot_settings import INTERACTION_CHANNEL_NEEDS
 from leaguebot.core.services.settings.channel_registry_service import (
     ChannelUse,
     live_divisions_on,
@@ -101,13 +101,15 @@ async def core_picture_channels(
     answered with what its use needs and Attach Files. Nothing for an output that is not core's.
     A channel not set is not answered: the setting is for the league to make, not this check.
 
-    Core's needs ask the image module whether a picture could attach a file, so *drawing* is
-    asked what a channel needs now, and Attach Files is added as the output counts as a picture.
+    What a channel needs as a picture is fixed (`DIVISION_CHANNEL_NEEDS`,
+    `INTERACTION_CHANNEL_NEEDS`, with Attach Files), so the image module is not asked what a picture
+    could attach now: *drawing* is not asked, for nothing but the connection is awaited while the
+    step holds it (architecture.md, "The database"), and the parameter keeps the shape every
+    answer to the hook is built in.
     """
     asked = CORE_ASPECTS & set(aspects)
     if not asked or not divisions:
-        return await _command_channel(config, drawing, db, asked)
-    needs = await core_channel_needs(drawing)
+        return await _command_channel(config, db, asked)
     cursor = await db.execute(
         "SELECT id, lineup_channel_id, calendar_channel_id FROM divisions "
         f"WHERE id IN ({', '.join('?' * len(divisions))}) ORDER BY id",
@@ -123,14 +125,15 @@ async def core_picture_channels(
                 PictureChannel(
                     frozenset({setting}), int(row[column]),
                     ChannelUse(setting, divisions[row["id"]]),
-                    f"/division {setting}-channel", attaching(needs[setting], True),
+                    f"/division {setting}-channel",
+                    attaching(DIVISION_CHANNEL_NEEDS[setting], True),
                 )
             )
-    return answered + await _command_channel(config, drawing, db, asked)
+    return answered + await _command_channel(config, db, asked)
 
 
 async def _command_channel(
-    config: ConfigService, drawing: ImageDrawing, db: aiosqlite.Connection, asked: Collection[str]
+    config: ConfigService, db: aiosqlite.Connection, asked: Collection[str]
 ) -> list[PictureChannel]:
     """The bot command channel, answered once for *asked* where any is and the channel is set."""
     if not asked:
@@ -141,7 +144,7 @@ async def _command_channel(
     return [
         PictureChannel(
             frozenset(asked), int(server.interaction_channel_id), ChannelUse("interaction"),
-            "/bot interaction-channel", attaching(await interaction_channel_needs(drawing), True),
+            "/bot interaction-channel", attaching(INTERACTION_CHANNEL_NEEDS, True),
         )
     ]
 

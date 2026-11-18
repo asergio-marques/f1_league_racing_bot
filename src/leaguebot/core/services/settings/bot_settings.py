@@ -82,7 +82,7 @@ from leaguebot.framework.models.change import (
     Verdict,
 )
 from leaguebot.framework.services.queue.change_types import CheckContext, Step, StepContext
-from leaguebot.core.models.channel_needs import ATTACH, SEND, VIEW, Needs
+from leaguebot.core.models.channel_needs import SEND, VIEW, Needs, attaching
 from leaguebot.core.services.settings.channel_registry_service import (
     ChannelUse,
     find_channel_use,
@@ -131,6 +131,12 @@ _SETTINGS: dict[str, tuple[str, str, str, str, str | None]] = {
 LOG_CHANNEL_NEEDS: Needs = (VIEW, SEND)
 
 
+#: What the command channel asks of the bot as text, View Channel and Send Messages; Attach Files is
+#: added where a lineup or a calendar picture could attach a file (`interaction_channel_needs`), and
+#: always where one is about to be switched on (`core/services/modules/picture_channels.py`).
+INTERACTION_CHANNEL_NEEDS: Needs = (VIEW, SEND)
+
+
 async def interaction_channel_needs(drawing: "ImageDrawing") -> Needs:
     """What the bot's command channel asks of the bot: View Channel and Send Messages, which its
     replies and the posts a command ends with need, and Attach Files where the image module
@@ -144,7 +150,7 @@ async def interaction_channel_needs(drawing: "ImageDrawing") -> Needs:
     channels, rather than read from the image module's configuration.
     """
     attaches = await drawing.lineup_attaches_files() or await drawing.calendar_attaches_files()
-    return (VIEW, SEND) + ((ATTACH,) if attaches else ())
+    return attaching(INTERACTION_CHANNEL_NEEDS, attaches)
 
 
 async def _log_channel_needs() -> Needs:
