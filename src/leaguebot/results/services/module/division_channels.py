@@ -51,6 +51,16 @@ _CHANNELS = (
      "*(not configured)*"),
 )
 
+#: The outputs that post to each channel, by its setting: what `channel_needs` asks the image
+#: module whether could attach a file, and what the channels a picture posts to are answered by.
+#: The verdicts channel takes the verdicts and the verdict banners, where attendance's sanction
+#: cards go as well.
+_ASPECTS = {
+    "results": ("results",),
+    "standings": ("standings",),
+    "verdicts": ("verdicts", "verdict_banner"),
+}
+
 
 async def _channels_of(db_path: str) -> dict[int, Any]:
     """Each division's row of results' channel configuration, by division id."""
@@ -239,11 +249,7 @@ async def channel_needs(drawing: "ImageDrawing | None") -> dict[str, Needs]:
                 return reposted + (ATTACH,)
         return reposted
 
-    return {
-        "results": await attaches("results"),
-        "standings": await attaches("standings"),
-        "verdicts": await attaches("verdicts", "verdict_banner"),
-    }
+    return {setting: await attaches(*aspects) for setting, aspects in _ASPECTS.items()}
 
 
 async def kept_channels(drawing: "ImageDrawing | None") -> KeptReader:
