@@ -120,7 +120,7 @@ def _decision(*, posts=True, rejects=False, png=None, notices=(), problem=None):
 def _drawing():
     return MagicMock(
         template_key="results_race_template", session_name="Race",
-        division_name="Main", round_number="5",
+        division_name="Main", round_number="5", season_number="3",
     )
 
 
@@ -396,7 +396,7 @@ async def test_a_problem_is_reported_naming_the_session(tmp_path):
     bot.output_router.post_log.assert_not_awaited()
     [reported] = posted.lines
     assert "Results image" in reported
-    assert "Main" in reported and "5" in reported and "Race" in reported
+    assert "Season 3 Main round 5 — Race" in reported
     assert "no such field" in reported
     # And nothing of the sort reached the results channel.
     assert all("no such field" not in (content or "") for content, _ in sent)
@@ -438,7 +438,7 @@ async def test_notices_are_reported_when_a_graphic_does_post(tmp_path):
 
     # The notices come back as a line of the job that posts, once, naming the session.
     [reported] = posted.lines
-    assert "Main round 5" in reported and "OPTIONAL_FIELD_EMPTIED" in reported
+    assert "Season 3 Main round 5 — Race" in reported and "OPTIONAL_FIELD_EMPTIED" in reported
 
 
 # ── The lifecycle: result_status reaches the drawing (T028) ───────────────

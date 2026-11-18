@@ -819,7 +819,8 @@ class ImageDrawing:
         own template, so that a sound qualifying template still draws while a faulty race
         template falls back to text) and found the picture due. The drawing is rendered, and its
         render's notices and the problem of a picture that was due and not drawn are handed back
-        as lines headed by the toggle's name. None for the file where the render posts no image.
+        as lines headed by the toggle's name and naming the session by its season, division and
+        round (image spec, render notices). None for the file where the render posts no image.
 
         A fault in resolving the directories or building the fill is raised, for the post to name
         as the reason the text stands; a switch nobody signed up for (`SwitchNotSignedUp`) is
@@ -828,7 +829,11 @@ class ImageDrawing:
         import discord
 
         decision = await image_results_post.render_png(self._config, self._renderer, drawing)
-        what = f"{drawing.division_name} round {drawing.round_number} — {drawing.session_name}"
+        season = f"Season {drawing.season_number} " if drawing.season_number is not None else ""
+        what = (
+            f"{season}{drawing.division_name} round {drawing.round_number}"
+            f" — {drawing.session_name}"
+        )
         lines = image_results_post.lines_of(what, decision)
         if not decision.posts_image:
             return None, lines
