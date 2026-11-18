@@ -1079,6 +1079,37 @@ async def _gate_2b_no_signup_channel(db_path, monkeypatch):
     return cog, "missing required configuration"
 
 
+async def _a_signup_channel_on(db_path, server):
+    """Signup on, its signup channel (900) set, and the press made on *server*, which the test
+    reads off the cog."""
+    cog = _cog(db_path)
+    answer_switch(cog.bot.module_service, "signup", True)
+    cog.bot.signup_module_service.get_config = AsyncMock(
+        return_value=SimpleNamespace(signup_channel_id=900)
+    )
+    sign_up_signup_refusals(cog.bot)
+    cog.guild = server
+    return cog
+
+
+async def _gate_2b_signup_channel_gone(db_path, monkeypatch):
+    from tests.support.channel_faults import server_holding
+
+    cog = await _a_signup_channel_on(db_path, server_holding(gone=(900,)))
+    return cog, "is no longer on the server"
+
+
+async def _gate_2b_signup_channel_unusable(db_path, monkeypatch):
+    from tests.support.channel_faults import server_holding
+
+    cog = await _a_signup_channel_on(db_path, server_holding(unusable={900: ("embed_links",)}))
+    return cog, "missing permissions the bot needs there: Embed Links"
+
+
+#: Why the approval does not yet refuse a signup channel deleted or unusable.
+_SIGNUP_CHANNEL_NOT_JUDGED = "#449: the approval does not judge the signup channel on the server"
+
+
 async def _gate_2d_a_round_already_run(db_path, monkeypatch):
     cog = _cog_with_rounds(db_path, [_round_in(-90)], attendance=False)
     return cog, "dates that have already gone by"
@@ -1112,6 +1143,14 @@ async def _gate_4b_an_image_fault(db_path, monkeypatch):
         _gate_2_no_points_configuration,
         _gate_2a_points_out_of_order,
         pytest.param(_gate_2b_no_signup_channel, id="2b_no_signup_channel"),
+        pytest.param(
+            _gate_2b_signup_channel_gone, id="2b_signup_channel_gone",
+            marks=pytest.mark.xfail(strict=True, reason=_SIGNUP_CHANNEL_NOT_JUDGED),
+        ),
+        pytest.param(
+            _gate_2b_signup_channel_unusable, id="2b_signup_channel_unusable",
+            marks=pytest.mark.xfail(strict=True, reason=_SIGNUP_CHANNEL_NOT_JUDGED),
+        ),
         _gate_2d_a_round_already_run,
         _gate_3a_an_unusable_team_name,
         _gate_4a_a_lineup_too_small,
@@ -1122,9 +1161,11 @@ async def _gate_4b_an_image_fault(db_path, monkeypatch):
 async def test_every_approval_gate_refusal_is_recorded(db_path, monkeypatch, gate):
     """Manager (id 77) presses ✅ Approve and one gate refuses: the reply is today's, nothing is
     approved, and the log channel gets exactly one refusal line naming the button and its
-    review, carrying the reply's reason — every item of it where the reply is a list."""
+    review, carrying the reply's reason — every item of it where the reply is a list. A gate
+    that judges the server is pressed on the one it gives the cog."""
     cog, reply_says = await gate(db_path, monkeypatch)
     interaction = _recorded_interaction(cog)
+    interaction.guild = getattr(cog, "guild", None)
 
     await _run(cog, interaction)
 

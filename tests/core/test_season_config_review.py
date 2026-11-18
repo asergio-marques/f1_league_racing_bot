@@ -192,16 +192,53 @@ def _interaction() -> MagicMock:
 # ── What the configuration review checks ────────────────────────────────────────────
 
 
-async def test_the_signup_module_needs_its_channel_and_both_roles():
+#: Why a signup channel deleted or unusable is not yet a fault of the configuration.
+_SIGNUP_CHANNEL_NOT_JUDGED = (
+    "#449: the configuration's faults do not judge the signup channel on the server"
+)
+
+
+def _plain(line: str) -> str:
+    """*line* as read, without its bold marks, in lower case."""
+    return line.replace("**", "").lower()
+
+
+@pytest.mark.parametrize("channel, server, named", [
+    pytest.param(None, None, "the signup module has no signup channel", id="unset"),
+    pytest.param(
+        1, {"gone": (1,)}, "is no longer on the server — `/signup channel`", id="deleted",
+        marks=pytest.mark.xfail(strict=True, reason=_SIGNUP_CHANNEL_NOT_JUDGED),
+    ),
+    pytest.param(
+        1, {"unusable": {1: ("manage_roles",)}},
+        "is missing permissions the bot needs there: manage permissions",
+        id="lacking_manage_permissions",
+        marks=pytest.mark.xfail(strict=True, reason=_SIGNUP_CHANNEL_NOT_JUDGED),
+    ),
+    pytest.param(1, {"unreadable": (1,)}, None, id="unreadable"),
+])
+async def test_the_signup_module_needs_its_channel_and_both_roles(channel, server, named):
     """Each fault names the command that sets it: the roles are the league's, set under
-    `/bot`, not under `/signup` (issue #276)."""
-    bot = _bot(signup=True, signup_config=_signup_config(channel=None), roles=(None, None))
+    `/bot`, not under `/signup` (issue #276). The signup channel (1) is a fault while unset,
+    deleted from the server, or missing a permission the bot needs there (Manage Permissions
+    here), named with what it lacks; one the server could not be asked about (a server error) is
+    not named, a check that cannot tell refusing nothing."""
+    from tests.support.channel_faults import server_holding
+
+    bot = _bot(signup=True, signup_config=_signup_config(channel=channel), roles=(None, None))
     cog = _cog(bot)
+    guild = server_holding(**server) if server is not None else None
 
-    faults = await _faults(cog)
+    faults = await _faults(cog, guild)
 
-    assert len(faults) == 3
-    assert any("signup channel" in f for f in faults)
+    channel_lines = [f for f in faults if "signup channel" in _plain(f)]
+    if named is None:
+        assert channel_lines == []
+    else:
+        assert len(channel_lines) == 1, faults
+        assert named in _plain(channel_lines[0])
+        assert "/signup channel" in channel_lines[0]
+    assert len(faults) == 2 + len(channel_lines)
     assert any("base role" in f and "/bot base-role" in f for f in faults)
     assert any("driver role" in f and "/bot driver-role" in f for f in faults)
 
@@ -242,18 +279,38 @@ async def test_a_driver_role_the_bot_cannot_grant_is_a_fault():
     assert "Move my role above it" in fault
 
 
-async def test_confirming_refuses_a_driver_role_gone_from_the_server(tmp_path):
-    """The signup module is on, and the league's driver role (3) has been deleted from the server
-    since the review. ✅ Confirm configuration is refused at the press, naming the driver role,
-    and nothing is asked of the change queue."""
+def _signup_channel_gone() -> MagicMock:
+    """The server holding the league's two roles (2 and 3), the signup channel (1) deleted."""
+    from tests.support.channel_faults import server_holding
+
+    guild = server_holding(gone=(1,))
+    guild.get_role = _guild().get_role
+    return guild
+
+
+@pytest.mark.parametrize("server, named", [
+    pytest.param(lambda: _guild(gone=(3,)), "**driver role** is no longer on the server",
+                 id="the_driver_role_deleted"),
+    pytest.param(
+        _signup_channel_gone, "is no longer on the server — `/signup channel`",
+        id="the_signup_channel_deleted",
+        marks=pytest.mark.xfail(strict=True, reason=_SIGNUP_CHANNEL_NOT_JUDGED),
+    ),
+])
+async def test_confirming_refuses_a_driver_role_gone_from_the_server(tmp_path, server, named):
+    """The signup module is on, and the league's driver role (3), or the signup channel (1), has
+    been deleted from the server since the review. ✅ Confirm configuration is refused at the
+    press, naming what was deleted, and nothing is asked of the change queue."""
     bot = _bot(signup=True, db_path=await _migrated(tmp_path))
+    # A press let through asks the queue, recorded below, rather than raising on the double.
+    bot.change_queue.ask = AsyncMock(return_value=1)
     cog = _cog(bot)
     interaction = _interaction()
-    interaction.guild = _guild(gone=(3,))
+    interaction.guild = server()
 
     await _confirm(cog, interaction)
 
-    assert "**driver role** is no longer on the server" in _told(interaction)
+    assert named in _told(interaction)
     assert "Nothing has been confirmed" in _told(interaction)
     assert bot.change_queue.method_calls == []
 
@@ -766,17 +823,34 @@ async def test_the_image_outputs_are_reported_when_the_module_is_on(monkeypatch)
     assert any("**Image outputs**" in m and "lineup: on" in m for m in messages)
 
 
-async def test_a_faulty_configuration_is_reported_without_a_button(monkeypatch):
-    """Signup is on and the league's base role is unset. The review asked of the queue ends in
-    the faults, naming the base role and `/bot base-role`, and saying to run
+def _on_a_server_without_the_signup_channel(interaction: MagicMock) -> MagicMock:
+    interaction.guild = _signup_channel_gone()
+    return interaction
+
+
+@pytest.mark.parametrize("roles, server, named", [
+    pytest.param((None, 3), lambda interaction: interaction,
+                 "**base role** — `/bot base-role`", id="the_base_role_unset"),
+    pytest.param(
+        (2, 3), _on_a_server_without_the_signup_channel,
+        "is no longer on the server — `/signup channel`", id="the_signup_channel_deleted",
+        marks=pytest.mark.xfail(strict=True, reason=_SIGNUP_CHANNEL_NOT_JUDGED),
+    ),
+])
+async def test_a_faulty_configuration_is_reported_without_a_button(
+    monkeypatch, roles, server, named,
+):
+    """Signup is on and the league's base role is unset, or the signup channel (1) has been
+    deleted from the server. The review asked of the queue ends in the faults, naming the base
+    role and `/bot base-role`, or the signup channel and `/signup channel`, and saying to run
     `/season config-review` again once they are put right; it asks no question to confirm."""
-    bot = _report_bot(signup=True, roles=(None, 3))
+    bot = _report_bot(signup=True, roles=roles)
     cog = _cog(bot)
 
-    messages = await _report(cog, _interaction(), monkeypatch)
+    messages = await _report(cog, server(_interaction()), monkeypatch)
 
     assert "cannot be confirmed yet" in messages[-1]
-    assert "**base role** — `/bot base-role`" in messages[-1]
+    assert named in messages[-1]
     assert "/season config-review" in messages[-1]
     assert not any("Do you confirm this season's configuration?" in m for m in messages)
 

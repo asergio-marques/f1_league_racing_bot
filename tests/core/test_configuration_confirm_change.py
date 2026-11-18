@@ -267,6 +267,14 @@ async def _delete_the_driver_role(league: Any) -> None:
     league.roles_gone.add(DRIVER_ROLE)
 
 
+async def _delete_the_signup_channel(league: Any) -> None:
+    """Delete the signup channel (620) from the server; the stored setting, which the review's
+    evidence holds, is untouched."""
+    from tests.support.season_league import SIGNUP_CHANNEL
+
+    league.remove_channel(SIGNUP_CHANNEL)
+
+
 @pytest.mark.parametrize(
     "meanwhile, refusal, why, stage",
     [
@@ -275,6 +283,16 @@ async def _delete_the_driver_role(league: Any) -> None:
         pytest.param(_delete_the_driver_role, DRIVER_ROLE_GONE,
                      "The league's **driver role** is no longer on the server", "CONFIGURATION",
                      id="a_fault_found_afresh"),
+        pytest.param(
+            _delete_the_signup_channel, "is no longer on the server — `/signup channel`.",
+            "is no longer on the server — `/signup channel`.", "CONFIGURATION",
+            id="the_signup_channel_deleted",
+            marks=pytest.mark.xfail(
+                strict=True,
+                reason="#449: confirming the configuration does not judge the signup channel "
+                "on the server",
+            ),
+        ),
     ],
 )
 async def test_a_refusal_found_as_the_confirmation_starts_confirms_nothing(
@@ -282,7 +300,8 @@ async def test_a_refusal_found_as_the_confirmation_starts_confirms_nothing(
 ):
     """The signup module is on. Admin presses ✅ Confirm configuration and the confirmation is
     accepted; before the queue runs it, the season moves on to Waiting, or the league's driver
-    role (820) is deleted from the server, which the review's evidence does not hold. As it
+    role (820) or the signup channel (620) is deleted from the server, which the review's
+    evidence does not hold. As it
     starts it is refused in the words the press uses: the season is left at
     *stage*, no signup settings are kept, nothing is audited, Admin's reply becomes the refusal,
     one refusal line names Admin, the button and why, and the queue is not stopped."""

@@ -540,6 +540,63 @@ async def test_the_signup_configuration_is_reviewed(db_path):
     assert "Available slots: Sunday 20:00" in public
 
 
+#: Why the placements review does not yet name a signup channel the approval would refuse.
+_SIGNUP_CHANNEL_NOT_REVIEWED = (
+    "#449: the placements review does not judge the signup channel or withhold Approve on it"
+)
+
+
+@pytest.mark.parametrize("channel, server, named", [
+    pytest.param(
+        None, {}, ["`/signup channel`", "`/season placements-review`"],
+        id="unset", marks=pytest.mark.xfail(strict=True, reason=_SIGNUP_CHANNEL_NOT_REVIEWED),
+    ),
+    pytest.param(
+        900, {"gone": (900,)},
+        ["⛔ The signup channel <#900> is no longer on the server.", "`/signup channel`",
+         "`/season placements-review`"],
+        id="deleted", marks=pytest.mark.xfail(strict=True, reason=_SIGNUP_CHANNEL_NOT_REVIEWED),
+    ),
+    pytest.param(
+        900, {"unusable": {900: ("manage_channels",)}},
+        ["<#900>", "missing permissions the bot needs there: Manage Channel",
+         "`/season placements-review`"],
+        id="lacking_manage_channel",
+        marks=pytest.mark.xfail(strict=True, reason=_SIGNUP_CHANNEL_NOT_REVIEWED),
+    ),
+    pytest.param(900, {"unreadable": (900,)}, None, id="unreadable"),
+])
+async def test_a_signup_channel_the_approval_would_refuse_withholds_approval(
+    db_path, channel, server, named,
+):
+    """Signup is on. Its signup channel is unset, deleted from the server, or missing a
+    permission the bot needs there (Manage Channel here); `/season placements-review` names it
+    privately, saying what to run, and the review asked of the queue carries no Approve question,
+    since the press would refuse it. One the server could not be asked about (a server error) is
+    not named, and Approve is offered."""
+    from tests.support.channel_faults import server_holding
+    from tests.support.review_workflows import sign_up_signup_refusals
+
+    cog = _cog(db_path, signup=True)
+    cog.bot.signup_module_service.get_config = AsyncMock(
+        return_value=SimpleNamespace(signup_channel_id=channel)
+    )
+    sign_up_signup_refusals(cog.bot)
+    interaction = _interaction()
+    interaction.guild = server_holding(**server)
+
+    messages = await _review(cog, interaction)
+
+    private = _private(messages)
+    if named is None:
+        assert _offered(cog)
+        assert "<#900>" not in private
+    else:
+        assert not _offered(cog)
+        for words in named:
+            assert words in private, (words, private)
+
+
 @pytest.mark.parametrize("signup", [True, False])
 async def test_the_placements_review_does_not_repeat_the_league_s_roles(db_path, signup):
     """Confirming the configuration fixed both roles until the season ends (issue #276), so

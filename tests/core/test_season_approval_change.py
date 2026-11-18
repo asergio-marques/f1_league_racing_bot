@@ -219,6 +219,14 @@ async def _lose_rasteriser(league: Any) -> None:
     league.rasteriser_on = False
 
 
+async def _delete_signup_channel(league: Any) -> None:
+    """Delete the signup channel (620) from the server; the stored setting is untouched, so the
+    season's fingerprint does not see it."""
+    from tests.support.season_league import SIGNUP_CHANNEL
+
+    league.remove_channel(SIGNUP_CHANNEL)
+
+
 #: Each way a season can change while its approval waits: what changes it, the league it needs,
 #: and the reply's words for it.
 _REFUSALS = {
@@ -242,11 +250,40 @@ _REFUSALS = {
         _lose_rasteriser, {"images": True},
         "• Inkscape is not installed on this host.",
     ),
+    "a signup channel deleted": (
+        _delete_signup_channel, {"signup": True},
+        "is no longer on the server — `/signup channel`",
+    ),
+}
+
+#: The changes the approval does not yet judge again as it comes up to run.
+_NOT_JUDGED_AT_THE_QUEUE = {
+    "a signup channel deleted":
+        "#449: the approval's queued check does not re-run the modules' refusals",
 }
 
 
-async def _league_for(tmp_path: Any, monkeypatch: Any, **kwargs: Any) -> Any:
-    return await season_league(tmp_path, monkeypatch=monkeypatch, **kwargs)
+def _cases(changes: Any) -> list[Any]:
+    """*changes*' names, in order, each the queue does not yet judge again marked to fail."""
+    return [
+        pytest.param(change, marks=pytest.mark.xfail(
+            strict=True, reason=_NOT_JUDGED_AT_THE_QUEUE[change]))
+        if change in _NOT_JUDGED_AT_THE_QUEUE else change
+        for change in sorted(changes)
+    ]
+
+
+async def _league_for(
+    tmp_path: Any, monkeypatch: Any, *, signup: bool = False, **kwargs: Any
+) -> Any:
+    """`season_league`'s league; with *signup*, the signup module on and its signup channel
+    (620) set and on the server."""
+    from tests.support.season_league import signup_channel_set
+
+    league = await season_league(tmp_path, monkeypatch=monkeypatch, **kwargs)
+    if signup:
+        await signup_channel_set(league)
+    return league
 
 
 # ── The defects ─────────────────────────────────────────────────────────────────────
@@ -486,7 +523,7 @@ async def test_the_press_runs_every_gate_before_asking_and_asks_nothing_when_one
     assert (await league.season())["stage"] == "PLACEMENTS"
 
 
-@pytest.mark.parametrize("change", sorted(_REFUSALS))
+@pytest.mark.parametrize("change", _cases(_REFUSALS))
 async def test_a_refusal_found_when_the_approval_runs_updates_the_reply_and_the_queue_goes_on(
     tmp_path, monkeypatch, change,
 ):
@@ -1848,6 +1885,13 @@ def _save_fails_once() -> ExitStack:
     return _everywhere("commit_placements_on", _once)
 
 
+async def _signup_channel_set(league: Any) -> None:
+    """The signup module on, its signup channel (620) set and on the server."""
+    from tests.support.season_league import signup_channel_set
+
+    await signup_channel_set(league)
+
+
 async def _window_opening_soon(league: Any) -> None:
     """Pro's round 1 is moved so that its check-in notice (five days before it, attendance on)
     opens five minutes after "now": the press and the first try find nothing gone by."""
@@ -1868,6 +1912,9 @@ async def _pass_the_window(league: Any) -> None:
 _WHILE_STOPPED = {
     "a round edited": (None, _edit_round, _REFUSALS["a round edited"][2]),
     "a window passed": (_window_opening_soon, _pass_the_window, _REFUSALS["a date passed"][2]),
+    "a signup channel deleted": (
+        _signup_channel_set, _delete_signup_channel, _REFUSALS["a signup channel deleted"][2],
+    ),
 }
 
 
@@ -1875,7 +1922,7 @@ async def _points_copied(league: Any) -> list[dict[str, Any]]:
     return await league.rows("SELECT * FROM season_points_entries WHERE season_id = ?", SEASON_ID)
 
 
-@pytest.mark.parametrize("change", sorted(_WHILE_STOPPED))
+@pytest.mark.parametrize("change", _cases(_WHILE_STOPPED))
 async def test_a_retried_save_judges_the_approval_again_and_refuses_what_changed_while_it_was_stopped(
     tmp_path, monkeypatch, change,
 ):
@@ -2081,7 +2128,7 @@ def _late_notices(league: Any) -> list[str]:
     return [text for text in league.texts(REVIEW_CHANNEL) if text.startswith(LATE_REFUSAL_HEAD)]
 
 
-@pytest.mark.parametrize("change", sorted(_REFUSALS))
+@pytest.mark.parametrize("change", _cases(_REFUSALS))
 async def test_a_refusal_at_run_after_the_reply_expired_is_told_in_the_review_s_channel(
     tmp_path, monkeypatch, change,
 ):
