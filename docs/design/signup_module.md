@@ -223,12 +223,11 @@ work and restarts"), each a timer in memory and no change on the queue:
 
 - **a manager's pending reason** after Reject or Request Changes, awaiting the message they type
   (`_PENDING_REASONS` in `signup_views.py`, with its five-minute lapse an asyncio task kept in the
-  entry), which `/signup cancel` also reads: it is refused for a driver a manager is typing a
-  reason about (`reason_pending_for`). That refusal reads memory, so it is made at the ask and at
-  the form's submit and never in the change's check, which reads only the database and the queue;
-  a Reject pressed after a cancellation is queued lets the cancellation go ahead, and the reason
-  then gets the "moved on" refusal. A restart drops it unrecorded; `clear_pending_reasons` drops every entry and cancels every
-  lapse on `/bot pack` and `/bot factory-reset` (`in_memory_state_cleared`;
+  entry), which `/signup cancel` also reads (`reason_pending_for`) to refuse a driver a manager is
+  typing a reason about, as the specification's "Wizard flow" has it. That refusal reads memory,
+  so it is made at the ask and at the form's submit and never in the change's check, which reads
+  only the database and the queue. A restart drops the pending reason unrecorded;
+  `clear_pending_reasons` drops every entry and cancels every lapse on `/bot pack` and `/bot factory-reset` (`in_memory_state_cleared`;
   `test_a_reset_cancels_every_pending_lapse_and_none_fires_after`);
 - **`/signup close`'s confirmation** (`ConfirmCloseView`, five minutes), whose cancel and lapse are
   recorded and whose asking records nothing.
