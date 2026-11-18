@@ -2,8 +2,7 @@
 
 Results' own commands, under results' own group. They sat under core's `/division` until #462
 moved them, and only their names changed. `/results channel results` and `/results channel
-standings` refuse alike; `/results channel verdicts` keeps words of its own, and refuses a channel
-the bot cannot post in before it reads anything else.
+standings` refuse alike; `/results channel verdicts` keeps words of its own.
 
 **A channel serves one purpose across the whole server** (decided 2026-09-06). Two settings
 sharing one channel interleave two kinds of posting, and several posting paths edit or delete
@@ -27,14 +26,15 @@ rule is pinned in `test_channel_registry.py`.
 (`tests/weather/test_weather_channel_command.py`): the command answers with the queue's
 acknowledgement, and the queue writes the division's channel and its audit entry in one save,
 stamped with the queue's clock, then updates the acknowledgement to the reply and writes the
-line. The module, the season, the division and (verdicts) the bot's access to the channel are
-judged by the command, which must find the division to ask for its change; the channel's use, and
-the value already held, by the setting's check at the ask, in the same words. The check is made
-again as the change starts, so results switched off, the division deleted, the season ended, the
-channel claimed or (verdicts) the bot's access to it lost while the change waits is refused then,
-in the ask's words; a division renamed meanwhile is still the division asked for, and gets its
-channel. The tests run the bot the entry point builds, with the real queue and "now" pinned, and
-run the queue.
+line. The module, the season and the division are judged by the command, which must find the
+division to ask for its change; the channel's use, the value already held, and whether the bot
+holds every permission the channel's use needs there (#570), by the setting's check at the ask,
+in the same words. The check is made again as the change starts, so results switched off, the
+division deleted, the season ended, the channel claimed, a permission lost or the channel deleted
+while the change waits is refused then, in the ask's words; a division renamed meanwhile is still
+the division asked for, and gets its channel. The tests run the bot the entry point builds, with
+the real queue and "now" pinned, on a league server holding every channel with every permission
+unless a test says otherwise, and run the queue.
 """
 from __future__ import annotations
 
@@ -42,7 +42,6 @@ import json
 import os
 import sqlite3
 from datetime import datetime, timezone
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
@@ -63,6 +62,7 @@ from tests.support.change_queue import (
     step_rows,
     stopped_job,
 )
+from tests.support.channel_faults import answer_attachments, league_server
 from tests.support.season_league import set_module_flag
 from tests.support.settings_league import interaction as member_asks
 from tests.support.settings_league import last_said, unruled
@@ -95,6 +95,20 @@ _NO_SEASON = (
     "start one with `/season setup`."
 )
 _NO_ACCESS = "❌ Cannot access that channel. Ensure the bot has permission to post there."
+
+#: The refusal a channel is given where the bot lacks permissions its use needs there, the
+#: setting and the permissions it lacks filled in.
+_CANNOT_USE = (
+    f"❌ The bot is missing permissions it needs in <#{CHANNEL_ID}> as the {{which}} channel for "
+    f"**Division 1**: {{missing}}. Give the bot them there, or pick another channel. Nothing was "
+    f"changed."
+)
+
+#: The refusal a channel is given where it has been deleted from the server.
+_GONE = f"❌ <#{CHANNEL_ID}> is no longer on the server. Nothing was changed."
+
+#: Why a test fails until setting a results channel judges whether the bot can use it.
+_NOT_JUDGED = "#570: setting a results channel does not yet judge whether the bot can use it"
 
 
 # ---------------------------------------------------------------------------
@@ -182,10 +196,12 @@ async def _make_db(tmp_path, name: str = "results_channels", *, status: str = "S
 
 async def _make_cog(db_path: str) -> ResultsCog:
     """The cog on the league's bot (`league_bot`), with the league's log channel and its real
-    change queue, "now" pinned to `NOW`. `cog.channels` holds the channels the bot finds by id
+    change queue, "now" pinned to `NOW`, its league server holding every channel with every
+    permission held (`league_server`). `cog.channels` holds the channels the bot finds by id
     beside the league's own: `_channel` puts each there as it makes it."""
     bot = await league_bot(db_path)
     league_queue(bot, db_path, now=Clock(NOW))
+    league_server(bot)
     found = bot.get_channel
     bot.channels = {}
     bot.get_channel = MagicMock(
@@ -196,16 +212,14 @@ async def _make_cog(db_path: str) -> ResultsCog:
     return cog
 
 
-def _channel(cog, which: str, channel_id: int = CHANNEL_ID, name: str | None = None, *,
-             may_post: bool = True):
+def _channel(cog, which: str, channel_id: int = CHANNEL_ID, name: str | None = None):
     """A text channel as Discord gives one, named for the command unless *name* is given, its
-    mention the one Discord renders, the bot allowed to post in it unless *may_post* is False,
-    and found by the bot by its id."""
+    mention the one Discord renders, and found by the bot by its id. What the bot may do in it is
+    the league server's to say (`league_server`)."""
     channel = MagicMock(spec=discord.TextChannel)
     channel.id = channel_id
     channel.name = name or which
     channel.mention = f"<#{channel_id}>"
-    channel.permissions_for = MagicMock(return_value=SimpleNamespace(send_messages=may_post))
     cog.bot.channels[channel_id] = channel
     return channel
 
@@ -651,8 +665,8 @@ async def test_the_verdicts_channel_is_logged_under_results_channel_verdicts(tmp
 # ---------------------------------------------------------------------------
 
 
-def _refusal(case_id, command, reply, **setup):
-    return pytest.param(command, reply, setup, id=case_id)
+def _refusal(case_id, command, reply, *, marks=(), **setup):
+    return pytest.param(command, reply, setup, id=case_id, marks=marks)
 
 
 def _channel_refusals(setting: str):
@@ -667,35 +681,33 @@ def _channel_refusals(setting: str):
         ),
         _refusal(f"{setting}-channel-doing-another-job", command, _clash(setting), claimed=True),
         _refusal(f"{setting}-already-set", command, _already(setting), held=True),
+        _refusal(
+            f"{setting}-channel-the-bot-cannot-use", command,
+            _CANNOT_USE.format(which=setting, missing="Read Message History"),
+            denied=("read_message_history",),
+            marks=pytest.mark.xfail(strict=True, reason=_NOT_JUDGED),
+        ),
     ]
 
 
 @pytest.mark.parametrize(
     ("command", "reply", "setup"),
-    _channel_refusals("results")
-    + _channel_refusals("standings")
-    + _channel_refusals("verdicts")
-    + [
-        _refusal(
-            "verdicts-channel-the-bot-cannot-post-in", "results channel verdicts", _NO_ACCESS,
-            may_post=False,
-        ),
-    ],
+    _channel_refusals("results") + _channel_refusals("standings") + _channel_refusals("verdicts"),
 )
 async def test_every_channel_refusal_is_recorded(tmp_path, monkeypatch, command, reply, setup):
     """The manager runs `/results channel results`, `standings` or `verdicts` for Division 1
     and is turned away: the module is off, no season is live, the division is not in the
     season, the channel already does Division 2's other job or already does this one for
-    Division 1, or (verdicts) the bot may not post in it. The manager is answered as today, no
-    change is asked of the queue, nothing is written or audited, and exactly one line records the
-    refusal and its reason.
+    Division 1, or the bot is denied Read Message History there, which each of the three needs to
+    take down what it posted last. The manager is answered word for word, no change is asked of
+    the queue, nothing is written or audited, and exactly one line records the refusal and its
+    reason.
 
     The module-off words are each command's own, not the results cog's gate, which is worded
     differently: the commands keep the words they had before they moved, and are refused before
-    the season is read or anything deferred. A verdicts channel the bot cannot post in is
-    checked before the season is read, rather than discovered at the first verdict. The
-    verdicts command names its own setting to the check, so the channel a division's verdicts
-    already go to is refused in its own words, not as a clash a manager would go looking for."""
+    the season is read or anything deferred. The verdicts command names its own setting to the
+    check, so the channel a division's verdicts already go to is refused in its own words, not as
+    a clash a manager would go looking for."""
     setting = command.rsplit(" ", 1)[1]
     db_path = await _make_db(
         tmp_path, status=setup.get("status", "SETUP"), results=not setup.get("results_off")
@@ -708,7 +720,9 @@ async def test_every_channel_refusal_is_recorded(tmp_path, monkeypatch, command,
     cog = await _make_cog(db_path)
     season_lookup = _spy(monkeypatch, cog.bot.season_service, "get_setup_or_active_season")
     interaction = _interaction(cog, setting)
-    channel = _channel(cog, setting, may_post=setup.get("may_post", True))
+    channel = _channel(cog, setting)
+    if setup.get("denied"):
+        league_server(cog.bot, unusable={CHANNEL_ID: setup["denied"]})
 
     await _run(cog, interaction, setting, name=setup.get("name", "Division 1"), channel=channel)
 
@@ -717,10 +731,51 @@ async def test_every_channel_refusal_is_recorded(tmp_path, monkeypatch, command,
     assert await change_rows(db_path) == []
     assert await _audit(db_path) == []
     assert await _channels(db_path) == before
-    if setup.get("results_off") or setup.get("may_post") is False:
-        season_lookup.assert_not_awaited()
     if setup.get("results_off"):
+        season_lookup.assert_not_awaited()
         interaction.response.defer.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# Attach Files is asked only where the picture could attach a file (#570)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("which", sorted(COMMANDS))
+@pytest.mark.parametrize(
+    "attaches",
+    [
+        pytest.param(True, id="picture-attaches-a-file",
+                     marks=pytest.mark.xfail(strict=True, reason=_NOT_JUDGED)),
+        pytest.param(False, id="no-picture"),
+    ],
+)
+async def test_attach_files_is_asked_only_where_the_picture_could_attach_a_file(
+    tmp_path, which, attaches
+):
+    """Season 1 is being set up, and its Division 1 has none of its results channels; the
+    league's server holds channel 770001, where the bot holds every permission but Attach Files.
+    The image module answers that the results, the standings or the verdicts picture (whichever
+    channel is being set) could post attaching a file, or that it could not. The manager (id 77)
+    runs `/results channel results`, `standings` or `verdicts` for 770001, and the queue runs.
+    Where the picture attaches a file, the command is refused naming Attach Files, the channel is
+    not written and nothing is audited; where it does not, Attach Files is not asked for and the
+    channel is set."""
+    db_path = await _make_db(tmp_path)
+    cog = await _make_cog(db_path)
+    league_server(cog.bot, unusable={CHANNEL_ID: ("attach_files",)})
+    answer_attachments(cog.bot.image_drawing, *((which,) if attaches else ()))
+    interaction = _interaction(cog, which)
+
+    await _run(cog, interaction, which)
+
+    if attaches:
+        assert _replied(interaction) == _CANNOT_USE.format(which=which, missing="Attach Files")
+        assert (await _channels(db_path))[which] is None
+        assert await _audit(db_path) == []
+    else:
+        assert _replied(interaction) == _reply(which, "set")
+        assert (await _channels(db_path))[which] == CHANNEL_ID
 
 
 # ---------------------------------------------------------------------------
@@ -927,13 +982,13 @@ async def _claim_the_channel(cog, db_path: str, which: str) -> None:
 
 
 async def _lose_access(cog, db_path: str, which: str) -> None:
-    cog.bot.channels[CHANNEL_ID].permissions_for.return_value = SimpleNamespace(
-        send_messages=False
-    )
+    """The bot is denied Send Messages in channel 770001, which each of the three needs."""
+    league_server(cog.bot, unusable={CHANNEL_ID: ("send_messages",)})
 
 
 async def _delete_the_channel(cog, db_path: str, which: str) -> None:
-    cog.bot.channels[CHANNEL_ID] = None
+    """Channel 770001 is deleted from the server."""
+    league_server(cog.bot, gone=(CHANNEL_ID,))
 
 
 def _meanwhile_cases():
@@ -948,11 +1003,16 @@ def _meanwhile_cases():
             ),
             pytest.param(which, _end_the_season, _NO_SEASON, id=f"{which}-season_ended"),
             pytest.param(which, _claim_the_channel, _clash(which), id=f"{which}-channel_claimed"),
+            pytest.param(
+                which, _lose_access, _CANNOT_USE.format(which=which, missing="Send Messages"),
+                id=f"{which}-access_lost",
+                marks=pytest.mark.xfail(strict=True, reason=_NOT_JUDGED),
+            ),
+            pytest.param(
+                which, _delete_the_channel, _GONE, id=f"{which}-channel_deleted",
+                marks=pytest.mark.xfail(strict=True, reason=_NOT_JUDGED),
+            ),
         ]
-    cases += [
-        pytest.param("verdicts", _lose_access, _NO_ACCESS, id="verdicts-access_lost"),
-        pytest.param("verdicts", _delete_the_channel, _NO_ACCESS, id="verdicts-channel_deleted"),
-    ]
     return cases
 
 
@@ -964,8 +1024,8 @@ async def test_a_change_is_refused_as_it_starts_where_its_ask_no_longer_holds(
     (id 77) asks `/results channel results`, `standings` or `verdicts` for channel 770001, and is
     acknowledged; before the change runs, as a change waiting ahead of it on the league's lane
     would, results is switched off, or Division 1 is deleted, or Season 1 is completed, or 770001
-    is made one of Division 2's channels, or (verdicts) the bot loses its permission to post in
-    770001 or the channel is deleted. The change judges again as it starts and is refused:
+    is made one of Division 2's channels, or the bot is denied Send Messages in 770001, or 770001
+    is deleted from the server. The change judges again as it starts and is refused:
     Division 1's channel is not written, nothing is audited, the manager's reply becomes the
     refusal the command gives at the ask, word for word, the log channel takes that refusal as its
     only line, and the queue is not stopped."""
