@@ -205,9 +205,10 @@ architecture.md's "How modules and core fit together" has it and holds no rule o
 fetch and answers `PRESENT`, `GONE` or `UNUSABLE` with what the bot lacks there, and raises on any
 answer Discord does not prove, a server error or a bot member it cannot read. `judged_presence`
 stands aside on that raise, the stated exception in architecture.md's "Errors and failures", which
-is what a confirmation wants; a caller that can refuse for a check it could not make calls the
-strict one. `channel_fault` words the one line, and takes the *needs* its caller hands it, so it
-holds no list of channels and no permission of its own. A need is data (`core/models/channel_needs.py`)
+is what a confirmation wants, and is the strict reader's one caller: it raises so that a caller
+free to refuse on a check it could not make may. The gates before a repost and a recalculation
+judge from the cache alone, through `results_post_service.channel_fault`. Core's own `channel_fault`
+words the confirmation's line, and takes the *needs* its caller hands it, so it holds no list of channels and no permission of its own. A need is data (`core/models/channel_needs.py`)
 and each part builds its channels' from it in its own service (`channel_needs`: weather's forecast
 channel, results' three, attendance's two), asking the image module's drawing, handed through the
 module's wiring, only whether a picture could attach a file. The alternatives rejected: one table of
