@@ -230,6 +230,67 @@ async def test_a_division_with_no_config_reads_as_none(tmp_path):
     assert await service.get_division_config(DIVISION_ID) is None
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#570: attendance answers no channel for a picture switched on"
+)
+async def test_attendance_answers_the_channel_each_output_posts_to_while_on(tmp_path):
+    """Division 1's check-in call channel is 410 and its attendance channel 411; Am has only its
+    attendance channel 421; Old, not among the divisions handed, has check-in call channel 430.
+    Attendance on, each channel answers for the output that posts to it, with what its use needs
+    and Attach Files, though the drawing does not yet say a picture attaches a file, and the
+    command that sets it again: Check-in switched on answers Division 1's 410; Attendance answers
+    411 and Am's 421. Only other outputs switched on, or attendance off, it answers nothing."""
+    from leaguebot.attendance.services.settings.division_channels import picture_channels
+    from leaguebot.core.models.channel_needs import ATTACH, EMBED, READ_HISTORY, SEND, VIEW
+    from leaguebot.core.services.modules.picture_channels import PictureChannel
+    from leaguebot.core.services.settings.channel_registry_service import ChannelUse
+    from tests.support.channel_faults import answer_attachments
+
+    db_path = await _make_db(tmp_path)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "
+            "VALUES (2, ?, 'Am', 2, 555), (3, ?, 'Old', 3, 555)",
+            (SEASON_ID, SEASON_ID),
+        )
+        await db.execute(
+            "INSERT INTO attendance_division_config (division_id, rsvp_channel_id, "
+            "attendance_channel_id) VALUES (?, '410', '411'), (2, NULL, '421'), (3, '430', NULL)",
+            (DIVISION_ID,),
+        )
+        await db.commit()
+
+    async def answered(on: bool, *aspects: str) -> list:
+        modules = MagicMock()
+        answer_switch(modules, "attendance", on)
+        async with get_connection(db_path) as db:
+            found = await picture_channels(
+                modules, answer_attachments(MagicMock()), db=db,
+                divisions={DIVISION_ID: "Division 1", 2: "Am"}, aspects=frozenset(aspects),
+            )
+        return sorted(found, key=lambda channel: channel.channel_id)
+
+    assert await answered(True, "rsvp") == [
+        PictureChannel(
+            frozenset({"rsvp"}), 410, ChannelUse("rsvp", "Division 1"),
+            "/attendance channel rsvp", (VIEW, SEND, EMBED, READ_HISTORY, ATTACH),
+        )
+    ]
+    sheet = (VIEW, SEND, READ_HISTORY, ATTACH)
+    assert await answered(True, "attendance") == [
+        PictureChannel(
+            frozenset({"attendance"}), 411, ChannelUse("attendance", "Division 1"),
+            "/attendance channel attendance", sheet,
+        ),
+        PictureChannel(
+            frozenset({"attendance"}), 421, ChannelUse("attendance", "Am"),
+            "/attendance channel attendance", sheet,
+        ),
+    ]
+    assert await answered(True, "results", "lineup") == []
+    assert await answered(False, "rsvp", "attendance") == []
+
+
 # ---------------------------------------------------------------------------
 # FR-028–FR-031 — recalculating an amended round
 # ---------------------------------------------------------------------------
