@@ -272,7 +272,6 @@ async def test_results_names_each_division_s_missing_or_deleted_channels(tmp_pat
     assert await faults(True, lacking) == {DIVISION_ID: [results_line, standings_line], **am}
 
 
-@pytest.mark.xfail(strict=True, reason="#570: results answers no channel for a picture switched on")
 async def test_results_answers_the_channel_each_output_posts_to_while_on(tmp_path):
     """Division 11's results channel is 120, its standings channel 121 and its verdicts channel
     122; Am has only its standings channel 221; Old, not among the divisions handed, has results

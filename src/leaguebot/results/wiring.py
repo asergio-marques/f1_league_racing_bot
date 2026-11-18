@@ -268,6 +268,20 @@ def sign_up_to_division_channel_faults_read(bot: "LeagueBot") -> None:
     )
 
 
+def sign_up_to_picture_channels_read(bot: "LeagueBot") -> None:
+    """Sign results' channels a picture posts to up to the hook the channels a picture posts to are
+    read through, handed the module service, which answers whether results is on, and the image
+    module's drawing."""
+    from leaguebot.results.services.module import division_channels
+
+    bot.picture_channels_read.subscribe(
+        partial(
+            division_channels.picture_channels, bot.module_service,
+            as_image_drawing(bot.image_drawing),
+        )
+    )
+
+
 def sign_up_to_fingerprint_areas_read(bot: "LeagueBot") -> None:
     """Sign results' rows of its own configuration up to the hook a season's fingerprint is taken
     through, by area, handed the season service. Results reads its channels by division, as the

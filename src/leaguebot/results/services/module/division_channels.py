@@ -11,23 +11,25 @@ it replaced, and **writes nothing where the channel is already the one held**, s
 tell that nothing changed. `penalty_channel_id` is a TEXT column, the other two INTEGER; each gives
 its previous value back as an integer.
 
-The module hands core its channels, too, through two of core's hooks: the lines the placements
+The module hands core its channels, too, through three of core's hooks: the lines the placements
 review shows for each division (`division_lines`, the review showing them whether the module is on
-or off) and the faults a season's confirmation judges them by (`division_channel_faults`, asking
-the module's switch of itself).
+or off), the faults a season's confirmation judges them by (`division_channel_faults`, asking
+the module's switch of itself) and the channels an output about to be a picture posts to
+(`picture_channels`, answered only while the module is on).
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
 import aiosqlite
 
 from leaguebot.results.models.switch import SWITCH_KEY
 from leaguebot.framework.db.database import get_connection
-from leaguebot.core.models.channel_needs import ATTACH, READ_HISTORY, SEND, VIEW, Needs
+from leaguebot.core.models.channel_needs import ATTACH, READ_HISTORY, SEND, VIEW, Needs, attaching
 from leaguebot.core.services.modules.kept_channels import KeptChannel, KeptReader
+from leaguebot.core.services.modules.picture_channels import PictureChannel
 from leaguebot.core.services.seasons.approval_checks import channel_fault
 from leaguebot.core.services.settings.channel_registry_service import (
     ChannelUse,
@@ -60,6 +62,10 @@ _ASPECTS = {
     "standings": ("standings",),
     "verdicts": ("verdicts", "verdict_banner"),
 }
+
+#: What each of results' channels needs of the bot, Attach Files aside: each is posted in and
+#: reposted, the bot finding what it posted last and taking it down.
+_REPOSTED_NEEDS: Needs = (VIEW, SEND, READ_HISTORY)
 
 
 async def _channels_of(db_path: str) -> dict[int, Any]:
@@ -241,15 +247,59 @@ async def channel_needs(drawing: "ImageDrawing | None") -> dict[str, Needs]:
     `verdict_banner` for the verdicts channel, where attendance's sanction cards go as well. With
     no *drawing*, nothing is drawn and no channel needs Attach Files.
     """
-    reposted: Needs = (VIEW, SEND, READ_HISTORY)
-
     async def attaches(*aspects: str) -> Needs:
         for aspect in aspects:
             if drawing is not None and await drawing.aspect_attaches_files(aspect):
-                return reposted + (ATTACH,)
-        return reposted
+                return _REPOSTED_NEEDS + (ATTACH,)
+        return _REPOSTED_NEEDS
 
     return {setting: await attaches(*aspects) for setting, aspects in _ASPECTS.items()}
+
+
+async def picture_channels(
+    modules: "ModuleService",
+    drawing: "ImageDrawing",
+    *,
+    db: aiosqlite.Connection,
+    divisions: Mapping[int, str],
+    aspects: Collection[str],
+) -> list[PictureChannel]:
+    """The results, standings and verdicts channels of each of *divisions* (the live season's, by
+    id, naming each) that are set and that an output among *aspects* posts to, for the check made
+    as an output is switched to a picture (`core/services/modules/picture_channels.py`): by
+    division, then in the order `_CHANNELS` gives. Each names the outputs asked that post there
+    (`_ASPECTS`), what a channel posted in and reposted needs and Attach Files, as the output counts
+    as a picture whatever its switch holds now, and the command that sets it again.
+
+    Subscribed to core's `picture_channels_read`, which hands the connection, the divisions and the
+    outputs asked. Nothing while the results module is off, read on *db*: a switched-off module
+    posts nowhere. Reads only.
+
+    What a channel needs as a picture does not depend on the *drawing*, which is not asked: the
+    hook's connection is the step's, and nothing but it is awaited while it is held (architecture.md,
+    "The database"). The parameter keeps the shape every answer to the hook is built in.
+    """
+    if not divisions or not await modules.is_enabled_on(db, SWITCH_KEY):
+        return []
+    needs = attaching(_REPOSTED_NEEDS, True)
+    cursor = await db.execute(
+        "SELECT division_id, results_channel_id, standings_channel_id, penalty_channel_id "
+        f"FROM division_results_config WHERE division_id IN ({', '.join('?' * len(divisions))}) "
+        "ORDER BY division_id",
+        tuple(divisions),
+    )
+    answered: list[PictureChannel] = []
+    for row in await cursor.fetchall():
+        for column, setting, _label, command, _unset in _CHANNELS:
+            posting = frozenset(_ASPECTS[setting]) & set(aspects)
+            if posting and row[column] is not None and row[column] != "":
+                answered.append(
+                    PictureChannel(
+                        posting, int(row[column]),
+                        ChannelUse(setting, divisions[int(row["division_id"])]), command, needs,
+                    )
+                )
+    return answered
 
 
 async def kept_channels(drawing: "ImageDrawing | None") -> KeptReader:
