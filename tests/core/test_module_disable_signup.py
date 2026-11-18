@@ -847,35 +847,81 @@ def _set_before(channel: Any, refused: Any) -> list[Any]:
     return put[: put.index(refused)]
 
 
+#: A role the bot sets nothing for on the signup channel, which the league gave an overwrite there.
+LEAGUE_ROLE = 3009
+
+
+def _league_own() -> discord.PermissionOverwrite:
+    """The permission a league set by hand on 620 for a target the bot sets too: Add Reactions."""
+    return discord.PermissionOverwrite(add_reactions=True)
+
+
+def _league_role_own() -> discord.PermissionOverwrite:
+    """The overwrite the league set by hand on 620 for its own role 3009."""
+    return discord.PermissionOverwrite(view_channel=True, send_messages=True)
+
+
+def _standing(channel: Any, overwrites: dict[Any, discord.PermissionOverwrite]) -> None:
+    """620 holding *overwrites*, by target, as Discord reads them back: a fresh copy each time."""
+
+    def _copy(overwrite: discord.PermissionOverwrite) -> discord.PermissionOverwrite:
+        return discord.PermissionOverwrite.from_pair(*overwrite.pair())
+
+    channel.overwrites = {target: _copy(overwrite) for target, overwrite in overwrites.items()}
+    channel.overwrites_for = MagicMock(
+        side_effect=lambda target: _copy(overwrites.get(target, discord.PermissionOverwrite()))
+    )
+
+
+def _last_edits(channel: Any) -> dict[Any, Any]:
+    """Each target's last permission edit on the channel: the overwrite it was given, or None
+    where it was cleared."""
+    return {
+        call.args[0]: call.kwargs.get("overwrite")
+        for call in channel.set_permissions.await_args_list
+    }
+
+
 async def _enables(league: SeasonLeague) -> list[dict[str, Any]]:
     return await league.rows(
         "SELECT change_type FROM audit_entries WHERE change_type = 'MODULE_ENABLE'"
     )
 
 
+@pytest.mark.parametrize("league_own", [False, True],
+                         ids=["nothing standing", "the league's own standing"])
 @pytest.mark.xfail(strict=True, reason="#449: the switch-on puts no permission back on the kept "
                    "signup channel")
 async def test_switching_signup_back_on_puts_the_permissions_back_with_the_current_base_role(
-    tmp_path
+    tmp_path, league_own
 ):
     """Signup is off with the signup channel (620) kept, and while it is off the league's base role
-    is changed from 3001 to 3005. Manager 77 switches signup on and the queue runs: signup is on,
-    and the bot's permissions are put on 620 for each target `/signup channel` sets as the roles
-    stand now: 3005 is given the base role's permissions, and 3001 is given none."""
+    is changed from 3001 to 3005. Where *league_own*, the league has also set by hand, on 620,
+    Add Reactions for 3005 and an overwrite for its own role 3009, which the bot sets nothing for.
+    Manager 77 switches signup on and the queue runs: signup is on, and the bot's permissions are
+    put on 620 for each target `/signup channel` sets as the roles stand now: 3005 is given the
+    base role's permissions, alongside the league's Add Reactions where it set one, 3001 is given
+    none, and 3009's overwrite is not touched."""
     league, channel = await _off_with_the_channel_kept(tmp_path)
     await league.write("UPDATE server_configs SET base_role_id = ?", NEW_BASE_ROLE)
+    new_role = league.guild.get_role(NEW_BASE_ROLE)
+    league_role = league.guild.get_role(LEAGUE_ROLE)
+    if league_own:
+        _standing(channel, {new_role: _league_own(), league_role: _league_role_own()})
 
     await _switch_on(league)
     await run_queue(league.bot)
 
     assert await league.bot.module_service.is_enabled("signup")
     wanted = await _wanted(league)
-    new_role = league.guild.get_role(NEW_BASE_ROLE)
     assert set(_put_back(channel)) == set(wanted)
     assert league.guild.get_role(BASE_ROLE) not in _put_back(channel)
+    assert league_role not in _last_edits(channel)
     [given] = [call.kwargs["overwrite"] for call in channel.set_permissions.await_args_list
                if call.args[0] is new_role]
-    assert given == wanted[new_role]
+    expected = _league_own() if league_own else discord.PermissionOverwrite()
+    expected.update(**{name: value for name, value in wanted[new_role] if value is not None})
+    assert given == expected
 
 
 @pytest.mark.xfail(strict=True, reason="#449: the switch-on puts no permission back on the kept "
@@ -926,17 +972,30 @@ async def test_a_restore_that_cannot_take_back_what_it_set_says_so(tmp_path):
     assert any(line.startswith("❌") and LEFT in line for line in await _log_lines(league))
 
 
-@pytest.mark.parametrize("take_back", ["goes through", "is refused"])
+@pytest.mark.parametrize(
+    "take_back, league_own",
+    [("goes through", False), ("is refused", False), ("goes through", True)],
+    ids=["goes through", "is refused", "goes through over the league's own"],
+)
 @pytest.mark.xfail(strict=True, reason="#449: the switch-on puts no permission back on the kept "
                    "signup channel, and a save that fails takes none back")
-async def test_a_save_that_faults_after_the_restore_takes_the_permissions_back(tmp_path, take_back):
-    """Signup is off with 620 kept. Manager 77 switches it on; every permission is put back, then
-    the save fails (the database refuses the flag). Every target put on is taken off again and
-    signup stays off. Where Discord takes them all off, the reply says the module is still off and
+async def test_a_save_that_faults_after_the_restore_takes_the_permissions_back(
+    tmp_path, take_back, league_own
+):
+    """Signup is off with 620 kept. Where *league_own*, the league has set by hand, on 620, Add
+    Reactions for the base role 3001 and an overwrite for its own role 3009, which the bot sets
+    nothing for. Manager 77 switches it on; every permission is put back, then the save fails (the
+    database refuses the flag). Every target put on is taken back to what stood before, 3001 to the
+    league's Add Reactions exactly and every other to no overwrite, 3009 is never touched, and
+    signup stays off. Where Discord takes them all back, the reply says the module is still off and
     nothing is said to be left; where it refuses to take off @everyone's, the reply and the failure
     line name the signup channel and what to do."""
     league, channel = await _off_with_the_channel_kept(tmp_path)
     targets = list(await _wanted(league))
+    base_role = league.guild.get_role(BASE_ROLE)
+    standing = {base_role: _league_own()} if league_own else {}
+    if league_own:
+        _standing(channel, {**standing, league.guild.get_role(LEAGUE_ROLE): _league_role_own()})
     _refusing(channel, taken_off=targets[0] if take_back == "is refused" else None)
     await league.write(
         "CREATE TRIGGER refuse_signup_on BEFORE UPDATE OF signup_module_enabled ON server_configs "
@@ -947,7 +1006,7 @@ async def test_a_save_that_faults_after_the_restore_takes_the_permissions_back(t
     await run_queue(league.bot)
 
     assert set(_put_back(channel)) == set(targets)
-    assert set(_cleared(channel)) == set(targets)
+    assert _last_edits(channel) == {target: standing.get(target) for target in targets}
     assert not await league.bot.module_service.is_enabled("signup")
     reply = updated_reply(interaction)
     if take_back == "goes through":
