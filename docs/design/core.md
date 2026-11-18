@@ -224,19 +224,18 @@ calendar need the image module's answer to build their needs, which is awaited, 
 `core_division_channel_faults` (its subscriber of `division_channel_faults_read`, signed up before
 every module's, so a division's lines read core's first) builds them where it can await, from
 `core_channel_needs`. `division_channel_faults` holds no list of channels, so the review and the two
-confirmations cannot disagree about one and `season_approval_change` holds none.
+confirmations cannot disagree about one and `season_approval_change` holds none. *Rejected:* the
+check reading the image module's configuration for a switch, which is the module's to answer
+(`ImageDrawing.calendar_attaches_files` and `lineup_attaches_files`).
 
 **The approval's queued check judges what the press judged, whole.** Between the press and the
 queue reaching the approval, any of it can change, and a module's own channel is as likely to be
 deleted as a division's. The check therefore reads `confirmation_refused` again, handed the server,
 after the division channels and before the drawing program, and gives the first refusal as the
 press does; a retried save judges through it too (`season_approval_change`'s docstring holds the
-order). Asking the hook, not a list of modules' rules,
-keeps core free of any module's rule. *Rejected:* re-judging only the channels the check already
-names, which leaves a module's refusals (signup's channel, results' points configurations) judged
-only at the press. *Rejected:* the
-check reading the image module's configuration for a switch, which is the module's to answer
-(`ImageDrawing.calendar_attaches_files` and `lineup_attaches_files`).
+order). Asking the hook, not a list of modules' rules, keeps core free of any module's rule.
+*Rejected:* re-judging only the channels the check already names, which leaves a module's refusals
+(signup's channel, results' points configurations) judged only at the press.
 
 **Core's models** (`core/models/`) are plain data and the enums the schema ties to: the season's
 status and stage, a division's and a round's status, the driver's state and the dependency table
