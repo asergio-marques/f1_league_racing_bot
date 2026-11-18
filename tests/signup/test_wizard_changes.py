@@ -45,6 +45,7 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
+from leaguebot.signup.services.review_changes import CORRECTION_TIMER
 from tests.support.change_queue import (
     acknowledgement,
     change_rows,
@@ -2046,10 +2047,10 @@ async def test_a_manager_s_cancellation_ends_the_signup_tells_the_driver_and_hol
     the queue runs, Kimi is Not Signed Up and his wizard ended; a `signup.end` on the league lane
     asked back a `signup.closing` on his channel's lane; his channel is told once that Admin
     cancelled his signup, with the reason where one was given; his typing there is revoked, the
-    channel's deletion armed a day on, and his 24-hour timer disarmed. The log channel holds one
-    "Signup | Cancelled" line naming Admin and Kimi (and the reason); one `SIGNUP_CANCEL` audit
-    entry by Admin records Kimi, his state before and Not Signed Up after; and Admin is told the
-    signup was cancelled."""
+    channel's deletion armed a day on, and his 24-hour and correction-window timers disarmed. The
+    log channel holds one "Signup | Cancelled" line naming Admin and Kimi (and the reason); one
+    `SIGNUP_CANCEL` audit entry by Admin records Kimi, his state before and Not Signed Up after;
+    and Admin is told the signup was cancelled."""
     league = await _league(tmp_path)
     await signing_up(league, SIGNING_UP, state=state)
     _held(league, KIMI_CHANNEL)
@@ -2072,6 +2073,7 @@ async def test_a_manager_s_cancellation_ends_the_signup_tells_the_driver_and_hol
     ]
     disarmed = [call.args for call in league.bot.scheduler_service.disarm.call_args_list]
     assert (INACTIVITY_TIMER, str(SIGNING_UP)) in disarmed
+    assert (CORRECTION_TIMER, str(SIGNING_UP)) in disarmed
     [line] = [line for line in league.bot.log_channel.sent if "| Signup | Cancelled" in line]
     assert f"<@{REVIEWER}>" in line and f"<@{SIGNING_UP}>" in line
     assert (reason in line) if reason else ("reason:" not in line)
