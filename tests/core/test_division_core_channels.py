@@ -324,9 +324,16 @@ async def test_the_assignment_is_logged(tmp_path, which):
 
 
 @pytest.mark.parametrize("which", ALL)
-async def test_the_manager_is_told_which_channel_was_assigned(tmp_path, which):
+@pytest.mark.parametrize("server", ["no-server-to-ask", "server-answers-with-an-error"])
+async def test_the_manager_is_told_which_channel_was_assigned(tmp_path, which, server):
+    """Division 1 of a season being set up, with no channel. The bot either has no league server
+    to ask, or asks one whose lookup of #notices fails with a server error. The manager runs
+    /division lineup-channel or calendar-channel for #notices and the queue runs: a check that
+    cannot be made does not refuse, so the manager is told the channel was set, and it is."""
     db_path = await _make_db(tmp_path)
     cog = await _make_cog(db_path)
+    if server == "server-answers-with-an-error":
+        league_server(cog.bot, unreadable=(CHANNEL_ID,))
     interaction = _interaction(cog, which)
 
     await _run(cog, which, interaction)
@@ -334,6 +341,7 @@ async def test_the_manager_is_told_which_channel_was_assigned(tmp_path, which):
     assert _replied(interaction) == (
         f"✅ {LABELS[which]} for **Division 1** set to <#{CHANNEL_ID}>."
     )
+    assert await _channel_column(db_path, CORE_COLUMNS[which]) == CHANNEL_ID
 
 
 @pytest.mark.parametrize("which", ALL)
