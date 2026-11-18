@@ -1553,7 +1553,7 @@ Refused while an auto-close time is armed. The refusal names the armed time and 
 |-----------|------|----------|-------------|
 | `user` | Member | ✅ | The driver whose signup to end |
 
-Ends a signup a driver is filling in, has sent for review, or is correcting — one a driver who does not withdraw would otherwise hold for up to 24 hours, blocking placements, and one a manager could otherwise end only as a rejection. A form opens with one optional **reason**; submitting it ends the signup at once. Closing the form does nothing and records nothing.
+Ends a signup a driver is filling in, has sent for review, or is correcting — a driver who stops answering would otherwise hold their place for up to 24 hours, and blocks placements while awaiting review or correcting, unless they withdraw; a signup awaiting review a manager could otherwise end only as a rejection. A form opens with one optional **reason**; submitting it ends the signup at once. Closing the form does nothing and records nothing.
 
 The driver is then Not Signed Up and may press Sign Up again while signups are open. Their timers are dropped, and their signup channel is told the signup was cancelled by you, with the reason where you gave one, and is deleted 24 hours later, as after a rejection. A signup that had reached review is kept with its season. Where the channel is already gone the signup still ends, and nothing is posted. You may cancel your own signup.
 
