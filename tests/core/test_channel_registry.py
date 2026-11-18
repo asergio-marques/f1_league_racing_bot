@@ -203,11 +203,7 @@ _OWNING_MODULE = {
 }
 
 
-@pytest.mark.parametrize("setting", [
-    *sorted(_OWNING_MODULE),
-    pytest.param("signup", marks=pytest.mark.xfail(
-        strict=True, reason="#449: signup answers for its channel while it is switched off")),
-])
+@pytest.mark.parametrize("setting", [*sorted(_OWNING_MODULE), "signup"])
 async def test_a_switched_off_module_s_channel_is_free_to_another_setting(db_path, setting):
     """Channel 500 kept as Pro's *setting*, or as the server's signup channel, while its module is
     switched off: the module answers for no channel while it is off, so nothing holds 500, and

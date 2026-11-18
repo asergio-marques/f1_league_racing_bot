@@ -187,10 +187,12 @@ def sign_up_to_pack(bot: "LeagueBot") -> None:
 
 def sign_up_to_channel_uses_read(bot: "LeagueBot") -> None:
     """Sign signup up to the hook a channel being set is asked of each module through, handed the
-    database's path."""
+    module service, which answers whether signup is on, and the database's path."""
     from leaguebot.signup.services import channel_uses
 
-    bot.channel_uses_read.subscribe(partial(channel_uses.channel_uses, bot.db_path))
+    bot.channel_uses_read.subscribe(
+        partial(channel_uses.channel_uses, bot.module_service, bot.db_path)
+    )
 
 
 def sign_up_to_setting_channels_read(bot: "LeagueBot") -> None:
