@@ -1186,6 +1186,19 @@ async def bot_packed_on(db: aiosqlite.Connection) -> dict[str, Any]:
     }
 
 
+async def clear_signup_channel_on(db: aiosqlite.Connection) -> int | None:
+    """Clear the signup channel the configuration keeps, on *db*, committing nothing, and give
+    the id it held, None where none was kept: the switch-on's save clears one another setting took
+    while the module was off (`kept_channels`), so that the league sets it again. Nothing else of
+    the configuration is touched."""
+    cursor = await db.execute("SELECT signup_channel_id FROM signup_module_config")
+    row = await cursor.fetchone()
+    if row is None or row["signup_channel_id"] is None:
+        return None
+    await db.execute("UPDATE signup_module_config SET signup_channel_id = NULL")
+    return int(row["signup_channel_id"])
+
+
 async def review_section(
     service: SignupModuleService,
     modules: "ModuleService",

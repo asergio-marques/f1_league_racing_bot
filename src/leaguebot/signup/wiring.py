@@ -398,7 +398,10 @@ def register_change_types(bot: "LeagueBot") -> None:
     )
     bot.change_queue.register(
         setting_change(
-            module_on_signup(modules=bot.module_service, config=bot.config_service)
+            module_on_signup(
+                modules=bot.module_service, config=bot.config_service,
+                channel_uses_read=bot.channel_uses_read,
+            )
         )
     )
     for setting in signup_settings(modules=bot.module_service, signup=bot.signup_module_service):

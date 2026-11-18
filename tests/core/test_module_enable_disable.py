@@ -980,12 +980,7 @@ _KEPT = {
     "signup": ("signup", "signup_module_config", "signup_channel_id", "signup channel",
                "/signup channel", "✅ Signup module enabled.", "SIGNUP_CHANNEL_SET"),
 }
-#: Why signup's case fails until its switch-on checks the channel it keeps.
-_SIGNUP_UNCHECKED = "#449: signup forgets its channel on switch-off, and its switch-on checks none"
-KEPT_SETTINGS = [
-    *(setting for setting in _KEPT if setting != "signup"),
-    pytest.param("signup", marks=pytest.mark.xfail(strict=True, reason=_SIGNUP_UNCHECKED)),
-]
+KEPT_SETTINGS = list(_KEPT)
 #: The server's own roles, set where the kept channel is the server's (signup's), so that its
 #: switch-on asks for neither.
 SERVER_BASE_ROLE, SERVER_DRIVER_ROLE = 819, 820
@@ -1231,8 +1226,7 @@ async def test_a_switch_on_whose_kept_channels_cannot_be_checked_leaves_the_modu
     ("rsvp", "embed_links", "Embed Links", ()),
     ("attendance", "read_message_history", "Read Message History", ()),
     ("attendance", "send_messages", "Send Messages", ()),
-    pytest.param("signup", "manage_roles", "Manage Permissions", (),
-                 marks=pytest.mark.xfail(strict=True, reason=_SIGNUP_UNCHECKED)),
+    ("signup", "manage_roles", "Manage Permissions", ()),
 ])
 async def test_a_switch_on_finding_a_kept_channel_the_bot_cannot_use_leaves_the_module_off_and_names_the_way_out(
     tmp_path, setting, denied, missing, pictures
