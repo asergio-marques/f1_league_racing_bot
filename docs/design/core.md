@@ -242,8 +242,9 @@ the server in its payload, which runs at the ask and again as the change claims 
 because the Discord read belongs in a check and never in a save. Both judge only where no server
 is claimed (core_specification.md, "Setting the bot up", says what a configured server and
 another server are answered); the cog refuses another server's claim at the ask, and the save
-reports it as the change starts. The refusal goes to the host's log alone, the queue's own line
-having no league log to go to before the claim. The alternatives rejected: judging in the save,
+reports it as the change starts. The change's `on_refused` hook writes the refusal where
+core_specification.md, "Setting the bot up", says, the queue's own line having no league log to
+go to before the claim. The alternatives rejected: judging in the save,
 which reads the database alone (architecture.md, "How a change is carried out"); and judging only
 at the ask, which leaves a channel broken while the command waits to be claimed.
 
