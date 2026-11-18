@@ -250,7 +250,9 @@ async def test_a_second_open_asked_while_the_first_is_stopped_is_dropped_once_th
 async def test_an_open_with_no_results_channel_stops_the_queue_naming_the_command(tmp_path):
     """Pro has no results channel set when round 3 starts. The queue stops rather than passing
     over it, its stop notice in the log channel naming `/results channel results`, and no
-    channel is created."""
+    channel is created. Once the channel is set again (606) and the job retried, the submission
+    opens: one channel is created and recorded, the queue runs clear, and round 3 awaits its
+    results (#456)."""
     league = await _league(tmp_path)
     await league.write(
         "UPDATE division_results_config SET results_channel_id = NULL WHERE division_id = ?", PRO,
@@ -262,6 +264,16 @@ async def test_an_open_with_no_results_channel_stops_the_queue_naming_the_comman
     assert await stopped_job(league.db_path) is not None
     assert "/results channel results" in league.log()
     assert league.created == []
+
+    await league.write(
+        "UPDATE division_results_config SET results_channel_id = 606 WHERE division_id = ?", PRO,
+    )
+    await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    [made] = league.created
+    assert await _submission(league) == [{"channel_id": made, "closed": 0}]
+    assert await _status(league) == "AWAITING_RESULTS"
 
 
 async def test_the_opening_of_a_submission_cannot_be_discarded(tmp_path):
