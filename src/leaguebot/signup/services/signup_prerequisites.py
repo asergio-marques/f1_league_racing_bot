@@ -36,7 +36,7 @@ if TYPE_CHECKING:
 #: What a season's approval is refused on, one line to the reason beneath it in the log channel.
 _NO_SIGNUP_CHANNEL = "**Signup channel** (use `/signup channel`)"
 #: How the placements review's private lines close: the season is held back, and what to run after.
-_WITHHELD = "The season is not offered for approval while that stands —"
+_WITHHELD = "The season is **not** offered for approval while that stands —"
 _RUN_AGAIN = "run `/season placements-review` again."
 
 
@@ -74,8 +74,8 @@ async def confirmation_refusals(
     if channel_id is None:
         if not approval:
             return [Refusal(
-                "⛔ **No signup channel is set.** The season is **not** offered for approval "
-                f"while that stands — set one with `{COMMAND}`, then {_RUN_AGAIN}"
+                f"⛔ **No signup channel is set.** {_WITHHELD} set one with `{COMMAND}`, "
+                f"then {_RUN_AGAIN}"
             )]
         return [Refusal(
             "❌ Season cannot be approved — signup module is enabled but "
@@ -88,27 +88,28 @@ async def confirmation_refusals(
     if presence.state is PresenceState.GONE:
         if not approval:
             return [Refusal(
-                f"⛔ The signup channel <#{channel_id}> is no longer on the server. {_WITHHELD} "
-                f"set it again with `{COMMAND}`, then {_RUN_AGAIN}"
+                f"⛔ **The signup channel <#{channel_id}> is no longer on the server.** "
+                f"{_WITHHELD} set it again with `{COMMAND}`, then {_RUN_AGAIN}"
             )]
-        return [_unusable_channel(f"<#{channel_id}> is no longer on the server — `{COMMAND}`.")]
+        return [_channel_refusal(f"<#{channel_id}> is no longer on the server — `{COMMAND}`.")]
     if presence.state is PresenceState.UNUSABLE:
         missing = ", ".join(presence.missing)
         if not approval:
             return [Refusal(
-                f"⛔ The signup channel <#{channel_id}> is missing permissions the bot needs "
-                f"there: {missing}. {_WITHHELD} give the bot them, then {_RUN_AGAIN}"
+                f"⛔ **The signup channel <#{channel_id}> is missing permissions the bot needs "
+                f"there: {missing}.** {_WITHHELD} give the bot them, then {_RUN_AGAIN}"
             )]
-        return [_unusable_channel(
+        return [_channel_refusal(
             f"<#{channel_id}> is missing permissions the bot needs there: {missing} — "
             "give the bot them."
         )]
     return []
 
 
-def _unusable_channel(item: str) -> Refusal:
-    """The approval's refusal of a signup channel that is set but cannot be used, laid out as the
-    unset channel's is: a head and the item beneath it, which the log line carries."""
+def _channel_refusal(item: str) -> Refusal:
+    """The approval's refusal of a signup channel that is set but gone from the server or unusable
+    there, laid out as the unset channel's is: a head and the item beneath it, which the log line
+    carries."""
     reason = f"the signup channel cannot be used:\n• {item}"
     return Refusal(f"❌ Season cannot be approved — {reason}", reason)
 

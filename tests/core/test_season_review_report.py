@@ -547,7 +547,7 @@ async def test_the_signup_configuration_is_reviewed(db_path):
     ),
     pytest.param(
         900, {"gone": (900,)},
-        ["⛔ The signup channel <#900> is no longer on the server.", "`/signup channel`",
+        ["⛔ **The signup channel <#900> is no longer on the server.**", "`/signup channel`",
          "`/season placements-review`"],
         [],
         id="deleted",

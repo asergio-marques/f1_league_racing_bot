@@ -199,7 +199,7 @@ async def channel_fault(
 
     *value* is the channel's id as the column holds it; *label* is what a league calls the
     channel and *command* sets it. A channel of no division (the server's, as signup's) is
-    given as a *division_name* of None and named "The {label}". *needs* is what the channel's use
+    given as a *division_name* of None, set, and named "The {label}". *needs* is what the channel's use
     asks of the bot, which its module states (`channel_needs`); a channel lacking any is named
     with what it lacks, in Discord's own words, so the league can give the bot them or set
     another. The channel is judged by `judged_presence`, so one that could not be looked up for
@@ -208,8 +208,6 @@ async def channel_fault(
     """
     owner = f"**{division_name}**'s {label}" if division_name is not None else f"The {label}"
     if not value:
-        if division_name is None:
-            return f"The {label} is not set — `{command}`."
         return f"**{division_name}** has no {label} — `{command}`."
     if guild is None:
         return None
