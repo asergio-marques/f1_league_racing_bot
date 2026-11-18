@@ -280,20 +280,21 @@ approval saved, a season's configuration confirmed, a review gathering its lines
 review gathering each division's lines, a division's channel faults read, a channel's uses read as a
 command sets it or as a module is switched on (weather, results, attendance and signup answer it
 only while the module is on), the channels a picture posts to read as an output is switched to one or
-the image module is switched on (core, weather, results and attendance answer it, each for its own
-outputs and only while on), the factory reset gathering the channels each module holds, a round's
-drawn phases read, a driver's signup name, username and nationality read for a season, with whether
-a nationality is collected, which the modules that draw a driver ask through core's reader, the
-divisions a driver's accounts raced in read, a driver's standing in a division read for the season's
-history, a season's fingerprint taken, a season's pending test-mode steps read, the test-mode
-review's marks read, a season's confirmation judged, a division's final round read, a season ending,
-a season, division, round or driver deleted, a driver merged into another or turned down, a driver's
-account changed, a base role changed, the bot packed, test mode turned on, the bot's in-memory state
-cleared, the hub's panel gathering its options, a module's switch read), core declares a hook. The
-builder, or the module's wiring it calls, signs each module up to it before the bot connects. Core
-calls whoever signed up, and never imports a module, the bot's type aside (see "How the code is laid
-out"). A module turned on or off is not a hook but a change of the module's own, which core asks for
-by its kind (see "Each module turns itself on and off").
+the image module is switched on (core answers it for the lineup and the calendar, and weather,
+results and attendance each for their own outputs, only while on), the factory reset gathering the
+channels each module holds, a round's drawn phases read, a driver's signup name, username and
+nationality read for a season, with whether a nationality is collected, which the modules that draw
+a driver ask through core's reader, the divisions a driver's accounts raced in read, a driver's
+standing in a division read for the season's history, a season's fingerprint taken, a season's
+pending test-mode steps read, the test-mode review's marks read, a season's confirmation judged, a
+division's final round read, a season ending, a season, division, round or driver deleted, a driver
+merged into another or turned down, a driver's account changed, a base role changed, the bot packed,
+test mode turned on, the bot's in-memory state cleared, the hub's panel gathering its options, a
+module's switch read), core declares a hook. The builder, or the module's wiring it calls, signs
+each module up to it before the bot connects. Core calls whoever signed up, and never imports a
+module, the bot's type aside (see "How the code is laid out"). A module turned on or off is not a
+hook but a change of the module's own, which core asks for by its kind (see "Each module turns
+itself on and off").
 
 **A hook core declares is a list of subscribers.** Core declares the moment and what it hands over:
 what the moment concerns, where it concerns anything (the rows, the round, the driver's accounts,
@@ -420,6 +421,8 @@ switch-on runs and a module answers it only while it is on, so a channel it kept
 against another setting while it is off, and the switch-on claims it again, clearing what another
 setting took meanwhile (core_specification.md, "Modules" and "Channels"). Signup's channel is the
 server's, not a division's, so its reader answers with no division.
+*Rejected:* an `After` step that undoes the switch-on, and the check in `check()`; the reasons are
+in `setting_change`'s docstring.
 
 An output switched to a picture has the channels it posts to checked in the same way, by a step
 before the save (`core/services/modules/picture_channels.py`), which the image module hands the
@@ -427,16 +430,15 @@ outputs the change switches on, read on the connection the step holds, and which
 channels a picture posts to. Core answers its own channels for the lineup and the calendar alone,
 and each module answers for its own, only while it is on, as its channel uses are answered. Every
 need is asked as if the output were a picture, Attach Files among it, whatever the output's switch
-holds now, so the answers fix the need and do not ask the drawing what a picture could attach: the step's connection is held, and nothing but it may be awaited (see "The database"). The
-step judges every channel strictly (`channel_presence`) and once however many outputs post to it, so
-that a channel gone or lacking a permission refuses, and a channel it cannot read ends the setting
-on a fault with nothing saved. The image module's switch-on makes the same check of the outputs
-already on, since the configuration is kept while the module is off. An output left as text, a module
-that is off, a cancelled division and a finished season have no channel judged
-(core_specification.md, "Channels"). The check names no module, and the image module calls it,
-never the hook.
-*Rejected:* an `After` step that undoes the switch-on, and the check in `check()`; the reasons are
-in `setting_change`'s docstring.
+holds now, so the answers fix the need and do not ask the drawing what a picture could attach: the
+step's connection is held, and nothing but it may be awaited (see "The database"). The step judges
+every channel strictly (`channel_presence`) and once however many outputs post to it, so that a
+channel gone or lacking a permission refuses, and a channel it cannot read ends the setting on a
+fault with nothing saved. The image module's switch-on makes the same check of the outputs already
+on, since the configuration is kept while the module is off. An output left as text has no channel
+judged (image_module_specification.md, "Configuration"), nor has a module that is off, a cancelled
+division or a finished season (core_specification.md, "Channels"). The check names no module, and
+the image module calls it, never the hook.
 
 Where a module also put something on the server that its switch-off took off, its switch-on puts it
 back as two further steps before the save, after the check: a record step, which keeps what it found
