@@ -540,23 +540,17 @@ async def test_the_signup_configuration_is_reviewed(db_path):
     assert "Available slots: Sunday 20:00" in public
 
 
-#: Why the placements review does not yet name a signup channel the approval would refuse.
-_SIGNUP_CHANNEL_NOT_REVIEWED = (
-    "#449: the placements review does not judge the signup channel or withhold Approve on it"
-)
-
-
 @pytest.mark.parametrize("channel, server, named, unsaid", [
     pytest.param(
         None, {}, ["`/signup channel`", "`/season placements-review`"], [],
-        id="unset", marks=pytest.mark.xfail(strict=True, reason=_SIGNUP_CHANNEL_NOT_REVIEWED),
+        id="unset",
     ),
     pytest.param(
         900, {"gone": (900,)},
         ["⛔ The signup channel <#900> is no longer on the server.", "`/signup channel`",
          "`/season placements-review`"],
         [],
-        id="deleted", marks=pytest.mark.xfail(strict=True, reason=_SIGNUP_CHANNEL_NOT_REVIEWED),
+        id="deleted",
     ),
     pytest.param(
         900, {"unusable": {900: ("manage_channels",)}},
@@ -564,7 +558,6 @@ _SIGNUP_CHANNEL_NOT_REVIEWED = (
          "give the bot them", "`/season placements-review`"],
         ["`/signup channel`"],
         id="lacking_manage_channel",
-        marks=pytest.mark.xfail(strict=True, reason=_SIGNUP_CHANNEL_NOT_REVIEWED),
     ),
     pytest.param(900, {"unreadable": (900,)}, None, [], id="unreadable"),
 ])

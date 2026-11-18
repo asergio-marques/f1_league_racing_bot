@@ -68,10 +68,10 @@ def sign_up_to_configuration_confirmed(bot: "LeagueBot") -> None:
 
 
 def sign_up_to_confirmation_refused(bot: "LeagueBot") -> None:
-    """Sign signup's refusal of a season's approval while its signup channel is unset up to the
-    hook a season's confirmation is refused through, after results': handed the league's modules
-    and signup's service, then the season and which confirmation is judged. Signup checks its own
-    switch."""
+    """Sign signup's refusal of a season's approval, and of its placements review, while its
+    signup channel is unset, gone or unusable up to the hook a season's confirmation is refused
+    through, after results': handed the league's modules and signup's service, then the season,
+    which confirmation is judged and the server. Signup checks its own switch."""
     from leaguebot.signup.services import signup_prerequisites
 
     bot.confirmation_refused.subscribe(partial(
