@@ -555,6 +555,19 @@ def start_change(
     )
 
 
+def end_key(payload: dict[str, Any]) -> str:
+    """The key of an ending, which the queue refuses to ask twice in a row on a lane.
+
+    Every ending of a driver's signup shares one key, bar a manager's cancellation, which has its
+    own: a cancellation asked behind another ending (an expiry that proves not due, a withdrawal)
+    is then judged by its own check when its turn comes, never refused as a repeat of an ask nobody
+    made, and never lost where the ending ahead of it is dropped.
+    """
+    if payload.get("reason") == CANCELLED:
+        return f"{END}:{CANCELLED}:{payload['user_id']}"
+    return f"{END}:{payload['user_id']}"
+
+
 def end_change(
     *,
     signup: Callable[[], "SignupModuleService"],
@@ -922,7 +935,7 @@ def end_change(
             **closing_steps(now=now, arm_once=arm_once),
         },
         check=check,
-        key=lambda payload: f"{END}:{payload['user_id']}",
+        key=end_key,
         doing=lambda payload: (
             "Ending a signup" if payload.get("reason") in (EXPIRED, CHANNEL_GONE)
             else "Rejecting a signup" if payload.get("reason") == REJECTED
