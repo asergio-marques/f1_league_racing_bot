@@ -76,6 +76,7 @@ from leaguebot.core.services.seasons.season_lifecycle_service import (
 )
 from leaguebot.core.utils.channel_guard import league_role_faults
 from leaguebot.framework.utils.league_server import league_guild
+from leaguebot.signup.services.channel_uses import POSTING_NEEDS
 from leaguebot.signup.services.closing_steps import (
     ARM_DELETION,
     BUTTON_KEPT,
@@ -110,8 +111,11 @@ ARM_CLOSE = "arm_close"
 DELETE_CLOSED = "delete_closed"
 #: What a league is told when the module is off.
 MODULE_OFF = "⛔ Signup module is not enabled. Use `/module enable signup` first."
-#: What the bot needs on the signup channel to post the Sign Up button.
-NEEDED = "**View Channel**, **Send Messages** and **Embed Links**"
+#: What the bot needs on the signup channel to post the Sign Up button, named as a refusal names it.
+NEEDED = (
+    ", ".join(f"**{name}**" for _, name in POSTING_NEEDS[:-1])
+    + f" and **{POSTING_NEEDS[-1][1]}**"
+)
 
 CLOSE = "signup.close"
 RETURN_DRIVERS = "return_drivers"
@@ -216,7 +220,7 @@ def window_open_change(
         if not isinstance(found, discord.TextChannel):
             return Verdict.refuse("❌ Configured signup channel not found.")
         have = found.permissions_for(found.guild.me)
-        if not (have.view_channel and have.send_messages and have.embed_links):
+        if not all(getattr(have, attribute) for attribute, _ in POSTING_NEEDS):
             return Verdict.refuse(
                 f"❌ The bot needs {NEEDED} on {found.mention} to post the Sign Up button. "
                 "Signups were not opened."

@@ -11,12 +11,34 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
+from leaguebot.core.models.channel_needs import (
+    EMBED,
+    MANAGE_CHANNEL,
+    MANAGE_PERMISSIONS,
+    SEND,
+    VIEW,
+    Needs,
+)
 from leaguebot.framework.db.database import get_connection
 from leaguebot.core.services.settings.channel_registry_service import (
     ChannelUse,
     DiscordTargets,
     channel_ids_in,
 )
+
+#: What the bot needs on the signup channel to post there: the information post with its Sign Up
+#: button is an embed (`window_changes`), so View Channel, Send Messages and Embed Links.
+POSTING_NEEDS: Needs = (VIEW, SEND, EMBED)
+#: What the bot needs on the signup channel to set who may see it (`channel_setting`): Manage
+#: Channel and Manage Permissions.
+OVERWRITE_NEEDS: Needs = (MANAGE_CHANNEL, MANAGE_PERMISSIONS)
+
+
+def channel_needs() -> Needs:
+    """What the signup channel needs of the bot, stated once: its posting needs
+    (`POSTING_NEEDS`), which `/signup open` checks before it posts, and its overwrite needs
+    (`OVERWRITE_NEEDS`)."""
+    return POSTING_NEEDS + OVERWRITE_NEEDS
 
 
 async def channel_uses(
