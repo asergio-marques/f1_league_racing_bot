@@ -1155,6 +1155,25 @@ async def test_switching_an_output_on_judges_no_channel_of_a_module_that_is_off(
     guild.fetch_channel.assert_not_called()
 
 
+async def test_switching_an_output_on_judges_no_channel_of_an_output_left_as_text(tmp_path):
+    """Images and results on, a running season holding Pro, Pro's standings channel 121
+    deleted and the Standings left as text: `/images config toggle Calendar` switches the
+    Calendar on, said as today, and channel 121, which only the Standings would post to, is
+    never looked for."""
+    league = await _league(tmp_path, modules=("images", "results"))
+    await _live_season(league.db_path)
+    guild = league_server(league.bot, gone=(PRO_STANDINGS,))
+
+    asked = await _toggle()(league)
+    await run_queue(league.bot)
+
+    assert last_said(asked) == "✅ **Calendar** image output **enabled**."
+    assert await _rows(league.db_path, CALENDAR_SWITCH) == [(1,)]
+    assert await _rows(league.db_path, _switch_of("standings")) == [(0,)]
+    looked_for = guild.get_channel.call_args_list + guild.fetch_channel.call_args_list
+    assert PRO_STANDINGS not in [call.args[0] for call in looked_for]
+
+
 async def test_switching_an_output_off_judges_no_channel(tmp_path):
     """The Calendar on, the bot command channel 100 deleted: `/images config toggle Calendar`
     switches it off, said as today, and nothing of the server is read."""

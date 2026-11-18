@@ -444,6 +444,10 @@ async def _kept_league(tmp_path, *aspects: str, results: bool = False, **server)
             ("standings",), False, {"gone": (PRO_STANDINGS,)}, None,
             id="standings on, results off, standings channel gone",
         ),
+        pytest.param(
+            ("calendar",), True, {"gone": (PRO_STANDINGS,)}, None,
+            id="calendar on, standings left as text, results on, standings channel gone",
+        ),
     ],
 )
 async def test_enabling_is_refused_where_an_output_left_on_posts_to_a_channel_that_cannot_take_it(
@@ -454,8 +458,9 @@ async def test_enabling_is_refused_where_an_output_left_on_posts_to_a_channel_th
     left on with results on, Pro's standings channel 121 deleted: `/module enable images` is
     refused, the module still off, the reply naming the channel in one bullet with the outputs
     that post to it and what it lacks or that it is gone, and the ways out; one "⛔" line and no
-    audit entry. Standings left on with results off, its channel deleted, is not judged: the
-    module is switched on again as today."""
+    audit entry. Standings left on with results off, its channel deleted, is not judged; nor,
+    with results on, is the channel of Standings left as text while the Calendar is on: the
+    module is switched on again as today, and channel 121 is never looked for."""
     from tests.support.settings_league import last_said, log_lines
 
     league, cog = await _kept_league(tmp_path, *aspects, results=results, **server)
@@ -466,6 +471,9 @@ async def test_enabling_is_refused_where_an_output_left_on_posts_to_a_channel_th
     if named is None:
         assert await _images_flag(league.db_path) == 1
         assert last_said(asked) == ENABLED_AGAIN
+        guild = league.bot.get_guild.return_value
+        looked_for = guild.get_channel.call_args_list + guild.fetch_channel.call_args_list
+        assert PRO_STANDINGS not in [call.args[0] for call in looked_for]
         return
     assert await _images_flag(league.db_path) == 0
     reply = last_said(asked)
