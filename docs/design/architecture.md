@@ -277,8 +277,8 @@ judged, a round amended or its timed work armed again, a round's timed work read
 a division or a season cancelled, a round's results made final, placements confirmed, a season's
 approval saved, a season's configuration confirmed, a review gathering its lines, the placements
 review gathering each division's lines, a division's channel faults read, a channel's uses read as a
-command sets it or as a module is switched on (weather, results and attendance answer it only while
-the module is on, signup whatever its switch), the factory reset gathering the channels each module
+command sets it or as a module is switched on (weather, results, attendance and signup answer it only
+while the module is on), the factory reset gathering the channels each module
 holds, a round's drawn phases read, a driver's signup name, username and nationality read for a
 season, with whether a nationality is collected, which the modules that draw a driver ask through
 core's reader, the divisions a driver's accounts raced in read, a driver's standing in a division
@@ -410,11 +410,19 @@ A module that keeps channels while it is off has its switch-on check them. The s
 `Setting` with a step before its save, which core's check (`core/services/modules/kept_channels.py`)
 supplies and which the module hands its own reader of the channels it kept, with its own needs of
 the bot in each: core names no module in it, and each module's reader is built from the one
-statement of its channels that its confirmation faults also read (a table of them, or, for weather's
-one channel, the constants it is named and set by). The channel hook is read as the switch-on runs
-and a module answers it only while it is on, so a channel it kept does not count against another
-setting while it is off, and the switch-on claims it again, clearing what another setting took
-meanwhile (core_specification.md, "Modules" and "Channels").
+statement of its channels that its confirmation faults also read (a table of them, or, for the one
+channel of weather and of signup, the constants it is named and set by, signup's needs being stated
+once and read by `/signup open` for the part it needs to post). The channel hook is read as the
+switch-on runs and a module answers it only while it is on, so a channel it kept does not count
+against another setting while it is off, and the switch-on claims it again, clearing what another
+setting took meanwhile (core_specification.md, "Modules" and "Channels"). Signup's channel is the
+server's, not a division's, so its reader answers with no division.
+
+Where a module also put something on the server that its switch-off took off, its switch-on puts it
+back as a further step before the save, after the check: the step records what it found, puts back,
+and declares an undo that takes the put-back back, from the record the queue keeps, where a later
+step or the save does not go through. Signup's three steps are the check, the record of the bot's
+permissions on its channel, and the restore.
 *Rejected:* an `After` step that undoes the switch-on, and the check in `check()`; the reasons are
 in `setting_change`'s docstring.
 
@@ -624,12 +632,16 @@ it that carries the line — the arming of the daily portrait job, a role's gran
 where it replaces one gone from the server while the season's configuration is fixed, the old hub
 stood down and the new one's permissions set once its channel is moved, or the signup channel's
 permissions set (the new channel's first, the old one's cleared last); see "The record is the
-queue's"), and the work after it that the setting does not need (checking it against the templates,
+queue's"), after any step before the save, and the work after it that the setting does not need (checking it against the templates,
 arming or removing a timed job, granting a role to every driver, asking the hub's panel to be posted
 again as the bot's own change, posting the signup information in the new signup channel where a
 window is open) is work nothing later depends on. Work the save waits on may come before it (a
-module's kept channels checked before it is switched on): it saves nothing, and a fault in it, or a
-refusal by it, ends the setting with nothing saved and no audit record. A fault in any of these
+module's kept channels checked before it is switched on, and what it put back on Discord): it saves
+nothing, and a fault in it, or a refusal by it, ends the setting with nothing saved and no audit
+record. A step that changed something on Discord declares an undo (`Before.undo`), which the queue
+runs, last step first, where a later step before the save halts or faults or the save does, so that
+nothing is half-set; where Discord refuses the take-back, the step says what it left and the reply
+and the failure line carry it. A fault in any of these
 leaves nothing half-done and nothing behind it on the lane waits on it. A fault in a step before the
 save saves nothing, and one in the save is rolled back whole, so nothing is saved and the member can
 simply ask again; a fault in a step after the save leaves the setting saved, so asking again with
@@ -719,7 +731,7 @@ stop nobody yet holds the role to clear.
   judgement of the state, as is the reading a module's switch-on makes of its kept channels before
   its save: a module's channels are not counted while it is off, and its switch-on claims them
   again, so a switch-on must stay a change that never stops its lane, its steps before the save and
-  its save ending on a fault. That invariant is the one a later reader could tune away: a change
+  its save ending on a fault, and the undos of those steps ending on a fault too. That invariant is the one a later reader could tune away: a change
   that can stop its lane and claims a channel would need the save to re-check, or would need to be
   barred from being overtaken.
 
@@ -818,8 +830,9 @@ stop nobody yet holds the role to clear.
   tables it writes) and `setting_change` builds the change type, so that the line, whether an audit
   record is written, the answer for a value already held and the answer for a fault are decided in
   one place. A setting's value, its audit record and its line are one save, after any steps before
-  it (a module's kept channels checked before it is switched on, which save nothing and end the
-  setting on a fault, or refused, with no audit record), save where a step after it arms the daily
+  it (a module's kept channels checked before it is switched on, and what it puts back, which save
+  nothing and end the setting on a fault, or refused, with no audit record, the steps that changed
+  something on Discord taken back by their undos), save where a step after it arms the daily
   portrait job, grants a role to every driver where it replaces one gone from the server while the
   season's configuration is fixed, stands the old hub down and sets the new one's permissions once
   its channel is moved, or sets the new signup channel's permissions and then clears the old one's:

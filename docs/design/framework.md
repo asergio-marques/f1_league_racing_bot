@@ -197,6 +197,16 @@ the steps the queue keeps rather than from memory, so a restart between a step a
 hands it the same. The docstring of `setting_change` holds why the steps before the save keep the
 queue's last-judgement invariant.
 
+A step that changes something on Discord declares an undo (`Before.undo`), itself an `ACT` step.
+The undos of the steps that returned run, last step first, where a later step halts or faults and
+where the save does, planned as jobs of the change in the place of the rest, so a restart finishes
+them; a step that fails part-way takes back its own partial work before it raises, and its undo is
+not run. The pattern a module follows is a step that records what is there, a step that changes it
+whose undo restores the record, and the save, the record being kept by the queue (`FOUND`) rather
+than in memory. Where Discord refuses a take-back, the undo raises `StepFailedOnDiscord` with a
+notice of what was left and how to put it right; `setting_change` carries the notice into the failure
+line and the reply, and names the kind of fault from its cause, never `StepFailedOnDiscord`.
+
 ### The clock
 
 The queue's clock, `ChangeQueue.now`, is the bot's: the builder hands services, change types and
