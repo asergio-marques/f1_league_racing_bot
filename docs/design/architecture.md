@@ -1577,8 +1577,10 @@ one that says otherwise below.
   a team name from becoming a bad artwork filename.
 - Results' reader of an attendance switch (`points_amendment_faults.approval_faults`) and core's
   reader of whether a channel can be used as its posting needs (`approval_checks.judged_presence`,
-  which `channel_on_server` asks) stand aside, reading the switch as off and the channel as
-  present, because a reader that cannot answer must not refuse an amendment or a season. The strict
+  which `channel_on_server` and the check of a command setting a channel,
+  `channel_registry_service.unusable_refusal`, ask) stand aside, reading the switch as off and the
+  channel as present, because a reader that cannot answer must not refuse an amendment, a season or
+  the channel a manager chose. The strict
   reader beneath it (`approval_checks.channel_presence`) answers only what Discord proves, a
   channel found, gone, or found and lacking a permission its use needs, and raises on anything
   else, so that a caller which can refuse for a check that could not be made is not forced to
