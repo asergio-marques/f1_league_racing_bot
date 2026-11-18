@@ -374,8 +374,6 @@ async def test_an_enable_that_cannot_arm_the_daily_refresh_leaves_the_module_on_
 # The channels the outputs already on post to (#570, slice 3)
 # ---------------------------------------------------------------------------
 
-#: Why the enable's channel tests fail until the check before its save lands.
-CHANNELS_NOT_JUDGED = "#570: switching the image module on judges no channel an output posts to"
 #: The opening and the close of the enable's refusal for channels that cannot take a picture.
 STILL_OFF = (
     "⛔ The image module is still off: outputs switched on post to channels that cannot take "
@@ -432,13 +430,11 @@ async def _kept_league(tmp_path, *aspects: str, results: bool = False, **server)
             ("lineup", "calendar"), False, {"unusable": {COMMAND: ("attach_files",)}},
             ("**Lineup, Calendar**", f"<#{COMMAND}>", "Attach Files"),
             id="lineup and calendar on, command channel lacking Attach Files",
-            marks=pytest.mark.xfail(strict=True, reason=CHANNELS_NOT_JUDGED),
         ),
         pytest.param(
             ("standings",), True, {"gone": (PRO_STANDINGS,)},
             ("**Standings**", f"<#{PRO_STANDINGS}>", "no longer on the server"),
             id="standings on, results on, standings channel gone",
-            marks=pytest.mark.xfail(strict=True, reason=CHANNELS_NOT_JUDGED),
         ),
         pytest.param(
             ("standings",), False, {"gone": (PRO_STANDINGS,)}, None,
@@ -487,7 +483,6 @@ async def test_enabling_is_refused_where_an_output_left_on_posts_to_a_channel_th
     assert line.startswith(f"⛔ `/module enable` refused for {NAMED} — ")
 
 
-@pytest.mark.xfail(strict=True, reason=CHANNELS_NOT_JUDGED)
 @pytest.mark.parametrize("cause", ["a channel's fetch fails", "the server is out of reach"])
 async def test_an_enable_that_cannot_tell_leaves_the_module_off_and_says_to_run_it_again(
     tmp_path, cause
