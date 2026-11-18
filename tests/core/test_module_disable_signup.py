@@ -396,14 +396,13 @@ async def test_the_channel_is_kept_and_its_permissions_removed(tmp_path):
     ) in reply
 
 
-@pytest.mark.xfail(strict=True, reason="#449: the switch-off deletes the configuration row and "
-                   "its channel")
 async def test_disabling_signup_keeps_both_roles(tmp_path):
     """They are the league's, not the module's (issue #276). Disabling signup deleted them
     with its configuration row, and a league that ran on without signups lost the base role
     another module reads and the driver role its season's end revokes. The base role (3001) and
-    the driver role (3002) are set; once the switch-off has run both stand, the configuration and
-    its signup channel stand too, and the acknowledgement says the two roles are kept."""
+    the driver role (3002) are set; once the switch-off has run both stand, and the
+    acknowledgement says the two roles are kept. That the configuration and its channel stand too
+    is `test_the_channel_is_kept_and_its_permissions_removed`'s."""
     league = await _league(tmp_path)
     await league.write("UPDATE server_configs SET base_role_id = ?, driver_role_id = 3002",
                        BASE_ROLE)
@@ -416,9 +415,6 @@ async def test_disabling_signup_keeps_both_roles(tmp_path):
 
     config = await league.bot.config_service.get_server_config()
     assert (config.base_role_id, config.driver_role_id) == (BASE_ROLE, 3002)
-    signup_config = await league.bot.signup_module_service.get_config()
-    assert signup_config is not None
-    assert signup_config.signup_channel_id == LEAGUE_SIGNUP_CHANNEL
     assert "base role and driver role" in updated_reply(interaction)
 
 
