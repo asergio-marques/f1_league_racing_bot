@@ -177,7 +177,7 @@ folder.
 | Amending a round | `amendment_rules_service`, `round_steps` | nothing: the first judges core's own rules of what an amendment may do (the fields, the round's status, the moment and a mystery round given a circuit alone) and gathers each module's part of the judgement through `amendment_judged`; the second names a round in an amendment's step by the number it bears when read |
 | Season reviews and confirmations | `approval_checks`, `approval_window_service` (`calendar_faults`, what is already behind a season on the day it is approved), `review_sections`, `confirmation_refusals`, `season_fingerprint_service`, `season_review_changes`, `season_review_views`, `season_review_workflows` | `season_review_prompts` |
 | The hub | `hub_service`, `about_service` | `server_configs.hub_message_id` |
-| A module switched on | `kept_channels` (`kept_channels_check`), `picture_channels` (`picture_channels_check`, `core_picture_channels`) | nothing: the first reads the channels a module kept through the reader its switch-on hands it, asks the registry, through the bot's `channel_uses_read` hook that every module holding channels answers, which are taken, and Discord which are gone or unusable; the second reads, through the `picture_channels_read` hook, the channels an output switched to a picture posts to, and asks Discord which are gone or lack what a picture needs |
+| A module or an output switched on | `kept_channels` (`kept_channels_check`), `picture_channels` (`picture_channels_check`, `core_picture_channels`) | nothing: the first reads the channels a module kept through the reader its switch-on hands it, asks the registry, through the bot's `channel_uses_read` hook that every module holding channels answers, which are taken, and Discord which are gone or unusable; the second reads, through the `picture_channels_read` hook, the channels an output switched to a picture posts to, and asks Discord which are gone or lack what a picture needs |
 | Test mode | `test_mode_service`, `test_roster_service`, `backup_service` | `server_configs.test_mode_active` |
 | Starting over | `pack_service`, `factory_reset_service`, `in_memory_state` | — |
 
@@ -233,20 +233,21 @@ own list, which lets two gates judge one channel differently.
 **The server's channels hand their needs from the service that owns the setting.** `hub_service`
 owns `HUB_NEEDS`, the five core_specification.md, "The hub", lists: the bot's own overwrite in the
 hub grants it Embed Links, and the hub is held to the same five needs as the signup channel;
-`bot_settings` owns `LOG_CHANNEL_NEEDS` and `interaction_channel_needs(drawing)`, the latter asking
-the image module's drawing, as the division channels do, whether a lineup or calendar picture
-attaches a file. `/bot init` judges both its channels through `init_channel_refusals`, which words
-every refusal on a line of its own, the command channel first. It is called from two places: the
-cog, at the ask, against the server the command runs in, and `bot_init_change`'s check, against
-the server in its payload, which runs at the ask and again as the change claims the server,
-because the Discord read belongs in a check and never in a save. Both judge only where no server
-is claimed (core_specification.md, "Setting the bot up", says what a configured server and
-another server are answered); the cog refuses another server's claim at the ask, and the save
-reports it as the change starts, with no channel refusal beside it. The change's `on_refused` hook
-writes the refusal where core_specification.md, "Setting the bot up", says, the queue's own line
-having no league log to go to before the claim. The alternatives rejected: judging in the save,
-which reads the database alone (architecture.md, "How a change is carried out"); and judging only
-at the ask, which leaves a channel broken while the change waits in the queue.
+`bot_settings` owns `LOG_CHANNEL_NEEDS`, `INTERACTION_CHANNEL_NEEDS` (the text needs of the command
+channel) and `interaction_channel_needs(drawing)`, which asks the image module's drawing, as the
+division channels do, whether a lineup or calendar picture attaches a file. `/bot init` judges both
+its channels through `init_channel_refusals`, which words every refusal on a line of its own, the
+command channel first. It is called from two places: the cog, at the ask, against the server the
+command runs in, and `bot_init_change`'s check, against the server in its payload, which runs at the
+ask and again as the change claims the server, because the Discord read belongs in a check and never
+in a save. Both judge only where no server is claimed (core_specification.md, "Setting the bot up",
+says what a configured server and another server are answered); the cog refuses another server's
+claim at the ask, and the save reports it as the change starts, with no channel refusal beside it.
+The change's `on_refused` hook writes the refusal where core_specification.md, "Setting the bot up",
+says, the queue's own line having no league log to go to before the claim. The alternatives
+rejected: judging in the save, which reads the database alone (architecture.md, "How a change is
+carried out"); and judging only at the ask, which leaves a channel broken while the change waits in
+the queue.
 
 **Core's own two channels are named through the same hook as the modules'.** The lineup and the
 calendar need the image module's answer to build their needs, which is awaited, so
@@ -275,9 +276,10 @@ order). Asking the hook, not a list of modules' rules, keeps core free of any mo
 
 **Core's models** (`core/models/`) are plain data and the enums the schema ties to: the season's
 status and stage, a division's and a round's status, the driver's state and the dependency table
-(`module_dependencies.py`), and the permissions a saved channel needs (`channel_needs.py`: `Needs`
-and the named permissions, which each part states its channels' needs from). The change queue's
-vocabulary and `Refused` are the framework's models (`framework.md`, "How the code is laid out").
+(`module_dependencies.py`), and the permissions a saved channel needs (`channel_needs.py`: `Needs`,
+the named permissions, which each part states its channels' needs from, and `attaching`, which adds
+Attach Files to them where a picture attaches a file). The change queue's vocabulary and `Refused`
+are the framework's models (`framework.md`, "How the code is laid out").
 
 **Core's helpers** (`core/utils/`) are the tier guards (`channel_guard.py`), the season-stage gate
 (`season_gate.py`), the team choices a command's autocomplete offers (`team_autocomplete.py`),
