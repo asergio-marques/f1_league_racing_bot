@@ -480,6 +480,11 @@ REFUSAL_CASES = [
     pytest.param("no-season", _NO_SEASON, id="no-season"),
     pytest.param("unknown-division", _not_found("Division 9"), id="unknown-division"),
     pytest.param("in-use", _clash(), id="in-use"),
+    pytest.param("in-use-cannot-use", _clash(), id="in-use-cannot-use"),
+    pytest.param(
+        "already-set-cannot-use", {which: _already(which) for which in COMMANDS},
+        id="already-set-cannot-use",
+    ),
 ]
 
 
@@ -504,17 +509,25 @@ async def test_every_refusal_of_a_channel_command_is_recorded(tmp_path, which, c
     - **unknown-division**: Season 1 has Division 1 alone and the manager names Division 9,
       refused by the name typed.
     - **in-use**: #notices is already Division 2's results channel. A channel serves one purpose
-      across the whole server (decided 2026-09-06), checked before the write."""
+      across the whole server (decided 2026-09-06), checked before the write.
+    - **in-use-cannot-use** and **already-set-cannot-use**: #notices is already Division 2's
+      results channel, or already Division 1's check-in call (or attendance) channel, and the bot
+      is also denied Embed Links and Read Message History there. The clash or "already" refusal
+      comes first, never the missing-permissions one."""
     db_path = await _make_db(
         tmp_path, attendance=case != "module-disabled",
         status="COMPLETED" if case == "no-season" else "SETUP",
     )
-    if case == "in-use":
+    if case in ("in-use", "in-use-cannot-use"):
         await _claim(db_path)
+    if case == "already-set-cannot-use":
+        await _seed(db_path, which, CHANNEL_ID)
+    before = await _channels(db_path)
     cog = await _make_cog(db_path)
     interaction = _interaction(cog, which)
-    if case == "cannot-use":
+    if case.endswith("cannot-use"):
         league_server(cog.bot, unusable={CHANNEL_ID: ("embed_links", "read_message_history")})
+    if isinstance(reply, dict):
         reply = reply[which]
 
     await _run(
@@ -528,7 +541,7 @@ async def test_every_refusal_of_a_channel_command_is_recorded(tmp_path, which, c
         interaction.response.defer.assert_not_awaited()
     assert await change_rows(db_path) == []
     assert await _audit(db_path) == []
-    assert await _channels(db_path) == _none_set()
+    assert await _channels(db_path) == before
     assert _lines(cog) == [_refusal_line(which, reply)]
 
 

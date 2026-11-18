@@ -423,35 +423,50 @@ async def test_a_refused_assignment_writes_nothing(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "denied,pictures,refused",
+    "denied,pictures,held,refused",
     [
         pytest.param(
-            "send_messages", False, _CANNOT_USE.format(missing="Send Messages"),
+            "send_messages", False, None, _CANNOT_USE.format(missing="Send Messages"),
             id="send-messages-denied",
             marks=pytest.mark.xfail(strict=True, reason=_NOT_JUDGED),
         ),
         pytest.param(
-            "attach_files", True, _CANNOT_USE.format(missing="Attach Files"),
+            "attach_files", True, None, _CANNOT_USE.format(missing="Attach Files"),
             id="attach-files-denied-while-weather-draws-pictures",
             marks=pytest.mark.xfail(strict=True, reason=_NOT_JUDGED),
         ),
         pytest.param(
-            "attach_files", False, None, id="attach-files-denied-while-weather-draws-none"
+            "attach_files", False, None, None, id="attach-files-denied-while-weather-draws-none"
+        ),
+        pytest.param(
+            "send_messages", False, "already", _ALREADY,
+            id="send-messages-denied-in-the-channel-already-set",
+        ),
+        pytest.param(
+            "send_messages", False, "clash", _RESULTS_CLASH,
+            id="send-messages-denied-in-a-channel-doing-another-job",
         ),
     ],
 )
 async def test_a_channel_the_bot_cannot_use_is_refused_and_recorded(
-    tmp_path, denied, pictures, refused
+    tmp_path, denied, pictures, held, refused
 ):
     """Season 1 is being set up, and its Division 1 has no forecast channel; the league's server
     holds #forecasts, where the bot holds every permission but one. The manager (id 77) runs
     `/weather channel` for #forecasts, and the queue runs. Denied Send Messages, which every
     forecast needs, the command is refused naming Send Messages; denied Attach Files while the
     image module answers that weather's pictures could attach a file, it is refused naming Attach
-    Files. Refused, the reply is the refusal word for word, Division 1 keeps no forecast channel,
-    nothing is audited, and the log channel takes the refusal as its only line. Denied Attach
-    Files while weather draws no picture, Attach Files is not asked for and #forecasts is set."""
+    Files. Where #forecasts is already Division 1's forecast channel, or Division 2's results
+    channel, the bot denied Send Messages there too, the "already" or clash refusal comes first,
+    never the missing-permissions one. Refused, the reply is the refusal word for word, Division 1
+    keeps the forecast channel it had, nothing is audited, and the log channel takes the refusal
+    as its only line. Denied Attach Files while weather draws no picture, Attach Files is not
+    asked for and #forecasts is set."""
     db_path = await _make_db(tmp_path)
+    if held == "already":
+        await _seed_forecast_channel(db_path, CHANNEL_ID)
+    if held == "clash":
+        await _seed_other_division_results(db_path, CHANNEL_ID)
     cog = await _make_cog(db_path)
     league_server(cog.bot, unusable={CHANNEL_ID: (denied,)})
     answer_attachments(cog.bot.image_drawing, *(("weather",) if pictures else ()))
@@ -466,7 +481,7 @@ async def test_a_channel_the_bot_cannot_use_is_refused_and_recorded(
         assert await _forecast_channel(db_path) == CHANNEL_ID
         return
     assert _replied(interaction) == refused
-    assert await _forecast_channel(db_path) is None
+    assert await _forecast_channel(db_path) == (CHANNEL_ID if held == "already" else None)
     assert await _audit(db_path) == []
     assert _lines(cog) == [_refusal_line(refused)]
 

@@ -671,6 +671,14 @@ def _channel_refusals(setting: str):
             denied=("read_message_history",),
             marks=pytest.mark.xfail(strict=True, reason=_NOT_JUDGED),
         ),
+        _refusal(
+            f"{setting}-channel-doing-another-job-the-bot-cannot-use", command, _clash(setting),
+            claimed=True, denied=("read_message_history",),
+        ),
+        _refusal(
+            f"{setting}-already-set-the-bot-cannot-use", command, _already(setting),
+            held=True, denied=("read_message_history",),
+        ),
     ]
 
 
@@ -683,9 +691,11 @@ async def test_every_channel_refusal_is_recorded(tmp_path, monkeypatch, command,
     and is turned away: the module is off, no season is live, the division is not in the
     season, the channel already does Division 2's other job or already does this one for
     Division 1, or the bot is denied Read Message History there, which each of the three needs to
-    take down what it posted last. The manager is answered word for word, no change is asked of
-    the queue, nothing is written or audited, and exactly one line records the refusal and its
-    reason.
+    take down what it posted last. Where the channel already does Division 2's other job, or
+    already does this one, and the bot is also denied Read Message History there, the clash or
+    "already" refusal comes first, never the missing-permissions one. The manager is answered word
+    for word, no change is asked of the queue, nothing is written or audited, and exactly one line
+    records the refusal and its reason.
 
     The module-off words are each command's own, not the results cog's gate, which is worded
     differently: the commands keep the words they had before they moved, and are refused before

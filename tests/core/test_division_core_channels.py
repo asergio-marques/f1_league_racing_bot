@@ -688,6 +688,8 @@ async def test_every_channel_command_here_audits_its_ids_as_integers(tmp_path, w
             "a_channel_the_bot_cannot_use",
             marks=pytest.mark.xfail(strict=True, reason=_NOT_JUDGED),
         ),
+        "a_channel_doing_another_job_the_bot_cannot_use",
+        "the_channel_already_set_the_bot_cannot_use",
     ],
 )
 async def test_every_channel_command_refusal_is_recorded(tmp_path, which, case):
@@ -698,17 +700,25 @@ async def test_every_channel_command_refusal_is_recorded(tmp_path, which, case):
     one purpose across the whole server; giving #notices while it is already the results channel
     of Division 2, a setting of another kind and another module; giving #notices while it is
     already this very channel of Division 1; and giving #notices where the bot lacks a permission
-    the channel's use needs, Embed Links for the lineup and Send Messages for the calendar. The
-    manager gets the reply word for word and nothing else, the setting is not written and nothing
-    is audited, and the log channel gets exactly one line, "⛔ `/division …-channel` refused for
-    Manager (`<@77>`) — " and the reply's first line, without its mark."""
+    the channel's use needs, Embed Links for the lineup and Send Messages for the calendar. Two
+    further cases give #notices while it is the lineup channel of Division 2, or already this very
+    channel of Division 1, and the bot also lacks that permission there: the in-use or "already"
+    reply comes first, never the missing-permissions one. The manager gets the reply word for word
+    and nothing else, the setting is not written and nothing is audited, and the log channel gets
+    exactly one line, "⛔ `/division …-channel` refused for Manager (`<@77>`) — " and the reply's
+    first line, without its mark."""
     db_path = await _make_db(tmp_path, season=case != "no_season")
     name = "Division 9" if case == "an_unknown_division" else "Division 1"
-    if case == "a_channel_doing_another_job":
+    unusable = case.endswith("the_bot_cannot_use")
+    # A refusal that comes before the permissions are judged answers as it would alone.
+    situation = (
+        case if case == "a_channel_the_bot_cannot_use" else case.removesuffix("_the_bot_cannot_use")
+    )
+    if situation == "a_channel_doing_another_job":
         await _seed_other_division_lineup(db_path, CHANNEL_ID)
     if case == "another_divisions_results_channel":
         await _seed_other_division_results(db_path, CHANNEL_ID)
-    if case == "the_channel_already_set":
+    if situation == "the_channel_already_set":
         await _seed_core_channel(db_path, which, CHANNEL_ID)
     reply = {
         "no_season": _NO_SEASON,
@@ -722,9 +732,9 @@ async def test_every_channel_command_refusal_is_recorded(tmp_path, which, case):
         "a_channel_the_bot_cannot_use": _CANNOT_USE.format(
             which=which, missing="Embed Links" if which == "lineup" else "Send Messages"
         ),
-    }[case]
+    }[situation]
     cog = await _make_cog(db_path)
-    if case == "a_channel_the_bot_cannot_use":
+    if unusable:
         denied = "embed_links" if which == "lineup" else "send_messages"
         league_server(cog.bot, unusable={CHANNEL_ID: (denied,)})
     interaction = _interaction(cog, which)
@@ -734,7 +744,7 @@ async def test_every_channel_command_refusal_is_recorded(tmp_path, which, case):
     interaction.response.send_message.assert_awaited_once_with(reply, ephemeral=True)
     interaction.followup.send.assert_not_awaited()
     assert await _audit_rows(db_path) == []
-    expected_column = CHANNEL_ID if case == "the_channel_already_set" else None
+    expected_column = CHANNEL_ID if situation == "the_channel_already_set" else None
     assert await _channel_column(db_path, CORE_COLUMNS[which]) == expected_column
     reason = reply.split(" ", 1)[1]
     assert _lines(cog) == [
