@@ -1962,8 +1962,6 @@ async def test_a_member_leaving_with_no_signup_in_progress_is_left_alone(tmp_pat
 CANCEL_AUDIT = "SIGNUP_CANCEL"
 #: The reason manager 77 gives on the form, where they give one.
 CANCEL_REASON = "Signed up twice by mistake"
-#: Why a cancellation test fails before the change: `/signup cancel` does not exist.
-NO_CANCEL = "#502: /signup cancel does not exist yet"
 
 
 async def _ask_cancel(league: SeasonLeague, user_id: int = SIGNING_UP) -> Any:
@@ -2028,7 +2026,6 @@ def _refusal_lines(league: SeasonLeague) -> list[str]:
             if line.startswith("⛔") and "refused for" in line]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CANCEL)
 @pytest.mark.parametrize(
     "state, reason",
     [
@@ -2095,7 +2092,6 @@ async def _signup_off_meanwhile(league: SeasonLeague) -> None:
     await league.switch("signup", False)
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CANCEL)
 @pytest.mark.parametrize(
     "meanwhile, state_after",
     [
@@ -2124,7 +2120,6 @@ async def test_a_cancellation_is_judged_again_when_its_turn_comes(tmp_path, mean
     assert await _cancel_audits(league) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CANCEL)
 async def test_a_cancellation_whose_signup_channel_is_gone_ends_the_signup_and_posts_nothing(
     tmp_path,
 ):
@@ -2153,7 +2148,6 @@ async def test_a_cancellation_whose_signup_channel_is_gone_ends_the_signup_and_p
     assert KIMI_CHANNEL not in league.channels and league.created == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CANCEL)
 async def test_signup_cancel_opens_a_one_field_form_and_asks_nothing_until_it_is_submitted(
     tmp_path,
 ):
@@ -2203,7 +2197,6 @@ async def _assigned(_league: SeasonLeague) -> int:
     return LEWIS
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CANCEL)
 @pytest.mark.parametrize(
     "driver, state, names_driver_reject",
     [

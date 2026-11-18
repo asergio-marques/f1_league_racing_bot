@@ -14,6 +14,7 @@ Commands:
   /signup close-time add    <close_time>      — arm an auto-close time
   /signup close-time cancel                   — clear the auto-close time
   /signup close-time modify <close_time>      — replace the armed auto-close time
+  /signup cancel <user>                       — end a driver's signup that is under way
 
 The league's base role and driver role, which this module reads, are core's and are set by
 `/bot base-role` and `/bot driver-role` (issue #276).
@@ -636,6 +637,41 @@ class SignupCog(commands.Cog):
         self, interaction: discord.Interaction, close_time: str
     ) -> None:
         await self._ask_close_time(interaction, "modify", close_time)
+
+    # ── /signup cancel (#502) ──────────────────────────────────────────
+
+    @signup.command(
+        name="cancel",
+        description="End the signup a driver has under way.",
+    )
+    @app_commands.describe(user="The driver whose signup to end.")
+    @league_manager_only
+    async def signup_cancel(self, interaction: discord.Interaction, user: discord.Member) -> None:
+        """End the signup a driver is filling in, awaiting review or correcting.
+
+        Refused, with the reason and a line in the log channel, for a driver with no signup in
+        progress, an approved one (Unassigned: `/driver reject` turns them down), one placed in a
+        seat, signup being off, and a driver whose signup a manager has pressed Reject or Request
+        Changes on and not yet given the reason. Otherwise it opens a form for an optional reason;
+        the signup ends when that is submitted (`CancelSignupModal`). The command holds no rule:
+        `cancellation_refusal` judges the state, here from the driver service and again by the
+        queued change from the database. The reason a manager is still to type lives in memory, so
+        it is judged here and on the form's submission and never by the queued change.
+        """
+        if not await self._module_gate(interaction):
+            return
+        profile = await self.bot.driver_service.get_profile(str(user.id))
+        refusal = cancellation_refusal(
+            None if profile is None else profile.current_state,
+            user.mention,
+            reason_pending_for(user.id),
+        )
+        if refusal is not None:
+            await refuse(
+                interaction, f"⛔ {refusal}", what=describe(interaction), reason=refusal
+            )
+            return
+        await interaction.response.send_modal(CancelSignupModal(self, user))
 
     # ── /signup open (T017) ───────────────────────────────────────────
 

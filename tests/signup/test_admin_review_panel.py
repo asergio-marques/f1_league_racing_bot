@@ -68,7 +68,6 @@ from tests.signup.test_review_changes import (
 from tests.signup.test_wizard_changes import (
     CANCEL_REASON,
     END_KIND,
-    NO_CANCEL,
     _ask_cancel,
     _cancel,
     _cancel_audits,
@@ -731,7 +730,6 @@ async def test_a_fault_in_the_reason_step_is_reported_through_the_press(tmp_path
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CANCEL)
 @pytest.mark.parametrize("form_open_first", [False, True], ids=["before-the-form", "on-submit"])
 @pytest.mark.parametrize("button,label", NEGATIVE, ids=NEGATIVE_IDS)
 async def test_a_cancellation_is_refused_while_a_manager_awaits_a_reason(
@@ -770,7 +768,6 @@ async def test_a_cancellation_is_refused_while_a_manager_awaits_a_reason(
     )
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CANCEL)
 @pytest.mark.parametrize("button,label", NEGATIVE, ids=NEGATIVE_IDS)
 async def test_a_button_pressed_after_a_cancellation_is_asked_lets_it_go_ahead(
     tmp_path, button, label

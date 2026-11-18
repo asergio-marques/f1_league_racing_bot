@@ -104,7 +104,6 @@ _ACTING = [
     ("signup_close", "signup close", list),
     pytest.param(
         "signup_cancel", "signup cancel", lambda: [MagicMock()], id="signup cancel",
-        marks=pytest.mark.xfail(strict=True, reason="#502: /signup cancel does not exist yet"),
     ),
 ]
 
