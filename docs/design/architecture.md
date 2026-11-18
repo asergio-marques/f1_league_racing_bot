@@ -412,8 +412,8 @@ bot in each: core names no module in it, and each module's reader is built from 
 channels that its confirmation faults also read. The channel hook is read as the switch-on runs and a
 module answers it only while it is on, so a channel it kept does not count against another setting
 while it is off, and the switch-on claims it again, clearing what another setting took meanwhile.
-*Rejected:* a check inside the switch-on's save, which carries no finding to the reply and could not
-end the setting refused.
+*Rejected:* an `After` step that undoes the switch-on, and the check in `check()`; the reasons are in
+`setting_change`'s docstring.
 
 **A module's private code stays inside it.** A name starting with an underscore is used only
 inside its own module (after PEP 8's convention, extended to the files of one module). What a
