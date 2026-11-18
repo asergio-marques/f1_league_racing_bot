@@ -85,7 +85,7 @@ Each answers at once ("⏳ Setting the results channel for **Division One** to #
 
 **All three block a season.** While results & standings is on, a season cannot be approved until every division has all three, and the bot names each division that is missing one. The verdicts channel is the one people forget, because penalties are the last thing on your mind while building a calendar.
 
-**The bot needs View Channel, Send Messages and Read Message History in each of the three**, because it posts a table again and takes the old one down by finding it; and Attach Files in a channel while that channel's aspect (results, standings, verdicts or the verdict banner) draws pictures. Confirming a season, and the approval of `/results rounds amend`, is refused up front, naming the channel and the permission it lacks, rather than stopping the queue part-way.
+**The bot needs View Channel, Send Messages and Read Message History in each of the three**, because it posts a table again and takes the old one down by finding it; and Attach Files in a channel while that channel's aspect (results, standings, verdicts or the verdict banner) draws pictures. Confirming a season, and approving a points amendment with `/results amend review`, is refused up front, naming the channel and the permission it lacks, rather than stopping the queue part-way.
 
 > **A division copied from another does not inherit any of them.** The copy starts with none and nothing warns you at the time — it surfaces later as a season that will not approve. Set them explicitly.
 
