@@ -427,8 +427,7 @@ outputs the change switches on, read on the connection the step holds, and which
 channels a picture posts to. Core answers its own channels for the lineup and the calendar alone,
 and each module answers for its own, only while it is on, as its channel uses are answered. Every
 need is asked as if the output were a picture, Attach Files among it, whatever the output's switch
-holds now, so the answers fix the need and are not handed the drawing to ask what a picture could
-attach: the step's connection is held, and nothing but it may be awaited (see "The database"). The
+holds now, so the answers fix the need and do not ask the drawing what a picture could attach: the step's connection is held, and nothing but it may be awaited (see "The database"). The
 step judges every channel strictly (`channel_presence`) and once however many outputs post to it, so
 that a channel gone or lacking a permission refuses, and a channel it cannot read ends the setting
 on a fault with nothing saved. The image module's switch-on makes the same check of the outputs
