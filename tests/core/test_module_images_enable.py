@@ -188,16 +188,16 @@ async def test_the_module_is_enabled(tmp_path, again, rasteriser):
     """With or without a rasteriser (FR-007 / FR-008), for the first time or again over a kept
     configuration with the standings aspect on. Refusing would leave a league unable to set up
     the module they are installing the rasteriser for. The member is acknowledged at once, and
-    once the change has run the module is on, and the reply and the Success line keep today's
-    words.
+    once the change has run the module is on; the first switch-on's reply and the Success line
+    keep today's words.
 
     The first switch-on says every output aspect starts disabled: enabling the module does not
     thereby start posting graphics, so a division is not surprised by a picture where it
     expected text. Switched on again, the reply says the configuration is kept as the league left
-    it, since an aspect left on is still on. A missing rasteriser is said, and a present one adds nothing: otherwise the first graphic a
-    league expects simply does not arrive, with nothing connecting that to a program nobody told
-    them about; and with nothing to warn about, a notice every time would be noise on the common
-    path."""
+    it, since an aspect left on is still on. A missing rasteriser is said, and a present one adds
+    nothing: otherwise the first graphic a league expects simply does not arrive, with nothing
+    connecting that to a program nobody told them about; and with nothing to warn about, a
+    notice every time would be noise on the common path."""
     from tests.support.change_queue import acknowledgement
     from tests.support.settings_league import last_said, log_lines
 
