@@ -29,6 +29,9 @@ if TYPE_CHECKING:
 _LABEL = "weather channel"
 _COMMAND = "/weather channel"
 
+#: The one output the forecast channel posts, as the image module names it.
+FORECAST_ASPECT = "weather"
+
 
 async def set_division_forecast_channel(
     db: aiosqlite.Connection, division_id: int, channel_id: int | None
@@ -96,7 +99,7 @@ async def channel_needs(drawing: "ImageDrawing") -> Needs:
     pictures could attach a file (`aspect_attaches_files`, a question it answers by its switches
     and not by the state of a template). A forecast is a post and not an embed, and is not
     reposted, so Embed Links and Read Message History are not asked."""
-    attaches = await drawing.aspect_attaches_files("weather")
+    attaches = await drawing.aspect_attaches_files(FORECAST_ASPECT)
     return (VIEW, SEND) + ((ATTACH,) if attaches else ())
 
 
