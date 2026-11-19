@@ -120,8 +120,9 @@ only when called (`aspect_status`'s module docstring).
 `image/models/` holds plain data. `switch` holds `SWITCH_KEY`, the key image's switch is read by
 (`"images"`). `image_module` holds the configuration as read (`ImageConfig`),
 the render's and the validity check's outcomes (`RenderOutcome`, `ValidityReport`), whose shapes
-Principle XIV constrains (its module docstring), with `Problem`, `AspectStatus` and the validity
-layers' numbers. `image_constants` holds the static maps: the nine
+Principle XIV constrains (its module docstring), with `Problem`, `AspectStatus`, the validity
+layers' numbers and `DrawingRefused`, the base of the drawing's errors a league can put right
+(the catalogue's, and each aspect's and kind's data error). `image_constants` holds the static maps: the nine
 aspects, the sixteen templates and which aspect draws which. `image_catalogues` holds the field
 catalogue of each image type. `forecast_values`, `results_drawing`, `standings_drawing`,
 `attendance_drawing`, `verdict_banner_drawing` and `verdict_kind` hold models another module composes
@@ -393,6 +394,12 @@ fallback: a tier's colours that cannot be read or applied are drawn in the templ
 notice; data that cannot be assembled or a template that cannot be filled comes back as a problem,
 from which the caller falls back to text (image specification, "Errors and the rejection of input").
 A render's problem and its notices are distinct outcomes (`RenderOutcome`, Principle XIV.4).
+What comes back as a problem is a `DrawingRefused` alone, an error raised on purpose and worded for
+the league; any other exception is a fault in the bot. A caller with a fallback takes it as a
+problem all the same, which is the default. A caller with none, the preview, asks `render` to raise
+it (`raise_faults`), so that it reaches the command's failure path, one record and one reply, and
+ends the whole preview rather than marking one picture: a problem there would be a fallback with
+nothing to fall back to.
 
 **A drawing that rides on a post is place 6.** Image's own are `ImageDrawing.attach_forecast`,
 `attach_check_in_call`, `draw_attendance_sheet`, `draw_banner` and the forecast's `_weather_gate`.
