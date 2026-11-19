@@ -30,6 +30,7 @@ from leaguebot.image.models.image_module import (
     PROBLEM_RASTERISER,
     PROBLEM_UNKNOWN_IMAGE_TYPE,
     PROBLEM_UNRESOLVED_VALUE,
+    DrawingRefused,
     PostingOrigin,
     Problem,
     RenderNotice,
@@ -643,6 +644,7 @@ def _draw(
     spec_builder,
     palette: dict[str, str],
     division_name: str | None,
+    raise_faults: bool = False,
 ) -> _Drawn:
     """Parse the template, paint the tier's palette into it, build and verify the spec, and
     fill: the render's whole work on the tree, run in a worker thread through `off_the_loop`.
@@ -659,6 +661,12 @@ def _draw(
     the posting paths fall back from to text. A fault the verify meets in counting the template's
     mandatory ids is not caught here: it leaves the worker and `off_the_loop` raises it out of
     the render, for the caller's place-5 fallback.
+
+    What the builder or the fill raises is a problem only when it is a `DrawingRefused`, an error
+    the league caused and can put right. Any other exception is a fault in the bot, and a caller
+    with no fallback to text (the preview) asks for it raised (*raise_faults*), so that it reaches
+    its command's failure path and is not shown to a league in Python's words. The posting paths
+    keep the default and fall back as before.
     """
     from leaguebot.image.utils.svg_document import SvgError, load_svg
     from leaguebot.image.utils.svg_fill import fill
@@ -685,7 +693,9 @@ def _draw(
 
     try:
         spec = spec_builder(root)
-    except Exception as exc:  # noqa: BLE001 — place 5: the problem is what the caller falls back from
+    except Exception as exc:  # noqa: BLE001 — place 5: the problem is what the caller falls back from, unless it has none
+        if raise_faults and not isinstance(exc, DrawingRefused):
+            raise
         log.exception("render: spec build failed for %s", image_type)
         return _Drawn(
             problem=Problem(
@@ -706,7 +716,9 @@ def _draw(
 
     try:
         result = fill(spec)
-    except Exception as exc:  # noqa: BLE001 — place 5: the problem is what the caller falls back from
+    except Exception as exc:  # noqa: BLE001 — place 5: the problem is what the caller falls back from, unless it has none
+        if raise_faults and not isinstance(exc, DrawingRefused):
+            raise
         log.exception("render: fill failed for %s", image_type)
         return _Drawn(
             problem=Problem(
@@ -767,6 +779,7 @@ class ImageRenderService:
         output_dir: Path | None = None,
         filename_stem: str | None = None,
         division_name: str | None = None,
+        raise_faults: bool = False,
     ) -> RenderOutcome:
         """Render one template.
 
@@ -786,6 +799,12 @@ class ImageRenderService:
         the season, division and round passes a stem built from them. The **directory** is
         what keeps concurrent renders apart and what ``discard_render`` recognises as the
         bot's own, so the stem is free to be anything a filesystem will take.
+
+        *raise_faults* is for a caller with no fallback to text, which the preview is: an
+        exception the data build or the fill raises that is not a `DrawingRefused` is raised out
+        of the render, to the caller's command-failure path, instead of being returned as a
+        problem. A refusal the league can put right still comes back as a problem. The posting
+        paths leave it off and fall back from the problem as ever.
         """
         if not converter_available():
             return RenderOutcome(
@@ -838,7 +857,8 @@ class ImageRenderService:
         # verify, fill, serialise. Nothing parsed leaves it, so what comes back is the
         # serialised picture or a problem and the notices, plain data (`load_svg`).
         drawn = await off_the_loop(
-            _draw, report.resolved_path, image_type, spec_builder, palette, division_name
+            _draw, report.resolved_path, image_type, spec_builder, palette, division_name,
+            raise_faults,
         )
         notices.extend(drawn.notices)
         if drawn.svg is None or drawn.canvas is None:

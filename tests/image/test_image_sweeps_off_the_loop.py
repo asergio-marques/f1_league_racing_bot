@@ -634,7 +634,6 @@ def _fill_raising(monkeypatch, fault: Exception) -> Any:
     return lambda _root: object()
 
 
-@pytest.mark.xfail(strict=True, reason="#454: a render cannot yet be asked to raise a fault in the bot")
 @pytest.mark.parametrize("where", ["data", "fill"])
 async def test_a_render_with_no_fallback_raises_a_fault_in_the_bot(monkeypatch, where):
     """The calendar drawn by a caller with no fallback, the preview: a fault in the bot while
@@ -653,7 +652,6 @@ async def test_a_render_with_no_fallback_raises_a_fault_in_the_bot(monkeypatch, 
     assert str(raised.value) == str(fault)
 
 
-@pytest.mark.xfail(strict=True, reason="#454: a render cannot yet be asked to raise a fault in the bot")
 @pytest.mark.parametrize("refusal", [
     CalendarDataError("Division 1 holds no round to draw"),
     CapacityError("the template declares no round to fill"),
