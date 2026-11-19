@@ -1631,7 +1631,7 @@ async def test_an_amendment_is_refused_when_the_season_cannot_be_read(tmp_path):
     assert "Repair the channels" not in reply
     assert "•" not in reply
     [line] = _refusal_lines(league)
-    assert "\n" not in line
+    assert line.split("\n")[1:] == ["―" * 36]
     assert await _approvals(league) == []
     assert await points_state(league) == before
 
