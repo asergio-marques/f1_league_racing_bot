@@ -247,22 +247,13 @@ CONVERTER_ABSENT_REMEDY = (
     pytest.param(
         "unreadable switch", FAULT_IN_THE_BOT, "the images switch could not be read",
         id="unreadable switch",
-        marks=pytest.mark.xfail(
-            strict=True, reason="#584: a switch that cannot be read is named in its own words",
-        ),
     ),
     pytest.param(
         "unreadable round", FAULT_IN_THE_BOT, "the round could not be read",
         id="unreadable round",
-        marks=pytest.mark.xfail(
-            strict=True, reason="#584: a round that cannot be read is named in its own words",
-        ),
     ),
     pytest.param(
         "drawing fault", FAULT_IN_THE_BOT, "the drawing broke", id="drawing fault",
-        marks=pytest.mark.xfail(
-            strict=True, reason="#584: a fault in drawing the forecast is named in its own words",
-        ),
     ),
     pytest.param(
         "converter absent", CONVERTER_ABSENT_WORDS, None, id="converter absent",
