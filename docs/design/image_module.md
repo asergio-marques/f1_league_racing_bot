@@ -118,16 +118,15 @@ only when called (`aspect_status`'s module docstring).
 ### Models and utilities
 
 `image/models/` holds plain data. `switch` holds `SWITCH_KEY`, the key image's switch is read by
-(`"images"`). `image_module` holds the configuration as read (`ImageConfig`),
-the render's and the validity check's outcomes (`RenderOutcome`, `ValidityReport`), whose shapes
-Principle XIV constrains (its module docstring), with `Problem`, `AspectStatus`, the validity
-layers' numbers and `DrawingRefused`, the base of the drawing's errors a league can put right
-(the catalogue's, and each aspect's and kind's data error). `image_constants` holds the static maps: the nine
-aspects, the sixteen templates and which aspect draws which. `image_catalogues` holds the field
-catalogue of each image type. `forecast_values`, `results_drawing`, `standings_drawing`,
-`attendance_drawing`, `verdict_banner_drawing` and `verdict_kind` hold models another module composes
-for a picture and hands in (below, "How modules and core fit
-together").
+(`"images"`). `image_module` holds the configuration as read (`ImageConfig`), the render's and the
+validity check's outcomes (`RenderOutcome`, `ValidityReport`), whose shapes Principle XIV constrains
+(its module docstring), with `Problem`, `AspectStatus`, the validity layers' numbers and
+`DrawingRefused`, the base of the drawing's errors a league can put right (`CapacityError` and the
+data error of each aspect that has one). `image_constants` holds the static maps: the nine aspects,
+the sixteen templates and which aspect draws which. `image_catalogues` holds the field catalogue of
+each image type. `forecast_values`, `results_drawing`, `standings_drawing`, `attendance_drawing`,
+`verdict_banner_drawing` and `verdict_kind` hold models another module composes for a picture and
+hands in (below, "How modules and core fit together").
 
 `image/utils/` holds the pure work, which reads no database and touches no Discord object:
 `svg_document` (parsing, the canvas, style resolution and `off_the_loop`), `svg_fill` (the six fill
