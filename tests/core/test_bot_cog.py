@@ -2126,9 +2126,6 @@ async def test_bot_factory_reset_reports_to_the_log_where_dms_are_closed(tmp_pat
     assert await ConfigService(db_path).get_league_server_id() is None
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#454: the stop message names Python's error and not the channel"
-)
 async def test_a_clean_up_that_breaks_says_where_it_stopped(tmp_path, monkeypatch):
     """The clean-up breaks on a fault in the bot while deleting #race-control: the owner's
     progress message says it stopped, at that channel, and the kind of fault in plain words,
