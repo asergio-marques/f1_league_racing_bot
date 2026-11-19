@@ -37,9 +37,10 @@ name and value the other specs reuse: channels, roles, divisions, teams and driv
 off and deletes the saved backup, lock and all, and the backup commands then refuse to run at
 all. So after `01-full-season.md` there is nothing left to restore: run `00-base.md` again before
 the next spec. To skip that, copy `bot.bkup.db` and `scheduler.bkup.db` somewhere safe once
-`00-base.md` is done; to go back to them, stop the bot, delete `bot.db`, `scheduler.db` and any
-`-wal` and `-shm` files beside them, copy the two saved files back as `bot.db` and
-`scheduler.db`, and start the bot.
+`00-base.md` is done; to go back to them, stop the bot, copy the two saved files into the bot
+host folder as `bot.staged.db` and `scheduler.staged.db`, and start the bot. It swaps them in
+as it starts, removing the `-wal` and `-shm` files of the databases they replace, and the host's
+log says `Started on a restored database.`
 
 ## How a step is written
 
