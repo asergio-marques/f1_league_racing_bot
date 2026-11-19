@@ -1583,8 +1583,6 @@ async def _season_state(path: str, season_id: int):
     )
 
 
-@pytest.mark.xfail(strict=True, reason="#513: a refused Approve tells the admin to repair the "
-                   "channels whatever the fault")
 async def test_an_amendment_is_refused_when_the_guild_is_not_in_cache(tmp_path):
     """The bot is no longer in the league's server when Approve is pressed: the press is refused
     saying so, nothing is queued and the season stands as it was (#187). It used to overwrite

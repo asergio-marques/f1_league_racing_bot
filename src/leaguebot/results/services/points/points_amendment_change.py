@@ -81,7 +81,10 @@ from leaguebot.core.services.seasons.season_service import (
 from leaguebot.framework.utils.log_lines import refusal_line, refuse, reply_reason
 from leaguebot.core.utils.season_gate import stage_refusal
 from leaguebot.results.services.review import review_posting, review_verdicts
-from leaguebot.results.services.points.points_amendment_faults import approval_faults
+from leaguebot.results.services.points.points_amendment_faults import (
+    ApprovalFaultKind,
+    approval_faults,
+)
 from leaguebot.results.services.points.amendment_mode_service import (
     get_amendment_state,
     validate_modification_ordering,
@@ -319,13 +322,17 @@ def points_amendment_change(
         )
         if faults.lines:
             bullets = "\n• ".join(faults.lines)
+            repair = (
+                " Repair the channels above and review again."
+                if faults.kind is ApprovalFaultKind.CHANNELS else ""
+            )
             return Verdict.refuse(
                 f"⛔ Amendment not approved — the result could not be published:\n"
                 f"• {bullets}\n"
                 f"**Nothing has been changed** — not the season's points, not the staged "
                 f"changes, not amendment mode. Approving rescores and reposts every round of "
-                f"every division, so it is refused entire rather than left half-published. "
-                f"Repair the channels above and review again.",
+                f"every division, so it is refused entire rather than left half-published."
+                f"{repair}",
                 "\n".join(faults.lines),
             )
         return Verdict.go()
