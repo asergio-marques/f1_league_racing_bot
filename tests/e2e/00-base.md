@@ -1,7 +1,8 @@
 # 00 — The base
 
-Builds a test league from no database file: every module on, four teams, a two-division test
-season of three rounds each with eighteen fake drivers seated, approved and ready to run. Ends by
+Builds a test league from no database file: every module on, eleven racing teams and the
+Reserve team, a two-division test season of three rounds each with forty-five fake drivers
+seated, approved and ready to run. Ends by
 saving that state as a locked backup, which every later spec restores. Read
 [the README](README.md) first for the step format and how to report a failure.
 
@@ -17,7 +18,7 @@ Every name and value below is fixed here, once. The later specs reuse them; do n
 | Base role | `@Members` |
 | Driver role | `@Driver` |
 | Division roles | `@Division 1`, `@Division 2` |
-| Team roles | `@Alpha Racing`, `@Bravo Motorsport`, `@Charlie GP`, `@Delta Racing`, `@Reserve` |
+| Team roles | `@Alpha Racing`, `@Bravo Motorsport`, `@Charlie GP`, `@Delta Racing`, `@Echo Racing`, `@Foxtrot Motorsport`, `@Golf GP`, `@Hotel Racing`, `@India Motorsport`, `@Juliett GP`, `@Kilo Racing`, `@Reserve` |
 | Interaction channel | `#bot-commands` |
 | Log channel | `#bot-log` |
 | Signup channel | `#signup` |
@@ -25,7 +26,9 @@ Every name and value below is fixed here, once. The later specs reuse them; do n
 | Division 2 channels | `#d2-calendar`, `#d2-lineup`, `#d2-weather`, `#d2-results`, `#d2-standings`, `#d2-verdicts`, `#d2-rsvp`, `#d2-attendance` |
 | Season | Season #1, game edition `25` (F1 25), season id 1 |
 | Divisions | `Division 1` (tier 1, role `@Division 1`), `Division 2` (tier 2, role `@Division 2`) |
-| Teams (shorthand — full name — role) | `ALP` — Alpha Racing — `@Alpha Racing`; `BRV` — Bravo Motorsport — `@Bravo Motorsport`; `CHL` — Charlie GP — `@Charlie GP`; `DLT` — Delta Racing — `@Delta Racing`; `Reserve` — Reserve — `@Reserve` |
+| Teams (shorthand — full name — role) | `ALP` — Alpha Racing — `@Alpha Racing`; `BRV` — Bravo Motorsport — `@Bravo Motorsport`; `CHL` — Charlie GP — `@Charlie GP`; `DLT` — Delta Racing — `@Delta Racing`; `ECH` — Echo Racing — `@Echo Racing`; `FOX` — Foxtrot Motorsport — `@Foxtrot Motorsport`; `GLF` — Golf GP — `@Golf GP`; `HTL` — Hotel Racing — `@Hotel Racing`; `IND` — India Motorsport — `@India Motorsport`; `JLT` — Juliett GP — `@Juliett GP`; `KLO` — Kilo Racing — `@Kilo Racing`; `Reserve` — Reserve — `@Reserve` |
+| Division 1 seating | Every racing team full: 11 teams × 2 = 22 racing drivers, and 2 in Reserve — 24 in all |
+| Division 2 seating | `BRV` (Bravo Motorsport) **empty**, no driver; `CHL` (Charlie GP) **partial**, one driver in its two seats; the other nine full — 19 racing drivers, and 2 in Reserve — 21 in all |
 | Points configurations | `Standard` and `Half Points`, seeded by test mode |
 | Image outputs | All nine switched on |
 
@@ -38,7 +41,10 @@ early March is UTC.
 | 2 | `<YEAR+1>-03-08` 20:00 — Sprint — Hungaroring (14) | `<YEAR+1>-03-08` 21:00 — Sprint — Circuit de Spa-Francorchamps (13) |
 | 3 | `<YEAR+1>-03-15` 20:00 — Mystery | `<YEAR+1>-03-15` 21:00 — Normal — Circuit Zandvoort (15) |
 
-**Drivers.** Fake drivers, seated by `/test-mode roster add-bulk` (step 30).
+**Drivers.** Fake drivers, seated by `/test-mode roster add-bulk` (step 27), IDs
+9000000000000000001 to 9000000000000000045. Seats are per division, so each division's
+lineup is its own: Division 1 fills every team; Division 2 leaves `BRV` empty and `CHL` with one
+driver.
 
 | ID | Driver | Team | Division | Nationality |
 |---|---|---|---|---|
@@ -50,16 +56,43 @@ early March is UTC.
 | 9000000000000000006 | Felix Fournier | CHL | Division 1 | French |
 | 9000000000000000007 | Gabriel Gomes | DLT | Division 1 | Brazilian |
 | 9000000000000000008 | Hiro Hayashi | DLT | Division 1 | Japanese |
-| 9000000000000000009 | Ian Irwin | Reserve | Division 1 | Australian |
-| 9000000000000000010 | Jari Jokinen | ALP | Division 2 | Finnish |
-| 9000000000000000011 | Kevin Keller | ALP | Division 2 | American |
-| 9000000000000000012 | Liam Lavoie | BRV | Division 2 | Canadian |
-| 9000000000000000013 | Mateo Morales | BRV | Division 2 | Mexican |
-| 9000000000000000014 | Niels Nygaard | CHL | Division 2 | Danish |
-| 9000000000000000015 | Olivier Orsini | CHL | Division 2 | Monegasque |
-| 9000000000000000016 | Pim Prasert | DLT | Division 2 | Thai |
-| 9000000000000000017 | Quinn Quayle | DLT | Division 2 | British |
-| 9000000000000000018 | Rafael Rossi | Reserve | Division 2 | Italian |
+| 9000000000000000009 | Ian Irwin | ECH | Division 1 | Australian |
+| 9000000000000000010 | Jari Jokinen | ECH | Division 1 | Finnish |
+| 9000000000000000011 | Kevin Keller | FOX | Division 1 | American |
+| 9000000000000000012 | Liam Lavoie | FOX | Division 1 | Canadian |
+| 9000000000000000013 | Mateo Morales | GLF | Division 1 | Mexican |
+| 9000000000000000014 | Niels Nygaard | GLF | Division 1 | Danish |
+| 9000000000000000015 | Olivier Orsini | HTL | Division 1 | Monegasque |
+| 9000000000000000016 | Pim Prasert | HTL | Division 1 | Thai |
+| 9000000000000000017 | Quinn Quayle | IND | Division 1 | Austrian |
+| 9000000000000000018 | Rafael Rossi | IND | Division 1 | Argentine |
+| 9000000000000000019 | Samuel Shaw | JLT | Division 1 | British |
+| 9000000000000000020 | Tomas Torres | JLT | Division 1 | Italian |
+| 9000000000000000021 | Ugo Ulivi | KLO | Division 1 | Spanish |
+| 9000000000000000022 | Victor Vance | KLO | Division 1 | Dutch |
+| 9000000000000000023 | Willem Wouters | Reserve | Division 1 | German |
+| 9000000000000000024 | Xavier Xu | Reserve | Division 1 | French |
+| 9000000000000000025 | Yuki Yamada | ALP | Division 2 | Brazilian |
+| 9000000000000000026 | Zane Zeller | ALP | Division 2 | Japanese |
+| 9000000000000000027 | Aaron Abbott | CHL | Division 2 | Australian |
+| 9000000000000000028 | Bastien Blanc | DLT | Division 2 | Finnish |
+| 9000000000000000029 | Conor Cole | DLT | Division 2 | American |
+| 9000000000000000030 | Diego Duarte | ECH | Division 2 | Canadian |
+| 9000000000000000031 | Elias Eriksen | ECH | Division 2 | Mexican |
+| 9000000000000000032 | Finn Fischer | FOX | Division 2 | Danish |
+| 9000000000000000033 | Gianni Galli | FOX | Division 2 | Monegasque |
+| 9000000000000000034 | Hugo Hartley | GLF | Division 2 | Thai |
+| 9000000000000000035 | Isaac Ingram | GLF | Division 2 | Austrian |
+| 9000000000000000036 | Jonas Janssen | HTL | Division 2 | Argentine |
+| 9000000000000000037 | Kai Kimura | HTL | Division 2 | British |
+| 9000000000000000038 | Lucas Lambert | IND | Division 2 | Italian |
+| 9000000000000000039 | Marco Moretti | IND | Division 2 | Spanish |
+| 9000000000000000040 | Noah Novak | JLT | Division 2 | Dutch |
+| 9000000000000000041 | Owen Oakley | JLT | Division 2 | German |
+| 9000000000000000042 | Pablo Pena | KLO | Division 2 | French |
+| 9000000000000000043 | Quentin Quint | KLO | Division 2 | Brazilian |
+| 9000000000000000044 | Rory Reid | Reserve | Division 2 | Japanese |
+| 9000000000000000045 | Stefan Sommer | Reserve | Division 2 | Australian |
 
 ## Conventions in this spec
 
@@ -238,34 +271,35 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
 
 ### The teams
 
-15. **Do:** `/team add`, then fill the form **Add a team**: **Shorthand** `ALP`, **Full name**
-    `Alpha Racing`, **Role** `@Alpha Racing`, and submit.
+15. **Do**, once for each of the eleven teams below, in this order: `/team add`, then fill the
+    form **Add a team** with the row's **Shorthand**, **Full name** and **Role**, and submit.
 
-    **Expect:**
-    - **Ack:** `Adding **Alpha Racing**`
-    - **Then:** ``✅ Team "Alpha Racing" added as `ALP`, with role <@&<Alpha Racing role id>>.``
+    | Shorthand | Full name | Role |
+    |---|---|---|
+    | `ALP` | `Alpha Racing` | `@Alpha Racing` |
+    | `BRV` | `Bravo Motorsport` | `@Bravo Motorsport` |
+    | `CHL` | `Charlie GP` | `@Charlie GP` |
+    | `DLT` | `Delta Racing` | `@Delta Racing` |
+    | `ECH` | `Echo Racing` | `@Echo Racing` |
+    | `FOX` | `Foxtrot Motorsport` | `@Foxtrot Motorsport` |
+    | `GLF` | `Golf GP` | `@Golf GP` |
+    | `HTL` | `Hotel Racing` | `@Hotel Racing` |
+    | `IND` | `India Motorsport` | `@India Motorsport` |
+    | `JLT` | `Juliett GP` | `@Juliett GP` |
+    | `KLO` | `Kilo Racing` | `@Kilo Racing` |
+
+    **Expect**, for each, `<full name>`, `<shorthand>` and `<role>` being the row's:
+    - **Ack:** `Adding **<full name>**`
+    - **Then:** ``✅ Team "<full name>" added as `<shorthand>`, with role <@&<role id>>.``
     - **Log:**
       ```
       <you> | /team add | Success
-        team: Alpha Racing
-        shorthand: ALP
-        role: Alpha Racing (<@&<Alpha Racing role id>>)
+        team: <full name>
+        shorthand: <shorthand>
+        role: <full name> (<@&<role id>>)
       ```
 
-16. As step 15, with **Shorthand** `BRV`, **Full name** `Bravo Motorsport`, **Role**
-    `@Bravo Motorsport`.
-
-    **Expect:** as step 15, with those three values.
-
-17. As step 15, with **Shorthand** `CHL`, **Full name** `Charlie GP`, **Role** `@Charlie GP`.
-
-    **Expect:** as step 15, with those three values.
-
-18. As step 15, with **Shorthand** `DLT`, **Full name** `Delta Racing`, **Role** `@Delta Racing`.
-
-    **Expect:** as step 15, with those three values.
-
-19. **Do:** `/team reserve-role role:@Reserve`
+16. **Do:** `/team reserve-role role:@Reserve`
 
     **Expect:**
     - **Ack:** `Setting the Reserve team's role`
@@ -276,11 +310,11 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
         role: Reserve (<@&<Reserve role id>>)
       ```
 
-20. **Do:** `/team list`
+17. **Do:** `/team list`
 
     **Expect:**
     - **Reply:** headed `**Server team list:**`, then one line per team in the form
-      ``  <full name> — `<shorthand>` → <@&<role id>>``: the four teams of the Fixture, then
+      ``  <full name> — `<shorthand>` → <@&<role id>>``: the eleven teams of the Fixture, in shorthand order (`ALP` to `KLO`), then
       ``  Reserve — `Reserve` → <@&<Reserve role id>>`` last.
     - **Log:** nothing; it is a view.
 
@@ -290,7 +324,7 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
 
 ### Setting up the season
 
-21. **Do:** `/season setup game_edition:25`
+18. **Do:** `/season setup game_edition:25`
 
     **Expect:**
     - **Ack:** `Starting the season setup`
@@ -309,7 +343,7 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
         season: Season #1 (F1 25)
       ```
 
-22. **Do:** `/test-mode toggle`
+19. **Do:** `/test-mode toggle`
 
     **Expect:**
     - **Ack:** `Turning test mode on`
@@ -327,7 +361,7 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
 
 ### Confirming the configuration
 
-23. **Do:** `/season config-review`
+20. **Do:** `/season config-review`
 
     **Expect:**
     - **Ack:** `Posting the review of /season config-review`
@@ -352,12 +386,12 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
         ```
     - **Log:** `<you> | /season config-review | Review posted`
 
-24. **Do:** within five minutes, press **✅ Confirm configuration** on the question.
+21. **Do:** within five minutes, press **✅ Confirm configuration** on the question.
 
     **Expect:**
     - **Ack:** `Confirming season 1's configuration`
     - **Then:** ``✅ Season #1's configuration is confirmed. The season is now in placements — build its divisions and calendar, place its drivers, then run `/season placements-review`.``
-    - **Posts:** every message step 23 posted in `#bot-commands` is deleted.
+    - **Posts:** every message step 20 posted in `#bot-commands` is deleted.
     - **Log:**
       ```
       <you> | /season config-review | Confirmed
@@ -367,7 +401,7 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
 
 ### The divisions
 
-25. **Do:** `/division add name:Division 1 role:@Division 1 tier:1`
+22. **Do:** `/division add name:Division 1 role:@Division 1 tier:1`
 
     **Expect:**
     - **Ack:** `Adding division **Division 1** (Tier 1)`
@@ -385,7 +419,7 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
         division: Division 1, tier: 1
       ```
 
-26. **Do:** `/division add name:Division 2 role:@Division 2 tier:2`
+23. **Do:** `/division add name:Division 2 role:@Division 2 tier:2`
 
     **Expect:**
     - **Ack:** `Adding division **Division 2** (Tier 2)`
@@ -406,7 +440,7 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
 
 ### The calendar
 
-27. **Do:** `/round add-xml`. In the form **Add rounds from XML**, paste the following into
+24. **Do:** `/round add-xml`. In the form **Add rounds from XML**, paste the following into
     **XML payload**, with `<YEAR+1>` replaced by the year after the run (six places), and submit.
 
     ```xml
@@ -470,7 +504,7 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
 
 ### The division channels
 
-28. **Do**, for **Division 1**, each command of the table below with `name:Division 1` and
+25. **Do**, for **Division 1**, each command of the table below with `name:Division 1` and
     the `#d1-` channel it names.
 
     | Do | Ack | Then | Log, first line |
@@ -491,10 +525,10 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
       channel: #<the channel's name, e.g. d1-calendar>
     ```
 
-29. **Do** step 28 again for **Division 2**: every command with `name:Division 2` and the
+26. **Do** step 25 again for **Division 2**: every command with `name:Division 2` and the
     matching `#d2-` channel.
 
-    **Expect:** as step 28, with `Division 2` and the `#d2-` channels throughout.
+    **Expect:** as step 25, with `Division 2` and the `#d2-` channels throughout.
 
 ---
 
@@ -502,7 +536,7 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
 
 ### Seating the drivers
 
-30. **Do:** `/test-mode roster add-bulk`. In the form **Import a test roster**, paste the
+27. **Do:** `/test-mode roster add-bulk`. In the form **Import a test roster**, paste the
     following into **Paste roster.csv, header and all**, and submit.
 
     ```
@@ -541,7 +575,7 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
         divisions: Division 1, Division 2
       ```
 
-31. **Do:** `/test-mode roster list division:Division 1`
+28. **Do:** `/test-mode roster list division:Division 1`
 
     **Expect:**
     - **Reply:** headed `**Fake Driver Roster — Division 1**`, then a code block whose first
@@ -556,14 +590,14 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
       ```
     - **Log:** nothing; it is a view.
 
-32. **Do:** `/test-mode roster list division:Division 2`
+29. **Do:** `/test-mode roster list division:Division 2`
 
-    **Expect:** as step 31, headed `**Fake Driver Roster — Division 2**`, with the nine
+    **Expect:** as step 28, headed `**Fake Driver Roster — Division 2**`, with the nine
     Division 2 drivers, `<@9000000000000000010>` to `<@9000000000000000018>`.
 
 ### Approving the season
 
-33. **Do:** `/season placements-review`
+30. **Do:** `/season placements-review`
 
     **Expect:**
     - **Ack:** `Posting the review of /season placements-review`
@@ -571,7 +605,7 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
       `resources/league/` holds no artwork for it — the acknowledgement is updated to
       `✅ Review posted.`, a blank line, and a section headed `⚠️ **Image notices**` naming
       each picture with its notices beneath. Otherwise it is left as it is.
-      > UNVERIFIED: as in step 23, a review with no notices has an empty outcome, and the
+      > UNVERIFIED: as in step 20, a review with no notices has an empty outcome, and the
       > acknowledgement is expected to stand unchanged.
     - **Posts** (`#bot-commands`, public), in this order:
       - `🎨 Drawing the graphics for this review — one moment.`, deleted once the pictures are up;
@@ -598,7 +632,7 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
     - **Log:** `<you> | /season placements-review | Review posted`, and, where a picture drew
       with notices, a line naming that picture and its notices.
 
-34. **Do:** within five minutes, press **✅ Approve** on the question.
+31. **Do:** within five minutes, press **✅ Approve** on the question.
 
     **Expect:**
     - **Reply**, with three buttons, **💾 Save, then approve**, **Approve without saving** and
@@ -610,7 +644,7 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
       ```
     - Nothing posted, nothing in the log yet.
 
-35. **Do:** press **Approve without saving**.
+32. **Do:** press **Approve without saving**.
 
     **Expect:**
     - **Ack** (a new message beneath the question): `Approving season 1`
@@ -624,7 +658,7 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
       `lineup — Division 1`, and the same for Division 2) with its notices. No
       `⚠️ **Not everything could be done**` section.
     - **Posts:**
-      - `#bot-commands`: every message of the review (step 33) is deleted. Then
+      - `#bot-commands`: every message of the review (step 30) is deleted. Then
         `🎨 Posting lineups, calendars and opening classifications — one moment.`, deleted once
         the posts are made.
       - `#d1-lineup`, `#d2-lineup`: the division's lineup, as a picture.
@@ -647,7 +681,7 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
 
 ### Saving the base
 
-36. **Do:** `/test-mode backup save`
+33. **Do:** `/test-mode backup save`
 
     **Expect:**
     - **Reply:**
@@ -662,7 +696,7 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
       ```
     - `bot.bkup.db` and `scheduler.bkup.db` now exist in the bot host folder.
 
-37. **Do:** `/test-mode backup lock`
+34. **Do:** `/test-mode backup lock`
 
     **Expect:**
     - **Reply:** ``🔒 Locked. `/test-mode backup save` will refuse to overwrite it until you run this again.``
@@ -673,22 +707,22 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
       ```
     - `backup.lock` now exists in the bot host folder.
 
-38. **A refusal.** **Do:** `/test-mode backup save`
+35. **A refusal.** **Do:** `/test-mode backup save`
 
     **Expect:**
     - **Reply:** ``⛔ the saved backup is locked, so it will not be overwritten. Unlock it with `/test-mode backup lock` first.``
     - **Log:** ``⛔ `/test-mode backup save` refused for <you> — the saved backup is locked, so it will not be overwritten. Unlock it with `/test-mode backup lock` first.``
 
-39. **Do:** `/test-mode backup status`
+36. **Do:** `/test-mode backup status`
 
     **Expect:**
     - **Reply:**
       ```
       📦 **Saved backup**
-        Taken: <timestamp: the moment of step 36, not step 38>
-        Size: <size: as in step 36> KB
+        Taken: <timestamp: the moment of step 33, not step 35>
+        Size: <size: as in step 33> KB
         Readable: yes
-        Locked: locked by <your display name> at <the moment of step 37, ISO 8601>
+        Locked: locked by <your display name> at <the moment of step 34, ISO 8601>
       ```
     - **Log:** nothing; it is a view.
 
