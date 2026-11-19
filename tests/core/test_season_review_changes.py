@@ -325,13 +325,18 @@ APPROVE = SimpleNamespace(name="the Approve button")
 
 class _Drawing:
     """The drawing the builder hands: draws a picture to a file, recording each picture asked
-    and the thread it ran on. A picture named in `broken` will not draw."""
+    and the thread it ran on. A picture named in `broken` will not draw for a fault in the bot
+    (its template's font cannot be loaded); one named in `refused` is refused for a fault in its
+    template, the league's to correct; and one named in `absent` will not draw because Inkscape
+    is not installed on the host."""
 
     def __init__(self, folder: Any) -> None:
         self.folder = folder
         self.asked: list[str] = []
         self.threads: list[Any] = []
         self.broken: set[str] = set()
+        self.refused: set[str] = set()
+        self.absent: set[str] = set()
         #: Where set, the channel whose events are counted at each drawing, in `seen`.
         self.channel: Any = None
         self.seen: list[int] = []
@@ -345,6 +350,16 @@ class _Drawing:
             self.seen.append(len(self.channel.events))
         if picture["name"] in self.broken:
             raise RuntimeError("the template's font could not be loaded")
+        if picture["name"] in self.refused:
+            from leaguebot.core.services.seasons.season_review_changes import PictureNotDrawn
+
+            raise PictureNotDrawn("\u274c the lineup: the template has no rows")
+        if picture["name"] in self.absent:
+            from leaguebot.core.models.fault_source import FaultSource
+            from leaguebot.core.services.seasons.season_review_changes import PictureNotDrawn
+
+            raise PictureNotDrawn("\u274c Inkscape is not installed on this host.",
+                                  source=FaultSource.HOST)
         drawn = self.folder / f"{picture['kind']}-{picture['division_id']}.png"
         drawn.write_bytes(b"\x89PNG\r\n\x1a\n")
         return drawn
@@ -618,15 +633,74 @@ async def test_a_review_while_the_queue_is_stopped_is_acknowledged_and_posted_wh
     assert [m.content for m in _posts(posting.channel)][-1] == QUESTION
 
 
+#: What the reply says puts a picture right, by where its fault lies: the league's template, the
+#: bot, or the host that has not installed the converter.
+_TEMPLATE_SENTENCE = (
+    f"Correct the template or the assets it names, then run `{PLACEMENTS}` again."
+)
+_BOT_SENTENCE = (
+    "The fault is in the bot, and its detail is in the host's log; once it is cleared, "
+    f"run `{PLACEMENTS}` again."
+)
+_HOST_SENTENCE = (
+    "Inkscape is not installed on the machine running the bot, and the host must install it; "
+    f"once it has, run `{PLACEMENTS}` again."
+)
+_FONT = "the template's font could not be loaded"
+_BOT_WORDS = "the bot hit an internal fault"
+_REFUSED_WORDS = "\u274c the lineup: the template has no rows"
+_ABSENT_WORDS = "\u274c Inkscape is not installed on this host."
+_AM_LINEUP = {"name": "Am lineup", "division_id": 12, "kind": "lineup",
+              "text": "\U0001f465 Am lineup, as text"}
+
+
+@pytest.mark.parametrize(("faults", "pictures", "said", "sentences", "unsaid"), [
+    pytest.param(
+        {"broken": {"Pro lineup"}}, PICTURES, {"Pro lineup": _BOT_WORDS}, [_BOT_SENTENCE],
+        [_FONT, "Correct the template", "Inkscape"],
+        marks=pytest.mark.xfail(strict=True, reason="#584: the review names a fault in the bot "
+                                "in its own words and tells Alex to correct the template"),
+        id="bot"),
+    pytest.param(
+        {"refused": {"Pro lineup"}}, PICTURES, {"Pro lineup": _REFUSED_WORDS},
+        [_TEMPLATE_SENTENCE], ["The fault is in the bot", "Inkscape"], id="template"),
+    pytest.param(
+        {"absent": {"Pro lineup"}}, PICTURES, {"Pro lineup": _ABSENT_WORDS}, [_HOST_SENTENCE],
+        ["Correct the template", "The fault is in the bot"],
+        marks=pytest.mark.xfail(strict=True, reason="#584: the review tells Alex to correct the "
+                                "template where Inkscape is not installed"),
+        id="host"),
+    pytest.param(
+        {"absent": {"Pro calendar"}, "broken": {"Pro lineup"}, "refused": {"Am lineup"}},
+        [*PICTURES, _AM_LINEUP],
+        {"Pro calendar": _ABSENT_WORDS, "Pro lineup": _BOT_WORDS, "Am lineup": _REFUSED_WORDS},
+        [_TEMPLATE_SENTENCE, _BOT_SENTENCE, _HOST_SENTENCE], [_FONT],
+        marks=pytest.mark.xfail(strict=True, reason="#584: the review gives one remedy, to "
+                                "correct the template, whatever the faults' sources"),
+        id="all_three"),
+])
 async def test_a_picture_that_will_not_draw_withholds_the_button_and_is_told_in_the_reviewer_s_reply(
-        posting):
-    """Pro's lineup will not draw (its template's font cannot be loaded). Once the queue runs the
-    queue does not stop and the report is posted, but the question is withheld: none is posted, no
-    view is made, no row is kept for it and no five minutes are armed. Alex's reply is updated
-    naming "Pro lineup" as not drawn, and saying the season is not offered for approval."""
-    posting.drawing.broken = {"Pro lineup"}
+        posting, faults, pictures, said, sentences, unsaid):
+    """A picture of Alex's review will not draw: Pro's lineup for a fault in the bot (its
+    template's font cannot be loaded), for a fault in its template the league corrects (it has no
+    rows), or because Inkscape is not installed on the host; or all three at once, Pro's
+    calendar the converter's, Pro's lineup the bot's and Am's lineup the template's. Once the
+    queue runs the queue does not stop and the report is posted, but the question is withheld:
+    none is posted, no view is made, no row is kept for it and no five minutes are armed. Alex's
+    reply names each picture not drawn with its fault, a fault in the bot by its kind alone and
+    the others in their own words, and says the season is not offered for approval; the log
+    channel's "Picture not drawn" line names the same. The reply then says what puts it right,
+    one sentence for each source present, in the order template, bot, host: to correct the
+    template, that the fault is in the bot and its detail in the host's log, or that the host
+    must install Inkscape, each with running `/season placements-review` again."""
+    for kind, names in faults.items():
+        setattr(posting.drawing, kind, names)
     _attach(posting)
-    interaction = await _review(posting)
+    interaction = member_interaction(posting.bot, user=_alex())
+    interaction.channel_id = REVIEW_CHANNEL
+    await posting.bot.change_queue.ask(POST, {**_payload(), "pictures": pictures},
+                                       interaction=interaction,
+                                       what="posting the placements review")
     await run_queue(posting.bot)
 
     assert await stopped_job(posting.db_path) is None
@@ -635,8 +709,17 @@ async def test_a_picture_that_will_not_draw_withholds_the_button_and_is_told_in_
     assert QUESTION not in [m.content for m in _posts(posting.channel)]
     assert REPORT[0] in [m.content for m in _posts(posting.channel)]
     assert posting.views == []
-    assert "Pro lineup" in updated_reply(interaction)
-    assert "season is **not** offered for approval" in updated_reply(interaction)
+    reply = updated_reply(interaction)
+    assert "season is **not** offered for approval" in reply
+    for name, words in said.items():
+        assert f"\u2022 **{name}**: {words}" in reply
+        assert f"Picture not drawn\n  picture: {name}\n  fault: {words}" in _log(posting)
+    assert [sentence in reply for sentence in sentences] == [True] * len(sentences)
+    assert [reply.index(sentence) for sentence in sentences] == sorted(
+        reply.index(sentence) for sentence in sentences)
+    for words in unsaid:
+        assert words not in reply
+        assert words not in _log(posting)
     async with get_connection(posting.db_path) as db:
         cursor = await db.execute("SELECT COUNT(*) FROM season_review_prompts")
         assert (await cursor.fetchone())[0] == 0
@@ -762,8 +845,13 @@ def _lineup_will_not_post() -> Any:
 
 
 @pytest.mark.parametrize(("failing", "fault"), [
-    ("render_raises", "❌ the template's font could not be loaded"),
-    ("will_not_post", "❌ the lineup: the template has no rows"),
+    pytest.param("render_raises", "the template's font could not be loaded",
+                 marks=pytest.mark.xfail(strict=True, reason="#584: the review lineup's drawing "
+                                         "re-wraps a fault in the bot as a RuntimeError after "
+                                         "\"\u274c\"")),
+    pytest.param("will_not_post", "\u274c the lineup: the template has no rows",
+                 marks=pytest.mark.xfail(strict=True, reason="#584: a review's picture not drawn "
+                                         "does not say where its fault lies")),
     ("switched_off", "the lineup could not be drawn"),
     ("no_server", "the lineup could not be drawn"),
 ])
@@ -773,11 +861,12 @@ async def test_the_builder_s_drawing_of_a_review_lineup_that_will_not_draw_keeps
     the image module's drawing as the builder attaches it. Asked to draw Pro's lineup for Alex's
     review, the image module cannot: its renderer fails because the template's font cannot be
     loaded, or it will not post the lineup because the template has no rows, or the lineup is
-    switched off, or the league's server is not found. The drawing raises, and the fault the
-    review keeps, tells Alex and writes to the log channel reads as it does today: the renderer's
-    words after "❌", the image module's reason after "❌ the lineup:", or "the lineup could not
-    be drawn" (core specification, season review; image specification, "The drawing of
-    placements under review")."""
+    switched off, or the league's server is not found. The drawing raises. The renderer's fault,
+    a fault in the bot, is raised as it was met, the `RuntimeError` with its own message and no
+    "\u274c", for the review's posting to word by its kind. The others read as they do today: the
+    image module's reason after "\u274c the lineup:", marked as the league's to correct, or "the
+    lineup could not be drawn" (core specification, season review; image specification, "The
+    drawing of placements under review")."""
     import asyncio
 
     from leaguebot.core.services.seasons import season_review_changes
@@ -807,6 +896,12 @@ async def test_the_builder_s_drawing_of_a_review_lineup_that_will_not_draw_keeps
         await asyncio.to_thread(handed["drawing"], dict(PICTURES[1]))
 
     assert str(raised.value) == fault
+    if failing == "render_raises":
+        assert type(raised.value) is RuntimeError
+    if failing == "will_not_post":
+        from leaguebot.core.models.fault_source import FaultSource
+
+        assert raised.value.source is FaultSource.LEAGUE
 
 
 @pytest.mark.parametrize("outcome", ["posted", "refused-then-retried", "lineup-not-drawn"])
