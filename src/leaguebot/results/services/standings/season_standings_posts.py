@@ -44,6 +44,8 @@ from leaguebot.framework.models.change import (
     drawn_lines_kept,
 )
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
+from leaguebot.core.models.fault_source import source_of
+from leaguebot.core.services.modules.image_drawing import picture_remedy
 from leaguebot.framework.services.queue.change_types import Step, StepContext
 from leaguebot.framework.services.switches.module_service import ModuleService
 from leaguebot.core.services.seasons.season_lifecycle_service import require_guild
@@ -72,12 +74,17 @@ def _refused_picture_line(
     opening standings, the final classification) that went out as text: the member and the
     change it ran for, then the division, the championship, what failed (Discord's refusal and
     its reason, or the drawing's fault) and what puts it right, as the round's standings job
-    says it (image specification, "Errors"). No command posts these again, so none is named."""
+    says it (image specification, "Errors"). No command posts these again, so none is named.
+
+    Where Discord refused the picture (an `UploadFault`) nothing of a template is at fault;
+    otherwise the remedy reads by where the fault lies (`picture_remedy`): the template to fix,
+    the bot's fault, or the converter's absence."""
     from leaguebot.results.services.publishing.results_post_service import UploadFault
 
-    put_right = f"no command posts the {subject} again, and the text stands"
-    if not isinstance(fault, UploadFault):
-        put_right = f"fix the standings template; {put_right}"
+    tail = f"no command posts the {subject} again, and the text stands"
+    put_right = tail if isinstance(fault, UploadFault) else picture_remedy(
+        source_of(fault), template=f"fix the standings template; {tail}", otherwise=tail
+    )
     return (
         f"{ctx.named} | {ctx.what} | Standings posted as text\n"
         f"  division: {ctx.step_payload['division_name']}\n"

@@ -581,20 +581,12 @@ _NOTHING_POSTS_IT = "no command posts the final classification again, and the te
         "bot", "the bot hit an internal fault",
         f"the fault is in the bot, and its detail is in the host's log; {_NOTHING_POSTS_IT}",
         id="bot",
-        marks=pytest.mark.xfail(
-            strict=True,
-            reason="#584: the standings' line sends a fault in the bot to the template",
-        ),
     ),
     pytest.param(
         "host", "Inkscape is not installed on this host.",
         "Inkscape is not installed on the machine running the bot, and the host must install it; "
         f"{_NOTHING_POSTS_IT}",
         id="host",
-        marks=pytest.mark.xfail(
-            strict=True,
-            reason="#584: the standings' line sends the converter's absence to the template",
-        ),
     ),
     pytest.param(
         "discord", "Discord refused the picture (Missing Access)", _NOTHING_POSTS_IT,
