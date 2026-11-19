@@ -187,10 +187,12 @@ class DrawingRefused(Exception):
     something the league can put right: a division with no round to draw, a template that
     declares no slot for what the data holds.
 
-    The render turns one into a problem, which a caller answers in its own words, and lets any
-    other exception through as a fault in the bot. A deliberate refusal that later becomes
-    reachable inside the render's data build or fill joins this class then; one that is not
-    listed is reported as a fault.
+    Of what the render's data build or fill raises, only one of these is the league's to put
+    right: the render turns it into a problem, which a caller answers in its own words. Any other
+    exception there is a fault in the bot, which the render also returns as a problem by default
+    and raises where the caller has no fallback and asks it to (`raise_faults`). A deliberate
+    refusal that later becomes reachable inside the data build or fill joins this class then; one
+    that does not derive from it is reported as a fault.
     """
 
 
