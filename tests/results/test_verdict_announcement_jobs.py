@@ -1004,19 +1004,32 @@ _FAULTED_PICTURES = [
 ]
 
 
-@pytest.mark.parametrize(
-    ("aspect", "template", "name"), _FAULTED_PICTURES,
-    ids=[aspect for aspect, _t, _n in _FAULTED_PICTURES],
-)
+@pytest.mark.parametrize(("aspect", "template", "name", "kind", "detail"), [
+    *[pytest.param(aspect, template, name, "TEMPLATE_INVALID", RENDER_FAULT, id=aspect)
+      for aspect, template, name in _FAULTED_PICTURES],
+    pytest.param(
+        "verdict_banner", "verdict_banner_template", "Verdict banner",
+        "CONVERTER_ABSENT", CONVERTER_ABSENT_WORDS,
+        id="verdict_banner-converter absent",
+        marks=pytest.mark.xfail(
+            strict=True,
+            reason="#584: the banner's line says nothing of what puts the converter's absence "
+            "right",
+        ),
+    ),
+])
 async def test_a_verdict_picture_s_render_fault_is_named_by_its_own_picture(
-    tmp_path, aspect, template, name,
+    tmp_path, aspect, template, name, kind, detail,
 ):
     """Image generation is on with the *aspect* picture alone switched on and its template
     valid. Alex approves a five-second penalty for Lewis in round 3 of Pro, and the image
-    module's render of that picture fails on a template fault. The verdict is announced naming
-    Lewis and the queue runs to the end; the log channel gives the fault on a line headed
-    "⚠️ <name> image", the name `/images config toggle` offers, and nothing in the log calls it
-    a results image."""
+    module's render of that picture fails on a template fault, or, for the banner, for want of
+    Inkscape. The verdict is announced naming Lewis and the queue runs to the end; the log channel
+    gives the fault on a line headed "⚠️ <name> image", the name `/images config toggle` offers,
+    and nothing in the log calls it a results image. Where Inkscape is not installed, the banner's
+    line keeps the render's words and says that the host must install it, and that once it has
+    and the round is final, amending the round with `/results rounds amend` announces it
+    again."""
     from leaguebot.image.models.image_module import Problem, RenderOutcome
 
     league = await review_league(tmp_path)
@@ -1026,7 +1039,7 @@ async def test_a_verdict_picture_s_render_fault_is_named_by_its_own_picture(
         return_value={template: MagicMock(valid=True)}
     )
     league.bot.image_render_service.render = AsyncMock(return_value=RenderOutcome(
-        problem=Problem(kind="TEMPLATE_INVALID", detail=RENDER_FAULT, template_key=template),
+        problem=Problem(kind=kind, detail=detail, template_key=template),
     ))
     await _approve_reports(league, [penalty(LEWIS)])
     await run_queue(league.bot)
@@ -1035,9 +1048,11 @@ async def test_a_verdict_picture_s_render_fault_is_named_by_its_own_picture(
     [verdict] = _verdicts(league)
     assert f"<@{LEWIS}>" in verdict
     log = league.log()
-    [line] = [line for line in log.splitlines() if RENDER_FAULT in line]
+    [line] = [line for line in log.splitlines() if detail in line]
     assert line.startswith(f"⚠️ {name} image — "), line
     assert "Results image" not in log, log
+    if kind == "CONVERTER_ABSENT":
+        assert CONVERTER_ABSENT_REMEDY in line, line
 
 
 #: The detail of the one render notice the drawing below comes back with.
