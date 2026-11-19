@@ -244,15 +244,15 @@ Stefan Sommer for `CHL` in Division 2.
    Statuses**, paste into **ID, status — one entry per line**, and submit:
 
    ```
-   9000000000000000001, decline
+   9000000000000000001, tentative
    9000000000000000002, accept
    9000000000000000003, accept
    9000000000000000004, accept
-   9000000000000000005, accept
+   9000000000000000005, decline
    9000000000000000006, accept
    9000000000000000007, accept
    9000000000000000008, accept
-   9000000000000000009, accept
+   9000000000000000009, tentative
    9000000000000000010, accept
    9000000000000000011, accept
    9000000000000000012, accept
@@ -266,10 +266,14 @@ Stefan Sommer for `CHL` in Division 2.
    9000000000000000020, accept
    9000000000000000021, accept
    9000000000000000023, accept
-   9000000000000000024, accept
+   9000000000000000024, decline
    ```
 
-   Victor Vance (`…022`) is left out on purpose: the last notice is to name him.
+   Victor Vance (`…022`) is left out on purpose: the last notice is to name him. Four answers
+   here are changed again at step 11, to rehearse a check-in shifting before its deadline: Adam
+   Archer (`…001`) tentative, then declined; Emil Engel (`…005`) declined, then accepted; Ian
+   Irwin (`…009`) tentative, then accepted; and the reserve Xavier Xu (`…024`) declined, then
+   accepted.
 
    **Expect:**
    - **Ack:** `setting 23 test RSVP answer(s) on the check-in call of **Division 1**` (lower case,
@@ -277,22 +281,23 @@ Stefan Sommer for `CHL` in Division 2.
    - **Then:**
      ```
      ✅ Applied 23 update(s) in **Division 1**:
-       `9000000000000000001` → declined
+       `9000000000000000001` → tentative
        `9000000000000000002` → accepted
        …
-       `9000000000000000024` → accepted
+       `9000000000000000024` → declined
      🔄 The check-in call is redrawn on the change queue.
      ```
      one line per entry, in the order pasted.
-   - **Posts** (`#d1-rsvp`): the call edited in place: `(❌)` beside Adam Archer, `()` beside
-     Victor Vance, `(✅)` beside every other driver, both reserves included.
+   - **Posts** (`#d1-rsvp`): the call edited in place: `(❓)` beside Adam Archer and Ian Irwin,
+     `(❌)` beside Emil Engel and Xavier Xu, `()` beside Victor Vance, and `(✅)` beside every
+     other driver, Willem Wouters included.
    - **Log:**
      ```
      <you> | /attendance test rsvp | Success
        division: Division 1
        round_id: <id: Division 1's round 1>
        updates: 23
-       changes: `9000000000000000001` → declined, `9000000000000000002` → accepted, … , `9000000000000000024` → accepted
+       changes: `9000000000000000001` → tentative, `9000000000000000002` → accepted, … , `9000000000000000024` → declined
      ```
 
 ### The second forecast
@@ -344,19 +349,32 @@ Stefan Sommer for `CHL` in Division 2.
 
     ```
     9000000000000000022, accept
+    9000000000000000001, decline
+    9000000000000000005, accept
+    9000000000000000009, accept
+    9000000000000000024, accept
     ```
 
+    Victor Vance answers at last, and the four answers of step 8 change: the call is to end as
+    Adam Archer declined and every other driver accepted. Xavier Xu accepts after Willem Wouters
+    did, at step 8, so Willem Wouters is first among the reserves at the deadline.
+
     **Expect:**
-    - **Ack:** `setting 1 test RSVP answer(s) on the check-in call of **Division 1**`
+    - **Ack:** `setting 5 test RSVP answer(s) on the check-in call of **Division 1**`
     - **Then:**
       ```
-      ✅ Applied 1 update(s) in **Division 1**:
+      ✅ Applied 5 update(s) in **Division 1**:
         `9000000000000000022` → accepted
+        `9000000000000000001` → declined
+        `9000000000000000005` → accepted
+        `9000000000000000009` → accepted
+        `9000000000000000024` → accepted
       🔄 The check-in call is redrawn on the change queue.
       ```
-    - **Posts** (`#d1-rsvp`): the call edited, `(✅)` now beside Victor Vance.
-    - **Log:** as step 8, with `updates: 1` and
-      ``changes: `9000000000000000022` → accepted``.
+    - **Posts** (`#d1-rsvp`): the call edited: `(❌)` beside Adam Archer, and `(✅)` beside every
+      other driver, both reserves included.
+    - **Log:** as step 8, with `updates: 5` and
+      ``changes: `9000000000000000022` → accepted, `9000000000000000001` → declined, `9000000000000000005` → accepted, `9000000000000000009` → accepted, `9000000000000000024` → accepted``.
 
 ### The final forecast
 
@@ -402,7 +420,8 @@ Stefan Sommer for `CHL` in Division 2.
           <@9000000000000000024> (Xavier Xu) — **Standby** (no vacancy available)
         ```
         Willem Wouters takes Adam Archer's place, `ALP` being the one team with a driver who
-        declined; every other team accepted in full, so Xavier Xu has no team.
+        declined; every other team accepted in full, so Xavier Xu has no team. Willem Wouters is
+        placed first because he accepted first: Xavier Xu's acceptance is the later, at step 11.
 
 ### The result submission
 
@@ -762,7 +781,7 @@ sessions `Sprint Qualifying`, `Sprint Race`, `Feature Qualifying` and `Feature R
     9000000000000000027, accept
     9000000000000000028, accept
     9000000000000000029, accept
-    9000000000000000030, accept
+    9000000000000000030, tentative
     9000000000000000031, accept
     9000000000000000032, accept
     9000000000000000033, accept
@@ -780,11 +799,16 @@ sessions `Sprint Qualifying`, `Sprint Race`, `Feature Qualifying` and `Feature R
     9000000000000000045, accept
     ```
 
+    Diego Duarte (`…030`) answers tentative and keeps that answer to the deadline, so the season
+    holds a call ending with a tentative answer. He races all the same.
+
     **Expect:**
     - **Ack:** `setting 21 test RSVP answer(s) on the check-in call of **Division 2**`
-    - **Then:** `✅ Applied 21 update(s) in **Division 2**:`, one line per entry, each
-      `` `<id>` → accepted``, then `🔄 The check-in call is redrawn on the change queue.`
-    - **Posts** (`#d2-rsvp`): the call edited, `(✅)` beside every driver.
+    - **Then:** `✅ Applied 21 update(s) in **Division 2**:`, one line per entry in the order
+      pasted, each `` `<id>` → accepted`` but `` `9000000000000000030` → tentative``, then
+      `🔄 The check-in call is redrawn on the change queue.`
+    - **Posts** (`#d2-rsvp`): the call edited, `(❓)` beside Diego Duarte and `(✅)` beside every
+      other driver.
     - **Log:** as step 8, with `division: Division 2`, `updates: 21`.
 
 30. **Do:** `/test-mode advance`
@@ -817,8 +841,10 @@ sessions `Sprint Qualifying`, `Sprint Race`, `Feature Qualifying` and `Feature R
         <@9000000000000000045> (Stefan Sommer) → **Charlie GP**
       ```
       The reserves fill the empty seats: `Bravo Motorsport`, with no driver at all, takes the
-      first; `Charlie GP`, a seat empty beside Aaron Abbott, the second. Every other team
-      accepted in full and takes none.
+      first; `Charlie GP`, a seat empty beside Aaron Abbott, the second. `Echo Racing`, whose
+      Diego Duarte is tentative, is next in line, but a tentative driver ranks below an empty seat
+      and there is no third reserve; every other team accepted in full. So no other team takes
+      one.
 
 ### Division 1's clean-ups
 
@@ -1020,9 +1046,34 @@ Division 2's reserves fill `BRV` and `CHL` again.
       the embed titled `Season 1 Round 2 — Hungaroring`, `🏁 Event Type` `Sprint`, every driver
       `()`.
 
-46. **Do:** `/attendance test rsvp division:Division 1`, and paste every Division 1
-    driver as accepting: the 24 lines `9000000000000000001, accept` to
-    `9000000000000000024, accept`, one per driver.
+46. **Do:** `/attendance test rsvp division:Division 1`, and paste:
+
+    ```
+    9000000000000000001, accept
+    9000000000000000002, accept
+    9000000000000000003, accept
+    9000000000000000004, accept
+    9000000000000000005, accept
+    9000000000000000006, accept
+    9000000000000000007, accept
+    9000000000000000008, accept
+    9000000000000000009, accept
+    9000000000000000010, accept
+    9000000000000000011, accept
+    9000000000000000012, accept
+    9000000000000000013, accept
+    9000000000000000014, accept
+    9000000000000000015, accept
+    9000000000000000016, accept
+    9000000000000000017, accept
+    9000000000000000018, accept
+    9000000000000000019, accept
+    9000000000000000020, accept
+    9000000000000000021, accept
+    9000000000000000022, accept
+    9000000000000000023, accept
+    9000000000000000024, accept
+    ```
 
     **Expect:**
     - **Ack:** `setting 24 test RSVP answer(s) on the check-in call of **Division 1**`
@@ -1172,10 +1223,34 @@ Division 2's reserves fill `BRV` and `CHL` again.
       `Season 1 Round 2 — Circuit de Spa-Francorchamps`, `🏁 Event Type` `Sprint`.
     - **Log:** as step 28, with `round: 2`.
 
-61. **Do:** `/attendance test rsvp division:Division 2`, and paste step
-    29's 21 lines.
+61. **Do:** `/attendance test rsvp division:Division 2`, and paste:
 
-    **Expect:** as step 29.
+    ```
+    9000000000000000025, accept
+    9000000000000000026, accept
+    9000000000000000027, accept
+    9000000000000000028, accept
+    9000000000000000029, accept
+    9000000000000000030, accept
+    9000000000000000031, accept
+    9000000000000000032, accept
+    9000000000000000033, accept
+    9000000000000000034, accept
+    9000000000000000035, accept
+    9000000000000000036, accept
+    9000000000000000037, accept
+    9000000000000000038, accept
+    9000000000000000039, accept
+    9000000000000000040, accept
+    9000000000000000041, accept
+    9000000000000000042, accept
+    9000000000000000043, accept
+    9000000000000000044, accept
+    9000000000000000045, accept
+    ```
+
+    **Expect:** as step 29, but every line `` `<id>` → accepted`` and `(✅)` beside every
+    driver: Diego Duarte accepts this time.
 
 62. **Do:** `/test-mode advance`
 
@@ -1288,8 +1363,34 @@ Everybody accepts the call again.
     - **Posts** (`#d1-rsvp`): as step 7, the embed titled
       `Season 1 Round 3 — Mystery`, `📍 Location` `Mystery`, `🏁 Event Type` `Mystery`.
 
-75. **Do:** `/attendance test rsvp division:Division 1`, and paste step
-    46's 24 lines.
+75. **Do:** `/attendance test rsvp division:Division 1`, and paste:
+
+    ```
+    9000000000000000001, accept
+    9000000000000000002, accept
+    9000000000000000003, accept
+    9000000000000000004, accept
+    9000000000000000005, accept
+    9000000000000000006, accept
+    9000000000000000007, accept
+    9000000000000000008, accept
+    9000000000000000009, accept
+    9000000000000000010, accept
+    9000000000000000011, accept
+    9000000000000000012, accept
+    9000000000000000013, accept
+    9000000000000000014, accept
+    9000000000000000015, accept
+    9000000000000000016, accept
+    9000000000000000017, accept
+    9000000000000000018, accept
+    9000000000000000019, accept
+    9000000000000000020, accept
+    9000000000000000021, accept
+    9000000000000000022, accept
+    9000000000000000023, accept
+    9000000000000000024, accept
+    ```
 
     **Expect:** as step 46.
 
@@ -1343,10 +1444,33 @@ Everybody accepts the call again.
     **Expect:** as step 28, with `**Round 3** (**Circuit Zandvoort**)`, the embed
     titled `Season 1 Round 3 — Circuit Zandvoort`, `🏁 Event Type` `Normal`, and `round: 3`.
 
-83. **Do:** `/attendance test rsvp division:Division 2`, and paste step
-    29's 21 lines.
+83. **Do:** `/attendance test rsvp division:Division 2`, and paste:
 
-    **Expect:** as step 29.
+    ```
+    9000000000000000025, accept
+    9000000000000000026, accept
+    9000000000000000027, accept
+    9000000000000000028, accept
+    9000000000000000029, accept
+    9000000000000000030, accept
+    9000000000000000031, accept
+    9000000000000000032, accept
+    9000000000000000033, accept
+    9000000000000000034, accept
+    9000000000000000035, accept
+    9000000000000000036, accept
+    9000000000000000037, accept
+    9000000000000000038, accept
+    9000000000000000039, accept
+    9000000000000000040, accept
+    9000000000000000041, accept
+    9000000000000000042, accept
+    9000000000000000043, accept
+    9000000000000000044, accept
+    9000000000000000045, accept
+    ```
+
+    **Expect:** as step 61.
 
 84. **Do:** `/test-mode advance`
 
