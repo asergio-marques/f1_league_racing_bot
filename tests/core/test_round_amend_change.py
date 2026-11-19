@@ -3691,13 +3691,14 @@ async def test_a_standing_call_is_posted_again_when_its_window_has_passed(tmp_pa
 async def test_a_closed_check_in_is_left_alone(tmp_path, reposts):
     """Past its deadline the check-in is settled and the reserves are distributed against it.
 
-    Reopening it would unsettle a grid already told who is racing, so nothing is posted and
-    nothing is taken down — the amendment touches the forecasts and the schedule alone.
+    Reopening it would unsettle a grid already told who is racing, so the rules refuse the
+    amendment, and the check-in is left alone because nothing is amended: nothing is posted and
+    nothing is taken down.
 
     Attendance on; Pro's round 3, one hour out (its deadline two hours before it gone by), has
-    its call standing and its track amended. The rules refuse an amendment whose check-in
-    deadline has passed, at the offer and again when it runs, so nothing is asked of the queue:
-    the call stands as it was, and none is posted.
+    its call standing, and a manager asks to amend its track. The rules refuse an amendment
+    whose check-in deadline has passed, at the offer and again when it runs, so nothing is asked
+    of the queue: the call stands as it was, and none is posted.
     """
     league = await ongoing_league(tmp_path, attendance=True)
     await _place(league, R3, at=timedelta(hours=1))
