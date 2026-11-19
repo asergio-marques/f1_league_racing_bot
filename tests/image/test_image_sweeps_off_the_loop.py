@@ -38,6 +38,7 @@ from leaguebot.image.services.validity import image_validity_service as validity
 from leaguebot.image.services.config.image_settings import TEMPLATE, TEMPLATE_DIRECTORY, image_settings
 from leaguebot.framework.db.database import run_migrations
 from leaguebot.image.models.image_catalogues import CapacityError
+from leaguebot.image.services.aspects.image_calendar_service import CalendarDataError
 from leaguebot.image.models.image_module import PROBLEM_UNRESOLVED_VALUE
 from leaguebot.image.services.config.image_config_service import ImageConfigService
 from leaguebot.image.services.render.image_render_service import ImageRenderService
@@ -602,6 +603,73 @@ async def test_a_render_parses_its_template_off_the_loop(monkeypatch):
     assert outcome.problem.kind == PROBLEM_UNRESOLVED_VALUE
     assert len(threads) == 1 and threads[0] is not threading.current_thread()
     assert_no_tree_crossed(crossed)
+
+
+def _shipped_calendar(monkeypatch) -> ImageRenderService:
+    """A render service drawing the shipped calendar template, with the rasteriser present."""
+    monkeypatch.setattr(image_render_service, "converter_available", lambda: True)
+    validity = MagicMock()
+    validity.template_reports = AsyncMock(return_value={"calendar_template": SimpleNamespace(
+        valid=True, reason=None, resolved_path=SHIPPED / "calendar_template.svg",
+    )})
+    return ImageRenderService(MagicMock(), validity)
+
+
+def _builder_raising(fault: Exception) -> Any:
+    def build(_root: Any) -> Any:
+        raise fault
+
+    return build
+
+
+def _fill_raising(monkeypatch, fault: Exception) -> Any:
+    """A builder that answers, a check against the data that passes, and a fill that raises."""
+    from leaguebot.image.utils import svg_fill
+
+    def fill(_spec: Any) -> Any:
+        raise fault
+
+    monkeypatch.setattr(svg_fill, "fill", fill)
+    monkeypatch.setattr(image_render_service, "_verify_against_data", lambda *_args: None)
+    return lambda _root: object()
+
+
+@pytest.mark.parametrize("where", ["data", "fill"])
+async def test_a_render_with_no_fallback_raises_a_fault_in_the_bot(monkeypatch, where):
+    """The calendar drawn by a caller with no fallback, the preview: a fault in the bot while
+    the data is assembled, or while the template is filled, is raised out of the render with
+    its own class and message, not turned into a problem for the league."""
+    service = _shipped_calendar(monkeypatch)
+    fault: Exception = (
+        LookupError("no driver in seat 7") if where == "data" else RuntimeError("fill broke")
+    )
+    builder = _builder_raising(fault) if where == "data" else _fill_raising(monkeypatch, fault)
+
+    with pytest.raises(type(fault)) as raised:
+        await service.render("calendar_template", builder, raise_faults=True)
+
+    assert type(raised.value) is type(fault)
+    assert str(raised.value) == str(fault)
+
+
+@pytest.mark.parametrize("refusal", [
+    CalendarDataError("Division 1 holds no round to draw"),
+    CapacityError("the template declares no round to fill"),
+], ids=["calendar-data", "capacity"])
+async def test_a_render_with_no_fallback_still_returns_the_leagues_own_refusal(
+    monkeypatch, refusal
+):
+    """The calendar drawn by a caller with no fallback, its data refused for a reason the league
+    can put right: the render still answers a problem naming it, and raises nothing."""
+    service = _shipped_calendar(monkeypatch)
+
+    outcome = await service.render(
+        "calendar_template", _builder_raising(refusal), raise_faults=True
+    )
+
+    assert outcome.problem.kind == PROBLEM_UNRESOLVED_VALUE
+    assert str(refusal) in outcome.problem.detail
+    assert outcome.png_paths == []
 
 
 async def test_the_contrast_measurement_parses_its_template_off_the_loop(monkeypatch, tmp_path):

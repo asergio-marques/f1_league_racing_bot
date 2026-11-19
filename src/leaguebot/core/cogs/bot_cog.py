@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from datetime import datetime
 from typing import Any
 
@@ -703,16 +704,30 @@ async def _clean_up(guild, bot_user_id: int, targets, report, close, *, now: dat
 
     A clean-up that stops part-way is caught whatever the fault, logged on the host in full, and
     said so in the last report and the closing line, which a reset that ends in silence would not.
+    The last report names the step it stopped at, read from the last progress text the clean-up
+    reported, and the kind of fault in plain words (`describe_fault`), never the exception's own
+    text, as for any command's failure; the exception goes to the host's log.
     """
+    step: list[str] = []
+
+    async def tracked(text: str) -> None:
+        found = re.search(r"\bnow (.+?)\.\n", text)
+        if found is not None:
+            step[:] = [found.group(1)]
+        await report(text)
+
     try:
         outcome = await factory_reset_service.clean_discord(
-            guild, bot_user_id, targets, report, now=now
+            guild, bot_user_id, targets, tracked, now=now
         )
     except Exception as exc:  # noqa: BLE001 — the last report must say it stopped
         log.exception("factory reset: the Discord clean-up stopped")
-        # The owner's private progress message keeps the text (a test pins it); the log
-        # channel gets the kind of fault only, the detail staying in the host's log.
-        await report(f"⛔ Factory reset: the Discord clean-up stopped: {exc}")
+        # The owner's private progress message and the log channel's line both say the kind of
+        # fault only, the detail staying in the host's log.
+        at = f" while {step[0]}" if step else ""
+        await report(
+            f"⛔ Factory reset: the Discord clean-up stopped{at} — {describe_fault(exc)}."
+        )
         await close(
             "Clean-up stopped part-way",
             f"Discord: the clean-up stopped: {describe_fault(exc)}.",

@@ -30,6 +30,7 @@ from leaguebot.image.models.image_catalogues import (
     catalogue_for,
     row_crop_fields,
 )
+from leaguebot.image.models.image_module import DrawingRefused
 from leaguebot.image.utils.asset_resolver import normalise
 from leaguebot.image.utils.country_data import country_for_nationality
 from leaguebot.image.utils.svg_document import FieldIndex
@@ -50,7 +51,7 @@ _SEAT_PREFIX = "driver"
 NATIONALITY_OTHER = "Other"
 
 
-class LineupDataError(Exception):
+class LineupDataError(DrawingRefused):
     """A fatal disagreement between a division and what a lineup needs.
 
     Raised before anything is drawn. The caller turns it into a Problem, which aborts the

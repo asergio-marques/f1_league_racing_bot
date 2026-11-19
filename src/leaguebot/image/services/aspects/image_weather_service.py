@@ -33,6 +33,7 @@ from leaguebot.image.models.image_catalogues import (
     catalogue_for,
 )
 from leaguebot.image.models.forecast_values import ForecastValues
+from leaguebot.image.models.image_module import DrawingRefused
 from leaguebot.image.utils.svg_document import FieldIndex
 from leaguebot.image.utils.svg_fill import FillSpec
 
@@ -58,7 +59,7 @@ _SPRINT_KEYS = {
 
 MYSTERY_TEMPLATE_KEY = "weather_mystery_template"
 
-class WeatherDataError(Exception):
+class WeatherDataError(DrawingRefused):
     """A fatal disagreement between a round and what a weather graphic needs.
 
     Raised before anything is drawn. A posting no command triggered falls back to the textual

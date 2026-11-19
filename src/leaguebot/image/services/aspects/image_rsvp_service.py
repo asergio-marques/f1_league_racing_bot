@@ -35,6 +35,7 @@ from leaguebot.image.models.image_catalogues import (
     CapacityError,
     catalogue_for,
 )
+from leaguebot.image.models.image_module import DrawingRefused
 from leaguebot.image.utils.date_formatting import format_date_and_time
 from leaguebot.image.utils.svg_document import FieldIndex
 from leaguebot.image.utils.svg_fill import FillSpec
@@ -70,7 +71,7 @@ MYSTERY_RACE_NAME = "Mystery Grand Prix"
 MYSTERY_LITERAL = "Mystery"
 
 
-class RsvpDataError(Exception):
+class RsvpDataError(DrawingRefused):
     """A fatal disagreement between a round and what a check-in graphic needs.
 
     Raised before anything is drawn. The caller posts the call **without** an attachment —

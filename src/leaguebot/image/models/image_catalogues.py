@@ -25,9 +25,10 @@ from dataclasses import dataclass, field, replace
 from typing import Iterable, Mapping
 
 from leaguebot.image.models.image_constants import TEMPLATE_COLUMNS
+from leaguebot.image.models.image_module import DrawingRefused
 
 
-class CapacityError(Exception):
+class CapacityError(DrawingRefused):
     """A template's repeating collection cannot be counted.
 
     Raised for the two shapes XIV.11 forbids: no member at all, and a gap in the

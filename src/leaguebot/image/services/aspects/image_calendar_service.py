@@ -29,6 +29,7 @@ from leaguebot.image.models.image_catalogues import (
 )
 from leaguebot.core.models.round import RoundStatus
 from leaguebot.image.models.image_constants import MYSTERY_DATUM
+from leaguebot.image.models.image_module import DrawingRefused
 from leaguebot.image.utils.date_formatting import format_date_and_time
 from leaguebot.image.utils.svg_document import FieldIndex
 from leaguebot.image.utils.svg_fill import FillSpec
@@ -57,7 +58,7 @@ FORMAT_LABELS = {
 _ROUND_PREFIX = "round"
 
 
-class CalendarDataError(Exception):
+class CalendarDataError(DrawingRefused):
     """A fatal disagreement between a division and what a calendar needs.
 
     Raised before anything is drawn. The caller turns it into a Problem, which aborts the

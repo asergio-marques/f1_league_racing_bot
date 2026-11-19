@@ -7,7 +7,9 @@ values on a template and works none of them out. Pure: no Discord, no database, 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+
 from leaguebot.image.models.image_constants import MYSTERY_DATUM
+from leaguebot.image.models.image_module import DrawingRefused
 
 #: The aspect a standings picture is switched by, which a caller asks the drawing's gate about.
 STANDINGS_ASPECT = "standings"
@@ -16,7 +18,7 @@ DRIVERS_TEMPLATE_KEY = "standings_drivers_template"
 CONSTRUCTORS_TEMPLATE_KEY = "standings_constructors_template"
 
 
-class StandingsDataError(Exception):
+class StandingsDataError(DrawingRefused):
     """A fatal disagreement between a classification and what a standings graphic needs.
 
     Raised before anything is drawn. The caller turns it into a Problem, which abandons this

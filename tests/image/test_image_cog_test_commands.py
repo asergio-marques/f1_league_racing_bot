@@ -272,20 +272,31 @@ class TestTheReply:
 
         assert "round 3" in interaction.followup.messages[0]
 
-    async def test_a_problem_is_reported_and_no_picture_attached(self, cog):
-        """A problem means no image at all, never a partial one (XIV.4)."""
+    @pytest.mark.parametrize("field_id, said", [
+        (None, "❌ Lineup: the template is invalid"),
+        ("row_1_name", "❌ Lineup: `row_1_name` — the template is invalid"),
+    ], ids=["template", "field"])
+    async def test_a_problem_is_reported_and_no_picture_attached(self, cog, field_id, said):
+        """A problem means no image at all, never a partial one (XIV.4), and it is said in the
+        league's words, never as the structure that carries it."""
+        from leaguebot.image.models.image_module import PROBLEM_NOT_FOUND, Problem
+
+        problem = Problem(
+            kind=PROBLEM_NOT_FOUND, detail="the template is invalid",
+            template_key="lineup_template", field_id=field_id,
+        )
         interaction = _Interaction()
 
         await cog._send_preview(
             interaction,
             title="Lineup",
             context=_context(),
-            outcomes=[("Lineup", "lineup_template", _outcome(problem="the template is invalid"))],
+            outcomes=[("Lineup", "lineup_template", _outcome(problem=problem))],
         )
 
         reply = interaction.followup.messages[0]
-        assert "❌ Lineup" in reply
-        assert "the template is invalid" in reply
+        assert said in reply.splitlines()
+        assert "Problem(" not in reply
         assert interaction.followup.files == []
 
     async def test_fabricated_drivers_are_declared(self, cog):
@@ -789,16 +800,32 @@ class TestThePreviewDiscardsItsPictures:
 # ── A preview that cannot be assembled (#442) ─────────────────────────────
 
 
-async def test_a_preview_that_cannot_be_assembled_goes_to_the_failure_path():
-    """A fault while the preview's data is gathered is the bot's. It is not answered here with
-    the error's text: it goes on to the command tree, whose failure report names the command
-    it came from."""
+@pytest.mark.parametrize("where", [
+    "build",
+    pytest.param("render"),
+    pytest.param("second-render"),
+])
+async def test_a_preview_that_cannot_be_assembled_goes_to_the_failure_path(tmp_path, where):
+    """A fault in the bot while the preview's data is gathered, or while one of its pictures is
+    drawn, is the bot's. It is not answered here with the error's text: it goes on to the
+    command tree, whose failure report names the command it came from. The render is asked to
+    raise such a fault rather than make a problem of it, as a preview has no text to fall back
+    to; and a preview drawing two pictures whose second fails sends neither, and leaves the
+    first's file on the host no longer."""
     from unittest.mock import AsyncMock, MagicMock, patch
 
     from leaguebot.framework.utils.interaction_errors import describe
 
     from leaguebot.framework.utils.hooks import AwaitedHook
 
+    fault = RuntimeError("no such division row")
+    directory = tmp_path / "f1bot_render_lineup_template"
+    directory.mkdir()
+    first_png = directory / "lineup_template.png"
+    first_png.write_bytes(b"\x89PNG")
+    render = AsyncMock(
+        side_effect=[_outcome(png_paths=[first_png]), fault] if where == "second-render" else fault
+    )
     cog = ImageCog(
         SimpleNamespace(
             module_service=switches(images=True),
@@ -808,14 +835,17 @@ async def test_a_preview_that_cannot_be_assembled_goes_to_the_failure_path():
             season_service=SimpleNamespace(),
             image_config_service=SimpleNamespace(),
             preview_sources=SimpleNamespace(),
+            image_render_service=SimpleNamespace(render=render),
         )
     )
     interaction = _Interaction()
     interaction.command = SimpleNamespace(qualified_name="images test lineup")
-    fault = RuntimeError("no such division row")
+    pictures = 2 if where == "second-render" else 1
 
     async def _build(_context):
-        raise fault
+        if where == "build":
+            raise fault
+        return [(f"Lineup {n}", "lineup_template", lambda _root: None) for n in range(pictures)]
 
     with patch(
         "leaguebot.image.services.render.image_render_service.converter_available",
@@ -830,8 +860,16 @@ async def test_a_preview_that_cannot_be_assembled_goes_to_the_failure_path():
             )
 
     assert raised.value is fault
-    assert not any("no such division row" in m for m in interaction.followup.messages)
+    assert interaction.followup.messages == []
     assert describe(interaction) == "`/images test lineup`"
+    if where == "build":
+        render.assert_not_awaited()
+    else:
+        assert render.await_count == pictures
+        assert all(call.kwargs.get("raise_faults") is True for call in render.await_args_list)
+    if where == "second-render":
+        assert not first_png.exists()
+        assert not directory.exists()
 
 
 #: The four subgroup files of `/images`, in the order a league sees their groups.

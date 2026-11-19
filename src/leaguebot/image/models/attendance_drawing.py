@@ -27,6 +27,7 @@ from typing import Mapping, Sequence
 
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
 from leaguebot.image.models.image_constants import MYSTERY_DATUM, MYSTERY_GRAND_PRIX
+from leaguebot.image.models.image_module import DrawingRefused
 
 ATTENDANCE_TEMPLATE_KEY = "attendance_template"
 
@@ -65,7 +66,7 @@ MARK_DATA: tuple[str, ...] = (MARK_NEAR, MARK_REACHED)
 MARK_NEAR_BAND = 2
 
 
-class AttendanceDataError(Exception):
+class AttendanceDataError(DrawingRefused):
     """A fatal disagreement between a division and what an attendance sheet needs.
 
     Raised before anything is drawn. The caller turns it into a Problem, which abandons this

@@ -5,6 +5,11 @@ cog holds the command and the service the rule. A preview guards, then resolves,
 replies with the pictures and plainly what the render had to make do with. It changes nothing: a
 preview leaves a league's records exactly as it found them.
 
+A preview has no text to fall back to, so it asks the render to raise a fault in the bot rather
+than make a problem of it, and the fault goes to the command's failure path, whole: one fault in
+one picture ends the preview with none of them sent. Only an error the league can put right comes
+back as a problem, and is shown against its picture in words (`Problem.message`).
+
 What the runner needs, it is handed: it is not a cog and looks no service up (docs/design/architecture.md,
 "How the code is laid out"). The driver names reader is handed in, the render and the log writer as
 callables for the cog to resolve when it draws, and the services the previews draw through as one
@@ -51,8 +56,10 @@ async def run_preview(
     *kind* names the preview, and what each kind requires (rounds, teams, the format the round
     must carry) is read from `PREVIEW_KINDS` off it: one table, read in one place.
 
-    A preview whose data cannot be assembled is a fault in the bot and is raised, for the
-    command's failure path to name `/images test …` to the member and the log channel alike.
+    A preview whose data cannot be assembled, or whose drawing meets a fault in the bot, is
+    raised, for the command's failure path to name `/images test …` to the member and the log
+    channel alike. The pictures drawn before a later one raised are discarded first, as nothing
+    will send them.
     """
     # Defer first: several kinds draw more than one picture, and the rasteriser is a
     # subprocess, so the three-second acknowledgement cannot be met otherwise.
@@ -83,22 +90,32 @@ async def run_preview(
     round_number = getattr(context.round, "round_number", None) if context.round else None
 
     outcomes = []
-    for label, template_key, spec_builder in requests:
-        outcome = await render(
-            template_key,
-            spec_builder,
-            filename_stem=image_filename_stem(
-                subject_for_template(template_key),
-                season_number=context.season_number,
-                division_tier=context.division_tier,
+    try:
+        for label, template_key, spec_builder in requests:
+            outcome = await render(
+                template_key,
+                spec_builder,
+                filename_stem=image_filename_stem(
+                    subject_for_template(template_key),
+                    season_number=context.season_number,
+                    division_tier=context.division_tier,
+                    division_name=context.division_name,
+                    round_number=round_number,
+                ),
+                # A preview must show the tier's own colours, or it is not a preview of
+                # what the league will post (051).
                 division_name=context.division_name,
-                round_number=round_number,
-            ),
-            # A preview must show the tier's own colours, or it is not a preview of
-            # what the league will post (051).
-            division_name=context.division_name,
-        )
-        outcomes.append((label, template_key, outcome))
+                # No text to fall back to: a fault in the bot is raised to the command's
+                # failure path, not made a problem the manager reads in Python's words.
+                raise_faults=True,
+            )
+            outcomes.append((label, template_key, outcome))
+    except Exception:
+        # The pictures already drawn will not be sent, and `send_preview`, which discards
+        # what it sends, is never reached.
+        for _label, _key, drawn in outcomes:
+            image_render_service.discard_render(*drawn.png_paths)
+        raise
 
     await send_preview(
         interaction, post_log=post_log, title=title, context=context, outcomes=outcomes
@@ -156,7 +173,7 @@ async def send_preview(
     for label, template_key, outcome in outcomes:
         if outcome.problem:
             # A problem means no image at all: never a partial one (XIV.4).
-            lines.append(f"❌ {label}: {outcome.problem}")
+            lines.append(f"❌ {label}: {outcome.problem.message()}")
         else:
             lines.append(f"✅ {label}")
             for index, path in enumerate(outcome.png_paths):

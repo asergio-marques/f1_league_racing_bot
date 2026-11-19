@@ -118,15 +118,15 @@ only when called (`aspect_status`'s module docstring).
 ### Models and utilities
 
 `image/models/` holds plain data. `switch` holds `SWITCH_KEY`, the key image's switch is read by
-(`"images"`). `image_module` holds the configuration as read (`ImageConfig`),
-the render's and the validity check's outcomes (`RenderOutcome`, `ValidityReport`), whose shapes
-Principle XIV constrains (its module docstring), with `Problem`, `AspectStatus` and the validity
-layers' numbers. `image_constants` holds the static maps: the nine
-aspects, the sixteen templates and which aspect draws which. `image_catalogues` holds the field
-catalogue of each image type. `forecast_values`, `results_drawing`, `standings_drawing`,
-`attendance_drawing`, `verdict_banner_drawing` and `verdict_kind` hold models another module composes
-for a picture and hands in (below, "How modules and core fit
-together").
+(`"images"`). `image_module` holds the configuration as read (`ImageConfig`), the render's and the
+validity check's outcomes (`RenderOutcome`, `ValidityReport`), whose shapes Principle XIV constrains
+(its module docstring), with `Problem`, `AspectStatus`, the validity layers' numbers and
+`DrawingRefused`, the base of the drawing's errors a league can put right (`CapacityError` and the
+data error of each aspect that has one). `image_constants` holds the static maps: the nine aspects,
+the sixteen templates and which aspect draws which. `image_catalogues` holds the field catalogue of
+each image type. `forecast_values`, `results_drawing`, `standings_drawing`, `attendance_drawing`,
+`verdict_banner_drawing` and `verdict_kind` hold models another module composes for a picture and
+hands in (below, "How modules and core fit together").
 
 `image/utils/` holds the pure work, which reads no database and touches no Discord object:
 `svg_document` (parsing, the canvas, style resolution and `off_the_loop`), `svg_fill` (the six fill
@@ -393,6 +393,13 @@ fallback: a tier's colours that cannot be read or applied are drawn in the templ
 notice; data that cannot be assembled or a template that cannot be filled comes back as a problem,
 from which the caller falls back to text (image specification, "Errors and the rejection of input").
 A render's problem and its notices are distinct outcomes (`RenderOutcome`, Principle XIV.4).
+Of what the spec build and the fill raise, only a `DrawingRefused` is meant as a problem: an error
+raised on purpose, worded for the league, which it can put right. Any other exception is a fault
+in the bot. A caller with a fallback still takes it as a problem, which is the default. A caller
+with none, the preview, asks `render` to raise it (`raise_faults`), so that it reaches the
+command's failure path (core specification, "When a command fails" and "The record of what
+changed"): a problem there would be a fallback with nothing to fall back to. The template, verify,
+unresolved-field and rasteriser problems are not of this kind and come back as problems either way.
 
 **A drawing that rides on a post is place 6.** Image's own are `ImageDrawing.attach_forecast`,
 `attach_check_in_call`, `draw_attendance_sheet`, `draw_banner` and the forecast's `_weather_gate`.

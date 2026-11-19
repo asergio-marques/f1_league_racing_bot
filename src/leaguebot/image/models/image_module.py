@@ -182,6 +182,20 @@ class Problem:
         return f"{prefix}{self.detail}"
 
 
+class DrawingRefused(Exception):
+    """Base of an error raised on purpose while a picture is drawn, worded for the league and
+    something the league can put right: a division with no round to draw, a template that
+    declares no slot for what the data holds.
+
+    Of what the render's data build or fill raises, only one of these is the league's to put
+    right: the render turns it into a problem, which a caller answers in its own words. Any other
+    exception there is a fault in the bot, which the render also returns as a problem by default
+    and raises where the caller has no fallback and asks it to (`raise_faults`). A deliberate
+    refusal that later becomes reachable inside the data build or fill joins this class then; one
+    that does not derive from it is reported as a fault.
+    """
+
+
 # ── Derived types (not persisted) ─────────────────────────────────────────
 
 

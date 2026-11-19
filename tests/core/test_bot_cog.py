@@ -2127,10 +2127,24 @@ async def test_bot_factory_reset_reports_to_the_log_where_dms_are_closed(tmp_pat
 
 
 async def test_a_clean_up_that_breaks_says_where_it_stopped(tmp_path, monkeypatch):
+    """The clean-up breaks on a fault in the bot while deleting #race-control: the owner's
+    progress message says it stopped, at that channel, and the kind of fault in plain words,
+    never the error's own text."""
     from leaguebot.core.services.upkeep import factory_reset_service
+    from leaguebot.framework.utils.interaction_errors import describe_fault
 
-    async def broken(*_args, **_kwargs):
-        raise RuntimeError("gateway lost")
+    clean_discord = factory_reset_service.clean_discord
+    fault = RuntimeError("gateway lost")
+    channel = MagicMock()
+    channel.name = "race-control"
+    channel.delete = AsyncMock(side_effect=fault)
+
+    async def broken(guild, bot_user_id, _targets, report, *, now):
+        guild.get_channel = MagicMock(return_value=channel)
+        await clean_discord(
+            guild, bot_user_id, factory_reset_service.DiscordTargets(created=(40,), channels=()),
+            report, now=now,
+        )
 
     monkeypatch.setattr(factory_reset_service, "clean_discord", broken)
     db_path = await _make_db(tmp_path)
@@ -2141,7 +2155,10 @@ async def test_a_clean_up_that_breaks_says_where_it_stopped(tmp_path, monkeypatc
     await _run(cog, interaction)
 
     last = interaction.user.send.return_value.edit.await_args_list[-1].kwargs["content"]
-    assert "stopped" in last and "gateway lost" in last
+    assert "stopped" in last
+    assert "#race-control" in last
+    assert describe_fault(fault) in last
+    assert "gateway lost" not in last
 
 
 async def test_a_second_factory_reset_waits_for_the_first_clean_up(tmp_path):
