@@ -53,8 +53,9 @@ def _guild():
 def _drawing(db_path=":memory:", *, images_on=True, aspect_on=True, valid=True, outcome=None):
     """Image's drawing over doubles of its services: the module, the `lineup` aspect and the
     lineup template's validity as given, the packaged directories configured, and a renderer
-    giving *outcome* (nothing drawn by default), keeping the spec builder it was handed in
-    `captured`. Handed the database path, as the builder hands it."""
+    giving *outcome* (nothing drawn by default), keeping the spec builder it was handed, and the
+    rest of what it was asked with, in `captured`. Handed the database path, as the builder hands
+    it."""
     from leaguebot.image.services.render.image_drawing import ImageDrawing
 
     modules = MagicMock()
@@ -82,6 +83,7 @@ def _drawing(db_path=":memory:", *, images_on=True, aspect_on=True, valid=True, 
     async def _render(image_type, spec_builder, **kwargs):
         captured["image_type"] = image_type
         captured["builder"] = spec_builder
+        captured["kwargs"] = kwargs
         return outcome or NS(problem=None, notices=[], png_paths=[])
 
     renderer = MagicMock()
