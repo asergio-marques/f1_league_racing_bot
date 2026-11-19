@@ -375,7 +375,7 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
         `  Results: ✅ Enabled`, `  Attendance: ✅ Enabled`, `  Weather: ✅ Enabled`,
         `  Images: ✅ Enabled`; then `**Roles**` with `  Base role: <@&<Members role id>>` and
         `  Driver role: <@&<Driver role id>>`; then `**Teams**`, one line per team of the form
-        `  <shorthand> → <@&<role id>>`, Reserve among them. No line reading
+        `  <shorthand> → <@&<role id>>`: twelve lines, `ALP` to `KLO` and then `Reserve`. No line reading
         `⚠️ **Reserve team has no role assigned**`.
       - one message per module's settings, and one headed `**Image output**`;
       - no message opening `⛔ **The configuration cannot be confirmed yet.**`;
@@ -549,29 +549,61 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
     9000000000000000006,Felix Fournier,CHL,Division 1,French
     9000000000000000007,Gabriel Gomes,DLT,Division 1,Brazilian
     9000000000000000008,Hiro Hayashi,DLT,Division 1,Japanese
-    9000000000000000009,Ian Irwin,Reserve,Division 1,Australian
-    9000000000000000010,Jari Jokinen,ALP,Division 2,Finnish
-    9000000000000000011,Kevin Keller,ALP,Division 2,American
-    9000000000000000012,Liam Lavoie,BRV,Division 2,Canadian
-    9000000000000000013,Mateo Morales,BRV,Division 2,Mexican
-    9000000000000000014,Niels Nygaard,CHL,Division 2,Danish
-    9000000000000000015,Olivier Orsini,CHL,Division 2,Monegasque
-    9000000000000000016,Pim Prasert,DLT,Division 2,Thai
-    9000000000000000017,Quinn Quayle,DLT,Division 2,British
-    9000000000000000018,Rafael Rossi,Reserve,Division 2,Italian
+    9000000000000000009,Ian Irwin,ECH,Division 1,Australian
+    9000000000000000010,Jari Jokinen,ECH,Division 1,Finnish
+    9000000000000000011,Kevin Keller,FOX,Division 1,American
+    9000000000000000012,Liam Lavoie,FOX,Division 1,Canadian
+    9000000000000000013,Mateo Morales,GLF,Division 1,Mexican
+    9000000000000000014,Niels Nygaard,GLF,Division 1,Danish
+    9000000000000000015,Olivier Orsini,HTL,Division 1,Monegasque
+    9000000000000000016,Pim Prasert,HTL,Division 1,Thai
+    9000000000000000017,Quinn Quayle,IND,Division 1,Austrian
+    9000000000000000018,Rafael Rossi,IND,Division 1,Argentine
+    9000000000000000019,Samuel Shaw,JLT,Division 1,British
+    9000000000000000020,Tomas Torres,JLT,Division 1,Italian
+    9000000000000000021,Ugo Ulivi,KLO,Division 1,Spanish
+    9000000000000000022,Victor Vance,KLO,Division 1,Dutch
+    9000000000000000023,Willem Wouters,Reserve,Division 1,German
+    9000000000000000024,Xavier Xu,Reserve,Division 1,French
+    9000000000000000025,Yuki Yamada,ALP,Division 2,Brazilian
+    9000000000000000026,Zane Zeller,ALP,Division 2,Japanese
+    9000000000000000027,Aaron Abbott,CHL,Division 2,Australian
+    9000000000000000028,Bastien Blanc,DLT,Division 2,Finnish
+    9000000000000000029,Conor Cole,DLT,Division 2,American
+    9000000000000000030,Diego Duarte,ECH,Division 2,Canadian
+    9000000000000000031,Elias Eriksen,ECH,Division 2,Mexican
+    9000000000000000032,Finn Fischer,FOX,Division 2,Danish
+    9000000000000000033,Gianni Galli,FOX,Division 2,Monegasque
+    9000000000000000034,Hugo Hartley,GLF,Division 2,Thai
+    9000000000000000035,Isaac Ingram,GLF,Division 2,Austrian
+    9000000000000000036,Jonas Janssen,HTL,Division 2,Argentine
+    9000000000000000037,Kai Kimura,HTL,Division 2,British
+    9000000000000000038,Lucas Lambert,IND,Division 2,Italian
+    9000000000000000039,Marco Moretti,IND,Division 2,Spanish
+    9000000000000000040,Noah Novak,JLT,Division 2,Dutch
+    9000000000000000041,Owen Oakley,JLT,Division 2,German
+    9000000000000000042,Pablo Pena,KLO,Division 2,French
+    9000000000000000043,Quentin Quint,KLO,Division 2,Brazilian
+    9000000000000000044,Rory Reid,Reserve,Division 2,Japanese
+    9000000000000000045,Stefan Sommer,Reserve,Division 2,Australian
     ```
 
+    No refusal is expected for Division 2's empty `BRV` or half-filled `CHL`: the import refuses
+    only a misspelt team, an unknown nationality, a division not in the season or already
+    seated, a team given more drivers than it has seats, or a division given more drivers than
+    a configured template draws (`judge_bulk_on`). Leaving seats empty is none of those.
+
     **Expect:**
-    - **Ack:** `Seating 18 test drivers in **Division 1**, **Division 2**`
+    - **Ack:** `Seating 45 test drivers in **Division 1**, **Division 2**`
     - **Then:**
       ```
-      ✅ Seated **18** test driver(s) across 2 division(s): Division 1, Division 2.
+      ✅ Seated **45** test driver(s) across 2 division(s): Division 1, Division 2.
       `/test-mode roster list` shows a division's drivers with the mentions result submission wants.
       ```
     - **Log:**
       ```
       <you> | /test-mode roster add-bulk | Success
-        drivers_seated: 18
+        drivers_seated: 45
         divisions: Division 1, Division 2
       ```
 
@@ -580,10 +612,11 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
     **Expect:**
     - **Reply:** headed `**Fake Driver Roster — Division 1**`, then a code block whose first
       two lines are the column heads `Name`, `Mention`, `Team`, `Nationality` and a rule of
-      86 `-`, then one row per driver: the nine Division 1 drivers of the Fixture, each with
-      its mention `<@9000000000000000001>` to `<@9000000000000000009>`, its team by full name
-      (`Alpha Racing`, `Bravo Motorsport`, `Charlie GP`, `Delta Racing`, `Reserve`) and its
-      nationality as the Fixture gives it. It ends:
+      86 `-`, then one row per driver: the 24 Division 1 drivers of the Fixture, each with
+      its mention, `<@9000000000000000001>` to `<@9000000000000000024>`, its team by full name
+      (two to each of the eleven racing teams, two in `Reserve`) and its nationality as the
+      Fixture gives it. A long roster may come as several messages, each a complete table
+      repeating the heading. It ends:
       ```
       Copy mention strings above when submitting results in the format:
       `Position, <@user_id>, <@&role_id>, ...`
@@ -592,8 +625,10 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
 
 29. **Do:** `/test-mode roster list division:Division 2`
 
-    **Expect:** as step 28, headed `**Fake Driver Roster — Division 2**`, with the nine
-    Division 2 drivers, `<@9000000000000000010>` to `<@9000000000000000018>`.
+    **Expect:** as step 28, headed `**Fake Driver Roster — Division 2**`, with the 21
+    Division 2 drivers, `<@9000000000000000025>` to `<@9000000000000000045>`: none in
+    `Bravo Motorsport`, one (Aaron Abbott) in `Charlie GP`, two in each other racing
+    team and two in `Reserve`.
 
 ### Approving the season
 
@@ -612,9 +647,13 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
       - four pictures, each a message with a PNG attached: `📅 **Calendar**` (Division 1),
         `🏎️ **Lineup**` (Division 1), `📅 **Calendar**` (Division 2), `🏎️ **Lineup**`
         (Division 2). Look at each as a PNG: the calendar holds the division's three rounds on
-        their dates, round 3 of Division 1 as a mystery round; the lineup holds the four teams
-        with two drivers each and the reserve, each driver by name with the flag of their
-        nationality;
+        their dates, round 3 of Division 1 as a mystery round; each lineup holds eleven team blocks, `Alpha Racing` to
+        `Kilo Racing`, and a reserve block, each driver by name with the flag of their
+        nationality. Division 1: every block with both seats named, and two reserves.
+        Division 2: the `Bravo Motorsport` block drawn with both seats blank, the `Charlie GP`
+        block with its first seat named and its second blank, every other block full, and two
+        reserves. A blank seat is drawn with its name cleared and no flag, and raises no
+        image notice (`image_lineup_service.put_seat_name`);
       - the report, one message per section: the first opening
         `**Season Review (Season #1 — F1 25)**` and `**Modules**`, with the five modules each
         `✅ Enabled`; one per module's settings, one headed `**Image output**`; then, for each
@@ -623,7 +662,11 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
         `  Role: <@&<Division N role id>>`, `  Calendar channel: <#<dN-calendar id>>`,
         `  Lineup channel: <#<dN-lineup id>>` and each module's channel lines;
       - nothing reporting a fault, and no line naming a round as already run or inside a
-        window;
+        window. In particular, nothing about Division 2's empty `Bravo Motorsport` or
+        half-filled `Charlie GP`: no review check counts a team's empty seats. The one lineup
+        check counts team blocks and the drivers in each against the template's slots
+        (`lineup_review_problems`), and eleven teams fill the default template's eleven blocks
+        exactly;
       - last, the question, with a **✅ Approve** button:
         ```
         📋 **Do you accept this season configuration?**
@@ -661,12 +704,17 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
       - `#bot-commands`: every message of the review (step 30) is deleted. Then
         `🎨 Posting lineups, calendars and opening classifications — one moment.`, deleted once
         the posts are made.
-      - `#d1-lineup`, `#d2-lineup`: the division's lineup, as a picture.
+      - `#d1-lineup`, `#d2-lineup`: the division's lineup, as a picture, as in step 30:
+        Division 2's `Bravo Motorsport` with both seats blank and `Charlie GP` with one.
       - `#d1-calendar`, `#d2-calendar`: the division's calendar, as a picture.
       - `#d1-standings`, `#d2-standings`: the opening classification, as pictures, every driver
-        and team on zero with the season's rounds drawn empty.
+        and team on zero with the season's rounds drawn empty. Drivers: the racing drivers
+        alone, reserves left out, ordered by team then driver — 22 in Division 1, 19 in Division 2.
+        Teams: every racing team of the division, the Reserve team left out, alphabetically —
+        eleven in each, Division 2's empty `Bravo Motorsport` among them on zero
+        (`opening_driver_standings`, `opening_team_standings`).
       - `#d1-attendance`, `#d2-attendance`: the opening attendance sheet, as a picture, every
-        driver on zero.
+        racing driver on zero, reserves left out: 22 rows in Division 1, 19 in Division 2.
       - Nothing in the weather, results, verdicts or RSVP channels.
       > UNVERIFIED: the caption, if any, posted with each of these pictures, and how many
       > messages the opening classification takes (drivers and teams).
