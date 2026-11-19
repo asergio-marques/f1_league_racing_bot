@@ -55,7 +55,9 @@ from leaguebot.framework.services.queue.change_types import (
     StepView,
     drawn_notices_of,
 )
-from leaguebot.core.services.modules.image_drawing import CalendarPicture, ImageDrawing
+from leaguebot.core.services.modules.image_drawing import (
+    CalendarPicture, ImageDrawing, picture_remedy,
+)
 from leaguebot.core.services.seasons.season_end_changes import SEASON_CANCEL
 from leaguebot.framework.services.posting.standing_post_handler import post_standing
 from leaguebot.framework.utils.in_a_job import posts_in_a_job
@@ -383,27 +385,32 @@ POST_CALENDAR = "post_calendar"
 CLOSE = "close"
 _COMMAND = "`/division calendar-sync`"
 
-#: What puts a calendar fallen back to text right: correct the template, then run the sync
-#: command, which is refused once every division is done — unless the season was being cancelled
-#: as the posting ran, which no command repeats.
-_FIX_IT = (
-    "fix the calendar template, then run `/division calendar-sync` while the season is still "
-    "being raced"
-)
+#: What puts a calendar fallen back to text right, by where its fault lies (`picture_remedy`): for
+#: the league's own, correct the template, then run the sync command, which is refused once every
+#: division is done; for the bot's or the host's, the command alone, once the fault is cleared. A
+#: season being cancelled as the posting ran has none, the command being no longer there.
+_RUN_THE_SYNC = "run `/division calendar-sync` while the season is still being raced"
+_FIX_IT = f"fix the calendar template, then {_RUN_THE_SYNC}"
 _NOTHING_PUTS_IT_RIGHT = (
     "nothing does; no command posts the picture again now the season is cancelled, and the "
     "text calendar stands"
 )
 
 
-def _fallen_back_to_text_line(ctx: StepContext, division_name: str, problem: str) -> str:
+def _fallen_back_to_text_line(
+    ctx: StepContext, division_name: str, problem: str, source: FaultSource
+) -> str:
     """The `post_calendar` job's own log line where its calendar fell back to text, opening with
     the member and the change it ran for, as every other job line does (Constitution Principle
     V), then naming the division, the problem, and what puts it right (Constitution XIV.4:
     recorded alongside the source's own entry). A season being cancelled by the change this job
     runs for is read from the change's own kind, there being no command left once the season is
-    cancelled that posts the picture again."""
-    put_right = _NOTHING_PUTS_IT_RIGHT if ctx.kind == SEASON_CANCEL else _FIX_IT
+    cancelled that posts the picture again. Otherwise what puts it right is worded by where the
+    fault lies, *source*."""
+    put_right = (
+        _NOTHING_PUTS_IT_RIGHT if ctx.kind == SEASON_CANCEL
+        else picture_remedy(source, template=_FIX_IT, then=_RUN_THE_SYNC)
+    )
     return (
         f"{ctx.named} | {ctx.what} | Calendar posted as text\n"
         f"  division: {division_name}\n"
@@ -450,7 +457,9 @@ def _posting_lines(
             ctx.named, ctx.what, _drawn_as(division_name, season_number), posting.notices
         ),)
     if text_stands and posting.problem is not None:
-        lines += (_fallen_back_to_text_line(ctx, division_name, str(posting.problem)),)
+        lines += (_fallen_back_to_text_line(
+            ctx, division_name, str(posting.problem), posting.fault_source
+        ),)
     return lines
 
 

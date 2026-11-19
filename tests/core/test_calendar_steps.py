@@ -404,25 +404,16 @@ HOST_REMEDY = ("Inkscape is not installed on the machine running the bot, and th
                "install it")
 
 
-#: Why each case below fails until the build: the calendar's line still sends a manager to the
-#: template whatever the fault, and names a raised fault in its own words.
-_SENT_TO_THE_TEMPLATE = ("#584: the calendar's line still tells a manager to fix the template "
-                         "whatever the fault, and names a raised fault in its own words")
-
-
 @pytest.mark.parametrize(("cancelled", "answers", "problem", "remedy", "once"), [
     pytest.param(False, dict(fault=RuntimeError("KeyError: 7")), "the bot hit an internal fault",
-                 BOT_REMEDY, "it is cleared", id="the drawing raising",
-                 marks=pytest.mark.xfail(strict=True, reason=_SENT_TO_THE_TEMPLATE)),
+                 BOT_REMEDY, "it is cleared", id="the drawing raising"),
     pytest.param(False, dict(problem="the bot hit an internal fault", fault_source="bot"),
                  "the bot hit an internal fault", BOT_REMEDY, "it is cleared",
-                 id="a fault in the bot",
-                 marks=pytest.mark.xfail(strict=True, reason=_SENT_TO_THE_TEMPLATE)),
+                 id="a fault in the bot"),
     pytest.param(False, dict(problem="Inkscape is not installed on this host",
                              fault_source="host"),
                  "Inkscape is not installed on this host", HOST_REMEDY, "it has",
-                 id="the converter absent",
-                 marks=pytest.mark.xfail(strict=True, reason=_SENT_TO_THE_TEMPLATE)),
+                 id="the converter absent"),
     pytest.param(True, dict(fault=RuntimeError("KeyError: 7")), "the bot hit an internal fault",
                  None, None, id="the drawing raising in a cancelled season"),
     pytest.param(True, dict(problem="Inkscape is not installed on this host",
