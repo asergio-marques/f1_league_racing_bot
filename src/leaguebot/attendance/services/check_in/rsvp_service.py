@@ -316,7 +316,10 @@ async def _checkin_attachment(
             division_id, exc, exc_info=True,
         )
         if faults is not None:
-            faults.append(f"the graphic could not be drawn, so the call is posted without it: {exc}")
+            faults.append(
+                "the graphic could not be drawn, so the call is posted without it: "
+                f"{drawing.drawing_fault(exc)}"
+            )
         return None, ()
 
 

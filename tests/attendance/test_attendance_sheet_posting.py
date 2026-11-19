@@ -720,22 +720,12 @@ def _drawing_that_draws_nothing(fault: str):
     )
 
 
-#: Why a fault in the bot met in drawing the sheet fails until #584 is built.
-_NAMED_BY_ITS_WORDS = "#584: a fault in the bot drawing the sheet is named in its own words"
-
-
 @pytest.mark.parametrize("fault", [
-    pytest.param("drawing", marks=pytest.mark.xfail(strict=True, reason=_NAMED_BY_ITS_WORDS)),
-    pytest.param(
-        "drawing at the final", marks=pytest.mark.xfail(strict=True, reason=_NAMED_BY_ITS_WORDS),
-    ),
-    pytest.param(
-        "track registry", marks=pytest.mark.xfail(strict=True, reason=_NAMED_BY_ITS_WORDS),
-    ),
-    pytest.param("teams", marks=pytest.mark.xfail(strict=True, reason=_NAMED_BY_ITS_WORDS)),
-    pytest.param(
-        "round unreadable", marks=pytest.mark.xfail(strict=True, reason=_NAMED_BY_ITS_WORDS),
-    ),
+    "drawing",
+    "drawing at the final",
+    "track registry",
+    "teams",
+    "round unreadable",
     "none",
 ])
 @pytest.mark.asyncio

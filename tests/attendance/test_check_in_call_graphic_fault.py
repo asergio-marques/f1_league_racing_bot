@@ -65,9 +65,7 @@ def _sent(league: SeasonLeague) -> list[int]:
 
 
 @pytest.mark.parametrize("fault", [
-    pytest.param("not drawn", marks=pytest.mark.xfail(
-        strict=True, reason="#584: a drawing that raises is named in its own words",
-    )),
+    "not drawn",
     "no deadline",
     "none",
 ])

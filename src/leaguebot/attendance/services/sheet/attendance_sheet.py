@@ -33,6 +33,7 @@ from leaguebot.core.services.seasons.season_service import (
 from leaguebot.framework.utils.channels import as_text_channel
 from leaguebot.framework.services.posting.standing_post_handler import post_standing
 from leaguebot.framework.utils.in_a_job import posts_in_a_job
+from leaguebot.framework.utils.interaction_errors import describe_fault
 from leaguebot.framework.utils.league_bot import LeagueBot
 
 if TYPE_CHECKING:
@@ -629,7 +630,11 @@ async def _sheet_attachment(
             "post_attendance_sheet: the graphic could not be drawn for division %s: %s",
             division_id, exc, exc_info=True,
         )
-        _note(faults, f"the graphic could not be drawn, so the sheet is posted as text: {exc}")
+        _note(
+            faults,
+            "the graphic could not be drawn, so the sheet is posted as text: "
+            f"{drawing.drawing_fault(exc)}",
+        )
         return None
 
 
@@ -693,7 +698,7 @@ async def _round_grid(
                 _note(
                     faults,
                     f"the track registry could not be read, so the round headings are drawn "
-                    f"without their flags: {exc}",
+                    f"without their flags: {describe_fault(exc)}",
                 )
                 tracks = {}
 
@@ -761,7 +766,11 @@ async def _seat_teams(
             "post_attendance_sheet: the teams of division %s could not be read, so they are "
             "drawn without names or badges", division_id, exc_info=True,
         )
-        _note(faults, f"the teams could not be read, so they are drawn without names or badges: {exc}")
+        _note(
+            faults,
+            "the teams could not be read, so they are drawn without names or badges: "
+            f"{describe_fault(exc)}",
+        )
         return {}, {}
     wanted = set(user_ids)
     names = {
