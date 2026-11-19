@@ -845,10 +845,7 @@ def _lineup_will_not_post() -> Any:
 
 
 @pytest.mark.parametrize(("failing", "fault"), [
-    pytest.param("render_raises", "the template's font could not be loaded",
-                 marks=pytest.mark.xfail(strict=True, reason="#584: the review lineup's drawing "
-                                         "re-wraps a fault in the bot as a RuntimeError after "
-                                         "\"\u274c\"")),
+    ("render_raises", "the template's font could not be loaded"),
     pytest.param("will_not_post", "\u274c the lineup: the template has no rows",
                  marks=pytest.mark.xfail(strict=True, reason="#584: a review's picture not drawn "
                                          "does not say where its fault lies")),

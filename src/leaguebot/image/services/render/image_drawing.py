@@ -1173,21 +1173,17 @@ class ImageDrawing:
         """Draw *division_id*'s lineup in *guild* for a season review, which is drawn inside the
         review's job: each seated driver's missing portrait obtained, and the uncommitted
         drivers drawn in where *include_uncommitted*. A commanded drawing rejects rather than
-        falling back (Constitution XIV.7), so a fault comes back as the problem's words after
-        "❌", a render that raises as a `RuntimeError` of its own words after "❌", and a lineup not drawn at all (a switch off, no
-        server) with no words. The notices come back for the job to record."""
+        falling back (Constitution XIV.7), so a refusal the league can put right comes back as
+        the problem's words after "❌", and a lineup not drawn at all (a switch off, no server)
+        with no words. A fault in the bot is raised as it is, for the review's job to word by its
+        kind. The notices come back for the job to record."""
         if guild is None or not await self.lineup_wanted():
             return LineupPicture(path=None, problem=None)
-        try:
-            _division, outcome = await self._render_lineup(
-                guild, division_id,
-                include_uncommitted=include_uncommitted, obtain_missing_portraits=True,
-                raise_faults=True,
-            )
-        except Exception as exc:
-            # Raised again with the words a commanded drawing gives a fault, for the review's
-            # job to record as the picture's fault: nothing is swallowed here.
-            raise RuntimeError(f"❌ {exc}") from exc
+        _division, outcome = await self._render_lineup(
+            guild, division_id,
+            include_uncommitted=include_uncommitted, obtain_missing_portraits=True,
+            raise_faults=True,
+        )
         notices = tuple(each.detail for each in outcome.notices)
         if outcome.problem is not None:
             return LineupPicture(
