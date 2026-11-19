@@ -394,20 +394,46 @@ notice; data that cannot be assembled or a template that cannot be filled comes 
 from which the caller falls back to text (image specification, "Errors and the rejection of input").
 A render's problem and its notices are distinct outcomes (`RenderOutcome`, Principle XIV.4).
 Of what the spec build and the fill raise, only a `DrawingRefused` is meant as a problem: an error
-raised on purpose, worded for the league, which it can put right. Any other exception is a fault
-in the bot. A caller with a fallback still takes it as a problem, which is the default. A caller
-with none, the preview, asks `render` to raise it (`raise_faults`), so that it reaches the
-command's failure path (core specification, "When a command fails" and "The record of what
-changed"): a problem there would be a fallback with nothing to fall back to. The template, verify,
-unresolved-field and rasteriser problems are not of this kind and come back as problems either way.
+raised on purpose, worded for the league, which it can put right, and which keeps its words
+(`PROBLEM_UNRESOLVED_VALUE`). Any other exception is a fault in the bot. A caller with a fallback
+still takes it as a problem, which is the default, but one of an internal kind
+(`PROBLEM_DRAWING_FAULT`, in `INTERNAL_PROBLEM_KINDS`), in plain words: `describe_fault`'s kind of
+fault, with the detail logged on the host and never in the problem, so that `Problem.message`
+cannot echo it. A caller with no fallback, the preview, `/team lineup` and the review's lineup,
+asks `render` to raise it (`raise_faults`), so that it reaches the command's failure path (core
+specification, "When a command fails" and "The record of what changed"): a problem there would be
+a fallback with nothing to fall back to.
+
+**The converter's failures are of the same kind, save two.** A timeout, a converter that could not
+be run, a non-zero exit and a missing output file are faults in the bot, since the league can
+correct none of them, and the render treats them as the build's and the fill's faults are treated:
+a problem of the internal kind by default, raised where `raise_faults` asks. The two that keep
+their words have errors of their own, subclasses of `RasterisationError`, so that the render tells
+them apart by type and never by their text: `ConverterAbsent`, which the host puts right by
+installing Inkscape (`PROBLEM_CONVERTER_ABSENT`, also what `render`'s opening check returns), and
+`RasterisationRefused`, an image larger than Discord accepts, which the league can shrink
+(`PROBLEM_RASTERISER`). The template, verify and unresolved-field problems are not faults in the
+bot and come back as problems either way.
+
+**A problem says where its fault lies.** `Problem.source` is a `FaultSource` (core's, as core's
+pictures carry it): `BOT` for an internal kind, `HOST` for `PROBLEM_CONVERTER_ABSENT`, `LEAGUE`
+for the rest. The pictures core asks for (`CalendarPicture`, `LineupPicture`) carry it as
+`fault_source`, so that the module that posts the picture words what puts it right by it, and
+image words no other module's step. A refusal raised before the render, a vanished division or a
+round whose track cannot be named, comes back as the picture's problem with the league as its
+source, rather than raised.
 
 **A drawing that rides on a post is place 6.** Image's own are `ImageDrawing.attach_forecast`,
 `attach_check_in_call`, `draw_attendance_sheet`, `draw_banner` and the forecast's `_weather_gate`.
-Where another module posts the picture, the catch is the caller's, of place 5, the post itself
-falling back to text: results' `produce_session_results`, `produce_standings` and `_send_verdict`,
-and core's `LineupPoster._refresh_lineup_post` and `post_division_calendar`. The calendar a command
-draws for the placements review rides on no post: core's `render_for_command` refuses on its fault,
-as a commanded render does.
+Each words what it catches through `ImageDrawing.drawing_fault`: a `DrawingRefused` in its own
+words, any other exception as `describe_fault`'s kind of fault, handed back as `FaultWords` marked
+`BOT`, so that a line carries where its fault lies on the path that carries only words. Where
+another module posts the picture, the catch is the caller's, of place 5, the post itself falling
+back to text: results' `produce_session_results`, `produce_standings` and `_send_verdict`, and
+core's `LineupPoster._refresh_lineup_post` and `post_division_calendar`. Each reads the fault
+through the drawing it already holds (`drawing_fault`), and so words it alike. The calendar a
+command draws for the placements review rides on no post: core's `render_for_command` refuses on
+its fault, as a commanded render does.
 
 **Work off the event loop is place 4.** The worker's catch is `_contained`, which hands the fault
 back as plain text, and `off_the_loop` raises it afresh on the loop, so that nothing parsed leaves
