@@ -905,39 +905,88 @@ async def test_a_review_s_sanction_whose_role_change_discord_refuses_stops_the_q
 # ---------------------------------------------------------------------------
 
 
+#: The words the render gives where Inkscape is not installed, which the log channel keeps.
+CONVERTER_ABSENT_WORDS = "Inkscape is not installed on this host."
+#: What the verdict's line says puts its picture right where Inkscape is not installed.
+CONVERTER_ABSENT_REMEDY = (
+    "Inkscape is not installed on the machine running the bot, and the host must install it; "
+    "once it has and the round is final, amend the round with `/results rounds amend` to "
+    "announce it again"
+)
+
+
+@pytest.mark.parametrize("fault", [
+    pytest.param("bot", marks=pytest.mark.xfail(
+        strict=True,
+        reason="#584: a fault in the bot drawing a verdict is named in its own words and sent to "
+        "fix the template",
+    )),
+    pytest.param("converter absent", marks=pytest.mark.xfail(
+        strict=True,
+        reason="#584: the verdict's line says nothing of what puts the converter's absence right",
+    )),
+])
 async def test_a_verdict_whose_picture_fails_is_announced_as_text_and_says_why_in_the_log(
-    tmp_path, drawn, monkeypatch,
+    tmp_path, request, monkeypatch, fault,
 ):
     """Alex approves a five-second penalty for Lewis in round 3, the verdict graphic switched on,
-    and the image module's step that builds the verdict picture raises a fault it does not catch
-    itself (a file it reads cannot be opened); a fault in rasterising is caught there and already
-    reported in the log channel by the image module. Today the results module logs this one on
-    the host alone. The verdict is announced as text naming Lewis, the queue runs to the end, and
-    the log channel gains one line naming round 3 of Pro, the verdict picture, the fault, and
-    that the verdict went out as text."""
+    and the verdict's picture is not drawn: ("bot") the image module's step that builds it raises
+    a fault it does not catch itself (a file it reads cannot be opened), a fault in the bot;
+    ("converter absent") the render comes back not drawn, as Inkscape is not installed on the
+    host. The verdict is announced as text naming Lewis and the queue runs to the end. For the
+    fault in the bot, the log channel gains one line naming round 3 of Pro, the verdict picture,
+    the fault by its kind alone and never in the words it was raised with, that the verdict went
+    out as text, and that the fault is the bot's, its detail in the host's log, and that once it
+    is cleared and the round is final, amending the round with `/results rounds amend` announces
+    it again. Without Inkscape, the log channel keeps the render's words, and says the host must
+    install it and that once it has and the round is final, amending the round announces it
+    again."""
     from leaguebot.image.services.aspects import image_verdict_post
 
-    fault = "the verdict picture's file could not be opened"
-
-    async def _fails(*_args: Any, **_kwargs: Any) -> Any:
-        raise OSError(fault)
-
-    monkeypatch.setattr(image_verdict_post, "build_drawing", _fails)
+    raised = "the verdict picture's file could not be opened"
     league = await review_league(tmp_path)
+    if fault == "bot":
+        request.getfixturevalue("drawn")
+
+        async def _fails(*_args: Any, **_kwargs: Any) -> Any:
+            raise OSError(raised)
+
+        monkeypatch.setattr(image_verdict_post, "build_drawing", _fails)
+    else:
+        from leaguebot.image.models.image_module import Problem, RenderOutcome
+
+        answer_switch(league.bot.module_service, "images", True)
+        league.bot.image_config_service.get_toggles = AsyncMock(return_value={"verdicts": True})
+        league.bot.image_validity_service.template_reports = AsyncMock(
+            return_value={"verdicts_template": MagicMock(valid=True)}
+        )
+        league.bot.image_render_service.render = AsyncMock(return_value=RenderOutcome(
+            problem=Problem(kind="CONVERTER_ABSENT", detail=CONVERTER_ABSENT_WORDS,
+                            template_key="verdicts_template"),
+        ))
     await _approve_reports(league, [penalty(LEWIS)])
     await run_queue(league.bot)
 
     assert await stopped_at(league) is None
     [verdict] = _verdicts(league)
+    assert f"<@{LEWIS}>" in verdict
+    if fault == "converter absent":
+        lines = [line for line in league.bot.log_channel.sent if CONVERTER_ABSENT_WORDS in line]
+        assert any(CONVERTER_ABSENT_REMEDY in line for line in lines), league.bot.log_channel.sent
+        return
     assert f"**Driver**: <@{LEWIS}>" in verdict
+    assert not [line for line in league.bot.log_channel.sent if raised in line], (
+        league.bot.log_channel.sent
+    )
     faults = [line.lower() for line in league.bot.log_channel.sent
               if "Pro" in line and "round 3" in line.lower()]
     assert len(faults) == 1, league.bot.log_channel.sent
     [line] = faults
     assert "verdict" in line and ("picture" in line or "image" in line), line
-    assert "text" in line and fault in line, line
-    assert ("to put it right: fix the verdict template, then, once the round is final, amend "
-            "the round with `/results rounds amend`") in line, line
+    assert "text" in line and "the bot hit an internal fault" in line, line
+    assert ("to put it right: the fault is in the bot, and its detail is in the host's log; "
+            "once it is cleared and the round is final, amend the round with "
+            "`/results rounds amend` to announce it again") in line, line
 
 
 # ---------------------------------------------------------------------------
