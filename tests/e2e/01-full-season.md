@@ -144,9 +144,6 @@ session is in.
      them. A track name shorter than 15 characters is padded to 15, and the mystery round, which
      has no track, reads `TBA`. Every mark is ⏳: the restore brought the job store back with
      the data. A ⚠️ on any phase means a job was lost.
-     > UNVERIFIED: `Results: ⏳` rests on the approval having armed a `results` job for every
-     > round, which the test-mode guide says it does while weather is on. The arming in core's
-     > approval (`results_left_to_advance`) was not traced. Record the cell.
    - **Log:** nothing; it is a view.
 
 ---
@@ -240,9 +237,8 @@ Stefan Sommer for `CHL` in Division 2.
        `  <@9000000000000000001> (Adam Archer) ()`. Discord shows a fake mention as an unknown
        user; the name in brackets is the bot's;
      - three buttons, **✅ Accept**, **❓ Tentative**, **❌ Decline**.
-   - **Log:** any notice block for the check-in picture.
-     > UNVERIFIED: the heading of the check-in picture's notice block
-     > (`image_rsvp_post.render_check_in`, wrapped by `with_host_remedy`). Record it.
+   - **Log:** any notice block for the check-in picture, headed
+     `Image render notices — check-in call of round 1 in Season 1 **Division 1**:`.
 
 8. **Do:** `/attendance test rsvp division:Division 1`. In the form **Bulk Set RSVP
    Statuses**, paste into **ID, status — one entry per line**, and submit:
@@ -407,10 +403,6 @@ Stefan Sommer for `CHL` in Division 2.
         ```
         Willem Wouters takes Adam Archer's place, `ALP` being the one team with a driver who
         declined; every other team accepted in full, so Xavier Xu has no team.
-        > UNVERIFIED: that Willem Wouters is placed and Xavier Xu put on standby, not the other
-        > way about. Both accepted in one paste, so at one moment, and the tie falls to the order
-        > their attendance rows were opened (`ORDER BY accepted_at ASC, id ASC`), expected to be
-        > the roster's. If they are swapped, swap them in the results steps too.
 
 ### The result submission
 
@@ -453,8 +445,7 @@ sessions `Sprint Qualifying`, `Sprint Race`, `Feature Qualifying` and `Feature R
         Team: its shorthand.
         Tyre: Soft, Medium, Hard, Intermediate, Wet (or blank for none recorded).
         ```
-      > UNVERIFIED: whether the change queue writes a log line of its own for an opening the bot
-      > asked (its outcome is empty). Record any line that appears.
+    - The opening writes no log line of its own: the advance's line above is the only one.
 
 15. **Do:** `/test-mode review`
 
@@ -462,8 +453,6 @@ sessions `Sprint Qualifying`, `Sprint Race`, `Feature Qualifying` and `Feature R
     - **Reply:** under `**Division 1**`, the `Round 1` line now reads `P1: ✅  P2: ✅  P3: ✅` and
       `RSVP: ✅  Last: ✅  Deadline: ✅`, with `Cleanup: ⏳` and `Cleared: ⏳` still to come, and
       `Results: ⚠️`: the advance took the round's results job down, and no session's results stand.
-      > UNVERIFIED: the `Results` cell of a round whose submission is open and holds nothing
-      > (`phase_mark(False, (round, "results"), queued)` gives ⚠️ with no job). Record it.
     - **Log:** nothing; it is a view.
 
 16. **A refusal: the open submission holds the advance.** **Do:** `/test-mode advance`
@@ -830,8 +819,6 @@ sessions `Sprint Qualifying`, `Sprint Race`, `Feature Qualifying` and `Feature R
       The reserves fill the empty seats: `Bravo Motorsport`, with no driver at all, takes the
       first; `Charlie GP`, a seat empty beside Aaron Abbott, the second. Every other team
       accepted in full and takes none.
-      > UNVERIFIED: which reserve goes where — the same tie as step 13. The two
-      > teams are certain; the pairing is not. If swapped, swap the two in the results pastes.
 
 ### Division 1's clean-ups
 
@@ -1413,9 +1400,11 @@ season ends.
       ❌ Cannot complete season — the following rounds are not yet finalised:
       • Division 2 — Round 3 (Circuit Zandvoort)
       ```
-    - **Log:** ``⛔ `/season complete` refused for <you> — Cannot complete season — the following rounds are not yet finalised:``
-      > UNVERIFIED: whether the `•` line is written beneath the log line. The refusal is the
-      > change's check (`completion_refusal_on`), and the line's reason is the reply's first line.
+    - **Log:**
+      ```
+      ⛔ `/season complete` refused for <you> — Cannot complete season — the following rounds are not yet finalised:
+      • Division 2 — Round 3 (Circuit Zandvoort)
+      ```
     - Nothing posted, nothing changed.
 
 92. **Do:** paste step 38's race, unchanged, and press **Standard**.
@@ -1910,11 +1899,10 @@ backup is gone.
 
      **Expect:**
      - `0`: every fake driver is deleted.
-     - `45|0`: a history entry for each of the 45 fake drivers, kept by its synthetic ID with its
-       profile link cleared, so a fake driver created again under the same ID holds it again.
+     - `45|0`: a history entry for each of the 45 fake drivers, reserves included, kept by its
+       synthetic ID with its profile link cleared, so a fake driver created again under the same
+       ID holds it again.
      - `0`: test mode is off.
-     > UNVERIFIED: that each reserve has an entry, which needs their place in the division recorded
-     > as a racing driver's is. Record the count if it is not 45.
 
      No command shows a driver's history on Discord; this is where to read it.
 

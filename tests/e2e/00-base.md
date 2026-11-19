@@ -371,10 +371,10 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
 
     **Expect:**
     - **Ack:** `Posting the review of /season config-review`
-    - **Then:** the acknowledgement is left as it is.
-      > UNVERIFIED: a review with nothing at fault and no pictures has an empty outcome
-      > (`season_review_post_change`'s `outcome` returns `""`), so the update is expected to
-      > fail and the acknowledgement to stand unchanged. Record what the reply shows.
+    - **Then:** the acknowledgement stands unchanged. A review with nothing at fault and no
+      pictures has an empty outcome, Discord refuses to edit a message to nothing, and the host's
+      log shows, at ERROR, `could not update the reply to <the change> (change <n>)`. This is
+      believed a bot defect: record it, and carry on.
     - **Posts** (`#bot-commands`, public), one message per section; the parts that identify them:
       - the first, opening `**Configuration Review (Season #1 — F1 25)**`, then
         `  Test mode: ✅ On`, then under `**Modules**` the five lines `  Signup: ✅ Enabled`,
@@ -645,9 +645,9 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
     - **Then:** where any picture drew with notices — a fallback team badge or flag, where
       `resources/league/` holds no artwork for it — the acknowledgement is updated to
       `✅ Review posted.`, a blank line, and a section headed `⚠️ **Image notices**` naming
-      each picture with its notices beneath. Otherwise it is left as it is.
-      > UNVERIFIED: as in step 20, a review with no notices has an empty outcome, and the
-      > acknowledgement is expected to stand unchanged.
+      each picture with its notices beneath. Otherwise, as in step 20, the acknowledgement stands
+      unchanged and the host's log shows, at ERROR, `could not update the reply to <the change>
+      (change <n>)` — believed a bot defect: record it, and carry on.
     - **Posts** (`#bot-commands`, public), in this order:
       - `🎨 Drawing the graphics for this review — one moment.`, deleted once the pictures are up;
       - four pictures, each a message with a PNG attached: `📅 **Calendar**` (Division 1),
