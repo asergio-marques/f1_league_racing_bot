@@ -510,7 +510,8 @@ async def test_the_press_is_refused_at_once_in_today_s_words(
     (the positions at fault, the channel lost, the permission missing) written beneath, nothing
     is queued, no success is logged and the season, its working copy and amendment mode stay as
     they stood. The ordering's reply and line say nothing of publishing, so the two refusals are
-    told apart, and a table both out of order and undeliverable is refused on its ordering."""
+    told apart, and a table both out of order and undeliverable is refused on its ordering. A
+    refusal for a channel fault still ends by saying to repair the channels."""
     league = await points_league(tmp_path, **options)
     panel = await open_panel(league)
     await setup(league)
@@ -530,6 +531,8 @@ async def test_the_press_is_refused_at_once_in_today_s_words(
     if expected == OUT_OF_ORDER:
         assert "published" not in lines[0]
         assert "published" not in reply
+    if expected == NOT_PUBLISHED:
+        assert reply.endswith("Repair the channels above and review again.")
     assert len(await _approvals(league)) == asked
     assert await points_state(league) == before
     assert _success_lines(league) == []
