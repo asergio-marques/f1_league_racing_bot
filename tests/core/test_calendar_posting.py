@@ -260,8 +260,6 @@ async def test_a_commanded_posting_refuses_and_posts_nothing(tmp_path):
     assert len(drawing.discarded) == 1
 
 
-@pytest.mark.xfail(strict=True, reason="#584: a drawing that raises is still named by its own "
-                                       "words, and the posting does not say where its fault lies")
 async def test_a_render_that_raises_is_reported_rather_than_propagated(tmp_path):
     """A render fault reaching the approval would fail a season over a picture. Pro's calendar
     posted while its drawing raises "Inkscape is not installed": the textual calendar is posted,

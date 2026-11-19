@@ -330,8 +330,6 @@ _COMMAND_CASES = {
 }
 
 
-@pytest.mark.xfail(strict=True, reason="#584: the calendar's command outcome does not yet say "
-                                       "where its fault lies, nor word a raised fault by its kind")
 @pytest.mark.parametrize("case", sorted(_COMMAND_CASES))
 async def test_the_review_s_calendar_picture_is_drawn_through_the_drawing(tmp_path, case):
     """Elite's calendar of two rounds at Silverstone asked as the review's picture of season 3,

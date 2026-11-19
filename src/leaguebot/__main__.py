@@ -525,7 +525,9 @@ async def _draw_review_picture(
         notices.extend(outcome.notices)
     if outcome.png_path is None:
         raise PictureNotDrawn(
-            outcome.message or f"the {kind} could not be drawn", tuple(outcome.notices))
+            outcome.message or f"the {kind} could not be drawn", tuple(outcome.notices),
+            source=outcome.fault_source,
+        )
     return outcome.png_path
 
 

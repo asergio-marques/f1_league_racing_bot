@@ -43,6 +43,7 @@ from leaguebot.framework.models.change import (
     DrawnKept,
     drawn_kept,
 )
+from leaguebot.core.models.fault_source import FaultSource
 from leaguebot.core.models.round import RoundStatus
 from leaguebot.framework.services.posting import standing_posts
 from leaguebot.framework.services.queue.change_types import (
@@ -59,6 +60,7 @@ from leaguebot.core.services.seasons.season_end_changes import SEASON_CANCEL
 from leaguebot.framework.services.posting.standing_post_handler import post_standing
 from leaguebot.framework.utils.in_a_job import posts_in_a_job
 from leaguebot.framework.utils.league_bot import LeagueBot
+from leaguebot.framework.utils.interaction_errors import describe_fault
 from leaguebot.framework.utils.league_server import league_guild
 from leaguebot.framework.utils.log_lines import (
     drawn_notices_line, drawn_notices_section, refusal_line, reply_reason,
@@ -139,6 +141,7 @@ class CalendarPosting:
     message_id: int | None = None
     channel_id: int | None = None
     problem: str | None = None
+    fault_source: FaultSource = FaultSource.LEAGUE
     notices: list[str] = field(default_factory=list)
 
     @property
@@ -176,6 +179,7 @@ class CalendarCommandOutcome:
     message: str | None = None
     notices: list = field(default_factory=list)
     png_path: Path | None = None
+    fault_source: FaultSource = FaultSource.LEAGUE
 
     @property
     def drew(self) -> bool:
@@ -210,7 +214,11 @@ async def render_for_command(
         )
     except Exception as exc:  # noqa: BLE001 — a resolution fault, reported like any other
         log.exception("calendar: command render raised for division %s", division.id)
-        return CalendarCommandOutcome(action=REJECTED, message=f"\u274c {exc}")
+        return CalendarCommandOutcome(
+            action=REJECTED,
+            message=f"\u274c The calendar image could not be drawn \u2014 {describe_fault(exc)}",
+            fault_source=FaultSource.BOT,
+        )
 
     notices = list(picture.notices)
     if picture.problem is not None:
@@ -218,6 +226,7 @@ async def render_for_command(
             action=REJECTED,
             message=f"\u274c The calendar image could not be drawn \u2014 {picture.problem}",
             notices=notices,
+            fault_source=picture.fault_source,
         )
     if picture.path is None:
         return CalendarCommandOutcome(
@@ -329,11 +338,13 @@ async def post_division_calendar(
             except Exception as exc:  # noqa: BLE001
                 log.exception("calendar: render raised for division %s", division.id)
                 picture = None
-                result.problem = str(exc)
+                result.problem = describe_fault(exc)
+                result.fault_source = FaultSource.BOT
             if picture is not None:
                 result.notices = list(picture.notices)
                 if picture.problem is not None:
                     result.problem = picture.problem
+                    result.fault_source = picture.fault_source
                 elif picture.path is not None:
                     image_path = picture.path
 
@@ -542,6 +553,7 @@ def calendar_steps(seasons: "SeasonService", drawing: ImageDrawing) -> dict[str,
             result={
                 "division": division.name,
                 "problem": posting.problem,
+                "fault_source": posting.fault_source.value,
                 RESULT_NOTICES: [*kept.notices, *posting.notices],
                 RESULT_DRAWN: _drawn_as(division.name, season_number),
                 "rejected": posting.problem is not None and posting.message_id is None,

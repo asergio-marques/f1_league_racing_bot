@@ -226,10 +226,7 @@ async def test_a_retried_calendar_sync_posts_the_text(tmp_path, monkeypatch):
     pytest.param(dict(problem="the template has no rows"), "the template has no rows",
                  id="a template problem"),
     pytest.param(dict(fault=RuntimeError("KeyError: 7")), "the bot hit an internal fault",
-                 id="the drawing raising",
-                 marks=pytest.mark.xfail(strict=True, reason="#584: a calendar sync whose "
-                                                             "drawing raises still names the "
-                                                             "fault in its own words")),
+                 id="the drawing raising"),
 ])
 async def test_a_calendar_sync_whose_render_fails_posts_nothing_and_says_the_old_calendar_stands(
     tmp_path, monkeypatch, answers, words,

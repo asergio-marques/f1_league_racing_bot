@@ -424,15 +424,11 @@ _SENT_TO_THE_TEMPLATE = ("#584: the calendar's line still tells a manager to fix
                  id="the converter absent",
                  marks=pytest.mark.xfail(strict=True, reason=_SENT_TO_THE_TEMPLATE)),
     pytest.param(True, dict(fault=RuntimeError("KeyError: 7")), "the bot hit an internal fault",
-                 None, None, id="the drawing raising in a cancelled season",
-                 marks=pytest.mark.xfail(strict=True, reason="#584: the calendar's line names "
-                                         "a raised fault in its own words")),
+                 None, None, id="the drawing raising in a cancelled season"),
     pytest.param(True, dict(problem="Inkscape is not installed on this host",
                             fault_source="host"),
                  "Inkscape is not installed on this host", None, None,
-                 id="the converter absent in a cancelled season",
-                 marks=pytest.mark.xfail(strict=True, reason="#584: a calendar's picture does "
-                                         "not yet say where its fault lies")),
+                 id="the converter absent in a cancelled season"),
 ])
 async def test_a_calendar_whose_drawing_fails_says_what_puts_it_right_by_where_the_fault_lies(
     tmp_path, monkeypatch, cancelled, answers, problem, remedy, once,
