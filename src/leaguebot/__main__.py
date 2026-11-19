@@ -495,7 +495,7 @@ async def _draw_review_picture(
     so a review is not judged on a placeholder the league will not see, and, mid-season, with its
     uncommitted drivers in it. A calendar is core's, of the division's rounds as they stand when it
     is drawn. A picture the renderer will not draw raises `PictureNotDrawn`, with the renderer's
-    message and the notices it was drawn with.
+    message, the notices it was drawn with and where its fault lies.
     """
     from leaguebot.core.services.seasons.season_review_changes import PictureNotDrawn
 
@@ -509,7 +509,9 @@ async def _draw_review_picture(
             notices.extend(lineup.notices)
         if lineup.path is None:
             raise PictureNotDrawn(
-                lineup.problem or "the lineup could not be drawn", tuple(lineup.notices))
+                lineup.problem or "the lineup could not be drawn", tuple(lineup.notices),
+                source=lineup.fault_source,
+            )
         return lineup.path
     from leaguebot.core.services.rounds import calendar_post_service
 

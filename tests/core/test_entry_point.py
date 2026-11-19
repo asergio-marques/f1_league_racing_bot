@@ -241,13 +241,9 @@ async def test_the_review_s_lineup_picture_is_drawn_through_the_image_module_s_d
                  "❌ the template's font could not be loaded", id="its_words"),
     pytest.param(None, None, "the lineup could not be drawn", id="no_words"),
     pytest.param("❌ the lineup: the bot hit an internal fault", "bot",
-                 "❌ the lineup: the bot hit an internal fault", id="bot",
-                 marks=pytest.mark.xfail(strict=True, reason="#584: a review's lineup picture "
-                                         "does not say where its fault lies")),
+                 "❌ the lineup: the bot hit an internal fault", id="bot"),
     pytest.param("❌ Inkscape is not installed on this host.", "host",
-                 "❌ Inkscape is not installed on this host.", id="host",
-                 marks=pytest.mark.xfail(strict=True, reason="#584: a review's lineup picture "
-                                         "does not say where its fault lies")),
+                 "❌ Inkscape is not installed on this host.", id="host"),
 ])
 async def test_a_review_lineup_the_image_module_s_drawing_will_not_draw_raises_with_its_words(
     tmp_path, monkeypatch, problem, source, fault,
