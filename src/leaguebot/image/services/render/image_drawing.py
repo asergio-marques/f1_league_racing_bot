@@ -41,6 +41,7 @@ if TYPE_CHECKING:
     from leaguebot.image.models.image_catalogues import FieldCatalogue
 
 from leaguebot.image.models.switch import SWITCH_KEY
+from leaguebot.core.models.fault_source import FaultSource, FaultWords
 from leaguebot.core.services.modules.image_drawing import (
     CalendarPicture,
     CapacityProblem,
@@ -50,6 +51,7 @@ from leaguebot.core.services.modules.image_drawing import (
 )
 from leaguebot.framework.services.switches.module_service import ModuleService, SwitchNotSignedUp
 from leaguebot.framework.utils.hooks import AwaitedHook
+from leaguebot.framework.utils.interaction_errors import describe_fault
 from leaguebot.framework.utils.paths import resolve_within_project_root
 from leaguebot.image.models.image_catalogues import (
     catalogue_for,
@@ -57,6 +59,7 @@ from leaguebot.image.models.image_catalogues import (
     reserve_capacity_problem,
     row_capacity_problem,
 )
+from leaguebot.image.models.image_module import DrawingRefused
 from leaguebot.image.models.results_drawing import ResultsDrawing
 from leaguebot.image.models.standings_drawing import StandingsDrawing
 from leaguebot.image.models.image_constants import (
@@ -214,6 +217,18 @@ class ImageDrawing:
         self._driver_names_read = (
             driver_names_read if driver_names_read is not None else AwaitedHook()
         )
+
+    @staticmethod
+    def drawing_fault(error: Exception) -> str:
+        """The words for the fault *error* is, as a picture's line or a posting's reports it.
+
+        A `DrawingRefused` is the league's to put right and keeps its own words. Anything else
+        met while drawing is a fault in the bot, named by its kind alone and marked as the bot's
+        (`FaultWords`), its detail being in the host's log, where the caller has written it.
+        """
+        if isinstance(error, DrawingRefused):
+            return str(error)
+        return FaultWords(describe_fault(error), FaultSource.BOT)
 
     async def _drawn_template(self, aspect: str, template_key: str) -> Path | None:
         """The template's path where the module and *aspect* are both drawn and the template
@@ -529,7 +544,7 @@ class ImageDrawing:
             raise  # a module that never signed up is a fault in the bot's assembly, not a reading
         except Exception as exc:  # noqa: BLE001 — never break a posting on this reader
             log.error("weather: enablement check failed: %s", exc, exc_info=True)
-            return False, f"it could not be read whether a picture is due: {exc}"
+            return False, f"it could not be read whether a picture is due: {describe_fault(exc)}"
 
     async def attach_forecast(
         self, round_id: int, phase: int, *, values: ForecastValues
@@ -605,7 +620,7 @@ class ImageDrawing:
             log.error(
                 "weather: could not attach a graphic to round %s: %s", round_id, exc, exc_info=True
             )
-            return None, (weather.fault(what, str(exc)),)
+            return None, (weather.fault(what, self.drawing_fault(exc)),)
 
     # ── The check-in call ────────────────────────────────────────────────────
 
@@ -666,7 +681,7 @@ class ImageDrawing:
             raise  # a module that never signed up is a fault in the bot's assembly, not a reading
         except Exception as exc:  # noqa: BLE001 — the call must post whatever happens here
             log.error("rsvp: the check-in graphic could not be drawn: %s", exc, exc_info=True)
-            return None, (image_rsvp_post.fault(what, str(exc)),)
+            return None, (image_rsvp_post.fault(what, self.drawing_fault(exc)),)
 
     # ── The attendance sheet ─────────────────────────────────────────────────
 
@@ -706,7 +721,7 @@ class ImageDrawing:
             raise  # a module that never signed up is a fault in the bot's assembly, not a reading
         except Exception as exc:  # noqa: BLE001 — the sheet must post whatever happens here
             log.error("attendance: the sheet's graphic could not be drawn: %s", exc, exc_info=True)
-            return None, (image_attendance_post.fault(what, str(exc)),)
+            return None, (image_attendance_post.fault(what, self.drawing_fault(exc)),)
 
     # ── The verdict ──────────────────────────────────────────────────────────
 
@@ -806,7 +821,7 @@ class ImageDrawing:
             raise  # a module that never signed up is a fault in the bot's assembly, not a reading
         except Exception as exc:  # noqa: BLE001 — a banner never costs a batch its heading
             log.error("verdict banner: the graphic could not be drawn: %s", exc, exc_info=True)
-            return None, (banner.fault(what, str(exc)),)
+            return None, (banner.fault(what, self.drawing_fault(exc)),)
 
     # ── A session's results ──────────────────────────────────────────────────
 

@@ -192,7 +192,6 @@ async def test_enablement_is_asked_per_template_not_per_aspect(monkeypatch, tmp_
     ],
     ids=["round-readable", "round-unreadable"],
 )
-@pytest.mark.xfail(strict=True, reason="#584: a switch that cannot be read is named in its own words")
 async def test_a_reader_that_raises_never_breaks_the_posting(monkeypatch, round_reads, named):
     """The image settings' switch reader raises "boom" for a phase 2 forecast. The text stands,
     and the fault is handed back for the log channel, naming the forecast where its round can be
@@ -248,9 +247,6 @@ def test_the_mystery_notice_is_named_as_itself_rather_than_a_phase():
         pytest.param(
             AsyncMock(side_effect=RuntimeError("no round")), "the bot hit an internal fault",
             id="round-read-raises",
-            marks=pytest.mark.xfail(
-                strict=True, reason="#584: a round that cannot be read is named in its own words",
-            ),
         ),
         pytest.param(
             AsyncMock(return_value=None), "the round could not be found", id="round-not-found",

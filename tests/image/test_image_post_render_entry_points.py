@@ -288,17 +288,11 @@ async def _draw_banner(drawing):
             "image_rsvp_post", "render_check_in", _draw_check_in_call,
             RuntimeError("KeyError: 7"), "the bot hit an internal fault",
             id="check_in_call-a_fault_in_the_bot",
-            marks=pytest.mark.xfail(
-                strict=True, reason="#584: the check-in call's line names the fault in its own words",
-            ),
         ),
         pytest.param(
             "image_attendance_post", "render_sheet", _draw_sheet,
             RuntimeError("KeyError: 7"), "the bot hit an internal fault",
             id="sheet-a_fault_in_the_bot",
-            marks=pytest.mark.xfail(
-                strict=True, reason="#584: the sheet's line names the fault in its own words",
-            ),
         ),
         pytest.param(
             "image_attendance_post", "render_sheet", _draw_sheet,
@@ -309,9 +303,6 @@ async def _draw_banner(drawing):
             "image_verdict_banner_post", "render_banner", _draw_banner,
             RuntimeError("KeyError: 7"), "the bot hit an internal fault",
             id="banner-a_fault_in_the_bot",
-            marks=pytest.mark.xfail(
-                strict=True, reason="#584: the banner's line names the fault in its own words",
-            ),
         ),
     ],
 )
