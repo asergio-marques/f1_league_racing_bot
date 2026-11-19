@@ -655,7 +655,9 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
         (Division 2). Look at each as a PNG: the calendar holds the division's three rounds on
         their dates, round 3 of Division 1 as a mystery round; each lineup holds eleven team blocks, `Alpha Racing` to
         `Kilo Racing`, and a reserve block, each driver by name with the flag of their
-        nationality. Division 1: every block with both seats named, and two reserves.
+        nationality where `resources/league/flags/` holds it, else the packaged fallback flag,
+        reported as an image notice. Division 1: every block with both seats named, and two
+        reserves.
         Division 2: the `Bravo Motorsport` block drawn with both seats blank, the `Charlie GP`
         block with its first seat named and its second blank, every other block full, and two
         reserves. A blank seat is drawn with its name cleared and no flag, and raises no

@@ -184,8 +184,9 @@ Stefan Sommer for `CHL` in Division 2.
    - **Posts** (`#d1-weather`), a moment later: one message, its text the role mention
      `<@&<Division 1 role id>>` and nothing else, with the Phase 1 forecast picture attached:
      headed `Initial chance of rain`, the track `Silverstone Circuit`, the rain probability as a
-     whole percentage, and the flag of the United Kingdom. Where no picture could be drawn, the
-     text is posted instead, which is a failure here:
+     whole percentage, and the flag of the United Kingdom where `resources/league/flags/` holds
+     it, else the packaged fallback flag, reported as an image notice. Where no picture could be
+     drawn, the text is posted instead, which is a failure here:
      ```
      <@&<Division 1 role id>> 🏁 **Weather Forecast — Initial chance of rain**
      **Track**: Silverstone Circuit
@@ -227,7 +228,9 @@ Stefan Sommer for `CHL` in Division 2.
    - **Posts** (`#d1-rsvp`), one message:
      - the text `<@&<Division 1 role id>>`;
      - the check-in picture: the round, its grand prix (`British Grand Prix`) over its circuit, the
-       country's flag, the date, and the moment check-in closes, two hours before the race;
+       country's flag (where `resources/league/flags/` holds it, else the packaged fallback flag,
+       reported as an image notice), the date, and the moment check-in closes, two hours before
+       the race;
      - an embed titled `Season 1 Round 1 — Silverstone Circuit`, with the fields `📅 Date`
        (`<t:<the race: 20:00 on <YEAR+1>-03-01>:F>`), `📍 Location` (`Silverstone Circuit`) and
        `🏁 Event Type` (`Normal`); then the roster under `🧑‍🤝‍🧑 Driver Roster`, continued in a
@@ -741,7 +744,9 @@ sessions `Sprint Qualifying`, `Sprint Race`, `Feature Qualifying` and `Feature R
     **Expect:** as step 6, for Division 2:
     - **Reply:** ``⏩ **Phase 1** for **Division 2** — **Autodromo Nazionale Monza** is on the change queue: its forecast goes to the forecast channel and its calculation to the log channel as soon as the queue reaches it.``
     - **Posts** (`#d2-weather`): the Phase 1 picture, its text `<@&<Division 2 role id>>`, the
-      track `Autodromo Nazionale Monza` and the flag of Italy. Nothing in `#d1-weather`.
+      track `Autodromo Nazionale Monza` and the flag of Italy where `resources/league/flags/`
+      holds it, else the packaged fallback flag, reported as an image notice. Nothing in
+      `#d1-weather`.
     - **Log:** the success line with `phase: 1`, `division: Division 2`,
       `track: Autodromo Nazionale Monza`, `round: 1`; then
       `📋 **Phase 1 Calculation Log** | Round 1 in **Division 2** | Autodromo Nazionale Monza` with
@@ -1014,7 +1019,8 @@ Division 2's reserves fill `BRV` and `CHL` again.
     **Expect:**
     - **Reply:** ``⏩ **Phase 1** for **Division 1** — **Hungaroring** is on the change queue: its forecast goes to the forecast channel and its calculation to the log channel as soon as the queue reaches it.``
     - **Posts** (`#d1-weather`): the Phase 1 picture, its text `<@&<Division 1 role id>>`, the
-      track `Hungaroring` and the flag of Hungary.
+      track `Hungaroring` and the flag of Hungary where `resources/league/flags/` holds it, else
+      the packaged fallback flag, reported as an image notice.
     - **Log:** as step 6, with `track: Hungaroring` and `round: 2`; the calculation
       headed `📋 **Phase 1 Calculation Log** | Round 2 in **Division 1** | Hungaroring`.
 
@@ -1167,7 +1173,8 @@ Division 2's reserves fill `BRV` and `CHL` again.
     **Expect:**
     - **Reply:** ``⏩ **Phase 1** for **Division 2** — **Circuit de Spa-Francorchamps** is on the change queue: its forecast goes to the forecast channel and its calculation to the log channel as soon as the queue reaches it.``
     - **Posts** (`#d2-weather`): the Phase 1 picture, the track `Circuit de Spa-Francorchamps` and
-      the flag of Belgium.
+      the flag of Belgium where `resources/league/flags/` holds it, else the packaged fallback
+      flag, reported as an image notice.
     - **Log:** as step 27, with `track: Circuit de Spa-Francorchamps`, `round: 2`.
 
 60. **Do:** `/test-mode advance`
@@ -1340,8 +1347,9 @@ Everybody accepts the call again.
 
 81. **Do:** `/test-mode advance`
 
-    **Expect:** as step 27, with **Circuit Zandvoort**, the flag of the Netherlands,
-    and `round: 3`.
+    **Expect:** as step 27, with **Circuit Zandvoort**, the flag of the Netherlands where
+    `resources/league/flags/` holds it, else the packaged fallback flag, reported as an image
+    notice, and `round: 3`.
 
 82. **Do:** `/test-mode advance`
 
@@ -1655,8 +1663,8 @@ written here for after the amendment, before the completion.
 
 ### Artwork and image notices
 
-The base ships no league artwork: `resources/league/` holds only its `.gitkeep` files. Every
-picture therefore draws the **packaged fallbacks** — `resources/defaults/<class>/fallback.svg`
+The base ships no league artwork: `resources/league/` may hold none. Where it holds none, every
+picture draws the **packaged fallbacks** — `resources/defaults/<class>/fallback.svg`
 for a flag, a team badge, a track or a driver portrait — and the bot's own closed-set files for
 the markers, weather icons and tyres. That is no fault, and nothing posts as text for it, but each
 picture **reports** what it fell back on, as image notices:
