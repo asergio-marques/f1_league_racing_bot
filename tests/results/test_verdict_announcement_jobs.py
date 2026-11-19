@@ -916,11 +916,7 @@ CONVERTER_ABSENT_REMEDY = (
 
 
 @pytest.mark.parametrize("fault", [
-    pytest.param("bot", marks=pytest.mark.xfail(
-        strict=True,
-        reason="#584: a fault in the bot drawing a verdict is named in its own words and sent to "
-        "fix the template",
-    )),
+    "bot",
     pytest.param("converter absent", marks=pytest.mark.xfail(
         strict=True,
         reason="#584: the verdict's line says nothing of what puts the converter's absence right",

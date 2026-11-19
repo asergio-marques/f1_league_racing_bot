@@ -16,6 +16,8 @@ from typing import TYPE_CHECKING, NamedTuple
 import aiosqlite
 import discord
 
+from leaguebot.core.models.fault_source import FaultSource, source_of
+from leaguebot.core.services.modules.image_drawing import picture_remedy
 from leaguebot.framework.utils.in_a_job import posts_in_a_job
 from leaguebot.framework.services.posting.notice_handler import send_notice
 from leaguebot.framework.models.change import StepFailedOnDiscord
@@ -424,13 +426,25 @@ async def _record_announcement_on(
     )
 
 
-_SANCTION_PUT_RIGHT = (
-    "fix the verdict template; no command posts a sanction's card again, and the text card stands"
-)
-_VERDICT_PUT_RIGHT = (
-    "fix the verdict template, then, once the round is final, amend the round with "
-    "`/results rounds amend` to announce it again"
-)
+def _sanction_put_right(source: FaultSource) -> str:
+    """What puts a sanction's card right where its picture went out as text, by where the fault
+    lies (`picture_remedy`): the verdict template to fix where the league's; otherwise that no
+    command posts the card again and the text card stands."""
+    tail = "no command posts a sanction's card again, and the text card stands"
+    return picture_remedy(source, template=f"fix the verdict template; {tail}", otherwise=tail)
+
+
+def _verdict_put_right(source: FaultSource) -> str:
+    """What puts a verdict right where its picture went out as text, by where the fault lies
+    (`picture_remedy`): the verdict template to fix where the league's, then, once the round is
+    final, an amendment of the round to announce it again; where the fault is the bot's or the
+    converter is absent, that amendment once the fault is cleared or Inkscape installed."""
+    amend = "the round is final, amend the round with `/results rounds amend` to announce it again"
+    once = "once it is cleared" if source is FaultSource.BOT else "once it has"
+    return picture_remedy(
+        source, template=f"fix the verdict template, then, once {amend}",
+        otherwise=f"{once} and {amend}",
+    )
 
 
 class VerdictRefused(Exception):
@@ -455,7 +469,8 @@ FALLBACK_ATTRIBUTE = "verdict_fallback"
 
 
 def _refused_stop(
-    refused: VerdictRefused, what: str, division_name: str, round_number, put_right: str
+    refused: VerdictRefused, what: str, division_name: str, round_number,
+    put_right: "Callable[[FaultSource], str]",
 ) -> StepFailedOnDiscord:
     """The stop for a refused verdict (*what*, "the verdict" or "the sanction's announcement"),
     with its picture's lines kept on it for the job to hand back once the text posts."""
@@ -480,7 +495,8 @@ class SentVerdict(NamedTuple):
 
 
 def _fallback_lines(
-    sent: SentVerdict, division_name: str, round_number: int, put_right: str,
+    sent: SentVerdict, division_name: str, round_number: int,
+    put_right: "Callable[[FaultSource], str]",
 ) -> "Callable[[str, str], tuple[str, ...]] | None":
     """The lines a job writes to the log for a verdict as it went out: what its picture was
     drawn with, then, where it could not be drawn, the line saying so ("the verdict picture could
@@ -495,7 +511,7 @@ def _fallback_lines(
             return sent.lines
         return sent.lines + (picture_fallback_line(
             named, what, picture="verdict", division=division_name,
-            round_number=round_number, fault=fault, put_right=put_right,
+            round_number=round_number, fault=fault, put_right=put_right(source_of(fault)),
         ),)
 
     return lines
@@ -689,13 +705,13 @@ async def announce_sanction(
     except VerdictRefused as refused:
         raise _refused_stop(
             refused, "the sanction's announcement", ctx["division_name"], ctx["round_number"],
-            _SANCTION_PUT_RIGHT,
+            _sanction_put_right,
         ) from refused.cause
     except discord.HTTPException as exc:
         raise StepFailedOnDiscord(f"the sanction's announcement could not be posted: {exc}") from exc
     return _fallback_lines(
         sent, ctx["division_name"], ctx["round_number"],
-        _SANCTION_PUT_RIGHT,
+        _sanction_put_right,
     )
 
 
@@ -787,7 +803,7 @@ async def announce_verdict(
     except VerdictRefused as refused:
         raise _refused_stop(
             refused, "the verdict", ctx["division_name"], result_ctx["round_number"],
-            _VERDICT_PUT_RIGHT,
+            _verdict_put_right,
         ) from refused.cause
     except discord.HTTPException as exc:
         raise StepFailedOnDiscord(f"the verdict could not be posted: {exc}") from exc
@@ -795,7 +811,7 @@ async def announce_verdict(
         raise StepFailedOnDiscord("the verdict could not be posted")
     fallback = _fallback_lines(
         sent, ctx["division_name"], result_ctx["round_number"],
-        _VERDICT_PUT_RIGHT,
+        _verdict_put_right,
     )
     return AnnouncedVerdict(int(getattr(sent.message, "id")), int(channel.id), fallback)
 
