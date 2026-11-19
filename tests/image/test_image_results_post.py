@@ -640,12 +640,7 @@ async def test_an_unexpected_fault_in_the_image_path_never_blocks_the_posting(tm
             ),
         ),
         pytest.param(
-            "refused", "no driver sits in seat 7", "LEAGUE", id="a_refusal",
-            marks=pytest.mark.xfail(
-                strict=True,
-                reason="#584: core has no source_of to read where the fault lies",
-            ),
-        ),
+            "refused", "no driver sits in seat 7", "LEAGUE", id="a_refusal"),
     ],
 )
 async def test_a_resolution_fault_is_reported_and_the_text_still_posts(

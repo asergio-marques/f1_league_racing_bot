@@ -19,6 +19,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 
+from leaguebot.core.models.fault_source import FaultSource
+
 
 # ── Persisted entities ────────────────────────────────────────────────────
 
@@ -142,8 +144,13 @@ PROBLEM_WRAP_NO_EXTENT = "WRAP_NO_EXTENT"
 #: uniformly and no traceback escapes into a Discord surface.
 PROBLEM_UNKNOWN_IMAGE_TYPE = "UNKNOWN_IMAGE_TYPE"
 
+#: A fault in the bot met while drawing a graphic: in assembling its data, filling its template
+#: or converting it. Like :data:`PROBLEM_UNKNOWN_IMAGE_TYPE` no league can provoke or put it
+#: right, so its detail is the kind of fault in plain words and the exception is for the log.
+PROBLEM_DRAWING_FAULT = "DRAWING_FAULT"
+
 #: Kinds a user can neither cause nor fix. Their detail is for the log, not the caller.
-INTERNAL_PROBLEM_KINDS = frozenset({PROBLEM_UNKNOWN_IMAGE_TYPE})
+INTERNAL_PROBLEM_KINDS = frozenset({PROBLEM_UNKNOWN_IMAGE_TYPE, PROBLEM_DRAWING_FAULT})
 
 
 @dataclass
@@ -164,6 +171,11 @@ class Problem:
     def is_internal(self) -> bool:
         """True when a user could neither have caused this nor act on it."""
         return self.kind in INTERNAL_PROBLEM_KINDS
+
+    @property
+    def source(self) -> FaultSource:
+        """Where the fault lies: the bot's for an internal kind, otherwise the league's."""
+        return FaultSource.BOT if self.is_internal else FaultSource.LEAGUE
 
     def message(self, label: str | None = None) -> str:
         """The sentence shown to a user.

@@ -691,9 +691,6 @@ async def test_a_render_with_a_fallback_returns_a_fault_in_the_bot_in_plain_word
     CalendarDataError("Division 1 holds no round to draw"),
     CapacityError("the template declares no round to fill"),
 ], ids=["calendar-data", "capacity"])
-@pytest.mark.xfail(
-    strict=True, reason="#584: a render's problem does not say where its fault lies"
-)
 async def test_a_render_returns_the_leagues_own_refusal_whether_or_not_it_raises_faults(
     monkeypatch, refusal, raise_faults
 ):
