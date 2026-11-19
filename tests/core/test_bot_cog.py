@@ -1152,8 +1152,6 @@ def _cannot_use(channel_id: int, use: str, missing: str) -> str:
     )
 
 
-@pytest.mark.xfail(strict=True, reason="#584: a command failure line names the exception's class, "
-                   "not the kind of fault")
 @pytest.mark.parametrize(
     "attribute,column,factory,new_id",
     [pytest.param(*s, id=s[1])
@@ -2056,8 +2054,6 @@ async def test_bot_factory_reset_without_the_word_changes_nothing(tmp_path):
     assert await ConfigService(db_path).get_league_server_id() == SERVER_ID
 
 
-@pytest.mark.xfail(strict=True, reason="#584: a command failure line names the exception's class, "
-                   "not the kind of fault")
 async def test_bot_factory_reset_erases_nothing_without_a_backup(tmp_path, monkeypatch):
     """A backup that cannot be taken is a fault in the bot, so the reset is a failure, not a
     refusal (owner, 2026-09-29): the standard failure reply stating that nothing was erased, with

@@ -3405,7 +3405,6 @@ async def test_a_save_that_ends_on_a_fault_has_its_writes_rolled_back(env, monke
     assert await stopped_job(env.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason="#584: the failure line still names the exception's class, not the kind of fault")
 async def test_a_check_fault_as_a_member_s_change_starts_ends_it_as_a_failure_where_its_type_says_so(
     env,
 ):

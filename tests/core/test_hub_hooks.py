@@ -416,9 +416,6 @@ _INTERACTION_ROLE = (
     _success("/bot interaction-role", "interaction_role_id"),
 )
 _BASE_ROLE = ("handle_base_role", "base_role_id", "/bot base-role", "Base role", _BASE_ROLE_SET)
-_NAMED_BY_ITS_CLASS = (
-    "#584: a command failure line names the exception's class, not the kind of fault"
-)
 
 
 @pytest.mark.parametrize(
@@ -427,12 +424,10 @@ _NAMED_BY_ITS_CLASS = (
         pytest.param(_INTERACTION_ROLE, _REFUSED, False, id="refused"),
         pytest.param(
             _INTERACTION_ROLE, RuntimeError("x"), True, id="raises",
-            marks=pytest.mark.xfail(strict=True, reason=_NAMED_BY_ITS_CLASS),
         ),
         pytest.param(_BASE_ROLE, _REFUSED, False, id="base-role-refused"),
         pytest.param(
             _BASE_ROLE, RuntimeError("x"), True, id="base-role-raises",
-            marks=pytest.mark.xfail(strict=True, reason=_NAMED_BY_ITS_CLASS),
         ),
     ],
 )

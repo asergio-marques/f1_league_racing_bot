@@ -375,8 +375,6 @@ async def test_the_manager_is_told_which_role_was_set(tmp_path, column, change_t
     assert _reply(asked) == f"✅ **{label}** set to <@&{NEW_ROLE}>."
 
 
-@pytest.mark.xfail(strict=True, reason="#584: a command failure line names the exception's class, "
-                   "not the kind of fault")
 @pytest.mark.parametrize("column,change_type", _BOTH)
 async def test_a_league_role_saves_its_value_and_audit_together(
     tmp_path, monkeypatch, column, change_type
@@ -636,8 +634,6 @@ async def test_a_driver_who_could_not_be_given_it_is_named(tmp_path, column, cha
     ]
 
 
-@pytest.mark.xfail(strict=True, reason="#584: a command failure line names the exception's class, "
-                   "not the kind of fault")
 @pytest.mark.parametrize("column,change_type", _BOTH)
 async def test_a_fault_giving_the_replacement_leaves_the_role_saved(
     tmp_path, monkeypatch, column, change_type

@@ -90,11 +90,12 @@ def failure_line(
 
     The line of a failure with a member to name: `report_failure` writes it, and so does the
     change queue for a change that faults. A Discord event's has none, and is formed by
-    `event_failure_line`. The kind of fault is the error's type, or *kind* where given: for a
-    fault that is no exception of Discord's or the bot's own, but the bot's words for what failed.
+    `event_failure_line`. The kind of fault is `describe_fault`'s plain words, never the error's type
+    or message, or *kind* where given: for a fault that is no exception of Discord's or the bot's
+    own, but the bot's words for what failed.
     """
     return (
-        f"❌ {what} failed for {named} — {kind.rstrip('.') if kind else type(error).__name__}. "
+        f"❌ {what} failed for {named} — {kind.rstrip('.') if kind else describe_fault(error)}. "
         f"The details are in the host's log."
     )
 

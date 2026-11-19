@@ -87,7 +87,6 @@ def test_the_reply_opens_its_sentence_with_a_capital():
 # ── The log channel and the host's log ────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason="#584: the failure line still names the exception's class, not the kind of fault")
 async def test_a_failure_is_written_to_the_log_channel():
     interaction = _interaction()
 
@@ -103,7 +102,6 @@ async def test_a_failure_is_written_to_the_log_channel():
     assert "Traceback" not in line
 
 
-@pytest.mark.xfail(strict=True, reason="#584: the failure line still names the exception's class, not the kind of fault")
 async def test_a_failure_names_the_member_by_display_name_and_mention():
     """As every line in the log channel does: the name for the reader, the mention for the
     account it was."""
@@ -118,7 +116,6 @@ async def test_a_failure_names_the_member_by_display_name_and_mention():
     )
 
 
-@pytest.mark.xfail(strict=True, reason="#584: the failure line still names the exception's class, not the kind of fault")
 async def test_a_failure_names_a_member_without_a_display_name_by_mention_alone():
     interaction = _interaction()
     interaction.user.display_name = None
@@ -252,7 +249,6 @@ async def test_a_failure_before_any_command_was_found_is_still_answered():
 # ── Buttons, menus and forms ──────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason="#584: the failure line still names the exception's class, not the kind of fault")
 async def test_a_failed_button_tells_the_member_and_the_log_channel():
     from leaguebot.framework.utils.league_server import LeagueView
 
@@ -273,7 +269,6 @@ async def test_a_failed_button_tells_the_member_and_the_log_channel():
     assert "KeyError" not in line
 
 
-@pytest.mark.xfail(strict=True, reason="#584: the failure line still names the exception's class, not the kind of fault")
 async def test_a_failed_form_tells_the_member_and_the_log_channel():
     from leaguebot.framework.utils.league_server import LeagueModal
 

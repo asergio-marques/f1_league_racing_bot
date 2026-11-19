@@ -18,7 +18,7 @@ from leaguebot.framework.services.posting.retry_service import (
     get_all_pending,
     post_own_line,
 )
-from leaguebot.framework.utils.interaction_errors import job_failure_line
+from leaguebot.framework.utils.interaction_errors import describe_fault, job_failure_line
 from leaguebot.framework.utils.job_runner import run_job
 
 if TYPE_CHECKING:
@@ -45,13 +45,14 @@ class _EntriesFaulted(Exception):
 
 def _cycle_line(job: str, error: BaseException) -> str:
     """The log channel's line for a failed cycle: the timed job's line, which for the lines that
-    faulted names how many, and the kind of the first fault, never a message or an id."""
+    faulted names how many, and the kind of the first fault in `describe_fault`'s words, never a type,
+    a message or an id."""
     if not isinstance(error, _EntriesFaulted):
         return job_failure_line(job, error)
     noun = "kept line" if error.count == 1 else "kept lines"
     return (
         f"❌ The bot's timed job `{job}` failed for {error.count} {noun} — "
-        f"{type(error.first).__name__}. The details are in the host's log."
+        f"{describe_fault(error.first)}. The details are in the host's log."
     )
 
 

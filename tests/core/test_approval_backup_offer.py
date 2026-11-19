@@ -616,8 +616,6 @@ async def test_a_backup_refused_is_recorded_with_its_reason():
     assert reason == "the saved backup is locked"
 
 
-@pytest.mark.xfail(strict=True, reason="#584: a command failure line names the exception's class, "
-                   "not the kind of fault")
 @pytest.mark.parametrize("fault", ["backup_fault", "unexpected_error"])
 async def test_a_backup_stopped_by_a_fault_is_recorded_and_the_approval_goes_on(fault):
     """Alex presses 💾 Save, then approve, and the copy stops on a fault in the bot.

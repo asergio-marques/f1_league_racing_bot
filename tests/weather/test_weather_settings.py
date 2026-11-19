@@ -229,7 +229,6 @@ async def test_a_fault_in_a_deadline_s_save_saves_nothing_and_the_lane_goes_on(t
     assert last_said(behind).startswith("✅ Phase 2 deadline set to **3 day(s)**")
 
 
-@pytest.mark.xfail(strict=True, reason="#584: the failure line names the exception's class")
 async def test_a_check_fault_when_a_deadline_runs_says_nothing_was_saved_records_a_failure_and_the_lane_goes_on(
     tmp_path,
 ):

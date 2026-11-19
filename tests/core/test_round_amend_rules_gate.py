@@ -522,8 +522,6 @@ def _all_replies(interaction) -> str:
     return "\n".join(str(call.args[0]) for call in calls if call.args)
 
 
-@pytest.mark.xfail(strict=True, reason="#584: a command failure line names the exception's class, "
-                   "not the kind of fault")
 async def test_a_failed_round_amend_confirmation_goes_to_report_failure(tmp_path):
     """A fault while the amendment is asked of the change queue is the bot's: the standard
     failure reply naming `/round amend` and the round, one line in the log channel, and the
@@ -706,11 +704,11 @@ async def test_a_confirmed_round_amend_whose_reply_fails_still_records_what_chan
 @pytest.mark.parametrize(
     "where, error, message",
     [
-        pytest.param("the ask fails", "OperationalError", "database is locked",
+        pytest.param("the ask fails", "the bot could not read or write its database", "database is locked",
                      id="the ask fails"),
-        pytest.param("before amending", "OperationalError", "database is locked",
+        pytest.param("before amending", "the bot could not read or write its database", "database is locked",
                      id="before amending"),
-        pytest.param("the first answer fails", "RuntimeError", "gateway closed",
+        pytest.param("the first answer fails", "the bot hit an internal fault", "gateway closed",
                      id="the first answer fails"),
     ],
 )

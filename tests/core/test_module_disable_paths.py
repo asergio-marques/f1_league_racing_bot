@@ -196,8 +196,6 @@ async def test_disabling_images_twice_does_no_work(tmp_path):
     assert await _audit_types(league.db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason="#584: a command failure line names the exception's class, "
-                   "not the kind of fault")
 async def test_an_image_disable_that_cannot_be_written_leaves_the_module_on(tmp_path):
     """The flag and the audit entry are one save, so a fault at the audit leaves the module on.
     The member gets the standard failure reply, saying nothing was saved and what to run again,
@@ -340,8 +338,6 @@ async def test_a_manager_s_disable_is_audited_as_their_decision(tmp_path):
     assert await _audit_types(league.db_path) == ["ATTENDANCE_MODULE_DISABLED"]
 
 
-@pytest.mark.xfail(strict=True, reason="#584: a command failure line names the exception's class, "
-                   "not the kind of fault")
 async def test_an_attendance_disable_that_cannot_be_written_leaves_the_module_on(tmp_path):
     """The switch-off and its audit entry are one save, so a fault at the audit leaves the module
     on and its division channels bound. The member gets the standard failure reply, saying
@@ -585,8 +581,6 @@ async def test_enabling_signup_twice_does_no_work(tmp_path):
     ]
 
 
-@pytest.mark.xfail(strict=True, reason="#584: a command failure line names the exception's class, "
-                   "not the kind of fault")
 async def test_a_signup_enable_that_cannot_be_written_says_the_module_is_still_off(tmp_path):
     """The flag, the configuration row and the audit entry are one save, so a fault at the audit
     leaves the module off with no row created. The member gets the standard failure reply, saying

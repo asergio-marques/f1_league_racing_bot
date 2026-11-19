@@ -273,7 +273,6 @@ def _success_line(value: int) -> str:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="#584: the failure line still names the exception's class, not the kind of fault")
 async def test_a_setting_s_value_audit_entry_and_line_are_saved_in_one_save(env, monkeypatch):
     """The audit entry's write raising undoes the value with it: no success line, the failure
     line queued instead, and the lane not stopped, the request behind it running."""
@@ -434,7 +433,6 @@ async def test_the_acknowledgement_names_what_is_being_set(env):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="#584: the failure line still names the exception's class, not the kind of fault")
 @pytest.mark.parametrize("fault_at", [pytest.param("before"), "save"])
 async def test_a_fault_before_or_in_the_save_saves_nothing_says_to_run_it_again_and_the_lane_goes_on(
     env, fault_at
@@ -545,7 +543,6 @@ async def test_a_restart_between_a_step_before_the_save_and_the_save_still_hands
 LEFT = "Something was left on Discord: run `/dummy set` again, or remove it by hand."
 
 
-@pytest.mark.xfail(strict=True, reason="#584: the failure line still names the exception's class, not the kind of fault")
 async def test_a_save_that_faults_after_a_step_before_it_takes_that_step_back(env):
     """A step before the save (signup's permissions put back on its channel) declares an undo and
     returns, finding 2; the save then raises. The undo runs, reading what the step found from the
@@ -614,10 +611,8 @@ async def test_a_later_step_before_the_save_that_does_not_go_through_takes_back_
 @pytest.mark.parametrize(
     "left_by, caused, fault",
     [
-        pytest.param("the step before the save", True, "the bot hit an internal fault",
-                     marks=pytest.mark.xfail(strict=True, reason="#584: the failure line still names the exception's class, not the kind of fault")),
-        pytest.param("its undo", True, "the bot hit an internal fault",
-                     marks=pytest.mark.xfail(strict=True, reason="#584: the failure line still names the exception's class, not the kind of fault")),
+        pytest.param("the step before the save", True, "the bot hit an internal fault"),
+        pytest.param("its undo", True, "the bot hit an internal fault"),
         ("the step before the save", False, "the step before left something"),
         ("its undo", False, "the undo left something"),
     ],
@@ -711,7 +706,6 @@ async def test_a_stop_after_the_save_runs_the_steps_after_it_on_restart(env):
     assert (await _lines(env)).count(_success_line(6)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason="#584: the failure line still names the exception's class, not the kind of fault")
 async def test_a_fault_in_a_step_after_the_save_keeps_the_setting_and_says_what_was_not_done(env):
     _league(env, after="advise")
     env.knobs["after_faults"] = 1
@@ -730,7 +724,6 @@ async def test_a_fault_in_a_step_after_the_save_keeps_the_setting_and_says_what_
     assert await _value(env) == 7
 
 
-@pytest.mark.xfail(strict=True, reason="#584: the failure line still names the exception's class, not the kind of fault")
 async def test_a_line_carried_by_a_step_after_the_save_is_written_only_when_it_succeeds(env):
     """Where the step after the save carries the line (the daily job's arming), the success line
     waits for it: written once it succeeds, and never where it fails, the failure line standing
@@ -758,7 +751,6 @@ async def test_a_line_carried_by_a_step_after_the_save_is_written_only_when_it_s
     assert await stopped_job(env.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason="#584: the failure line still names the exception's class, not the kind of fault")
 async def test_a_check_fault_when_the_setting_runs_says_nothing_was_saved_records_a_failure_and_the_lane_goes_on(
     env,
 ):

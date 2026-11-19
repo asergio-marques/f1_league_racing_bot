@@ -443,8 +443,6 @@ async def test_a_posted_mystery_notice_is_recorded(tmp_path):
     ]
 
 
-@pytest.mark.xfail(strict=True, reason="#584: a command failure line names the exception's class, "
-                   "not the kind of fault")
 async def test_a_failing_mystery_notice_is_reported_not_raised(tmp_path):
     """The change queue cannot save the notice's ask. The maintainer is stepping through a season and needs to know which round failed: the
     standard failure reply and one failure line name the notice, the division and the round
@@ -520,8 +518,6 @@ async def test_an_opened_submission_is_recorded_as_asked_of_the_queue(tmp_path):
     ]
 
 
-@pytest.mark.xfail(strict=True, reason="#584: a command failure line names the exception's class, "
-                   "not the kind of fault")
 async def test_a_failing_round_start_is_reported_not_raised(tmp_path):
     """Round 3 of Division 1's result submission (4) is next, none open, and the change queue
     cannot save its ask. The standard failure reply and one failure line name the round start,
@@ -694,8 +690,6 @@ async def test_a_finalised_round_with_an_open_channel_says_so_differently(tmp_pa
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="#584: a command failure line names the exception's class, "
-                   "not the kind of fault")
 @pytest.mark.parametrize(
     "phase,phrase",
     [(5, "the RSVP notice"), (6, "the RSVP last-notice"), (7, "the RSVP deadline")],
@@ -806,8 +800,6 @@ async def test_an_advanced_forecast_cleanup_is_asked_of_the_change_queue(tmp_pat
     )
 
 
-@pytest.mark.xfail(strict=True, reason="#584: a command failure line names the exception's class, "
-                   "not the kind of fault")
 @pytest.mark.parametrize("phase,runner,label,prefix", CLEANUPS_ASKED)
 async def test_a_failing_cleanup_is_reported_not_raised(tmp_path, phase, runner, label, prefix):
     """The change queue cannot save the cleanup's ask. The standard failure reply and one
@@ -959,8 +951,6 @@ async def test_each_weather_phase_asks_the_queue_for_its_phase(tmp_path, phase):
     )
 
 
-@pytest.mark.xfail(strict=True, reason="#584: a command failure line names the exception's class, "
-                   "not the kind of fault")
 async def test_a_failing_weather_phase_names_the_round_and_track(tmp_path):
     """The change queue cannot save Phase 1's ask. The standard failure reply names the phase,
     the division, the round and the track, and one failure line the phase, the division and

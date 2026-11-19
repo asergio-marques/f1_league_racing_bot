@@ -595,7 +595,6 @@ def _capacity_read_faults(league: _League) -> None:
     register(league.bot, dataclasses.replace(change, steps={**change.steps, CHECK_CAPACITY: read}))
 
 
-@pytest.mark.xfail(strict=True, reason="#584: a failure line names the fault by its class")
 @pytest.mark.parametrize("ongoing", [True, False], ids=["season-ongoing", "no-season-ongoing"])
 async def test_a_capacity_read_that_faults_ends_on_a_fault_and_never_stops_the_lane(
     tmp_path, ongoing,

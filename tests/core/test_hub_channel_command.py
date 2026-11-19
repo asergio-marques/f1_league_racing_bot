@@ -266,8 +266,6 @@ async def test_the_hub_and_its_audit_entry_are_one_save_before_any_step_after_it
     assert [row["kind"] for row in await change_rows(db_path)] == ["core.setting.hub_channel_id"]
 
 
-@pytest.mark.xfail(strict=True, reason="#584: a command failure line names the exception's class, "
-                   "not the kind of fault")
 async def test_a_fault_in_the_save_saves_neither_the_hub_nor_its_audit_entry(
     db_path, monkeypatch
 ):
@@ -391,8 +389,6 @@ async def test_a_fault_after_the_save_leaves_the_hub_saved_and_is_reported_in_to
     assert _lines(cog) == [_with_faults(*faults)]
 
 
-@pytest.mark.xfail(strict=True, reason="#584: a command failure line names the exception's class, "
-                   "not the kind of fault")
 async def test_a_step_after_the_save_that_raises_leaves_the_hub_saved_and_records_no_success(
     db_path,
 ):

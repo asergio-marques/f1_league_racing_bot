@@ -422,8 +422,6 @@ class TestTheNationalityCommand:
         ]
         assert await stopped_job(league.db_path) is None
 
-    @pytest.mark.xfail(strict=True, reason="#584: a command failure line names "
-                       "the exception's class, not the kind of fault")
     async def test_a_fault_in_the_save_saves_neither_the_flag_nor_its_audit(
         self, league, monkeypatch
     ):

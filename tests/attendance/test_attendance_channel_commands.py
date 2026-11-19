@@ -608,7 +608,6 @@ async def test_the_manager_is_acknowledged_before_anything_is_written(tmp_path, 
     assert await _audit(db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason="#584: a failure line names the fault by its class")
 @pytest.mark.parametrize("which", BOTH)
 async def test_a_fault_in_the_save_saves_neither_the_channel_nor_its_audit(
     tmp_path, monkeypatch, which
