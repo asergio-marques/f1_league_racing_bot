@@ -11,8 +11,9 @@ granted, that a picture really draws. The logic itself is the suite's to check.
 ## Who they are for
 
 Maintainers, before a release or after a change that touches what a league sees. They assume
-you can stop and start the bot on its host and delete files beside it, and that you hold the
-league admin role on the test server.
+you can stop and start the bot on its host and delete files beside it, and that on the test server you
+are the owner or hold Discord's Administrator permission, which `/bot init` needs, and hold the
+league admin role.
 
 ## The specs, and the order to run them in
 

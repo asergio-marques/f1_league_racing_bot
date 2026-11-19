@@ -13,7 +13,7 @@ Every name and value below is fixed here, once. The later specs reuse them; do n
 | Thing | Value |
 |---|---|
 | Bot host folder | The folder the bot is started from, with `.env` holding `DB_PATH=bot.db` and `SCHEDULER_DB_PATH=` (empty) |
-| League admin role | `@League Admin` — held by you, the tester |
+| League admin role | `@League Admin` — held by you, the tester, who are also the server owner or hold Discord's Administrator permission |
 | Interaction role | `@League Manager` |
 | Base role | `@Members` |
 | Driver role | `@Driver` |
@@ -152,7 +152,10 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
 
 ### Claiming the server
 
-4. **Do:** `/bot init interaction_role:@League Manager league_admin_role:@League Admin interaction_channel:#bot-commands log_channel:#bot-log`
+4. `/bot init` is refused to anyone who is neither the server owner nor holds Discord's
+   Administrator permission: before it runs there is no league admin role to hold.
+
+   **Do:** `/bot init interaction_role:@League Manager league_admin_role:@League Admin interaction_channel:#bot-commands log_channel:#bot-log`
 
    **Expect:**
    - **Ack:** `Saving the bot configuration`
