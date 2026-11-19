@@ -623,6 +623,7 @@ async def test_the_channel_is_set_while_the_queue_is_stopped_on_another_job(tmp_
     assert (still["id"], still["change_id"]) == (stopped["id"], stopped["change_id"])
 
 
+@pytest.mark.xfail(strict=True, reason="#584: the failure line names the exception's class")
 async def test_a_fault_in_the_save_saves_neither_the_channel_nor_its_audit(tmp_path, monkeypatch):
     """Season 1 is being set up, and its Division 1 has no forecast channel. The manager runs
     `/weather channel` for #forecasts, and the audit entry's write fails on the database as the
@@ -650,8 +651,8 @@ async def test_a_fault_in_the_save_saves_neither_the_channel_nor_its_audit(tmp_p
         "recorded in the log channel."
     )
     assert _lines(cog) == [
-        f"❌ `/weather channel` failed for {NAMED} — OperationalError. The details are in the "
-        f"host's log."
+        f"❌ `/weather channel` failed for {NAMED} — the bot could not read or write its "
+        f"database. The details are in the host's log."
     ]
     assert await stopped_job(db_path) is None
 

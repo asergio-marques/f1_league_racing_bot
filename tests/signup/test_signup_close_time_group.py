@@ -499,6 +499,7 @@ async def test_a_close_time_faulted_in_its_save_stores_nothing(
     assert not any(" | Success" in line for line in await log_lines(league))
 
 
+@pytest.mark.xfail(strict=True, reason="#584: the failure line names the exception's class")
 @pytest.mark.parametrize("run, name, before, saved", _CLOSE_TIME_COMMANDS)
 async def test_a_close_timer_that_cannot_be_armed_or_removed_leaves_the_time_saved(
     tmp_path, run, name, before, saved
@@ -528,7 +529,8 @@ async def test_a_close_timer_that_cannot_be_armed_or_removed_leaves_the_time_sav
     lines = await log_lines(league)
     [failed] = [line for line in lines if line.startswith("❌ ")]
     assert failed.startswith(f"❌ `/signup close-time {name}` failed for ")
-    assert "— RuntimeError." in failed
+    assert "— the bot hit an internal fault." in failed
+    assert "RuntimeError" not in failed
     assert not any("scheduler down" in line for line in lines)
 
 

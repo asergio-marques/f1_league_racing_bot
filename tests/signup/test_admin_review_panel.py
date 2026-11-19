@@ -610,6 +610,7 @@ async def test_a_reason_that_lapses_after_the_signup_moved_on_says_so(
     assert await _driver_state(league) == state
 
 
+@pytest.mark.xfail(strict=True, reason="#584: the job's failure line names the exception's class")
 async def test_a_reason_lapse_that_fails_is_reported(tmp_path, monkeypatch):
     """Manager 77 presses Reject on Kimi's panel and types no reason; when the five minutes run
     out, writing the lapse's line faults unexpectedly. One ❌ line in the log channel names the
@@ -627,7 +628,9 @@ async def test_a_reason_lapse_that_fails_is_reported(tmp_path, monkeypatch):
     failed = [line for line in _lines(league) if line.startswith("❌")]
     assert len(failed) == 1, _lines(league)
     assert failed[0].startswith("❌ The bot's timed job `"), failed[0]
-    assert failed[0].endswith(" failed — RuntimeError. The details are in the host's log."), failed[0]
+    assert failed[0].endswith(
+        " failed — the bot hit an internal fault. The details are in the host's log."
+    ), failed[0]
     assert "secret detail" not in failed[0]
 
 

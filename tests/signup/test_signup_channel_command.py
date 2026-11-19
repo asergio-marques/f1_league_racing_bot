@@ -568,6 +568,7 @@ async def test_a_move_that_cannot_unlock_the_old_channel_says_so_and_stands(tmp_
     assert f"<#{OLD}>" in line
 
 
+@pytest.mark.xfail(strict=True, reason="#584: the failure line names the exception's class")
 async def test_a_signup_channel_edit_fault_goes_to_the_failure_path(tmp_path):
     """Anything but Discord's refusal is a fault in the bot. The manager sets 700, and setting
     its overwrites raises an error of the bot's own once the channel is saved. It is work after
@@ -589,7 +590,8 @@ async def test_a_signup_channel_edit_fault_goes_to_the_failure_path(tmp_path):
     lines = await log_lines(league)
     [failed] = [line for line in lines if line.startswith("❌ ")]
     assert failed.startswith(f"❌ `/signup channel` failed for {NAMED} (")
-    assert "— RuntimeError." in failed
+    assert "— the bot hit an internal fault." in failed
+    assert "RuntimeError" not in failed
     assert not any("gateway closed" in line for line in lines)
 
 
