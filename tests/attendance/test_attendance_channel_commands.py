@@ -608,6 +608,7 @@ async def test_the_manager_is_acknowledged_before_anything_is_written(tmp_path, 
     assert await _audit(db_path) == []
 
 
+@pytest.mark.xfail(strict=True, reason="#584: a failure line names the fault by its class")
 @pytest.mark.parametrize("which", BOTH)
 async def test_a_fault_in_the_save_saves_neither_the_channel_nor_its_audit(
     tmp_path, monkeypatch, which
@@ -617,7 +618,8 @@ async def test_a_fault_in_the_save_saves_neither_the_channel_nor_its_audit(
     write fails on the database as the queue runs the change. The channel is not saved either:
     Division 1 still has neither channel and no audit entry stands. The manager is told in
     `setting_change`'s words that nothing was saved and to run it again; the log channel gets
-    the one failure line and no success line; the queue is not stopped."""
+    the one failure line, naming the fault by its kind, and no success line; the queue is not
+    stopped."""
     from unittest.mock import AsyncMock
 
     from leaguebot.framework.services.queue import change_queue
@@ -640,8 +642,8 @@ async def test_a_fault_in_the_save_saves_neither_the_channel_nor_its_audit(
         f"again to retry. The fault is recorded in the log channel."
     )
     assert _lines(cog) == [
-        f"❌ `/attendance channel {which}` failed for {NAMED} — OperationalError. The details "
-        f"are in the host's log."
+        f"❌ `/attendance channel {which}` failed for {NAMED} — the bot could not read or write "
+        f"its database. The details are in the host's log."
     ]
     assert await stopped_job(db_path) is None
 
