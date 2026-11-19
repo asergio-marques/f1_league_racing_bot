@@ -60,7 +60,7 @@ A mystery round has no Phase 2 or 3 and no forecast clean-up: its timers stand i
 but weather hands back no step for them and the advance passes them by.
 
 **Paste a round's results before advancing past it.** A round whose submission channel is open
-and holds no results is offered again, and refused (step 16), until its first
+and holds no results is offered again, and refused (step 22), until its first
 session is in.
 
 ---
@@ -146,6 +146,98 @@ session is in.
      the data. A ⚠️ on any phase means a job was lost.
    - **Log:** nothing; it is a view.
 
+### The attendance settings
+
+The base left attendance at its packaged values: every penalty 1 point, no threshold. This spec
+gives each penalty a value of its own, so that every outcome on the attendance sheet can be told
+from every other, and sets the auto-reserve threshold that Round 3 crosses. The penalties and
+thresholds may be changed while the season is ongoing; the check-in timings may not (step
+10). No round has had its reports approved yet, so a penalty is saved alone and
+nothing is recalculated.
+
+| Setting | Value | What it charges |
+|---|---|---|
+| No-RSVP penalty | 2 | a full-time driver who never answered the call; with the absent penalty as well where he did not race |
+| Absent penalty | 3 | a full-time driver who answered tentative or declined, or never answered, and did not race |
+| No-show penalty | 4 | a driver who accepted and did not race, a reserve placed into a seat included |
+| Auto-reserve threshold | 6 | a full-time driver whose total reaches it at a report approval is moved to Reserve |
+
+6. **Do:** `/attendance config no-rsvp-penalty points:2`
+
+   **Expect:**
+   - **Ack:** `Setting the no-RSVP penalty to 2 point(s)`
+   - **Then:** `✅ No-RSVP penalty set to **2** point(s).`
+   - **Log:**
+     ```
+     <you> | /attendance config no-rsvp-penalty | Success
+       no-RSVP penalty: 2 point(s) (was 1 point(s))
+     ```
+
+7. **Do:** `/attendance config absent-penalty points:3`
+
+   **Expect:**
+   - **Ack:** `Setting the absent penalty to 3 point(s)`
+   - **Then:** `✅ Absent penalty set to **3** point(s).`
+   - **Log:**
+     ```
+     <you> | /attendance config absent-penalty | Success
+       absent penalty: 3 point(s) (was 1 point(s))
+     ```
+
+8. **Do:** `/attendance config no-show-penalty points:4`
+
+   **Expect:**
+   - **Ack:** `Setting the no-show penalty to 4 point(s)`
+   - **Then:** `✅ No-show penalty set to **4** point(s).`
+   - **Log:**
+     ```
+     <you> | /attendance config no-show-penalty | Success
+       no-show penalty: 4 point(s) (was 1 point(s))
+     ```
+
+9. **Do:** `/attendance config autoreserve points:6`
+
+   **Expect:**
+   - **Ack:** `Setting the auto-reserve threshold to 6 point(s)`
+   - **Then:** `✅ Auto-reserve threshold set to **6** point(s).`
+   - **Log:**
+     ```
+     <you> | /attendance config autoreserve | Success
+       auto-reserve threshold: 6 point(s) (was disabled)
+     ```
+   Setting a threshold judges nobody: it is judged at each report approval from here on.
+
+10. **A refusal: the timings are fixed once placements are confirmed.** **Do:**
+    `/attendance config rsvp-deadline hours:3`
+
+    **Expect:**
+    - **Reply:** `❌ Attendance configuration cannot be changed once a season's placements are confirmed.`
+    - **Log:** ``⛔ `/attendance config rsvp-deadline` refused for <you> — Attendance configuration cannot be changed once a season's placements are confirmed.``
+    - Nothing changed.
+
+11. **Do:** `/attendance config show`
+
+    **Expect:**
+    - **Reply:**
+      ```
+      **Attendance Configuration**
+
+      **Timing**
+        RSVP notice: **5** day(s) before race
+        Last reminder: **24** hr(s) before race
+        RSVP deadline: **2** hr(s) before race
+
+      **Penalties**
+        No-RSVP: **2** pt(s)
+        Absent penalty: **3** pt(s)
+        No-show (ACCEPTED + absent): **4** pt(s)
+
+      **Auto-actions**
+        Auto-reserve threshold: **6**
+        Auto-sack threshold: **disabled**
+      ```
+    - **Log:** nothing; it is a view.
+
 ---
 
 ## Part B — Round 1, Division 1: Silverstone Circuit
@@ -167,167 +259,168 @@ every driver is answered below.
 | Division 2 | every driver, both reserves included, **accepts** | Rory Reid → **Bravo Motorsport** (tier 1, no driver at all); Stefan Sommer → **Charlie GP** (tier 4, a seat empty) |
 
 **The empty seats are filled.** Division 2's empty `BRV` and half-empty `CHL` both draw a reserve.
-A placed reserve who does not race is charged a no-show, and a driver who declined and did not
-race an absence, each 1 attendance point by default; a reserve on standby is charged nothing. So
+A placed reserve who does not race is charged a no-show (4 points, as step 8 sets it),
+and a driver who declined and did not race an absence (3); a reserve on standby is charged
+nothing. So
 the results of Round 1 race Willem Wouters for `ALP` in Division 1, and Rory Reid for `BRV` and
 Stefan Sommer for `CHL` in Division 2.
 
 ### The first forecast
 
-6. **Do:** `/test-mode advance`
+12. **Do:** `/test-mode advance`
 
-   **Expect:**
-   - **Reply:** ``⏩ **Phase 1** for **Division 1** — **Silverstone Circuit** is on the change queue: its forecast goes to the forecast channel and its calculation to the log channel as soon as the queue reaches it.``
-   - **Posts** (`#d1-weather`), a moment later: one message, its text the role mention
-     `<@&<Division 1 role id>>` and nothing else, with the Phase 1 forecast picture attached:
-     headed `Initial chance of rain`, the track `Silverstone Circuit`, the rain probability as a
-     whole percentage, and the flag of the United Kingdom where `resources/league/flags/` holds
-     it, else the packaged fallback flag, reported as an image notice. Where no picture could be
-     drawn, the text is posted instead, which is a failure here:
-     ```
-     <@&<Division 1 role id>> 🏁 **Weather Forecast — Initial chance of rain**
-     **Track**: Silverstone Circuit
-     **Rain Probability**: <n: a whole number>%
-     A more detailed forecast will follow later.
-     ```
-   - **Log:**
-     ```
-     <you> | /test-mode advance | Success
-       phase: 1
-       division: Division 1
-       track: Silverstone Circuit
-       round: 1
-     ```
-     then the calculation, a message of its own:
-     ````
-     📋 **Phase 1 Calculation Log** | Round 1 in **Division 1** | Silverstone Circuit
-     ```json
-     { "phase": 1, "round_id": <id>, "track": "Silverstone Circuit", "distribution": "beta", "mu": 0.3, "sigma": 0.05, "alpha": …, "beta_param": …, "raw_draw": …, "rpc": … }
-     ```
-     ````
-     (indented over several lines), and any notice block, headed
-     `Image render notices — round 1 in **Division 1**, phase 1:`. The picture's rain
-     probability is the calculation's `rpc` as a whole per cent.
+    **Expect:**
+    - **Reply:** ``⏩ **Phase 1** for **Division 1** — **Silverstone Circuit** is on the change queue: its forecast goes to the forecast channel and its calculation to the log channel as soon as the queue reaches it.``
+    - **Posts** (`#d1-weather`), a moment later: one message, its text the role mention
+      `<@&<Division 1 role id>>` and nothing else, with the Phase 1 forecast picture attached:
+      headed `Initial chance of rain`, the track `Silverstone Circuit`, the rain probability as a
+      whole percentage, and the flag of the United Kingdom where `resources/league/flags/` holds
+      it, else the packaged fallback flag, reported as an image notice. Where no picture could be
+      drawn, the text is posted instead, which is a failure here:
+      ```
+      <@&<Division 1 role id>> 🏁 **Weather Forecast — Initial chance of rain**
+      **Track**: Silverstone Circuit
+      **Rain Probability**: <n: a whole number>%
+      A more detailed forecast will follow later.
+      ```
+    - **Log:**
+      ```
+      <you> | /test-mode advance | Success
+        phase: 1
+        division: Division 1
+        track: Silverstone Circuit
+        round: 1
+      ```
+      then the calculation, a message of its own:
+      ````
+      📋 **Phase 1 Calculation Log** | Round 1 in **Division 1** | Silverstone Circuit
+      ```json
+      { "phase": 1, "round_id": <id>, "track": "Silverstone Circuit", "distribution": "beta", "mu": 0.3, "sigma": 0.05, "alpha": …, "beta_param": …, "raw_draw": …, "rpc": … }
+      ```
+      ````
+      (indented over several lines), and any notice block, headed
+      `Image render notices — round 1 in **Division 1**, phase 1:`. The picture's rain
+      probability is the calculation's `rpc` as a whole per cent.
 
 ### The check-in call
 
-7. **Do:** `/test-mode advance`
+13. **Do:** `/test-mode advance`
 
-   **Expect:**
-   - **Reply:** `📨 The **RSVP notice** for **Division 1** — **Round 1** (**Silverstone Circuit**) is on the change queue: it goes to the RSVP channel as soon as the queue reaches it.`
-   - **Log:**
-     ```
-     <you> | /test-mode advance | Success
-       phase: rsvp_notice
-       division: Division 1
-       round: 1
-     ```
-   - **Posts** (`#d1-rsvp`), one message:
-     - the text `<@&<Division 1 role id>>`;
-     - the check-in picture: the round, its grand prix (`British Grand Prix`) over its circuit, the
-       country's flag (where `resources/league/flags/` holds it, else the packaged fallback flag,
-       reported as an image notice), the date, and the moment check-in closes, two hours before
-       the race;
-     - an embed titled `Season 1 Round 1 — Silverstone Circuit`, with the fields `📅 Date`
-       (`<t:<the race: 20:00 on <YEAR+1>-03-01>:F>`), `📍 Location` (`Silverstone Circuit`) and
-       `🏁 Event Type` (`Normal`); then the roster under `🧑‍🤝‍🧑 Driver Roster`, continued in a
-       field with a blank name where it outgrows one. One block per team, headed
-       `**<full name>**`, `Alpha Racing` to `Kilo Racing`, then `***(Reserve)* Reserve**` last;
-       under each, one line per driver, `  <@<id>> (<name>) ()` — for instance
-       `  <@9000000000000000001> (Adam Archer) ()`. Discord shows a fake mention as an unknown
-       user; the name in brackets is the bot's;
-     - three buttons, **✅ Accept**, **❓ Tentative**, **❌ Decline**.
-   - **Log:** any notice block for the check-in picture, headed
-     `Image render notices — check-in call of round 1 in Season 1 **Division 1**:`.
+    **Expect:**
+    - **Reply:** `📨 The **RSVP notice** for **Division 1** — **Round 1** (**Silverstone Circuit**) is on the change queue: it goes to the RSVP channel as soon as the queue reaches it.`
+    - **Log:**
+      ```
+      <you> | /test-mode advance | Success
+        phase: rsvp_notice
+        division: Division 1
+        round: 1
+      ```
+    - **Posts** (`#d1-rsvp`), one message:
+      - the text `<@&<Division 1 role id>>`;
+      - the check-in picture: the round, its grand prix (`British Grand Prix`) over its circuit, the
+        country's flag (where `resources/league/flags/` holds it, else the packaged fallback flag,
+        reported as an image notice), the date, and the moment check-in closes, two hours before
+        the race;
+      - an embed titled `Season 1 Round 1 — Silverstone Circuit`, with the fields `📅 Date`
+        (`<t:<the race: 20:00 on <YEAR+1>-03-01>:F>`), `📍 Location` (`Silverstone Circuit`) and
+        `🏁 Event Type` (`Normal`); then the roster under `🧑‍🤝‍🧑 Driver Roster`, continued in a
+        field with a blank name where it outgrows one. One block per team, headed
+        `**<full name>**`, `Alpha Racing` to `Kilo Racing`, then `***(Reserve)* Reserve**` last;
+        under each, one line per driver, `  <@<id>> (<name>) ()` — for instance
+        `  <@9000000000000000001> (Adam Archer) ()`. Discord shows a fake mention as an unknown
+        user; the name in brackets is the bot's;
+      - three buttons, **✅ Accept**, **❓ Tentative**, **❌ Decline**.
+    - **Log:** any notice block for the check-in picture, headed
+      `Image render notices — check-in call of round 1 in Season 1 **Division 1**:`.
 
-8. **Do:** `/attendance test rsvp division:Division 1`. In the form **Bulk Set RSVP
-   Statuses**, paste into **ID, status — one entry per line**, and submit:
+14. **Do:** `/attendance test rsvp division:Division 1`. In the form **Bulk Set RSVP
+    Statuses**, paste into **ID, status — one entry per line**, and submit:
 
-   ```
-   9000000000000000001, tentative
-   9000000000000000002, accept
-   9000000000000000003, accept
-   9000000000000000004, accept
-   9000000000000000005, decline
-   9000000000000000006, accept
-   9000000000000000007, accept
-   9000000000000000008, accept
-   9000000000000000009, tentative
-   9000000000000000010, accept
-   9000000000000000011, accept
-   9000000000000000012, accept
-   9000000000000000013, accept
-   9000000000000000014, accept
-   9000000000000000015, accept
-   9000000000000000016, accept
-   9000000000000000017, accept
-   9000000000000000018, accept
-   9000000000000000019, accept
-   9000000000000000020, accept
-   9000000000000000021, accept
-   9000000000000000023, accept
-   9000000000000000024, decline
-   ```
+    ```
+    9000000000000000001, tentative
+    9000000000000000002, accept
+    9000000000000000003, accept
+    9000000000000000004, accept
+    9000000000000000005, decline
+    9000000000000000006, accept
+    9000000000000000007, accept
+    9000000000000000008, accept
+    9000000000000000009, tentative
+    9000000000000000010, accept
+    9000000000000000011, accept
+    9000000000000000012, accept
+    9000000000000000013, accept
+    9000000000000000014, accept
+    9000000000000000015, accept
+    9000000000000000016, accept
+    9000000000000000017, accept
+    9000000000000000018, accept
+    9000000000000000019, accept
+    9000000000000000020, accept
+    9000000000000000021, accept
+    9000000000000000023, accept
+    9000000000000000024, decline
+    ```
 
-   Victor Vance (`…022`) is left out on purpose: the last notice is to name him. Four answers
-   here are changed again at step 11, to rehearse a check-in shifting before its deadline: Adam
-   Archer (`…001`) tentative, then declined; Emil Engel (`…005`) declined, then accepted; Ian
-   Irwin (`…009`) tentative, then accepted; and the reserve Xavier Xu (`…024`) declined, then
-   accepted.
+    Victor Vance (`…022`) is left out on purpose: the last notice is to name him. Four answers
+    here are changed again at step 17, to rehearse a check-in shifting before its deadline: Adam
+    Archer (`…001`) tentative, then declined; Emil Engel (`…005`) declined, then accepted; Ian
+    Irwin (`…009`) tentative, then accepted; and the reserve Xavier Xu (`…024`) declined, then
+    accepted.
 
-   **Expect:**
-   - **Ack:** `setting 23 test RSVP answer(s) on the check-in call of **Division 1**` (lower case,
-     as the code words it)
-   - **Then:**
-     ```
-     ✅ Applied 23 update(s) in **Division 1**:
-       `9000000000000000001` → tentative
-       `9000000000000000002` → accepted
-       …
-       `9000000000000000024` → declined
-     🔄 The check-in call is redrawn on the change queue.
-     ```
-     one line per entry, in the order pasted.
-   - **Posts** (`#d1-rsvp`): the call edited in place: `(❓)` beside Adam Archer and Ian Irwin,
-     `(❌)` beside Emil Engel and Xavier Xu, `()` beside Victor Vance, and `(✅)` beside every
-     other driver, Willem Wouters included.
-   - **Log:**
-     ```
-     <you> | /attendance test rsvp | Success
-       division: Division 1
-       round_id: <id: Division 1's round 1>
-       updates: 23
-       changes: `9000000000000000001` → tentative, `9000000000000000002` → accepted, … , `9000000000000000024` → declined
-     ```
+    **Expect:**
+    - **Ack:** `setting 23 test RSVP answer(s) on the check-in call of **Division 1**` (lower case,
+      as the code words it)
+    - **Then:**
+      ```
+      ✅ Applied 23 update(s) in **Division 1**:
+        `9000000000000000001` → tentative
+        `9000000000000000002` → accepted
+        …
+        `9000000000000000024` → declined
+      🔄 The check-in call is redrawn on the change queue.
+      ```
+      one line per entry, in the order pasted.
+    - **Posts** (`#d1-rsvp`): the call edited in place: `(❓)` beside Adam Archer and Ian Irwin,
+      `(❌)` beside Emil Engel and Xavier Xu, `()` beside Victor Vance, and `(✅)` beside every
+      other driver, Willem Wouters included.
+    - **Log:**
+      ```
+      <you> | /attendance test rsvp | Success
+        division: Division 1
+        round_id: <id: Division 1's round 1>
+        updates: 23
+        changes: `9000000000000000001` → tentative, `9000000000000000002` → accepted, … , `9000000000000000024` → declined
+      ```
 
 ### The second forecast
 
-9. **Do:** `/test-mode advance`
+15. **Do:** `/test-mode advance`
 
-   **Expect:**
-   - **Reply:** ``⏩ **Phase 2** for **Division 1** — **Silverstone Circuit** is on the change queue: its forecast goes to the forecast channel and its calculation to the log channel as soon as the queue reaches it.``
-   - **Posts** (`#d1-weather`): the Phase 2 picture, its text `<@&<Division 1 role id>>`, headed
-     `Initial session forecast`, with one row for each of the round's two sessions, `Qualifying`
-     and `Race`, each `Sunny`, `Mixed` or `Rain`. **Then the Phase 1 message of step
-     6 is deleted**: only one forecast of a round stands at a time. As text, which
-     is a failure here:
-     ```
-     <@&<Division 1 role id>> 🏁 **Weather Forecast — Initial session forecast**
-     **Track**: Silverstone Circuit
+    **Expect:**
+    - **Reply:** ``⏩ **Phase 2** for **Division 1** — **Silverstone Circuit** is on the change queue: its forecast goes to the forecast channel and its calculation to the log channel as soon as the queue reaches it.``
+    - **Posts** (`#d1-weather`): the Phase 2 picture, its text `<@&<Division 1 role id>>`, headed
+      `Initial session forecast`, with one row for each of the round's two sessions, `Qualifying`
+      and `Race`, each `Sunny`, `Mixed` or `Rain`. **Then the Phase 1 message of step
+      12 is deleted**: only one forecast of a round stands at a time. As text, which
+      is a failure here:
+      ```
+      <@&<Division 1 role id>> 🏁 **Weather Forecast — Initial session forecast**
+      **Track**: Silverstone Circuit
 
-     **Session Overview**:
-       <☀️, 🌦️ or 🌧️> **Qualifying**: <Sunny, Mixed or Rain> conditions expected
-       <☀️, 🌦️ or 🌧️> **Race**: <Sunny, Mixed or Rain> conditions expected
+      **Session Overview**:
+        <☀️, 🌦️ or 🌧️> **Qualifying**: <Sunny, Mixed or Rain> conditions expected
+        <☀️, 🌦️ or 🌧️> **Race**: <Sunny, Mixed or Rain> conditions expected
 
-     An accurate forecast will follow later.
-     ```
-   - **Log:** as step 6, with `phase: 2`; then
-     `📋 **Phase 2 Calculation Log** | Round 1 in **Division 1** | Silverstone Circuit` with its
-     JSON; and any notice block headed `Image render notices — round 1 in **Division 1**, phase 2:`.
+      An accurate forecast will follow later.
+      ```
+    - **Log:** as step 12, with `phase: 2`; then
+      `📋 **Phase 2 Calculation Log** | Round 1 in **Division 1** | Silverstone Circuit` with its
+      JSON; and any notice block headed `Image render notices — round 1 in **Division 1**, phase 2:`.
 
 ### The last notice
 
-10. **Do:** `/test-mode advance`
+16. **Do:** `/test-mode advance`
 
     **Expect:**
     - **Reply:** `⏰ The **RSVP last-notice** for **Division 1** — **Round 1** (**Silverstone Circuit**) is on the change queue: it goes to the RSVP channel as soon as the queue reaches it.`
@@ -345,7 +438,7 @@ Stefan Sommer for `CHL` in Division 2.
       ```
       No reserve is named: a reserve is asked, not required.
 
-11. **Do:** `/attendance test rsvp division:Division 1`, and paste:
+17. **Do:** `/attendance test rsvp division:Division 1`, and paste:
 
     ```
     9000000000000000022, accept
@@ -355,9 +448,9 @@ Stefan Sommer for `CHL` in Division 2.
     9000000000000000024, accept
     ```
 
-    Victor Vance answers at last, and the four answers of step 8 change: the call is to end as
+    Victor Vance answers at last, and the four answers of step 14 change: the call is to end as
     Adam Archer declined and every other driver accepted. Xavier Xu accepts after Willem Wouters
-    did, at step 8, so Willem Wouters is first among the reserves at the deadline.
+    did, at step 14, so Willem Wouters is first among the reserves at the deadline.
 
     **Expect:**
     - **Ack:** `setting 5 test RSVP answer(s) on the check-in call of **Division 1**`
@@ -373,18 +466,18 @@ Stefan Sommer for `CHL` in Division 2.
       ```
     - **Posts** (`#d1-rsvp`): the call edited: `(❌)` beside Adam Archer, and `(✅)` beside every
       other driver, both reserves included.
-    - **Log:** as step 8, with `updates: 5` and
+    - **Log:** as step 14, with `updates: 5` and
       ``changes: `9000000000000000022` → accepted, `9000000000000000001` → declined, `9000000000000000005` → accepted, `9000000000000000009` → accepted, `9000000000000000024` → accepted``.
 
 ### The final forecast
 
-12. **Do:** `/test-mode advance`
+18. **Do:** `/test-mode advance`
 
     **Expect:**
     - **Reply:** ``⏩ **Phase 3** for **Division 1** — **Silverstone Circuit** is on the change queue: its forecast goes to the forecast channel and its calculation to the log channel as soon as the queue reaches it.``
     - **Posts** (`#d1-weather`): the Phase 3 picture, its text `<@&<Division 1 role id>>`, headed
       `Final session forecast`, each session with its weather slot by slot — `Qualifying` up to
-      two slots, `Race` up to three. Then the Phase 2 message of step 9 is deleted.
+      two slots, `Race` up to three. Then the Phase 2 message of step 15 is deleted.
       As text, which is a failure here:
       ```
       <@&<Division 1 role id>> 🏁 **Weather Forecast — Final session forecast**
@@ -394,13 +487,13 @@ Stefan Sommer for `CHL` in Division 2.
         🏎️ **Qualifying**: <slots: one weather, or *a* → *b*>
         🏎️ **Race**: <slots>
       ```
-    - **Log:** as step 6, with `phase: 3`; then
+    - **Log:** as step 12, with `phase: 3`; then
       `📋 **Phase 3 Calculation Log** | Round 1 in **Division 1** | Silverstone Circuit` with its
       JSON; and any notice block headed `… phase 3:`.
 
 ### The deadline
 
-13. **Do:** `/test-mode advance`
+19. **Do:** `/test-mode advance`
 
     **Expect:**
     - **Reply:** `🏁 The **RSVP deadline** for **Division 1** — **Round 1** (**Silverstone Circuit**) is on the change queue: it goes to the RSVP channel as soon as the queue reaches it.`
@@ -412,7 +505,7 @@ Stefan Sommer for `CHL` in Division 2.
         round: 1
       ```
     - **Posts** (`#d1-rsvp`):
-      - the call edited: its three buttons gone, the answers as step 11 left them;
+      - the call edited: its three buttons gone, the answers as step 17 left them;
       - a new message, the reserve announcement:
         ```
         📋 **Reserve Distribution Results**
@@ -421,7 +514,7 @@ Stefan Sommer for `CHL` in Division 2.
         ```
         Willem Wouters takes Adam Archer's place, `ALP` being the one team with a driver who
         declined; every other team accepted in full, so Xavier Xu has no team. Willem Wouters is
-        placed first because he accepted first: Xavier Xu's acceptance is the later, at step 11.
+        placed first because he accepted first: Xavier Xu's acceptance is the later, at step 17.
 
 ### The result submission
 
@@ -436,7 +529,7 @@ the fastest lap where its holder finishes in the first fifteen (`seed_test_confi
 of a Normal or Mystery format is labelled `Qualifying` and `Race`; a Sprint round's four
 sessions `Sprint Qualifying`, `Sprint Race`, `Feature Qualifying` and `Feature Race`.
 
-14. **Do:** `/test-mode advance`
+20. **Do:** `/test-mode advance`
 
     **Expect:**
     - **Reply:** `⏩ The result submission of **Division 1** — **Round 1** (**Silverstone Circuit**) is on the change queue: its submission channel appears as soon as the queue reaches it.`
@@ -466,7 +559,7 @@ sessions `Sprint Qualifying`, `Sprint Race`, `Feature Qualifying` and `Feature R
         ```
     - The opening writes no log line of its own: the advance's line above is the only one.
 
-15. **Do:** `/test-mode review`
+21. **Do:** `/test-mode review`
 
     **Expect:**
     - **Reply:** under `**Division 1**`, the `Round 1` line now reads `P1: ✅  P2: ✅  P3: ✅` and
@@ -474,7 +567,7 @@ sessions `Sprint Qualifying`, `Sprint Race`, `Feature Qualifying` and `Feature R
       `Results: ⚠️`: the advance took the round's results job down, and no session's results stand.
     - **Log:** nothing; it is a view.
 
-16. **A refusal: the open submission holds the advance.** **Do:** `/test-mode advance`
+22. **A refusal: the open submission holds the advance.** **Do:** `/test-mode advance`
 
     **Expect:**
     - **Reply:** `⏸️ **Division 1** — **Round 1** is awaiting penalty review approval. Please complete the penalty review in the submission channel before advancing.`
@@ -485,7 +578,7 @@ sessions `Sprint Qualifying`, `Sprint Race`, `Feature Qualifying` and `Feature R
     the advance gives any open submission that is not final (a defect, noted in the report on
     this spec); what matters here is that nothing else advances until the results are in.
 
-17. **Do:** in `#s1-division-1-r1-results`, send this message as it stands:
+23. **Do:** in `#s1-division-1-r1-results`, send this message as it stands:
 
     ```
     1, <@9000000000000000008>, DLT, Soft, 1:27.100, N/A
@@ -521,7 +614,7 @@ sessions `Sprint Qualifying`, `Sprint Race`, `Feature Qualifying` and `Feature R
       Two configurations are attached to the season, so the bot asks.
     - **Log:** nothing yet.
 
-18. **Do:** press **Standard**.
+24. **Do:** press **Standard**.
 
     **Expect:**
     - The choice is edited to `🔧 Config selected: **Standard**`, its buttons gone.
@@ -548,7 +641,7 @@ sessions `Sprint Qualifying`, `Sprint Race`, `Feature Qualifying` and `Feature R
         configuration: Standard
       ```
 
-19. **Do:** in the submission channel, send:
+25. **Do:** in the submission channel, send:
 
     ```
     1, <@9000000000000000011>, FOX, 1:25:12.345, 1:29.100, N/A
@@ -578,9 +671,9 @@ sessions `Sprint Qualifying`, `Sprint Race`, `Feature Qualifying` and `Feature R
     Kevin Keller (`FOX`) wins and holds the fastest lap, Hiro Hayashi (`DLT`) second; Niels Nygaard
     is a lap down; Dirk Dekker and Victor Vance retire.
 
-    **Expect:** your message marked ⏳, then the choice as in step 17.
+    **Expect:** your message marked ⏳, then the choice as in step 23.
 
-20. **Do:** press **Standard**.
+26. **Do:** press **Standard**.
 
     **Expect:**
     - The choice edited to `🔧 Config selected: **Standard**`.
@@ -591,8 +684,8 @@ sessions `Sprint Qualifying`, `Sprint Race`, `Feature Qualifying` and `Feature R
         `⏳ The penalty review is being opened (job #<n: the review's first job>).`;
       - `#d1-results`: two pictures, captioned `**Season 1 Division 1 Round 1 — Qualifying**` and
         `**Season 1 Division 1 Round 1 — Race**`, each with `Provisional Results` on the line
-        beneath: the qualifying in step 17's order, the race in step
-        19's, Kevin Keller first with the fastest lap marked;
+        beneath: the qualifying in step 23's order, the race in step
+        25's, Kevin Keller first with the fastest lap marked;
       - `#d1-standings`: two pictures, drivers and teams, each captioned
         `**Season 1 Division 1 Round 1 — Race**` with `Provisional Results` beneath. Drivers: Kevin
         Keller 34, Hiro Hayashi 30, Rafael Rossi 25, Emil Engel 21, Bruno Bianchi 18, Samuel Shaw
@@ -620,7 +713,7 @@ sessions `Sprint Qualifying`, `Sprint Race`, `Feature Qualifying` and `Feature R
         **Staged Penalties:** *(none — click Add Penalty to stage one)*
         ```
         the attendees being the 22 drivers pasted, each by mention and name.
-    - **Log:** the `RESULT_SUBMISSION_ACCEPTED` line as in step 18, with
+    - **Log:** the `RESULT_SUBMISSION_ACCEPTED` line as in step 24, with
       `session: FEATURE_RACE`; the `“Standard” button … for the Race of round 1 (Division 1)`
       line; any notice blocks; and, once the review is up:
       ```
@@ -628,7 +721,7 @@ sessions `Sprint Qualifying`, `Sprint Race`, `Feature Qualifying` and `Feature R
         round 1 (Division 1)
       ```
 
-21. **A refusal: a round in its review cannot be amended.** **Do:**
+27. **A refusal: a round in its review cannot be amended.** **Do:**
     `/results rounds amend division_name:Division 1 round_number:1 session:Feature Race`
 
     **Expect:**
@@ -636,7 +729,7 @@ sessions `Sprint Qualifying`, `Sprint Race`, `Feature Qualifying` and `Feature R
     - **Log:** ``⛔ `/results rounds amend` refused for <you> — This round cannot be amended yet. Round results must reach **FINAL** status (approved through the full penalty review and appeals process) before they can be amended.``
     - Nothing created, nothing posted.
 
-22. **Stage a penalty.** **Do:** press **➕ Add Penalty** on the review.
+28. **Stage a penalty.** **Do:** press **➕ Add Penalty** on the review.
 
     **Expect:**
     - **Reply**, with two buttons, **Feature Qualifying** and **Feature Race**:
@@ -646,7 +739,7 @@ sessions `Sprint Qualifying`, `Sprint Race`, `Feature Qualifying` and `Feature R
     The buttons name the sessions by their stored type, though the review calls them
     `Qualifying` and `Race`.
 
-23. **Do:** press **Feature Race**. In the form **Add Penalty — Feature Race**,
+29. **Do:** press **Feature Race**. In the form **Add Penalty — Feature Race**,
     fill **Driver (@mention or user ID)** `9000000000000000018`, **Penalty value** `+5s`,
     **Penalty description** `Gained an advantage leaving the track at Copse`, **Justification**
     `Track limits, lap 12`, and submit.
@@ -668,7 +761,7 @@ sessions `Sprint Qualifying`, `Sprint Race`, `Feature Qualifying` and `Feature R
         staged: Penalty +5s for <@9000000000000000018> in Feature Race
       ```
 
-24. **Approve the reports.** **Do:** press **✅ Approve** on the review.
+30. **Approve the reports.** **Do:** press **✅ Approve** on the review.
 
     **Expect:**
     - **Ack:** `Approving round 1's reports (Division 1)`
@@ -681,15 +774,17 @@ sessions `Sprint Qualifying`, `Sprint Race`, `Feature Qualifying` and `Feature R
         seconds (+9.000 against Emil Engel's +6.500);
       - `#d1-standings`: drivers and teams again, labelled `Post-Race Penalty Results`, the old
         pair deleted. Drivers: Kevin Keller 34, Hiro Hayashi 30, Emil Engel 24, Rafael Rossi 22,
-        Bruno Bianchi 18, the rest as step 20. Teams: Foxtrot Motorsport 37,
+        Bruno Bianchi 18, the rest as step 26. Teams: Foxtrot Motorsport 37,
         Delta Racing 32, Charlie GP 24, India Motorsport 23, Alpha Racing 22, the rest as step
-        20;
+        26;
       - `#d1-verdicts`: the verdict banner, a picture, then the verdict, a picture with the text
         `<@9000000000000000018>`, for Rafael Rossi's +5s in the Race with its description and
         justification;
       - `#d1-attendance`: the attendance sheet after Round 1, a picture captioned
-        `**Attendance Standings**`: Adam Archer on 1 point (declined, did not race), every other
-        racing driver on 0;
+        `**Attendance Standings**`: Adam Archer on 3 points (declined, did not race: the absent
+        penalty), every other racing driver on 0, and Willem Wouters on 0 with a row of his own,
+        a reserve placed into a seat being scored (0, since he raced). Xavier Xu, on standby, is
+        not scored and has no row. Rows run by total, highest first;
       - submission channel: the penalty review deleted, and the appeals review posted, with
         **➕ Add Correction**, **No Changes / Confirm** and **✅ Approve**:
         ```
@@ -707,12 +802,12 @@ sessions `Sprint Qualifying`, `Sprint Race`, `Feature Qualifying` and `Feature R
         old=<JSON: status AWAITING_REPORT_VERDICTS, Rossi's position and points before>
         new=<JSON: status AWAITING_APPEAL_VERDICTS, Rossi now fourth, and the penalty>
       ```
-      and any notice blocks. No attendance sanction: the league sets no threshold.
-      > UNVERIFIED: whether the verdict banner carries text of its own, whether the new
-      > attendance sheet replaces the opening one or is posted beside it, and whether Willem
-      > Wouters, a placed reserve who raced, has a row on the sheet. Record each.
+      and any notice blocks. No attendance sanction: Adam Archer's 3 is short of the
+      auto-reserve threshold of 6.
+      > UNVERIFIED: whether the verdict banner carries text of its own, and whether the new
+      > attendance sheet replaces the opening one or is posted beside it. Record each.
 
-25. **Close the appeals.** **Do:** press **No Changes / Confirm** on the appeals review.
+31. **Close the appeals.** **Do:** press **No Changes / Confirm** on the appeals review.
 
     **Expect:**
     - **Ack:** `Approving round 1's appeals (Division 1)`
@@ -722,7 +817,7 @@ sessions `Sprint Qualifying`, `Sprint Race`, `Feature Qualifying` and `Feature R
         posts are up;
       - `#d1-results`: both pictures again, labelled `Final Results`, the Post-Race ones deleted;
       - `#d1-standings`: drivers and teams again, labelled `Final Results`, as in step
-        24;
+        30;
       - nothing in `#d1-verdicts`: no correction was staged;
       - the channel `#s1-division-1-r1-results` is **deleted**.
     - **Log:**
@@ -735,7 +830,7 @@ sessions `Sprint Qualifying`, `Sprint Race`, `Feature Qualifying` and `Feature R
       ```
       > UNVERIFIED: whether the acknowledgement is still updated once its channel is deleted.
 
-26. **Do:** `/test-mode review`
+32. **Do:** `/test-mode review`
 
     **Expect:**
     - **Reply:** Division 1's `Round 1` line reads `Results: ✅ finalized`.
@@ -747,9 +842,9 @@ sessions `Sprint Qualifying`, `Sprint Race`, `Feature Qualifying` and `Feature R
 
 ### Division 2's steps up to the deadline
 
-27. **Do:** `/test-mode advance`
+33. **Do:** `/test-mode advance`
 
-    **Expect:** as step 6, for Division 2:
+    **Expect:** as step 12, for Division 2:
     - **Reply:** ``⏩ **Phase 1** for **Division 2** — **Autodromo Nazionale Monza** is on the change queue: its forecast goes to the forecast channel and its calculation to the log channel as soon as the queue reaches it.``
     - **Posts** (`#d2-weather`): the Phase 1 picture, its text `<@&<Division 2 role id>>`, the
       track `Autodromo Nazionale Monza` and the flag of Italy where `resources/league/flags/`
@@ -761,11 +856,11 @@ sessions `Sprint Qualifying`, `Sprint Race`, `Feature Qualifying` and `Feature R
       `"mu": 0.15, "sigma": 0.03`; and any notice block headed
       `Image render notices — round 1 in **Division 2**, phase 1:`.
 
-28. **Do:** `/test-mode advance`
+34. **Do:** `/test-mode advance`
 
-    **Expect:** as step 7, for Division 2:
+    **Expect:** as step 13, for Division 2:
     - **Reply:** `📨 The **RSVP notice** for **Division 2** — **Round 1** (**Autodromo Nazionale Monza**) is on the change queue: it goes to the RSVP channel as soon as the queue reaches it.`
-    - **Log:** as step 7, with `division: Division 2`.
+    - **Log:** as step 13, with `division: Division 2`.
     - **Posts** (`#d2-rsvp`): `<@&<Division 2 role id>>`, the picture (`Italian Grand Prix` over
       `Autodromo Nazionale Monza`, check-in closing at 19:00 on `<YEAR+1>-03-01`), and the embed
       titled `Season 1 Round 1 — Autodromo Nazionale Monza`, `🏁 Event Type` `Normal`. In its
@@ -773,7 +868,7 @@ sessions `Sprint Qualifying`, `Sprint Race`, `Feature Qualifying` and `Feature R
       one line, `  <@9000000000000000027> (Aaron Abbott) ()`; every other team two drivers; and
       `***(Reserve)* Reserve**` last, with Rory Reid and Stefan Sommer.
 
-29. **Do:** `/attendance test rsvp division:Division 2`, and paste:
+35. **Do:** `/attendance test rsvp division:Division 2`, and paste:
 
     ```
     9000000000000000025, accept
@@ -809,31 +904,31 @@ sessions `Sprint Qualifying`, `Sprint Race`, `Feature Qualifying` and `Feature R
       `🔄 The check-in call is redrawn on the change queue.`
     - **Posts** (`#d2-rsvp`): the call edited, `(❓)` beside Diego Duarte and `(✅)` beside every
       other driver.
-    - **Log:** as step 8, with `division: Division 2`, `updates: 21`.
+    - **Log:** as step 14, with `division: Division 2`, `updates: 21`.
 
-30. **Do:** `/test-mode advance`
+36. **Do:** `/test-mode advance`
 
-    **Expect:** as step 9, with `Division 2`, `Autodromo Nazionale Monza`,
-    `#d2-weather` and the Division 2 role; the Phase 1 message of step 27 deleted.
+    **Expect:** as step 15, with `Division 2`, `Autodromo Nazionale Monza`,
+    `#d2-weather` and the Division 2 role; the Phase 1 message of step 33 deleted.
 
-31. **Do:** `/test-mode advance`
+37. **Do:** `/test-mode advance`
 
     **Expect:**
     - **Reply:** `⏰ The **RSVP last-notice** for **Division 2** — **Round 1** (**Autodromo Nazionale Monza**) is on the change queue: it goes to the RSVP channel as soon as the queue reaches it.`
-    - **Log:** as step 10, with `division: Division 2`.
+    - **Log:** as step 16, with `division: Division 2`.
     - **Posts** (`#d2-rsvp`), everybody having answered, pinging nobody:
       `✅ All drivers have responded. The race is <t:<the race>:R> — please review your attendance if anything has changed.`
 
-32. **Do:** `/test-mode advance`
+38. **Do:** `/test-mode advance`
 
-    **Expect:** as step 12, with `Division 2`, `Autodromo Nazionale Monza`,
-    `#d2-weather`; the Phase 2 message of step 30 deleted.
+    **Expect:** as step 18, with `Division 2`, `Autodromo Nazionale Monza`,
+    `#d2-weather`; the Phase 2 message of step 36 deleted.
 
-33. **Do:** `/test-mode advance`
+39. **Do:** `/test-mode advance`
 
     **Expect:**
     - **Reply:** `🏁 The **RSVP deadline** for **Division 2** — **Round 1** (**Autodromo Nazionale Monza**) is on the change queue: it goes to the RSVP channel as soon as the queue reaches it.`
-    - **Log:** as step 13, with `division: Division 2`.
+    - **Log:** as step 19, with `division: Division 2`.
     - **Posts** (`#d2-rsvp`): the call's buttons gone, and:
       ```
       📋 **Reserve Distribution Results**
@@ -851,11 +946,11 @@ sessions `Sprint Qualifying`, `Sprint Race`, `Feature Qualifying` and `Feature R
 Division 2's result submission is not offered yet: Division 1's clean-up jobs come up first (see
 "How the advance walks the season").
 
-34. **Do:** `/test-mode advance`
+40. **Do:** `/test-mode advance`
 
     **Expect:**
     - **Reply:** ``🧹 The **forecast cleanup** for **Division 1** — **Round 1** is on the change queue: it deletes the Phase 3 forecast as soon as the queue reaches it.``
-    - **Posts:** the Phase 3 message of step 12 is deleted from `#d1-weather`, which
+    - **Posts:** the Phase 3 message of step 18 is deleted from `#d1-weather`, which
       is now empty.
     - **Log:**
       ```
@@ -865,7 +960,7 @@ Division 2's result submission is not offered yet: Division 1's clean-up jobs co
         round: 1
       ```
 
-35. **Do:** `/test-mode advance`
+41. **Do:** `/test-mode advance`
 
     **Expect:**
     - **Reply:** `🧹 The **check-in cleanup** for **Division 1** — **Round 1** is on the change queue: it takes down the check-in call, last notice and reserve announcement as soon as the queue reaches it.`
@@ -883,18 +978,18 @@ Division 2's result submission is not offered yet: Division 1's clean-up jobs co
 
 The same as Division 1's, with no penalty: the reports are approved through the approval
 question. Rory Reid races for `BRV` and Stefan Sommer for `CHL`, as their placements in step
-33 want, both retiring without a point so that `Bravo Motorsport` stays on
+39 want, both retiring without a point so that `Bravo Motorsport` stays on
 zero.
 
-36. **Do:** `/test-mode advance`
+42. **Do:** `/test-mode advance`
 
     **Expect:**
     - **Reply:** `⏩ The result submission of **Division 2** — **Round 1** (**Autodromo Nazionale Monza**) is on the change queue: its submission channel appears as soon as the queue reaches it.`
-    - **Log:** as step 14, with `division: Division 2`.
+    - **Log:** as step 20, with `division: Division 2`.
     - **Posts:** the channel `s1-division-2-r1-results`, with the opening and the `Qualifying`
-      prompt as in step 14, reading `(Division 2)`.
+      prompt as in step 20, reading `(Division 2)`.
 
-37. **Do:** in `#s1-division-2-r1-results`, send the following, then press
+43. **Do:** in `#s1-division-2-r1-results`, send the following, then press
     **Standard** on the choice:
 
     ```
@@ -923,10 +1018,10 @@ zero.
 
     Twenty-one drivers: every Division 2 racing driver, and the two reserves in their places.
 
-    **Expect:** the choice as in step 17; on **Standard**, as step
-    18, with `(Division 2)` and `division: 'Division 2'`, and the Race prompt.
+    **Expect:** the choice as in step 23; on **Standard**, as step
+    24, with `(Division 2)` and `division: 'Division 2'`, and the Race prompt.
 
-38. **Do:** in the submission channel, send the following, then press **Standard**:
+44. **Do:** in the submission channel, send the following, then press **Standard**:
 
     ```
     1, <@9000000000000000025>, ALP, 1:15:30.000, 1:21.900, N/A
@@ -954,7 +1049,7 @@ zero.
 
     Yuki Yamada wins; Aaron Abbott, third, holds the fastest lap.
 
-    **Expect:** as step 20, for Division 2:
+    **Expect:** as step 26, for Division 2:
     - `#d2-results`: the two pictures, `Provisional Results`.
     - `#d2-standings`: drivers — Yuki Yamada 32, Finn Fischer 30, Aaron Abbott 26, Bastien Blanc
       21, Lucas Lambert 19, Diego Duarte 15, Hugo Hartley 13, Jonas Janssen 11, Noah Novak 9, Pablo
@@ -968,9 +1063,9 @@ zero.
       > UNVERIFIED: the order of the six drivers on 0.
     - the penalty review, `🏁 **Penalty Review — Round 1 | Division 2**`, with
       `**Preliminary Attendees (21):**`.
-    - **Log:** as step 20, with `round 1 (Division 2)`.
+    - **Log:** as step 26, with `round 1 (Division 2)`.
 
-39. **Do:** press **No Penalties / Confirm** on the review.
+45. **Do:** press **No Penalties / Confirm** on the review.
 
     **Expect:**
     - **Ack:** `Posting the approval question in the penalty review`
@@ -983,20 +1078,20 @@ zero.
         posted the approval question: no penalties staged
       ```
 
-40. **Do:** press **✅ Approve** on the approval question.
+46. **Do:** press **✅ Approve** on the approval question.
 
     **Expect:**
     - **Ack:** `Approving round 1's reports (Division 2)`
     - **Then:** `✅ Round 1's reports are approved (Division 2): nothing was staged. Its appeals review is posted below.`
-    - **Posts:** as step 24 for Division 2: the results and standings again as
+    - **Posts:** as step 30 for Division 2: the results and standings again as
       `Post-Race Penalty Results`, unchanged; **nothing in `#d2-verdicts`**; the attendance sheet
       in `#d2-attendance`, every racing driver on 0; the review and the question deleted, and the
       appeals review `⚖️ **Appeals Review — Round 1 | Division 2**` posted.
-    - **Log:** as step 24, with `round: 1 (Division 2)` and `penalties: none`.
+    - **Log:** as step 30, with `round: 1 (Division 2)` and `penalties: none`.
 
-41. **Do:** press **No Changes / Confirm** on the appeals review.
+47. **Do:** press **No Changes / Confirm** on the appeals review.
 
-    **Expect:** as step 25 for Division 2:
+    **Expect:** as step 31 for Division 2:
     `✅ Round 1's appeals are approved (Division 2): no corrections were staged. The round is final.`;
     `Final Results` in `#d2-results` and `#d2-standings`, `Bravo Motorsport` still last on 0; the
     submission channel deleted; the `APPEALS_REVIEW_APPROVED | Success` line with
@@ -1004,14 +1099,14 @@ zero.
 
 ### Division 2's clean-ups
 
-42. **Do:** `/test-mode advance`
+48. **Do:** `/test-mode advance`
 
-    **Expect:** as step 34, for `**Division 2**`: the Phase 3 message of step
-    32 deleted from `#d2-weather`, and the log line with `division: Division 2`.
+    **Expect:** as step 40, for `**Division 2**`: the Phase 3 message of step
+    38 deleted from `#d2-weather`, and the log line with `division: Division 2`.
 
-43. **Do:** `/test-mode advance`
+49. **Do:** `/test-mode advance`
 
-    **Expect:** as step 35, with `**Division 2**`, `division: Division 2`, and
+    **Expect:** as step 41, with `**Division 2**`, `division: Division 2`, and
     `#d2-rsvp` emptied.
 
 ---
@@ -1027,26 +1122,26 @@ Division 2's reserves fill `BRV` and `CHL` again.
 
 ### Division 1
 
-44. **Do:** `/test-mode advance`
+50. **Do:** `/test-mode advance`
 
     **Expect:**
     - **Reply:** ``⏩ **Phase 1** for **Division 1** — **Hungaroring** is on the change queue: its forecast goes to the forecast channel and its calculation to the log channel as soon as the queue reaches it.``
     - **Posts** (`#d1-weather`): the Phase 1 picture, its text `<@&<Division 1 role id>>`, the
       track `Hungaroring` and the flag of Hungary where `resources/league/flags/` holds it, else
       the packaged fallback flag, reported as an image notice.
-    - **Log:** as step 6, with `track: Hungaroring` and `round: 2`; the calculation
+    - **Log:** as step 12, with `track: Hungaroring` and `round: 2`; the calculation
       headed `📋 **Phase 1 Calculation Log** | Round 2 in **Division 1** | Hungaroring`.
 
-45. **Do:** `/test-mode advance`
+51. **Do:** `/test-mode advance`
 
     **Expect:**
     - **Reply:** `📨 The **RSVP notice** for **Division 1** — **Round 2** (**Hungaroring**) is on the change queue: it goes to the RSVP channel as soon as the queue reaches it.`
-    - **Log:** as step 7, with `round: 2`.
-    - **Posts** (`#d1-rsvp`): as step 7: the picture (`Hungarian Grand Prix`), and
+    - **Log:** as step 13, with `round: 2`.
+    - **Posts** (`#d1-rsvp`): as step 13: the picture (`Hungarian Grand Prix`), and
       the embed titled `Season 1 Round 2 — Hungaroring`, `🏁 Event Type` `Sprint`, every driver
       `()`.
 
-46. **Do:** `/attendance test rsvp division:Division 1`, and paste:
+52. **Do:** `/attendance test rsvp division:Division 1`, and paste:
 
     ```
     9000000000000000001, accept
@@ -1080,38 +1175,38 @@ Division 2's reserves fill `BRV` and `CHL` again.
     - **Then:** `✅ Applied 24 update(s) in **Division 1**:`, one line per entry, each
       `` `<id>` → accepted``, then `🔄 The check-in call is redrawn on the change queue.`
     - **Posts** (`#d1-rsvp`): the call edited, `(✅)` beside every driver.
-    - **Log:** as step 8, with `updates: 24`.
+    - **Log:** as step 14, with `updates: 24`.
 
-47. **Do:** `/test-mode advance`
+53. **Do:** `/test-mode advance`
 
     **Expect:**
-    - **Reply:** as step 44, with `**Phase 2**`.
+    - **Reply:** as step 50, with `**Phase 2**`.
     - **Posts** (`#d1-weather`): the Phase 2 picture, `Initial session forecast`, with four rows:
       `Sprint Qualifying`, `Sprint Race`, `Feature Qualifying`, `Feature Race`. The Phase 1 message
-      of step 44 is deleted.
-    - **Log:** as step 44, with `phase: 2`.
+      of step 50 is deleted.
+    - **Log:** as step 50, with `phase: 2`.
 
-48. **Do:** `/test-mode advance`
+54. **Do:** `/test-mode advance`
 
     **Expect:**
     - **Reply:** `⏰ The **RSVP last-notice** for **Division 1** — **Round 2** (**Hungaroring**) is on the change queue: it goes to the RSVP channel as soon as the queue reaches it.`
-    - **Log:** as step 10, with `round: 2`.
+    - **Log:** as step 16, with `round: 2`.
     - **Posts** (`#d1-rsvp`):
       `✅ All drivers have responded. The race is <t:<the race>:R> — please review your attendance if anything has changed.`
 
-49. **Do:** `/test-mode advance`
+55. **Do:** `/test-mode advance`
 
     **Expect:**
-    - **Reply:** as step 44, with `**Phase 3**`.
+    - **Reply:** as step 50, with `**Phase 3**`.
     - **Posts** (`#d1-weather`): the Phase 3 picture, `Final session forecast`, the four sessions
-      slot by slot. The Phase 2 message of step 47 is deleted.
-    - **Log:** as step 44, with `phase: 3`.
+      slot by slot. The Phase 2 message of step 53 is deleted.
+    - **Log:** as step 50, with `phase: 3`.
 
-50. **Do:** `/test-mode advance`
+56. **Do:** `/test-mode advance`
 
     **Expect:**
     - **Reply:** `🏁 The **RSVP deadline** for **Division 1** — **Round 2** (**Hungaroring**) is on the change queue: it goes to the RSVP channel as soon as the queue reaches it.`
-    - **Log:** as step 13, with `round: 2`.
+    - **Log:** as step 19, with `round: 2`.
     - **Posts** (`#d1-rsvp`): the call's buttons gone, and, every team having accepted in full:
       ```
       📋 **Reserve Distribution Results**
@@ -1119,11 +1214,11 @@ Division 2's reserves fill `BRV` and `CHL` again.
         <@9000000000000000024> (Xavier Xu) — **Standby** (no vacancy available)
       ```
 
-51. **Do:** `/test-mode advance`
+57. **Do:** `/test-mode advance`
 
     **Expect:**
     - **Reply:** `⏩ The result submission of **Division 1** — **Round 2** (**Hungaroring**) is on the change queue: its submission channel appears as soon as the queue reaches it.`
-    - **Log:** as step 14, with `round: Round 2`.
+    - **Log:** as step 20, with `round: Round 2`.
     - **Posts:** the channel `s1-division-1-r2-results`, opening
       ```
       ✅ Results submission open for **Round 2** (Division 1) - Sprint. Sessions: Sprint Qualifying, Sprint Race, Feature Qualifying, Feature Race. <@&<League Manager role id>>
@@ -1131,12 +1226,12 @@ Division 2's reserves fill `BRV` and `CHL` again.
       Submit results one driver per line (comma-separated), or type `CANCELLED` to skip a session.
       ```
       then ``📋 Submit **Sprint Qualifying** results (one driver per line), or type `CANCELLED`.``
-      with the qualifying format lines of step 14.
+      with the qualifying format lines of step 20.
 
 **The pastes of this round** are Round 1's, with Adam Archer back: in each, put
 `<@9000000000000000001>` where `<@9000000000000000023>` stands (line 12).
 
-52. **Do:** in `#s1-division-1-r2-results`, paste step 17's qualifying,
+58. **Do:** in `#s1-division-1-r2-results`, paste step 23's qualifying,
     so changed, and press **Standard**.
 
     **Expect:**
@@ -1144,21 +1239,21 @@ Division 2's reserves fill `BRV` and `CHL` again.
     - **Then:** `✅ The Sprint Qualifying of round 2 is saved, scored by **Standard**.`
     - **Posts:** `✅ **Sprint Qualifying** results saved.`, then
       ``📋 Submit **Sprint Race** results (one driver per line), or type `CANCELLED`.`` with the
-      race format lines of step 18.
-    - **Log:** as step 18, with `round: 2, session: SPRINT_QUALIFYING` and
+      race format lines of step 24.
+    - **Log:** as step 24, with `round: 2, session: SPRINT_QUALIFYING` and
       `the Sprint Qualifying of round 2 (Division 1)`.
 
-53. **Do:** paste step 19's race, so changed, and press **Standard**.
+59. **Do:** paste step 25's race, so changed, and press **Standard**.
 
-    **Expect:** as step 52, for `Sprint Race` (`session: SPRINT_RACE`), the next
+    **Expect:** as step 58, for `Sprint Race` (`session: SPRINT_RACE`), the next
     prompt being `Feature Qualifying`'s, with the qualifying format lines.
 
-54. **Do:** paste step 17's qualifying, so changed, and press **Standard**.
+60. **Do:** paste step 23's qualifying, so changed, and press **Standard**.
 
-    **Expect:** as step 52, for `Feature Qualifying` (`session: FEATURE_QUALIFYING`),
+    **Expect:** as step 58, for `Feature Qualifying` (`session: FEATURE_QUALIFYING`),
     the next prompt being `Feature Race`'s.
 
-55. **Do:** paste step 19's race, so changed, and press **Standard**.
+61. **Do:** paste step 25's race, so changed, and press **Standard**.
 
     **Expect:**
     - **Then:** `✅ The Feature Race of round 2 is saved, scored by **Standard**.`
@@ -1179,24 +1274,24 @@ Division 2's reserves fill `BRV` and `CHL` again.
       line, any notice blocks, and `<you> | Penalty review opened | Success` with
       `  round 2 (Division 1)`.
 
-56. **Do:** press **No Penalties / Confirm** on the review.
+62. **Do:** press **No Penalties / Confirm** on the review.
 
-    **Expect:** as step 39, with `round 2 (Division 1)` and the question in
+    **Expect:** as step 45, with `round 2 (Division 1)` and the question in
     `<#<s1-division-1-r2-results id>>`.
 
-57. **Do:** press **✅ Approve** on the approval question.
+63. **Do:** press **✅ Approve** on the approval question.
 
     **Expect:**
     - **Ack:** `Approving round 2's reports (Division 1)`
     - **Then:** `✅ Round 2's reports are approved (Division 1): nothing was staged. Its appeals review is posted below.`
-    - **Posts:** as step 40, in Division 1's channels: the four results and the
+    - **Posts:** as step 46, in Division 1's channels: the four results and the
       standings as `Post-Race Penalty Results`; nothing in `#d1-verdicts`; the attendance sheet
       after Round 2 in `#d1-attendance`, its totals as after Round 1 (everybody answered and
       raced); the appeals review `⚖️ **Appeals Review — Round 2 | Division 1**`.
     - **Log:** `<you> | PENALTY_REVIEW_APPROVED | Success` with `round: 2 (Division 1)` and
       `penalties: none`.
 
-58. **Do:** press **No Changes / Confirm** on the appeals review.
+64. **Do:** press **No Changes / Confirm** on the appeals review.
 
     **Expect:**
     - **Then:** `✅ Round 2's appeals are approved (Division 1): no corrections were staged. The round is final.`
@@ -1206,24 +1301,24 @@ Division 2's reserves fill `BRV` and `CHL` again.
 
 ### Division 2
 
-59. **Do:** `/test-mode advance`
+65. **Do:** `/test-mode advance`
 
     **Expect:**
     - **Reply:** ``⏩ **Phase 1** for **Division 2** — **Circuit de Spa-Francorchamps** is on the change queue: its forecast goes to the forecast channel and its calculation to the log channel as soon as the queue reaches it.``
     - **Posts** (`#d2-weather`): the Phase 1 picture, the track `Circuit de Spa-Francorchamps` and
       the flag of Belgium where `resources/league/flags/` holds it, else the packaged fallback
       flag, reported as an image notice.
-    - **Log:** as step 27, with `track: Circuit de Spa-Francorchamps`, `round: 2`.
+    - **Log:** as step 33, with `track: Circuit de Spa-Francorchamps`, `round: 2`.
 
-60. **Do:** `/test-mode advance`
+66. **Do:** `/test-mode advance`
 
     **Expect:**
     - **Reply:** `📨 The **RSVP notice** for **Division 2** — **Round 2** (**Circuit de Spa-Francorchamps**) is on the change queue: it goes to the RSVP channel as soon as the queue reaches it.`
-    - **Posts** (`#d2-rsvp`): as step 28, the embed titled
+    - **Posts** (`#d2-rsvp`): as step 34, the embed titled
       `Season 1 Round 2 — Circuit de Spa-Francorchamps`, `🏁 Event Type` `Sprint`.
-    - **Log:** as step 28, with `round: 2`.
+    - **Log:** as step 34, with `round: 2`.
 
-61. **Do:** `/attendance test rsvp division:Division 2`, and paste:
+67. **Do:** `/attendance test rsvp division:Division 2`, and paste:
 
     ```
     9000000000000000025, accept
@@ -1249,54 +1344,54 @@ Division 2's reserves fill `BRV` and `CHL` again.
     9000000000000000045, accept
     ```
 
-    **Expect:** as step 29, but every line `` `<id>` → accepted`` and `(✅)` beside every
+    **Expect:** as step 35, but every line `` `<id>` → accepted`` and `(✅)` beside every
     driver: Diego Duarte accepts this time.
 
-62. **Do:** `/test-mode advance`
+68. **Do:** `/test-mode advance`
 
-    **Expect:** as step 47, for `Division 2`, `Circuit de Spa-Francorchamps` and
-    `#d2-weather`: four sessions; the Phase 1 message of step 59 deleted.
+    **Expect:** as step 53, for `Division 2`, `Circuit de Spa-Francorchamps` and
+    `#d2-weather`: four sessions; the Phase 1 message of step 65 deleted.
 
-63. **Do:** `/test-mode advance`
+69. **Do:** `/test-mode advance`
 
-    **Expect:** as step 31, with `**Round 2** (**Circuit de Spa-Francorchamps**)`
+    **Expect:** as step 37, with `**Round 2** (**Circuit de Spa-Francorchamps**)`
     and `round: 2`.
 
-64. **Do:** `/test-mode advance`
+70. **Do:** `/test-mode advance`
 
-    **Expect:** as step 49, for `Division 2`, `Circuit de Spa-Francorchamps` and
-    `#d2-weather`; the Phase 2 message of step 62 deleted.
+    **Expect:** as step 55, for `Division 2`, `Circuit de Spa-Francorchamps` and
+    `#d2-weather`; the Phase 2 message of step 68 deleted.
 
-65. **Do:** `/test-mode advance`
+71. **Do:** `/test-mode advance`
 
-    **Expect:** as step 33, with `**Round 2** (**Circuit de Spa-Francorchamps**)`
+    **Expect:** as step 39, with `**Round 2** (**Circuit de Spa-Francorchamps**)`
     and `round: 2`: Rory Reid → **Bravo Motorsport**, Stefan Sommer → **Charlie GP**.
 
 ### Division 1's clean-ups
 
-66. **Do:** `/test-mode advance`
+72. **Do:** `/test-mode advance`
 
-    **Expect:** as step 34, with `**Round 2**` and `round: 2`: the Phase 3
-    message of step 49 deleted.
+    **Expect:** as step 40, with `**Round 2**` and `round: 2`: the Phase 3
+    message of step 55 deleted.
 
-67. **Do:** `/test-mode advance`
+73. **Do:** `/test-mode advance`
 
-    **Expect:** as step 35, with `**Round 2**` and `round: 2`.
+    **Expect:** as step 41, with `**Round 2**` and `round: 2`.
 
 ### Division 2's result submission
 
-68. **Do:** `/test-mode advance`
+74. **Do:** `/test-mode advance`
 
-    **Expect:** as step 51: the reply naming
+    **Expect:** as step 57: the reply naming
     `**Division 2** — **Round 2** (**Circuit de Spa-Francorchamps**)`, the channel
     `s1-division-2-r2-results`, the opening reading `(Division 2) - Sprint`.
 
-69. **Do**, in `#s1-division-2-r2-results`, four times, each followed by
-    **Standard**: step 37's qualifying (Sprint Qualifying), step
-    38's race (Sprint Race), the qualifying again (Feature Qualifying), the race
+75. **Do**, in `#s1-division-2-r2-results`, four times, each followed by
+    **Standard**: step 43's qualifying (Sprint Qualifying), step
+    44's race (Sprint Race), the qualifying again (Feature Qualifying), the race
     again (Feature Race), unchanged.
 
-    **Expect**, as steps 52 to 55 for Division 2:
+    **Expect**, as steps 58 to 61 for Division 2:
     - each session saved in turn, `of round 2`, `(Division 2)`;
     - `#d2-results`: four pictures, `Provisional Results`;
     - `#d2-standings`: drivers, after two rounds: Yuki Yamada 76, Finn Fischer 72, Aaron Abbott
@@ -1304,23 +1399,23 @@ Division 2's reserves fill `BRV` and `CHL` again.
       76, …, **Bravo Motorsport 0** last;
     - the penalty review, `**Preliminary Attendees (21):**`.
 
-70. **Do:** **No Penalties / Confirm**, then **✅ Approve** on the question, then
+76. **Do:** **No Penalties / Confirm**, then **✅ Approve** on the question, then
     **No Changes / Confirm** on the appeals review.
 
-    **Expect:** as steps 39 to 41, with `round 2` and
+    **Expect:** as steps 45 to 47, with `round 2` and
     `(Division 2)`: the four results and the standings as `Post-Race Penalty Results`, then as
     `Final Results`; the attendance sheet after Round 2 in `#d2-attendance`, everybody on 0;
     nothing in `#d2-verdicts`; the channel deleted.
 
 ### Division 2's clean-ups
 
-71. **Do:** `/test-mode advance`
+77. **Do:** `/test-mode advance`
 
-    **Expect:** as step 42, with `**Round 2**` and `round: 2`.
+    **Expect:** as step 48, with `**Round 2**` and `round: 2`.
 
-72. **Do:** `/test-mode advance`
+78. **Do:** `/test-mode advance`
 
-    **Expect:** as step 43, with `**Round 2**` and `round: 2`.
+    **Expect:** as step 49, with `**Round 2**` and `round: 2`.
 
 ---
 
@@ -1332,7 +1427,7 @@ Everybody accepts the call again.
 
 ### Division 1: the mystery round
 
-73. **Do:** `/test-mode advance`
+79. **Do:** `/test-mode advance`
 
     **Expect:**
     - **Reply:** ``🔮 The **Mystery Round notice** for **Division 1** — **Round 3** is on the change queue: it goes to the division forecast channel as soon as the queue reaches it.``
@@ -1355,15 +1450,15 @@ Everybody accepts the call again.
       > UNVERIFIED: whether the mystery picture raises any image notice. Record any block headed
       > `Image render notices — round 3 in **Division 1**, the mystery round notice:`.
 
-74. **Do:** `/test-mode advance`
+80. **Do:** `/test-mode advance`
 
     **Expect:**
     - **Reply:** `📨 The **RSVP notice** for **Division 1** — **Round 3** (**Mystery**) is on the change queue: it goes to the RSVP channel as soon as the queue reaches it.`
-    - **Log:** as step 7, with `round: 3`.
-    - **Posts** (`#d1-rsvp`): as step 7, the embed titled
+    - **Log:** as step 13, with `round: 3`.
+    - **Posts** (`#d1-rsvp`): as step 13, the embed titled
       `Season 1 Round 3 — Mystery`, `📍 Location` `Mystery`, `🏁 Event Type` `Mystery`.
 
-75. **Do:** `/attendance test rsvp division:Division 1`, and paste:
+81. **Do:** `/attendance test rsvp division:Division 1`, and paste:
 
     ```
     9000000000000000001, accept
@@ -1392,59 +1487,59 @@ Everybody accepts the call again.
     9000000000000000024, accept
     ```
 
-    **Expect:** as step 46.
+    **Expect:** as step 52.
 
-76. **Do:** `/test-mode advance`
+82. **Do:** `/test-mode advance`
 
-    **Expect:** as step 48, with `**Round 3** (**Mystery**)` and `round: 3`.
+    **Expect:** as step 54, with `**Round 3** (**Mystery**)` and `round: 3`.
 
-77. **Do:** `/test-mode advance`
+83. **Do:** `/test-mode advance`
 
-    **Expect:** as step 50, with `**Round 3** (**Mystery**)` and `round: 3`:
+    **Expect:** as step 56, with `**Round 3** (**Mystery**)` and `round: 3`:
     both reserves on standby.
 
     No Phase 2 or Phase 3 came between these steps: the mystery round's timers for them stand in
     the scheduler, but weather hands back no step for them and the advance passes them by.
 
-78. **Do:** `/test-mode advance`
+84. **Do:** `/test-mode advance`
 
     **Expect:**
     - **Reply:** `⏩ The result submission of **Division 1** — **Round 3** (**Mystery**) is on the change queue: its submission channel appears as soon as the queue reaches it.`
-    - **Log:** as step 14, with `round: Round 3`.
+    - **Log:** as step 20, with `round: Round 3`.
     - **Posts:** the channel `s1-division-1-r3-results`, opening
       ``✅ Results submission open for **Round 3** (Division 1) - Mystery. Sessions: Qualifying, Race. <@&<League Manager role id>>``
-      and the `Qualifying` prompt of step 14.
+      and the `Qualifying` prompt of step 20.
 
-79. **Do:** paste step 17's qualifying and press **Standard**,
-    then step 19's race and press **Standard**, each with `<@9000000000000000001>`
+85. **Do:** paste step 23's qualifying and press **Standard**,
+    then step 25's race and press **Standard**, each with `<@9000000000000000001>`
     for `<@9000000000000000023>` as in Round 2.
 
-    **Expect:** as steps 18 and 20, for round 3 of
+    **Expect:** as steps 24 and 26, for round 3 of
     Division 1: two pictures in `#d1-results`, `Provisional Results`; the standings in
     `#d1-standings`; the penalty review `🏁 **Penalty Review — Round 3 | Division 1**`.
     > UNVERIFIED: what the results pictures draw in place of a track for a mystery round.
 
-80. **Do:** **No Penalties / Confirm**, then **✅ Approve** on the question, then
+86. **Do:** **No Penalties / Confirm**, then **✅ Approve** on the question, then
     **No Changes / Confirm** on the appeals review.
 
-    **Expect:** as steps 56 to 58, with `round 3`: the results
+    **Expect:** as steps 62 to 64, with `round 3`: the results
     and standings as `Post-Race Penalty Results`, then `Final Results`; the attendance sheet after
     Round 3 in `#d1-attendance`; the channel deleted.
 
 ### Division 2: Circuit Zandvoort
 
-81. **Do:** `/test-mode advance`
+87. **Do:** `/test-mode advance`
 
-    **Expect:** as step 27, with **Circuit Zandvoort**, the flag of the Netherlands where
+    **Expect:** as step 33, with **Circuit Zandvoort**, the flag of the Netherlands where
     `resources/league/flags/` holds it, else the packaged fallback flag, reported as an image
     notice, and `round: 3`.
 
-82. **Do:** `/test-mode advance`
+88. **Do:** `/test-mode advance`
 
-    **Expect:** as step 28, with `**Round 3** (**Circuit Zandvoort**)`, the embed
+    **Expect:** as step 34, with `**Round 3** (**Circuit Zandvoort**)`, the embed
     titled `Season 1 Round 3 — Circuit Zandvoort`, `🏁 Event Type` `Normal`, and `round: 3`.
 
-83. **Do:** `/attendance test rsvp division:Division 2`, and paste:
+89. **Do:** `/attendance test rsvp division:Division 2`, and paste:
 
     ```
     9000000000000000025, accept
@@ -1470,53 +1565,53 @@ Everybody accepts the call again.
     9000000000000000045, accept
     ```
 
-    **Expect:** as step 61.
+    **Expect:** as step 67.
 
-84. **Do:** `/test-mode advance`
+90. **Do:** `/test-mode advance`
 
-    **Expect:** as step 30, with `Circuit Zandvoort` and the Normal round's two
-    sessions; the Phase 1 message of step 81 deleted.
+    **Expect:** as step 36, with `Circuit Zandvoort` and the Normal round's two
+    sessions; the Phase 1 message of step 87 deleted.
 
-85. **Do:** `/test-mode advance`
+91. **Do:** `/test-mode advance`
 
-    **Expect:** as step 31, with `**Round 3** (**Circuit Zandvoort**)` and
+    **Expect:** as step 37, with `**Round 3** (**Circuit Zandvoort**)` and
     `round: 3`.
 
-86. **Do:** `/test-mode advance`
+92. **Do:** `/test-mode advance`
 
-    **Expect:** as step 32, with `Circuit Zandvoort`; the Phase 2 message of step
-    84 deleted.
+    **Expect:** as step 38, with `Circuit Zandvoort`; the Phase 2 message of step
+    90 deleted.
 
-87. **Do:** `/test-mode advance`
+93. **Do:** `/test-mode advance`
 
-    **Expect:** as step 33, with `**Round 3** (**Circuit Zandvoort**)` and
+    **Expect:** as step 39, with `**Round 3** (**Circuit Zandvoort**)` and
     `round: 3`: Rory Reid → **Bravo Motorsport**, Stefan Sommer → **Charlie GP**.
 
 ### Division 1's clean-up
 
 The mystery round has **no forecast clean-up**: a clean-up takes down Phases 1 to 3 alone, so it
-is never offered, and the notice of step 73 stays in `#d1-weather` until the
+is never offered, and the notice of step 79 stays in `#d1-weather` until the
 season ends.
 
-88. **Do:** `/test-mode advance`
+94. **Do:** `/test-mode advance`
 
-    **Expect:** as step 35, with `**Round 3**` and `round: 3`.
+    **Expect:** as step 41, with `**Round 3**` and `round: 3`.
 
 ### Division 2's result submission
 
-89. **Do:** `/test-mode advance`
+95. **Do:** `/test-mode advance`
 
-    **Expect:** as step 36: the reply naming
+    **Expect:** as step 42: the reply naming
     `**Division 2** — **Round 3** (**Circuit Zandvoort**)`, the channel `s1-division-2-r3-results`,
     the opening reading `(Division 2) - Normal. Sessions: Qualifying, Race.`
 
-90. **Do:** paste step 37's qualifying, unchanged, and press
+96. **Do:** paste step 43's qualifying, unchanged, and press
     **Standard**.
 
-    **Expect:** as step 37, for round 3: `✅ **Qualifying** results saved.` and the
+    **Expect:** as step 43, for round 3: `✅ **Qualifying** results saved.` and the
     Race prompt.
 
-91. **A refusal: a round is still to be finalised.** **Do:** `/season complete`
+97. **A refusal: a round is still to be finalised.** **Do:** `/season complete`
 
     **Expect:**
     - **Reply:**
@@ -1531,57 +1626,57 @@ season ends.
       ```
     - Nothing posted, nothing changed.
 
-92. **Do:** paste step 38's race, unchanged, and press **Standard**.
+98. **Do:** paste step 44's race, unchanged, and press **Standard**.
 
-    **Expect:** as step 38, for round 3: two pictures in `#d2-results`, the
+    **Expect:** as step 44, for round 3: two pictures in `#d2-results`, the
     standings in `#d2-standings`, the penalty review `🏁 **Penalty Review — Round 3 | Division 2**`.
 
-93. **Do:** **No Penalties / Confirm**, then **✅ Approve** on the question, then
+99. **Do:** **No Penalties / Confirm**, then **✅ Approve** on the question, then
     **No Changes / Confirm** on the appeals review.
 
-    **Expect:** as steps 39 to 41, with `round 3` and
+    **Expect:** as steps 45 to 47, with `round 3` and
     `(Division 2)`; the channel deleted. With this, every round of both divisions is final, and
     the season moves on to its **Pending completion** stage of itself: nothing posts and nothing is
     logged for it (no placement was pending to turn down).
 
-94. **The final tables.** No command: read the last standings pictures.
+100. **The final tables.** No command: read the last standings pictures.
 
-    **Expect:**
-    - `#d1-standings`, drivers: Kevin Keller 114, Hiro Hayashi 102, Rafael Rossi 81, Emil Engel
-      73, Bruno Bianchi 60, Samuel Shaw 50, Olivier Orsini 43, Ian Irwin 36, Mateo Morales 29,
-      Carlos Cortes 22, Ugo Ulivi 15, Liam Lavoie 9, Adam Archer 8, Gabriel Gomes 6, Willem Wouters
-      4, Quinn Quayle 3, then the seven on 0. Teams: Foxtrot Motorsport 123, Delta Racing 108, India
-      Motorsport 84, Charlie GP 73, Alpha Racing 72, Juliett GP 50, Hotel Racing 43, Echo Racing 36,
-      Golf GP 29, Bravo Motorsport 22, Kilo Racing 15.
-    - `#d2-standings`, drivers: Yuki Yamada 108, Finn Fischer 102, Aaron Abbott 86, Bastien Blanc
-      70, Lucas Lambert 64, Diego Duarte 50, Hugo Hartley 43, Jonas Janssen 36, Noah Novak 29, Pablo
-      Pena 22, Zane Zeller 15, Conor Cole 12, Elias Eriksen 9, Gianni Galli 6, Isaac Ingram 3, then
-      Kai Kimura, Marco Moretti, Owen Oakley, Quentin Quint, Rory Reid and Stefan Sommer on 0.
-      Teams: Alpha Racing 123, Foxtrot Motorsport 108, Charlie GP 86, Delta Racing 82, India
-      Motorsport 64, Echo Racing 59, Golf GP 46, Hotel Racing 36, Juliett GP 29, Kilo Racing 22,
-      **Bravo Motorsport 0**.
-    - `#d1-attendance`: Adam Archer on 1, every other racing driver on 0. `#d2-attendance`: every
-      racing driver on 0.
+     **Expect:**
+     - `#d1-standings`, drivers: Kevin Keller 114, Hiro Hayashi 102, Rafael Rossi 81, Emil Engel
+       73, Bruno Bianchi 60, Samuel Shaw 50, Olivier Orsini 43, Ian Irwin 36, Mateo Morales 29,
+       Carlos Cortes 22, Ugo Ulivi 15, Liam Lavoie 9, Adam Archer 8, Gabriel Gomes 6, Willem Wouters
+       4, Quinn Quayle 3, then the seven on 0. Teams: Foxtrot Motorsport 123, Delta Racing 108, India
+       Motorsport 84, Charlie GP 73, Alpha Racing 72, Juliett GP 50, Hotel Racing 43, Echo Racing 36,
+       Golf GP 29, Bravo Motorsport 22, Kilo Racing 15.
+     - `#d2-standings`, drivers: Yuki Yamada 108, Finn Fischer 102, Aaron Abbott 86, Bastien Blanc
+       70, Lucas Lambert 64, Diego Duarte 50, Hugo Hartley 43, Jonas Janssen 36, Noah Novak 29, Pablo
+       Pena 22, Zane Zeller 15, Conor Cole 12, Elias Eriksen 9, Gianni Galli 6, Isaac Ingram 3, then
+       Kai Kimura, Marco Moretti, Owen Oakley, Quentin Quint, Rory Reid and Stefan Sommer on 0.
+       Teams: Alpha Racing 123, Foxtrot Motorsport 108, Charlie GP 86, Delta Racing 82, India
+       Motorsport 64, Echo Racing 59, Golf GP 46, Hotel Racing 36, Juliett GP 29, Kilo Racing 22,
+       **Bravo Motorsport 0**.
+     - `#d1-attendance`: Adam Archer on 3, every other racing driver on 0. `#d2-attendance`: every
+       racing driver on 0.
 
 ### Division 2's clean-ups
 
-95. **Do:** `/test-mode advance`
+101. **Do:** `/test-mode advance`
 
-    **Expect:** as step 42, with `**Round 3**` and `round: 3`.
+     **Expect:** as step 48, with `**Round 3**` and `round: 3`.
 
-96. **Do:** `/test-mode advance`
+102. **Do:** `/test-mode advance`
 
-    **Expect:** as step 43, with `**Round 3**` and `round: 3`.
+     **Expect:** as step 49, with `**Round 3**` and `round: 3`.
 
-97. **Do:** `/test-mode review`
+103. **Do:** `/test-mode review`
 
-    **Expect:**
-    - **Reply:** every mark done: for Division 1's Round 3 `Notice: ✅`, for every other round
-      `P1: ✅  P2: ✅  P3: ✅  Cleanup: ✅`;
-      every round's check-in `RSVP: ✅  Last: ✅  Deadline: ✅  Cleared: ✅`;
-      every round's `Results: ✅ finalized`;
-      no `⏳`, `⚠️` or `⏸️ pending review` anywhere.
-    - **Log:** nothing; it is a view.
+     **Expect:**
+     - **Reply:** every mark done: for Division 1's Round 3 `Notice: ✅`, for every other round
+       `P1: ✅  P2: ✅  P3: ✅  Cleanup: ✅`;
+       every round's check-in `RSVP: ✅  Last: ✅  Deadline: ✅  Cleared: ✅`;
+       every round's `Results: ✅ finalized`;
+       no `⏳`, `⚠️` or `⏸️ pending review` anywhere.
+     - **Log:** nothing; it is a view.
 
 ---
 
@@ -1593,93 +1688,93 @@ Keller (`FOX`) and Hiro Hayashi (`DLT`), takes the correction through the amendm
 stages, and checks the division is rebuilt.
 
 `/results rounds amend` is a **league admin's** command and opens only a round at **FINAL**
-(step 21). The round stays FINAL throughout, but its report and appeals
+(step 27). The round stays FINAL throughout, but its report and appeals
 stages are replayed in the amendment's own channel and both must be approved again before
 anything is published.
 
 **The clocks.** The paste must be sent within **five minutes** of its prompt. From the moment
-the corrected classification is recorded (step 99), the reports *and* the appeals
+the corrected classification is recorded (step 105), the reports *and* the appeals
 must both be approved within **half an hour**, or the bot puts the round back as it was. Have the
-paste of step 99 ready before step 98.
+paste of step 105 ready before step 104.
 
 ### Stage 1 — the classification
 
-98. **Do:** `/results rounds amend division_name:Division 1 round_number:1 session:Feature Race`
+104. **Do:** `/results rounds amend division_name:Division 1 round_number:1 session:Feature Race`
 
-    Naming `session` skips the session picker. `Feature Race` is the stored name of a Normal
-    round's Race.
+     Naming `session` skips the session picker. `Feature Race` is the stored name of a Normal
+     round's Race.
 
-    **Expect:**
-    - **Ack:** `Opening an amendment of a round's results`
-    - **Then:** `✅ Amendment channel created: <#<amend channel id>>`
-    - **Posts:** a new text channel **`amend-s1-division-1-r1`** (the bot names it
-      `amend-S1-division-1-R1`), in the category of `#bot-commands`, seen by `@League Manager`,
-      `@League Admin` and the bot alone. In it, in this order:
-      - the opening, with a **❌ Cancel Amendment** button:
-        ```
-        📋 **Amend Results — Round 1 (Division 1)**
-        Sessions: Feature Race.
-        **Stage 1 of 3.** Paste each session's corrected results when asked, in the same format as a first submission — the two sanction columns amendments used to take have been withdrawn. The reports and appeals of these sessions are reviewed together in the two stages that follow.
-        Click **❌ Cancel Amendment** to abort and delete this channel.
-        ```
-      - the prompt:
-        ```
-        📋 Submit **Race** results (one driver per line), or type `CANCELLED`.
-        Format: `Position, @Driver, Team, TotalTime, FastestLap, TimePenalties`
-        Team: its shorthand.
-        Optional first line: `FL: @Driver` to override fastest-lap holder.
-        ```
-      - nothing in `#d1-results`, `#d1-standings`, `#d1-verdicts` or `#d1-attendance`.
-    - **Log:** nothing: opening an amendment writes no line of its own.
+     **Expect:**
+     - **Ack:** `Opening an amendment of a round's results`
+     - **Then:** `✅ Amendment channel created: <#<amend channel id>>`
+     - **Posts:** a new text channel **`amend-s1-division-1-r1`** (the bot names it
+       `amend-S1-division-1-R1`), in the category of `#bot-commands`, seen by `@League Manager`,
+       `@League Admin` and the bot alone. In it, in this order:
+       - the opening, with a **❌ Cancel Amendment** button:
+         ```
+         📋 **Amend Results — Round 1 (Division 1)**
+         Sessions: Feature Race.
+         **Stage 1 of 3.** Paste each session's corrected results when asked, in the same format as a first submission — the two sanction columns amendments used to take have been withdrawn. The reports and appeals of these sessions are reviewed together in the two stages that follow.
+         Click **❌ Cancel Amendment** to abort and delete this channel.
+         ```
+       - the prompt:
+         ```
+         📋 Submit **Race** results (one driver per line), or type `CANCELLED`.
+         Format: `Position, @Driver, Team, TotalTime, FastestLap, TimePenalties`
+         Team: its shorthand.
+         Optional first line: `FL: @Driver` to override fastest-lap holder.
+         ```
+       - nothing in `#d1-results`, `#d1-standings`, `#d1-verdicts` or `#d1-attendance`.
+     - **Log:** nothing: opening an amendment writes no line of its own.
 
-99. **Do:** within five minutes of the prompt, in `#amend-s1-division-1-r1`, send step
-    19's race with its first two lines' driver and team swapped, every time and lap
-    left where it stands:
+105. **Do:** within five minutes of the prompt, in `#amend-s1-division-1-r1`, send step
+     25's race with its first two lines' driver and team swapped, every time and lap
+     left where it stands:
 
-    ```
-    1, <@9000000000000000008>, DLT, 1:25:12.345, 1:29.100, N/A
-    2, <@9000000000000000011>, FOX, +2.100, 1:29.450, N/A
-    3, <@9000000000000000018>, IND, +4.000, 1:29.500, N/A
-    4, <@9000000000000000005>, CHL, +6.500, 1:29.600, N/A
-    5, <@9000000000000000002>, ALP, +11.000, 1:29.700, N/A
-    6, <@9000000000000000019>, JLT, +14.250, 1:29.800, N/A
-    7, <@9000000000000000015>, HTL, +17.300, 1:29.850, N/A
-    8, <@9000000000000000009>, ECH, +20.400, 1:29.900, N/A
-    9, <@9000000000000000013>, GLF, +23.500, 1:29.950, N/A
-    10, <@9000000000000000003>, BRV, +26.600, 1:30.000, N/A
-    11, <@9000000000000000021>, KLO, +29.700, 1:30.050, N/A
-    12, <@9000000000000000023>, ALP, +32.800, 1:30.100, N/A
-    13, <@9000000000000000012>, FOX, +35.900, 1:30.150, N/A
-    14, <@9000000000000000007>, DLT, +39.000, 1:30.200, N/A
-    15, <@9000000000000000017>, IND, +42.100, 1:30.250, N/A
-    16, <@9000000000000000006>, CHL, +45.200, 1:30.300, N/A
-    17, <@9000000000000000020>, JLT, +48.300, 1:30.350, N/A
-    18, <@9000000000000000016>, HTL, +51.400, 1:30.400, N/A
-    19, <@9000000000000000010>, ECH, +54.500, 1:30.450, N/A
-    20, <@9000000000000000014>, GLF, +1 Lap, 1:30.500, N/A
-    21, <@9000000000000000004>, BRV, DNF, N/A, N/A
-    22, <@9000000000000000022>, KLO, DNF, N/A, N/A
-    ```
+     ```
+     1, <@9000000000000000008>, DLT, 1:25:12.345, 1:29.100, N/A
+     2, <@9000000000000000011>, FOX, +2.100, 1:29.450, N/A
+     3, <@9000000000000000018>, IND, +4.000, 1:29.500, N/A
+     4, <@9000000000000000005>, CHL, +6.500, 1:29.600, N/A
+     5, <@9000000000000000002>, ALP, +11.000, 1:29.700, N/A
+     6, <@9000000000000000019>, JLT, +14.250, 1:29.800, N/A
+     7, <@9000000000000000015>, HTL, +17.300, 1:29.850, N/A
+     8, <@9000000000000000009>, ECH, +20.400, 1:29.900, N/A
+     9, <@9000000000000000013>, GLF, +23.500, 1:29.950, N/A
+     10, <@9000000000000000003>, BRV, +26.600, 1:30.000, N/A
+     11, <@9000000000000000021>, KLO, +29.700, 1:30.050, N/A
+     12, <@9000000000000000023>, ALP, +32.800, 1:30.100, N/A
+     13, <@9000000000000000012>, FOX, +35.900, 1:30.150, N/A
+     14, <@9000000000000000007>, DLT, +39.000, 1:30.200, N/A
+     15, <@9000000000000000017>, IND, +42.100, 1:30.250, N/A
+     16, <@9000000000000000006>, CHL, +45.200, 1:30.300, N/A
+     17, <@9000000000000000020>, JLT, +48.300, 1:30.350, N/A
+     18, <@9000000000000000016>, HTL, +51.400, 1:30.400, N/A
+     19, <@9000000000000000010>, ECH, +54.500, 1:30.450, N/A
+     20, <@9000000000000000014>, GLF, +1 Lap, 1:30.500, N/A
+     21, <@9000000000000000004>, BRV, DNF, N/A, N/A
+     22, <@9000000000000000022>, KLO, DNF, N/A, N/A
+     ```
 
-    Hiro Hayashi now has the winner's line and the fastest lap; Kevin Keller is second. Rafael
-    Rossi's line is as it was: his five seconds are a decision the round already carries.
+     Hiro Hayashi now has the winner's line and the fastest lap; Kevin Keller is second. Rafael
+     Rossi's line is as it was: his five seconds are a decision the round already carries.
 
-    **Expect:**
-    - **Posts** (amendment channel): your message marked ⏳, then deleted, with no reply to it;
-      then the report stage (step 100).
-    - **Log:**
-      ```
-      <you> | AMEND_STAGE_1 | Recorded
-        season: 1, division: 'Division 1'
-        round: 1, sessions: FEATURE_RACE=Standard
-        Corrected classification recorded. Nothing is published until the report and appeal stages are approved.
-      ```
-    - Nothing in the league's channels. With two configurations attached, the amended session
-      keeps the one it was scored with, so no choice is asked.
+     **Expect:**
+     - **Posts** (amendment channel): your message marked ⏳, then deleted, with no reply to it;
+       then the report stage (step 106).
+     - **Log:**
+       ```
+       <you> | AMEND_STAGE_1 | Recorded
+         season: 1, division: 'Division 1'
+         round: 1, sessions: FEATURE_RACE=Standard
+         Corrected classification recorded. Nothing is published until the report and appeal stages are approved.
+       ```
+     - Nothing in the league's channels. With two configurations attached, the amended session
+       keeps the one it was scored with, so no choice is asked.
 
 ### Stage 2 — the reports
 
-100. **Expect**, posted in the amendment channel after step 99: the
+106. **Expect**, posted in the amendment channel after step 105: the
      report stage, with **➕ Add Penalty**, **No Penalties / Confirm**, **✅ Approve** (live, since a
      penalty stands) and **🏳️ Attendance Pardon**, a **Remove #1** button, and **no**
      **🔄 Resubmit Initial Results**:
@@ -1714,7 +1809,7 @@ paste of step 99 ready before step 98.
 
 ### Stage 3 — the appeals, and the rebuild
 
-101. **Expect**, the appeals stage, with **➕ Add Correction**, **No Changes /
+107. **Expect**, the appeals stage, with **➕ Add Correction**, **No Changes /
      Confirm** and **✅ Approve**:
      ```
      ⚖️ **Appeals Review — Round 1 | Division 1**
@@ -1740,8 +1835,8 @@ paste of step 99 ready before step 98.
        - `#d1-standings`: then every round's standings, in round order, drivers and teams, each a
          new picture, the old one deleted after it. After Round 1: Hiro Hayashi 35, Kevin Keller 29,
          Emil Engel 24, Rafael Rossi 22, …; teams Delta Racing 37, Foxtrot Motorsport 32, …. After
-         Round 3: Kevin Keller 109, Hiro Hayashi 107, the rest as step 94; teams
-         Foxtrot Motorsport 118, Delta Racing 113, the rest as step 94. The
+         Round 3: Kevin Keller 109, Hiro Hayashi 107, the rest as step 100; teams
+         Foxtrot Motorsport 118, Delta Racing 113, the rest as step 100. The
          opening classification posted at approval is left where it stands;
        - `#d1-attendance`: the attendance sheet again, a new picture, the old one deleted; its
          totals unchanged, a swap of places moving nobody's attendance;
@@ -1758,7 +1853,7 @@ paste of step 99 ready before step 98.
        ```
        `Incomplete` in place of `Success` names what could not be reposted: a failure here.
 
-102. **Do:** `/test-mode review`
+108. **Do:** `/test-mode review`
 
      **Expect:**
      - **Reply:** Division 1's `Round 1` line still reads `Results: ✅ finalized`: an amendment
@@ -1859,45 +1954,45 @@ Image render notices — <title> — <division>, round <R>:
     • <image type> — <detail> (×<n>)
 ```
 
-103. **Do:** `/images test calendar division:Division 2`
+109. **Do:** `/images test calendar division:Division 2`
 
      **Expect:** title `Calendar`, one picture, `✅ Calendar`: Division 2's three rounds on their
      dates. **Log:** the notice block, headed `Image render notices — Calendar — Division 2:`.
 
-104. **Do:** `/images test lineup division:Division 2`
+110. **Do:** `/images test lineup division:Division 2`
 
      **Expect:** title `Lineup`, one picture, `✅ Lineup`: eleven team blocks and a reserve block;
      `Bravo Motorsport` with both seats blank, `Charlie GP` with `Aaron Abbott` and a blank seat,
      and `Rory Reid` and `Stefan Sommer` in the reserve block: the lineup draws seats, not a round's
      placements. **Log:** headed `Image render notices — Lineup — Division 2:`.
 
-105. **Do:** `/images test results division:Division 2 round:2`
+111. **Do:** `/images test results division:Division 2 round:2`
 
      **Expect:** title `Results`, four pictures, in this order: `✅ Results — Sprint Qualifying`,
      `✅ Results — Sprint Race`, `✅ Results — Feature Qualifying`, `✅ Results — Feature Race`. Each
      draws Division 2's own drivers by name, reserves left out, in an invented finishing order.
      **Log:** headed `Image render notices — Results — Division 2, round 2:`.
 
-106. **Do:** `/images test standings division:Division 2 round:2`
+112. **Do:** `/images test standings division:Division 2 round:2`
 
      **Expect:** title `Standings`, two pictures, `✅ Standings — drivers` and
      `✅ Standings — constructors`, each with the season's three rounds as a grid and an invented
      classification up to round 2. The constructors list all eleven racing teams, `Bravo
      Motorsport` among them. **Log:** headed `Image render notices — Standings — Division 2, round 2:`.
 
-107. **Do:** `/images test attendance division:Division 2 round:2`
+113. **Do:** `/images test attendance division:Division 2 round:2`
 
      **Expect:** title `Attendance sheet`, one picture, `✅ Attendance sheet`: Division 2's racing
      drivers, rounds 1 and 2 filled with invented records, round 3 empty. **Log:** headed
      `Image render notices — Attendance sheet — Division 2, round 2:`.
 
-108. **Do:** `/images test rsvp division:Division 2 round:2`
+114. **Do:** `/images test rsvp division:Division 2 round:2`
 
      **Expect:** title `Check-in call`, one picture, `✅ Check-in call`, naming Circuit de
      Spa-Francorchamps and the round's date. **Log:** headed
      `Image render notices — Check-in call — Division 2, round 2:`.
 
-109. **Do:** `/images test verdict division:Division 2 round:2`
+115. **Do:** `/images test verdict division:Division 2 round:2`
 
      **Expect:** title `Verdict`, five pictures, one per sanction, in this order:
      `✅ Verdict 1 — 5 seconds added`, `✅ Verdict 2 — 10 seconds added`,
@@ -1907,13 +2002,13 @@ Image render notices — <title> — <division>, round <R>:
      > UNVERIFIED: which driver is drawn (`context.drivers[0]`, in the order the preview reads the
      > division's seats).
 
-110. **Do:** `/images test verdict-banner division:Division 2 round:2`
+116. **Do:** `/images test verdict-banner division:Division 2 round:2`
 
      **Expect:** title `Verdict banner`, one picture, `✅ Verdict banner`: Season 1, Division 2,
      Round 2 and its grand prix. **Log:** headed
      `Image render notices — Verdict banner — Division 2, round 2:`, where it has notices.
 
-111. **Do**, in turn: `/images test weather-p1 division:Division 2 round:2`, then
+117. **Do**, in turn: `/images test weather-p1 division:Division 2 round:2`, then
      `/images test weather-p2 division:Division 2 round:2`, then
      `/images test weather-p3 division:Division 2 round:2`.
 
@@ -1921,25 +2016,25 @@ Image render notices — <title> — <division>, round <R>:
      one picture each (`✅ Weather — phase <P>`); phases 2 and 3 drawn on the sprint templates, with
      the four sessions. **Log:** headed `Image render notices — Weather — phase <P> — Division 2, round 2:`.
 
-112. **Do:** `/images test weather-mystery division:Division 1 round:3`
+118. **Do:** `/images test weather-mystery division:Division 1 round:3`
 
      **Expect:** title `Mystery notice`, one picture, `✅ Mystery notice`, naming no circuit.
      **Log:** headed `Image render notices — Mystery notice — Division 1, round 3:`, where it has
      notices.
 
-113. **A refusal.** **Do:** `/images test weather-mystery division:Division 2 round:2`
+119. **A refusal.** **Do:** `/images test weather-mystery division:Division 2 round:2`
 
      **Expect:**
      - **Reply:** ``⛔ Round 2 of `Division 2` is not a mystery round, so there is no mystery notice to draw.``
      - **Log:** nothing: a preview's refusal is answered and not recorded.
 
-114. **A refusal.** **Do:** `/images test weather-p1 division:Division 1 round:3`
+120. **A refusal.** **Do:** `/images test weather-p1 division:Division 1 round:3`
 
      **Expect:**
      - **Reply:** ``⛔ Round 3 of `Division 1` is a mystery round, which carries no forecast. Use `/images test weather-mystery` for its notice.``
      - **Log:** nothing.
 
-115. **A refusal.** **Do:** `/images test results division:Division 2 round:4`
+121. **A refusal.** **Do:** `/images test results division:Division 2 round:4`
 
      **Expect:**
      - **Reply:** ``⛔ `Division 2` has no round 4. It holds rounds: 1, 2, 3.``
@@ -1952,10 +2047,10 @@ Nothing posts in any league channel during these steps.
 ## Part H — Completing the season
 
 Every round of both divisions is final and every clean-up advanced. Completing the season ends
-test mode: from step 117 on, none of `/test-mode`'s commands run, and the saved
+test mode: from step 123 on, none of `/test-mode`'s commands run, and the saved
 backup is gone.
 
-116. **Do:** `/test-mode advance`
+122. **Do:** `/test-mode advance`
 
      **Expect:**
      - **Reply:**
@@ -1971,7 +2066,7 @@ backup is gone.
      Any other reply — a step on the change queue, or a `⏸️ … is awaiting penalty review approval`
      — means a round or a clean-up is still outstanding: go back and finish it first.
 
-117. **Do:** `/season complete`
+123. **Do:** `/season complete`
 
      It takes no option and asks no confirmation.
 
@@ -1987,7 +2082,7 @@ backup is gone.
          107); Division 2's `Bravo Motorsport` on 0. The last round's standings stay where they are;
        - `#d1-attendance`, `#d2-attendance`: the **final attendance sheet**, one picture, with no
          text;
-       - `#d1-weather`: the mystery notice of step 73 is **deleted**. It is recorded
+       - `#d1-weather`: the mystery notice of step 79 is **deleted**. It is recorded
          as a forecast (its phase 0), and the completion clears every forecast posted under test mode
          (`forecast_deletes`, with no round named), though no clean-up ever took it down;
        - nothing in `#signup`, `#dN-rsvp` or `#dN-results`.
@@ -2013,7 +2108,7 @@ backup is gone.
      part in, switched test mode off — which deleted every fake driver — and marked the season
      completed, last.
 
-118. **Check the history on the host.** From the bot host folder, with the bot running or not,
+124. **Check the history on the host.** From the bot host folder, with the bot running or not,
      and the `sqlite3` command-line tool installed on the host:
 
      ```
@@ -2031,34 +2126,34 @@ backup is gone.
 
      No command shows a driver's history on Discord; this is where to read it.
 
-119. **Do:** `/test-mode advance`
+125. **Do:** `/test-mode advance`
 
      **Expect:**
      - **Reply:** ``ℹ️ Test mode is not active. Use `/test-mode toggle` to enable it first.``
      - **Log:** ``⛔ `/test-mode advance` refused for <you> — Test mode is not active. Use `/test-mode toggle` to enable it first.``
 
-120. **Do:** `/test-mode review`
+126. **Do:** `/test-mode review`
 
      **Expect:**
      - **Reply:** ``ℹ️ Test mode is not active. Use `/test-mode toggle` to enable it first.``
      - **Log:** nothing; it is a view.
 
-121. **Do:** `/test-mode backup status`
+127. **Do:** `/test-mode backup status`
 
      **Expect:**
      - **Reply:** ``⛔ The backup commands run only while the server is in **test mode**. They copy and replace the whole database, which is not something to do to a league that is running. Turn test mode on with `/test-mode toggle` first.``
      - **Log:** nothing; a view records no refusal.
 
-122. **Do:** `/test-mode backup restore`
+128. **Do:** `/test-mode backup restore`
 
      **Expect:**
-     - **Reply:** as step 121.
+     - **Reply:** as step 127.
      - **Log:** ``⛔ `/test-mode backup restore` refused for <you> — The backup commands run only while the server is in **test mode**. They copy and replace the whole database, which is not something to do to a league that is running. Turn test mode on with `/test-mode toggle` first.``
 
      The base cannot be restored from here: run `00-base.md` again before the next spec, or go back
      to a copy of the two backup files (see the README).
 
-123. **A refusal.** **Do:** `/season complete`
+129. **A refusal.** **Do:** `/season complete`
 
      **Expect:**
      - **Reply:** `❌ No season is being raced, so there is none to complete.`
