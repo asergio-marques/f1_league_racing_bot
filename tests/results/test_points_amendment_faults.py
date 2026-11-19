@@ -16,9 +16,6 @@ from leaguebot.framework.services.switches.module_service import SwitchNotSigned
 from tests.support.points_league import BETA_ATTENDANCE, SEASON_ID, points_league
 from tests.support.switches import answer_switch
 
-#: Why the tests of the faults' kind fail until `approval_faults` gives one.
-NO_KIND = "#513: approval_faults returns a bare list of lines, with no kind"
-
 
 def _switches(answer: object) -> MagicMock:
     """The module switches the check is handed: attendance's reads as *answer* says."""
@@ -27,7 +24,6 @@ def _switches(answer: object) -> MagicMock:
     return switches
 
 
-@pytest.mark.xfail(strict=True, reason=NO_KIND)
 async def test_approval_faults_names_a_cancelled_division_s_deleted_attendance_channel(tmp_path):
     """A division cancelled mid-season, attendance on, whose attendance channel (722) has been
     deleted: the approval reposts and recalculates its raced rounds too, so the check names the
@@ -57,7 +53,6 @@ async def test_approval_faults_names_a_cancelled_division_s_deleted_attendance_c
     assert f"**Beta** — the attendance channel (id {BETA_ATTENDANCE})" in named[0]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_KIND)
 async def test_approval_faults_asks_attendance_s_faults_through_the_hook_it_is_handed(
     tmp_path, monkeypatch,
 ):
@@ -117,8 +112,6 @@ async def _member_unresolved(league) -> int:
     return SEASON_ID
 
 
-@pytest.mark.xfail(strict=True, reason="#513: approval_faults returns a bare list of lines, with "
-                   "no kind, and its season line says nothing was changed")
 @pytest.mark.parametrize("setup, line, kind", [
     (_season_unread, "The season could not be read.", "SEASON"),
     (_not_in_server, "The bot is not in this server, so nothing can be reposted. "

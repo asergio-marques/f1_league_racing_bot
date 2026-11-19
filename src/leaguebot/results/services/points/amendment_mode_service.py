@@ -201,12 +201,12 @@ async def review_panel(
     # press: an approval that cannot be published is refused entire rather than
     # half-made (#187), and a manager should meet that while deciding rather than
     # after pressing Approve.
-    channel_faults = await approval_faults(
+    faults = await approval_faults(
         db_path, season.id, bot, module_service=module_service, attendance=attendance,
         drawing=drawing,
     )
-    if channel_faults:
-        bullet_list = "\n• ".join(channel_faults)
+    if faults.lines:
+        bullet_list = "\n• ".join(faults.lines)
         diff += (
             f"\n\n⛔ **These changes cannot be approved — the result could not "
             f"be published:**\n• {bullet_list}\n"

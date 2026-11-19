@@ -317,8 +317,8 @@ def points_amendment_change(
             db_path, season_id, ctx.bot, module_service=module_service, attendance=attendance,
             drawing=drawing,
         )
-        if faults:
-            bullets = "\n• ".join(faults)
+        if faults.lines:
+            bullets = "\n• ".join(faults.lines)
             return Verdict.refuse(
                 f"⛔ Amendment not approved — the result could not be published:\n"
                 f"• {bullets}\n"
@@ -326,7 +326,7 @@ def points_amendment_change(
                 f"changes, not amendment mode. Approving rescores and reposts every round of "
                 f"every division, so it is refused entire rather than left half-published. "
                 f"Repair the channels above and review again.",
-                "\n".join(faults),
+                "\n".join(faults.lines),
             )
         return Verdict.go()
 
