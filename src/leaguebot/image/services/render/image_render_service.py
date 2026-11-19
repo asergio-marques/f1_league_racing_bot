@@ -684,12 +684,13 @@ def _draw(
     either through a slot.
 
     A template that cannot be read, a spec that cannot be built, data the verify finds unfit, a
-    fill that fails and a field the fill cannot resolve come back as a problem, and a palette that
-    cannot be applied and what the fill substituted as notices: the render's own fallback, which
-    the posting paths fall back from to text. A refusal the league can put right is a problem in
-    its own words; a fault in the bot is an internal problem naming only its kind. A fault the verify meets in counting the template's
-    mandatory ids is not caught here: it leaves the worker and `off_the_loop` raises it out of
-    the render, for the caller's place-5 fallback.
+    fill that fails and a field the fill cannot resolve come back as a problem, and a palette
+    that cannot be applied and what the fill substituted as notices: the render's own fallback,
+    which the posting paths fall back from to text. A refusal the league can put right is a
+    problem in its own words; a fault in the bot is an internal problem naming only its kind. A
+    fault the verify meets in counting the template's mandatory ids is not caught here: it
+    leaves the worker and `off_the_loop` raises it out of the render, for the caller's place-5
+    fallback.
 
     What the builder or the fill raises is a problem only when it is a `DrawingRefused`, an error
     the league caused and can put right. Any other exception is a fault in the bot, and a caller
