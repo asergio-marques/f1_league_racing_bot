@@ -224,7 +224,9 @@ class ImageDrawing(Protocol):
     ) -> CalendarPicture:
         """Draw *division*'s calendar of *rounds*, named against *tracks*. Hands back the
         picture drawn, or the problem naming why it could not be, and the notices it survived —
-        already reported to the log channel in one message."""
+        already reported to the log channel in one message. A refusal the league can put right (a
+        round whose track matches none) comes back as the problem, and the picture says where its
+        fault lies. Whatever is raised is a fault in the bot."""
 
     async def lineup_wanted(self) -> bool:
         """Whether this league conveys its lineup as a picture: both the module and the
@@ -240,7 +242,9 @@ class ImageDrawing(Protocol):
     async def draw_lineup(self, guild: Any, division_id: int) -> LineupPicture:
         """Draw *division_id*'s lineup in *guild*, as the lineup of record. Hands back the
         picture drawn, or the problem naming why it could not be, and the notices it survived
-        — already reported to the log channel in one message."""
+        — already reported to the log channel in one message. A refusal, even one met before the
+        render, comes back as the problem, and the picture says where its fault lies. Whatever is
+        raised is a fault in the bot."""
 
     async def draw_lineup_for_command(self, guild: Any, division_id: int) -> LineupPicture:
         """Draw *division_id*'s lineup in *guild*, as a command's own output rather than the
@@ -248,9 +252,11 @@ class ImageDrawing(Protocol):
         drawn, or the problem naming why it could not be — worded for the command's own
         refusal rather than the text fallback's — and the notices it survived, which it has reported
         to the log channel in one message, the command running in no job, with the link to that
-        message where one was posted. A fault reading the division itself (the
-        database cannot be opened) is let out, for the command's own failure path to report,
-        rather than turned into refusal words."""
+        message where one was posted. A refusal, even one met before the render, comes back as
+        the problem, and the picture says where its fault lies. Whatever is raised, a fault in the
+        bot while drawing or in reading the division itself (the database cannot be opened), is
+        let out, for the command's own failure path to report, rather than turned into refusal
+        words."""
 
     async def draw_review_lineup(
         self, guild: Any, division_id: int, *, include_uncommitted: bool,
@@ -261,8 +267,9 @@ class ImageDrawing(Protocol):
         the drivers a mid-season confirmation has not yet committed in it where
         *include_uncommitted*. Hands back the picture drawn, or the problem naming why it could
         not be, worded for the command's own refusal, and the notices it survived, for the review's
-        job to record among its own lines. A render that raises raises, with its words after
-        "❌"."""
+        job to record among its own lines. A refusal, even one met before the render, comes back
+        as the problem, and the picture says where its fault lies. Whatever is raised is a fault
+        in the bot, for the review to word by its kind."""
 
     def discard_picture(self, path: Path | None) -> None:
         """Release a path `draw_calendar`, `draw_lineup`, `draw_lineup_for_command` or
