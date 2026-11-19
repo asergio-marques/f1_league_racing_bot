@@ -62,7 +62,7 @@ from leaguebot.framework.services.queue.change_types import (
 from leaguebot.framework.services.posting import standing_posts
 from leaguebot.framework.services.queue.audit_service import record_change_on
 from leaguebot.framework.utils.channels import as_text_channel
-from leaguebot.core.services.modules.image_drawing import ImageDrawing
+from leaguebot.core.services.modules.image_drawing import ImageDrawing, picture_remedy
 from leaguebot.framework.services.posting.standing_post_handler import post_standing
 from leaguebot.framework.utils.in_a_job import posts_in_a_job
 from leaguebot.framework.utils.interaction_errors import describe_fault
@@ -362,17 +362,15 @@ def posted_result(posted: LineupPosted | None) -> dict[str, Any]:
     }
 
 
-#: What puts a lineup fallen back to text right: correct the template, and the picture is
-#: posted with the next change to the division's drivers, there being no command that posts a
-#: lineup again on its own.
-_FIX_IT = (
-    "fix the lineup template; the picture is posted with the next change to the division's "
-    "drivers"
-)
-
-#: What puts right a lineup posted as text because Discord refused its picture: the template is
-#: not at fault, and the next change to the division's drivers posts the picture again.
+#: What posts a lineup's picture again, there being no command that posts a lineup on its own:
+#: the next change to the division's drivers. It is what puts right a lineup posted as text
+#: because Discord refused its picture, the template not being at fault, and what follows once a
+#: fault in the bot is cleared or the converter installed (`picture_remedy`).
 _POST_AGAIN = "the picture is posted with the next change to the division's drivers"
+
+#: What puts a lineup fallen back to text right where its template is at fault: correct it, and
+#: the picture is posted with the next change to the division's drivers.
+_FIX_IT = f"fix the lineup template; {_POST_AGAIN}"
 
 
 def fallen_back_to_text_line(ctx: StepContext, result: Mapping[str, Any]) -> tuple[str, ...]:
@@ -380,8 +378,9 @@ def fallen_back_to_text_line(ctx: StepContext, result: Mapping[str, Any]) -> tup
     back with render notices, one line naming the lineup and the division, which is where they
     reach the log channel (the drawing writes none itself); and where it fell back to text, the
     member and the change it ran for, the division, the problem, and what puts it right: the
-    template, or, where Discord refused the picture, nothing but the next change to the drivers.
-    Empty where nothing went wrong."""
+    template where that is at fault, that the fault is the bot's or the converter absent where it
+    is, or, where Discord refused the picture, nothing but the next change to the drivers. Empty
+    where nothing went wrong."""
     lines: tuple[str, ...] = ()
     if result.get("notices"):
         lines += (drawn_notices_line(
@@ -390,11 +389,15 @@ def fallen_back_to_text_line(ctx: StepContext, result: Mapping[str, Any]) -> tup
     problem = result.get("problem")
     if problem is None:
         return lines
+    put_right = _POST_AGAIN if result.get("refused") else picture_remedy(
+        FaultSource(result.get("fault_source", FaultSource.LEAGUE)),
+        template=_FIX_IT, then=_POST_AGAIN,
+    )
     return lines + (
         f"{ctx.named} | {ctx.what} | Lineup posted as text\n"
         f"  division: {result.get('division_name')}\n"
         f"  problem: {problem}\n"
-        f"  to put it right: {_POST_AGAIN if result.get('refused') else _FIX_IT}",
+        f"  to put it right: {put_right}",
     )
 
 

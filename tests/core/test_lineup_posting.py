@@ -620,9 +620,6 @@ POSTED_AS_TEXT_BY_SOURCE = (
 )
 
 
-@pytest.mark.xfail(strict=True, reason="#584: the lineup's line still tells a manager to fix the "
-                                       "template whatever the fault, and names a raised fault in "
-                                       "its own words")
 @pytest.mark.parametrize(("answers", "problem", "remedy", "once"), [
     pytest.param(dict(fault=RuntimeError("KeyError: 7")), "the bot hit an internal fault",
                  "the fault is in the bot, and its detail is in the host's log", "it is cleared",
