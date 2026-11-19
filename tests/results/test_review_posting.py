@@ -1762,11 +1762,6 @@ CONVERTER_ABSENT_REMEDY = (
     "Inkscape is not installed on the machine running the bot, and the host must install it; "
     "once it has, "
 )
-#: The xfail reason of a fault in the bot still named in its own words.
-NAMED_BY_ITS_WORDS = (
-    "#584: a picture's fault in the bot is named in its own words and its line says to fix the "
-    "template"
-)
 #: The xfail reason of the converter's absence with no remedy beside it.
 NO_HOST_REMEDY = "#584: the picture's line says nothing of what puts the converter's absence right"
 
@@ -1832,7 +1827,7 @@ def _render_without_the_converter(aspect: str) -> Any:
 
 
 @pytest.mark.parametrize("source", [
-    pytest.param("bot", marks=pytest.mark.xfail(strict=True, reason=NAMED_BY_ITS_WORDS)),
+    "bot",
     "league",
     pytest.param("converter absent", marks=pytest.mark.xfail(strict=True, reason=NO_HOST_REMEDY)),
 ])
@@ -1888,7 +1883,7 @@ async def test_a_results_picture_that_fails_posts_the_table_as_text_and_says_why
 
 
 @pytest.mark.parametrize("source", [
-    pytest.param("bot", marks=pytest.mark.xfail(strict=True, reason=NAMED_BY_ITS_WORDS)),
+    "bot",
     pytest.param("converter absent", marks=pytest.mark.xfail(strict=True, reason=NO_HOST_REMEDY)),
 ])
 async def test_a_standings_picture_that_fails_posts_the_standings_as_text_and_says_why_in_the_log(
@@ -1935,7 +1930,6 @@ async def test_a_standings_picture_that_fails_posts_the_standings_as_text_and_sa
     assert _says_why(line, "standings", source), line
 
 
-@pytest.mark.xfail(strict=True, reason=NAMED_BY_ITS_WORDS)
 async def test_a_picture_fallback_line_names_the_amendment_while_the_season_is_pending_completion(
     tmp_path,
 ):

@@ -72,7 +72,9 @@ from leaguebot.framework.models.change import (
     drawn_lines_kept,
 )
 from leaguebot.core.models.round import RoundStatus
+from leaguebot.core.models.fault_source import FaultSource, source_of
 from leaguebot.core.models.season import SeasonStage
+from leaguebot.core.services.modules.image_drawing import picture_remedy
 from leaguebot.core.services.seasons import season_service
 from leaguebot.framework.services.queue.change_types import OutcomeContext, Step, StepContext
 from leaguebot.framework.utils.channels import as_text_channel
@@ -332,23 +334,30 @@ def _refused_picture_line(
     return (picture_fallback_line(
         ctx.named, ctx.what, picture=picture, division=rnd["division_name"],
         round_number=rnd["round_number"], fault=fault,
-        put_right=_put_right(picture, payload["remedy"], at_discord=isinstance(fault, UploadFault)),
+        put_right=_put_right(
+            picture, payload["remedy"], at_discord=isinstance(fault, UploadFault),
+            source=source_of(fault),
+        ),
     ),)
 
 
-def _put_right(picture: str, remedy: str, *, at_discord: bool = False) -> str:
+def _put_right(
+    picture: str, remedy: str, *, at_discord: bool = False,
+    source: FaultSource = FaultSource.LEAGUE,
+) -> str:
     """What puts a *picture* that went out as text right, by the job's own *remedy*: the sync
     command while the season is being raced, the round's amendment once it is pending
     completion and the sync commands are refused (results spec :587, :589). Where Discord
     refused the upload, or the connection failed it, the template is not at fault: the picture
-    is posted again with the same command."""
+    is posted again with the same command. Otherwise it is worded by where the fault lies,
+    *source* (`picture_remedy`): the template to fix where the league's, or the bot's fault or
+    the converter's absence to be cleared first, the same command posting the picture after."""
     if at_discord:
         if remedy == _AMEND:
             return f"post the {picture} picture again by amending the round with `{_AMEND}`"
         return f"post the {picture} picture again with `{remedy}`"
-    if remedy == _AMEND:
-        return f"fix the {picture} template, then amend the round with `{_AMEND}`"
-    return f"fix the {picture} template, then run `{remedy}`"
+    then = f"amend the round with `{_AMEND}`" if remedy == _AMEND else f"run `{remedy}`"
+    return picture_remedy(source, template=f"fix the {picture} template, then {then}", then=then)
 
 
 def _standings_job(
@@ -853,7 +862,10 @@ async def _post_session_results(
         lines += (picture_fallback_line(
             ctx.named, ctx.what, picture="results", division=rnd["division_name"],
             round_number=rnd["round_number"], fault=posted.fault,
-            put_right=_put_right("results", payload["remedy"], at_discord=posted.at_discord),
+            put_right=_put_right(
+                "results", payload["remedy"], at_discord=posted.at_discord,
+                source=posted.fault_source,
+            ),
         ),)
     return StepResult(result=result, lines=lines, then=_deletes(channel_id, posted.old, what))
 
@@ -972,7 +984,9 @@ async def _post_standings(
             ctx.named, ctx.what, picture="standings", division=rnd["division_name"],
             round_number=rnd["round_number"], fault=fault,
             put_right=_put_right(
-                "standings", payload["remedy"], at_discord=failed is not None and failed.at_discord,
+                "standings", payload["remedy"],
+                at_discord=failed is not None and failed.at_discord,
+                source=FaultSource.LEAGUE if failed is None else failed.fault_source,
             ),
         ),)
     return StepResult(result=result, lines=lines, then=tuple(then))

@@ -11,6 +11,7 @@ import aiosqlite
 import discord
 
 from leaguebot.core.models.channel_needs import Needs
+from leaguebot.core.models.fault_source import FaultSource, source_of
 from leaguebot.core.services.drivers.driver_names import read_driver_names
 from leaguebot.framework.utils.hooks import AwaitedHook
 from leaguebot.framework.utils.in_a_job import posts_in_a_job
@@ -117,6 +118,12 @@ class PostedTable(NamedTuple):
     def at_discord(self) -> bool:
         """Whether *fault* was Discord's end of the upload, not the drawing."""
         return isinstance(self.fault, UploadFault)
+
+    @property
+    def fault_source(self) -> FaultSource:
+        """Where *fault* lies, as its words are marked (`FaultWords`): the league's where they
+        are not, as the words of a refusal or of Discord's are not."""
+        return FaultSource.LEAGUE if self.fault is None else source_of(self.fault)
 
 
 class UploadFault(str):
