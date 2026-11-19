@@ -7,6 +7,7 @@ values on a template and works none of them out. Pure: no Discord, no database, 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from leaguebot.image.models.image_module import DrawingRefused
 
 #: The aspect a results picture is switched by, which a caller asks the drawing's gate about.
 RESULTS_ASPECT = "results"
@@ -15,7 +16,7 @@ QUALIFYING_TEMPLATE_KEY = "results_qualifying_template"
 RACE_TEMPLATE_KEY = "results_race_template"
 
 
-class ResultsDataError(Exception):
+class ResultsDataError(DrawingRefused):
     """A fatal disagreement between a session and what a results graphic needs.
 
     Raised before anything is drawn. The caller turns it into a Problem, which aborts the
