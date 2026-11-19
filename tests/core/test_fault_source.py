@@ -8,10 +8,7 @@ unmarked string as the league's own refusal.
 """
 from __future__ import annotations
 
-import pytest
 
-
-@pytest.mark.xfail(strict=True, reason="#584: core has no FaultSource, FaultWords or source_of yet")
 def test_fault_words_carry_where_the_fault_lies():
     from leaguebot.core.models.fault_source import FaultSource, FaultWords, source_of
 
