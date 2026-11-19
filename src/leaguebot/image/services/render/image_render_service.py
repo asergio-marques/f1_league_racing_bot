@@ -27,6 +27,7 @@ from dataclasses import dataclass, field as dataclass_field
 from leaguebot.framework.utils.interaction_errors import describe_fault
 from leaguebot.image.models.image_constants import NOTICE_TIER_COLOURS_NOT_APPLIED
 from leaguebot.image.models.image_module import (
+    PROBLEM_CONVERTER_ABSENT,
     PROBLEM_DRAWING_FAULT,
     PROBLEM_NOT_SVG,
     PROBLEM_RASTERISER,
@@ -822,7 +823,7 @@ class ImageRenderService:
         if not converter_available():
             return RenderOutcome(
                 problem=Problem(
-                    kind=PROBLEM_RASTERISER,
+                    kind=PROBLEM_CONVERTER_ABSENT,
                     detail=f"{CONVERTER_NAME} is not installed on this host.",
                     template_key=image_type,
                 )

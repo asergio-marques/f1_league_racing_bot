@@ -969,9 +969,6 @@ async def test_wrapped_text_lands_inside_its_box_in_the_rasterised_png(tmp_path)
 
 
 @pytest.mark.parametrize("raise_faults", [True, False], ids=["raises-faults", "falls-back"])
-@pytest.mark.xfail(
-    strict=True, reason="#584: the converter's absence is not a problem of its own, for the host"
-)
 async def test_absent_converter_is_reported_and_no_render_attempted(
     db_path, module_service, config_service, template_dir, monkeypatch, tmp_path, raise_faults
 ):

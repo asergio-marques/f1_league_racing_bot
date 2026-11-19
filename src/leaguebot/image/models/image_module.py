@@ -131,7 +131,12 @@ PROBLEM_UNRESOLVED_VALUE = "UNRESOLVED_VALUE"
 PROBLEM_UNKNOWN_FIELD = "UNKNOWN_FIELD"
 PROBLEM_ASSET_UNRESOLVED = "ASSET_UNRESOLVED"
 PROBLEM_CAPACITY_EXCEEDED = "CAPACITY_EXCEEDED"
+#: The converter wrote an image larger than Discord accepts: the league can shrink its canvas
+#: or artwork. Any other conversion failure is a :data:`PROBLEM_DRAWING_FAULT`.
 PROBLEM_RASTERISER = "RASTERISER"
+#: The converter is not installed on the machine running the bot. It keeps its words, and only the
+#: host can put it right.
+PROBLEM_CONVERTER_ABSENT = "CONVERTER_ABSENT"
 #: A wrapped field the template gives no leading, or no room, to lay out (XIV.5, v4.8.0).
 #: Both are **structural** — read off the template alone — so both are complete at every one
 #: of the three validity moments and refuse at each. A `shape-inside` naming a rectangle the
@@ -174,7 +179,10 @@ class Problem:
 
     @property
     def source(self) -> FaultSource:
-        """Where the fault lies: the bot's for an internal kind, otherwise the league's."""
+        """Where the fault lies: the bot's for an internal kind, the host's where the converter
+        is absent, otherwise the league's."""
+        if self.kind == PROBLEM_CONVERTER_ABSENT:
+            return FaultSource.HOST
         return FaultSource.BOT if self.is_internal else FaultSource.LEAGUE
 
     def message(self, label: str | None = None) -> str:
