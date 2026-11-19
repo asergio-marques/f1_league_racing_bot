@@ -735,7 +735,7 @@ stated exception, core's among them; each docstring there named carries its reas
 
 | Starting point | The code |
 |---|---|
-| The slash-command sync at start-up | `on_ready`, which logs a refusal on the host and reports it to the log channel by `start_up_failure_line` |
+| The slash-command sync at start-up | `_when_ready`, which the bot's `on_ready` calls and which logs a refusal on the host and reports it to the log channel by `start_up_failure_line` |
 
 The framework's failure paths, a command, button or form, a Discord event, an autocomplete, a
 change, a scheduled job, a background task, the start-up sweep and the retry loop, and the log

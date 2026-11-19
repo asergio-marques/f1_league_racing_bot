@@ -1381,6 +1381,38 @@ def _sign_up_to_starting(bot: LeagueBot) -> None:
     bot.starting.subscribe(partial(image_wiring.start_up_steps, bot), module="images")
 
 
+async def _when_ready(bot: LeagueBot) -> None:
+    """What the bot does each time discord.py reports it ready: start up, then sync its commands.
+
+    discord.py reports the bot ready again after a network drop it could not resume, with no
+    restart. So this runs every step of the start-up through `start_up` alone, whose guard runs them
+    once per process, and returns at once where the guard is spent: a second ready runs no recovery
+    and syncs nothing (architecture.md, "Start-up runs once, in one function"). A recovery called
+    from here directly would undo work still in progress, saying the bot had restarted when it had
+    not. `test_a_second_ready_runs_no_start_up_step_and_syncs_nothing` pins it.
+    """
+    # Ready is reported once the bot has logged in, which is when it has a user.
+    assert bot.user is not None
+    log.info("Logged in as %s (id=%s)", bot.user, bot.user.id)
+
+    if not await start_up(
+        starting=bot.starting,
+        modules=bot.module_service,
+        change_queue=bot.change_queue,
+        scheduler=bot.scheduler_service,
+        post_log=bot.output_router.post_log,
+    ):
+        return
+
+    # Sync slash commands globally (may take up to 1 hour to propagate)
+    try:
+        synced = await bot.tree.sync()
+        log.info("Synced %d slash command(s)", len(synced))
+    except discord.HTTPException as exc:
+        log.error("Failed to sync slash commands: %s", exc)
+        await bot.output_router.post_log(start_up_failure_line("slash command sync", exc))
+
+
 async def main() -> None:
     load_dotenv()
     settings = read_settings(os.environ)
@@ -1418,29 +1450,7 @@ async def main() -> None:
 
     @bot.event
     async def on_ready() -> None:
-        # `on_ready` fires once the bot has logged in, which is when it has a user.
-        assert bot.user is not None
-        log.info("Logged in as %s (id=%s)", bot.user, bot.user.id)
-
-        # Start-up runs once per process, the sweep over the steps `build` signed up; a second ready, after a network
-        # drop, runs nothing again and syncs nothing (architecture.md, "Start-up runs once, in
-        # one function").
-        if not await start_up(
-            starting=bot.starting,
-            modules=bot.module_service,
-            change_queue=bot.change_queue,
-            scheduler=bot.scheduler_service,
-            post_log=bot.output_router.post_log,
-        ):
-            return
-
-        # Sync slash commands globally (may take up to 1 hour to propagate)
-        try:
-            synced = await bot.tree.sync()
-            log.info("Synced %d slash command(s)", len(synced))
-        except discord.HTTPException as exc:
-            log.error("Failed to sync slash commands: %s", exc)
-            await bot.output_router.post_log(start_up_failure_line("slash command sync", exc))
+        await _when_ready(bot)
 
     log.info("Starting bot...")
 
