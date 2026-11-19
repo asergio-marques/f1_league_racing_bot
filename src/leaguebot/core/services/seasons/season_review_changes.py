@@ -71,6 +71,7 @@ import aiosqlite
 import discord
 
 from leaguebot.core.models.fault_source import FaultSource
+from leaguebot.core.services.modules.image_drawing import picture_remedy
 from leaguebot.framework.db.database import get_connection
 from leaguebot.framework.models.change import (
     ChangeOrigin,
@@ -435,6 +436,24 @@ def _faults(ctx: OutcomeContext) -> list[tuple[str, str, FaultSource]]:
     ]
 
 
+def _remedies(faults: list[tuple[str, str, FaultSource]], review: str) -> str:
+    """What puts the pictures right, one sentence for each source among *faults*, in the order
+    league, bot, host: to correct the template, or that the fault is in the bot, or that the host
+    must install the converter, each with running *review* again."""
+    present = {source for _, _, source in faults}
+    sentences = []
+    for source in (FaultSource.LEAGUE, FaultSource.BOT, FaultSource.HOST):
+        if source not in present:
+            continue
+        if source is FaultSource.LEAGUE:
+            sentences.append(
+                f"Correct the template or the assets it names, then run `{review}` again.")
+            continue
+        words = picture_remedy(source, template="", then=f"run `{review}` again")
+        sentences.append(f"{words[0].upper()}{words[1:]}.")
+    return " ".join(sentences)
+
+
 def _posted_ids(ctx: OutcomeContext) -> list[int]:
     """The ids of the pictures and report sections posted so far, in the order posted."""
     return [
@@ -680,8 +699,8 @@ def season_review_post_change(
             "\u26d4 **A graphic could not be drawn for this review.**\n"
             f"{body}\n"
             f"Its section was shown as text, and {withheld} "
-            "while that stands, so no question was posted. Correct the template or the assets "
-            f"it names, then run `{ctx.payload['review']}` again."
+            f"while that stands, so no question was posted. "
+            f"{_remedies(faults, str(ctx.payload['review']))}"
         )
         return f"{text}\n\n{section}" if section else text
 

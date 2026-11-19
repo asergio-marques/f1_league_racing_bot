@@ -658,8 +658,6 @@ _AM_LINEUP = {"name": "Am lineup", "division_id": 12, "kind": "lineup",
     pytest.param(
         {"broken": {"Pro lineup"}}, PICTURES, {"Pro lineup": _BOT_WORDS}, [_BOT_SENTENCE],
         [_FONT, "Correct the template", "Inkscape"],
-        marks=pytest.mark.xfail(strict=True, reason="#584: the review names a fault in the bot "
-                                "in its own words and tells Alex to correct the template"),
         id="bot"),
     pytest.param(
         {"refused": {"Pro lineup"}}, PICTURES, {"Pro lineup": _REFUSED_WORDS},
@@ -667,16 +665,12 @@ _AM_LINEUP = {"name": "Am lineup", "division_id": 12, "kind": "lineup",
     pytest.param(
         {"absent": {"Pro lineup"}}, PICTURES, {"Pro lineup": _ABSENT_WORDS}, [_HOST_SENTENCE],
         ["Correct the template", "The fault is in the bot"],
-        marks=pytest.mark.xfail(strict=True, reason="#584: the review tells Alex to correct the "
-                                "template where Inkscape is not installed"),
         id="host"),
     pytest.param(
         {"absent": {"Pro calendar"}, "broken": {"Pro lineup"}, "refused": {"Am lineup"}},
         [*PICTURES, _AM_LINEUP],
         {"Pro calendar": _ABSENT_WORDS, "Pro lineup": _BOT_WORDS, "Am lineup": _REFUSED_WORDS},
         [_TEMPLATE_SENTENCE, _BOT_SENTENCE, _HOST_SENTENCE], [_FONT],
-        marks=pytest.mark.xfail(strict=True, reason="#584: the review gives one remedy, to "
-                                "correct the template, whatever the faults' sources"),
         id="all_three"),
 ])
 async def test_a_picture_that_will_not_draw_withholds_the_button_and_is_told_in_the_reviewer_s_reply(
