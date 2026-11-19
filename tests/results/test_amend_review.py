@@ -704,6 +704,8 @@ async def test_the_panel_names_no_channel_command_for_a_fault_that_is_not_a_chan
     else:
         assert "the season could not be read" in panel
         assert "Nothing would be changed." in panel
+        assert panel.lower().count("nothing would be changed") == 1
+        assert "Approving rescores" not in panel
         assert "could not be published" not in panel
         assert "•" not in panel
 

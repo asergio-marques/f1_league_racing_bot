@@ -1631,6 +1631,7 @@ async def test_an_amendment_is_refused_when_the_season_cannot_be_read(tmp_path):
     assert len(re.findall(r"nothing (?:was|has been) changed", reply, re.IGNORECASE)) == 1
     assert "**Nothing has been changed**" in reply
     assert "Repair the channels" not in reply
+    assert "•" not in reply
     [line] = _refusal_lines(league)
     assert "\n" not in line
     assert await _approvals(league) == []
