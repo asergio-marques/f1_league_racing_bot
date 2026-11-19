@@ -1584,7 +1584,7 @@ async def repost_channel_faults(
     approval as a live division's does, and the channel is set again with `/results channel
     results` or `standings`.
     """
-    bot_member, faults = _repost_gate(guild, bot)
+    bot_member, faults = repost_reach_fault(guild, bot)
     if faults:
         return faults
 
@@ -1607,12 +1607,13 @@ async def repost_channel_faults(
     return await _channel_faults_for_rows(division_rows, guild, bot_member, drawing)
 
 
-def _repost_gate(guild: "discord.Guild | None", bot: LeagueBot | None):
+def repost_reach_fault(guild: "discord.Guild | None", bot: LeagueBot | None):
     """The bot member the permission arithmetic needs, or the fault standing in its way.
 
-    Shared by the season-wide and division-wide gates so that the two cannot drift: both
-    refuse a guild they cannot reach, and both treat an unresolvable bot member as a fault
-    rather than as leave to assume (#187).
+    The gate of `repost_channel_faults`, and the one fault it can return that is not about a
+    channel: a guild the bot cannot reach, or a bot member it cannot resolve. Both are refused
+    rather than assumed (#187), and each line carries its own next step, so a caller that tells
+    the two kinds apart (`points_amendment_faults.approval_faults`) asks it before the channels.
     """
     if guild is None:
         return None, [
