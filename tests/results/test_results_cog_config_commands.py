@@ -295,7 +295,7 @@ async def test_the_results_module_gate_logs_its_refusal_unless_record_is_false(r
 async def test_a_view_refused_by_a_shared_check_writes_no_log_line(command, name, args, results_on):
     """Views, lists and previews change nothing and record nothing: a view the module gate turns
     away is answered, and the log channel is not written. `/results amend review` leads to a
-    change, so its refusals are recorded, and tests/core/test_amend_review.py pins them."""
+    change, so its refusals are recorded, and tests/results/test_amend_review.py pins them."""
     bot = _gate_bot(results_on=results_on)
     cog = ResultsCog.__new__(ResultsCog)
     cog.bot = bot
