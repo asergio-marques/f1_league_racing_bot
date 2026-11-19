@@ -301,7 +301,8 @@ async def test_a_fault_in_the_save_saves_neither_the_hub_nor_its_audit_entry(
         "recorded in the log channel."
     )
     assert _lines(cog) == [
-        f"❌ `/bot hub-channel` failed for {NAMED} — OperationalError. The details are in the "
+        f"❌ `/bot hub-channel` failed for {NAMED} — "
+        "the bot could not read or write its database. The details are in the "
         f"host's log."
     ]
     assert await stopped_job(db_path) is None
@@ -411,7 +412,8 @@ async def test_a_step_after_the_save_that_raises_leaves_the_hub_saved_and_record
         f"{SET}\n⚠️ The setting is saved, but the hub's permissions could not be updated."
     )
     assert _lines(cog) == [
-        f"❌ `/bot hub-channel` failed for {NAMED} — RuntimeError. The details are in the "
+        f"❌ `/bot hub-channel` failed for {NAMED} — "
+        "the bot hit an internal fault. The details are in the "
         f"host's log."
     ]
 

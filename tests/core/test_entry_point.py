@@ -236,19 +236,26 @@ async def test_the_review_s_lineup_picture_is_drawn_through_the_image_module_s_d
     assert asked == [(guild, 11, True)]
 
 
-@pytest.mark.parametrize(("problem", "fault"), [
-    pytest.param("❌ the template's font could not be loaded",
+@pytest.mark.parametrize(("problem", "source", "fault"), [
+    pytest.param("❌ the template's font could not be loaded", None,
                  "❌ the template's font could not be loaded", id="its_words"),
-    pytest.param(None, "the lineup could not be drawn", id="no_words"),
+    pytest.param(None, None, "the lineup could not be drawn", id="no_words"),
+    pytest.param("❌ the lineup: the bot hit an internal fault", "bot",
+                 "❌ the lineup: the bot hit an internal fault", id="bot"),
+    pytest.param("❌ Inkscape is not installed on this host.", "host",
+                 "❌ Inkscape is not installed on this host.", id="host"),
 ])
 async def test_a_review_lineup_the_image_module_s_drawing_will_not_draw_raises_with_its_words(
-    tmp_path, monkeypatch, problem, fault,
+    tmp_path, monkeypatch, problem, source, fault,
 ):
     """The review asks for Pro's lineup picture, and the image module's drawing the builder
     attached to the bot answers `draw_review_lineup` with no picture: with its words for why, or
-    with none. The builder's drawing of review pictures raises with exactly those words, or, with
+    with none; and, where it says so, with the fault in the bot or with Inkscape not installed on
+    the host. The builder's drawing of review pictures raises with exactly those words, or, with
     none, with "the lineup could not be drawn", so the review withholds its question and keeps
-    the fault as the reviewer and the log channel read it today."""
+    the fault as the reviewer and the log channel read it today; and where the picture says where
+    its fault lies, the bot or the host, what it raises says the same, so the review can say what
+    puts the picture right."""
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
 
@@ -260,9 +267,15 @@ async def test_a_review_lineup_the_image_module_s_drawing_will_not_draw_raises_w
     monkeypatch.setattr(bot.config_service, "get_league_server_id", AsyncMock(return_value=1))
     monkeypatch.setattr(bot, "get_guild", lambda server_id: guild if server_id == 1 else None)
 
+    where: dict[str, object] = {}
+    if source is not None:
+        from leaguebot.core.models.fault_source import FaultSource
+
+        where = {"fault_source": FaultSource(source)}
+
     async def draw_review_lineup(on: object, division_id: int, *,
                                  include_uncommitted: bool) -> LineupPicture:
-        return LineupPicture(path=None, problem=problem)
+        return LineupPicture(path=None, problem=problem, **where)
 
     monkeypatch.setattr(bot.image_drawing, "draw_review_lineup", draw_review_lineup,
                         raising=False)
@@ -271,6 +284,8 @@ async def test_a_review_lineup_the_image_module_s_drawing_will_not_draw_raises_w
         await _draw_review_picture(bot, {"kind": "lineup", "division_id": 11})
 
     assert str(raised.value) == fault
+    if source is not None:
+        assert raised.value.source is where["fault_source"]
 
 
 #: The kinds of the scheduler's own jobs, each signed up with its handler by the builder.
@@ -963,7 +978,8 @@ async def test_a_timed_job_s_failure_line_is_kept_when_the_log_channel_refuses_i
     assert channel_id == LOG_CHANNEL_ID
     assert content.startswith("❌ The bot's timed job `a_kind")
     assert "(key 12)" in content
-    assert "RuntimeError" in content
+    assert "the bot hit an internal fault" in content
+    assert "RuntimeError" not in content
     assert "the handler broke" not in content
     assert any(
         "no member's interaction can be told" in record.getMessage() for record in caplog.records
@@ -1338,7 +1354,8 @@ async def test_a_refused_command_sync_is_reported_to_the_log_channel(tmp_path, m
 
     assert calls[-2:] == ["start-up", "commands synced"]
     assert bot.lines == [
-        "❌ The bot's start-up step `slash command sync` failed — HTTPException. "
+        "❌ The bot's start-up step `slash command sync` failed — Discord refused or failed "
+        "a request from the bot. "
         "The details are in the host's log."]
     assert [r for r in caplog.records
             if r.name == "leaguebot.__main__" and r.levelno >= logging.ERROR

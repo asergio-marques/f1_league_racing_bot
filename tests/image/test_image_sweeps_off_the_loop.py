@@ -584,9 +584,11 @@ def _parsed_where(monkeypatch) -> list[threading.Thread]:
 
 
 async def test_a_render_parses_its_template_off_the_loop(monkeypatch):
-    """The calendar template rendered with a fill that fails after the parse: the parse runs
-    once, in a worker thread and never on the loop, the fill's fault still comes back as an
-    unresolved value, and nothing the worker hands back holds a tree."""
+    """The calendar template rendered with a builder that fails after the parse: the parse runs
+    once, in a worker thread and never on the loop, the builder's fault still comes back as a
+    fault in the bot, and nothing the worker hands back holds a tree."""
+    from leaguebot.image.models.image_module import PROBLEM_DRAWING_FAULT
+
     threads = _parsed_where(monkeypatch)
     monkeypatch.setattr(image_render_service, "converter_available", lambda: True)
     validity = MagicMock()
@@ -600,7 +602,7 @@ async def test_a_render_parses_its_template_off_the_loop(monkeypatch):
     with recording_threads() as crossed:
         outcome = await ImageRenderService(MagicMock(), validity).render("calendar_template", stop)
 
-    assert outcome.problem.kind == PROBLEM_UNRESOLVED_VALUE
+    assert outcome.problem.kind == PROBLEM_DRAWING_FAULT
     assert len(threads) == 1 and threads[0] is not threading.current_thread()
     assert_no_tree_crossed(crossed)
 
@@ -652,23 +654,54 @@ async def test_a_render_with_no_fallback_raises_a_fault_in_the_bot(monkeypatch, 
     assert str(raised.value) == str(fault)
 
 
+@pytest.mark.parametrize("where", ["data", "fill"])
+async def test_a_render_with_a_fallback_returns_a_fault_in_the_bot_in_plain_words(
+    monkeypatch, where
+):
+    """The calendar drawn by a caller that falls back to text: a fault in the bot while the data
+    is assembled, or while the template is filled, comes back as an internal problem whose
+    words name only the kind of fault, never the exception's message, and no picture."""
+    from leaguebot.core.models.fault_source import FaultSource
+    from leaguebot.image.models.image_module import PROBLEM_DRAWING_FAULT
+
+    service = _shipped_calendar(monkeypatch)
+    fault: Exception = (
+        LookupError("no driver in seat 7") if where == "data" else RuntimeError("fill broke")
+    )
+    builder = _builder_raising(fault) if where == "data" else _fill_raising(monkeypatch, fault)
+
+    outcome = await service.render("calendar_template", builder)
+
+    assert outcome.problem.kind == PROBLEM_DRAWING_FAULT
+    assert outcome.problem.is_internal
+    assert outcome.problem.source is FaultSource.BOT
+    assert outcome.problem.detail == "the bot hit an internal fault"
+    assert str(fault) not in outcome.problem.detail
+    assert outcome.png_paths == []
+
+
+@pytest.mark.parametrize("raise_faults", [True, False], ids=["raises-faults", "falls-back"])
 @pytest.mark.parametrize("refusal", [
     CalendarDataError("Division 1 holds no round to draw"),
     CapacityError("the template declares no round to fill"),
 ], ids=["calendar-data", "capacity"])
-async def test_a_render_with_no_fallback_still_returns_the_leagues_own_refusal(
-    monkeypatch, refusal
+async def test_a_render_returns_the_leagues_own_refusal_whether_or_not_it_raises_faults(
+    monkeypatch, refusal, raise_faults
 ):
-    """The calendar drawn by a caller with no fallback, its data refused for a reason the league
-    can put right: the render still answers a problem naming it, and raises nothing."""
+    """The calendar drawn by a caller with no fallback, and by one that falls back to text, its
+    data refused for a reason the league can put right: the render answers a problem naming it
+    in its own words, as the league's to put right, and raises nothing."""
+    from leaguebot.core.models.fault_source import FaultSource
+
     service = _shipped_calendar(monkeypatch)
 
     outcome = await service.render(
-        "calendar_template", _builder_raising(refusal), raise_faults=True
+        "calendar_template", _builder_raising(refusal), raise_faults=raise_faults
     )
 
     assert outcome.problem.kind == PROBLEM_UNRESOLVED_VALUE
     assert str(refusal) in outcome.problem.detail
+    assert outcome.problem.source is FaultSource.LEAGUE
     assert outcome.png_paths == []
 
 

@@ -125,7 +125,8 @@ async def test_one_entry_that_raises_does_not_stop_the_rest_or_the_loop(caplog):
     [line] = post_log.await_args.args
     assert post_log.await_args.kwargs == {"channel": channel}
     assert line.startswith("❌")
-    assert "OperationalError" in line
+    assert "the bot could not read or write its database" in line
+    assert "OperationalError" not in line
     assert "2 kept lines" in line
     assert "database is locked" not in line
     assert "101" not in line and "102" not in line

@@ -566,3 +566,121 @@ async def test_a_discarded_classification_whose_done_save_failed_is_named_for_re
         "SELECT * FROM classification_posts WHERE division_id = ? AND occasion = ?",
         PRO, occasion.value,
     ) == []
+
+
+#: What the opening or final standings' line says where nothing posts their picture again.
+_NOTHING_POSTS_IT = "no command posts the final classification again, and the text stands"
+
+
+@pytest.mark.parametrize(("source", "fault", "put_right"), [
+    pytest.param(
+        "league", "the template has no rows",
+        f"fix the standings template; {_NOTHING_POSTS_IT}", id="league",
+    ),
+    pytest.param(
+        "bot", "the bot hit an internal fault",
+        f"the fault is in the bot, and its detail is in the host's log; {_NOTHING_POSTS_IT}",
+        id="bot",
+    ),
+    pytest.param(
+        "host", "Inkscape is not installed on this host.",
+        "Inkscape is not installed on the machine running the bot, and the host must install it; "
+        f"{_NOTHING_POSTS_IT}",
+        id="host",
+    ),
+    pytest.param(
+        "discord", "Discord refused the picture (Missing Access)", _NOTHING_POSTS_IT,
+        id="discord",
+    ),
+])
+def test_a_standings_picture_line_says_what_puts_it_right_by_where_the_fault_lies(
+    source, fault, put_right,
+):
+    """Pro's final classification went out as text where its drivers' picture was due, and the
+    job writes its line to the log channel. The picture was not posted for one of four reasons:
+    the league's template refused it ("league"), a fault in the bot ("bot"), Inkscape not
+    installed on the host ("host"), or Discord refusing the upload ("discord"). The line keeps
+    the fault's words, and says what puts it right by where the fault lies: to fix the standings
+    template; that the fault is the bot's, with its detail in the host's log; that the host must
+    install Inkscape; or, where Discord refused it, nothing of a template. Each ends saying that
+    no command posts the final classification again and the text stands."""
+    from types import SimpleNamespace
+
+    from leaguebot.results.services.publishing.results_post_service import UploadFault
+    from leaguebot.results.services.standings.season_standings_posts import (
+        _refused_picture_line,
+    )
+
+    if source == "discord":
+        words: str = UploadFault(fault)
+    elif source == "league":
+        words = fault
+    else:
+        from leaguebot.core.models.fault_source import FaultSource, FaultWords
+
+        words = FaultWords(fault, FaultSource[source.upper()])
+    ctx = SimpleNamespace(
+        named="Admin (`<@4242>`)", what="the season's completion",
+        step_payload={"division_name": "Pro"},
+    )
+
+    line = _refused_picture_line(ctx, "drivers", words, subject="final classification")
+
+    assert line == (
+        "Admin (`<@4242>`) | the season's completion | Standings posted as text\n"
+        "  division: Pro\n"
+        f"  problem: the drivers picture of the final classification could not be posted: {fault}\n"
+        f"  to put it right: {put_right}"
+    )
+
+
+@pytest.mark.parametrize("occasion, job, word", _OCCASIONS)
+async def test_a_classification_drawn_without_inkscape_says_the_host_must_install_it(
+    tmp_path, monkeypatch, occasion, job, word,  # noqa: ARG001 — job is the save tests'
+):
+    """Images and results on, the standings aspect on, and Inkscape not installed on the host:
+    each championship's render comes back with the converter's absence ("Inkscape is not
+    installed on this host."), so the opening classification (season 3 approved) or the final
+    one (the season completed) goes out as text. Every line the log channel is given for a
+    picture not drawn keeps those words and ends saying that the host must install Inkscape, and
+    that no command posts the classification again and the text stands."""
+    from types import SimpleNamespace
+
+    from leaguebot.image.models.image_module import PROBLEM_CONVERTER_ABSENT, Problem
+    from leaguebot.image.services.aspects import image_standings_post
+    from tests.support.change_queue import queued_log_lines
+    from tests.support.season_league import standings_pictures_are_due
+
+    absent = "Inkscape is not installed on this host."
+    if occasion is ClassificationOccasion.SEASON_OPENING:
+        league = await season_league(tmp_path, monkeypatch=monkeypatch, results=True, images=True)
+    else:
+        league = await pending_completion_league(tmp_path, images=True)
+    league.bot.image_config_service.is_aspect_enabled = AsyncMock(return_value=True)
+    standings_pictures_are_due(monkeypatch)
+    monkeypatch.setattr(image_standings_post, "render_png", AsyncMock(
+        return_value=SimpleNamespace(
+            notices=(), problem=Problem(PROBLEM_CONVERTER_ABSENT, absent),
+            posts_image=False, png_paths=(),
+        )
+    ))
+    if occasion is ClassificationOccasion.SEASON_OPENING:
+        await press_approve(league)
+    else:
+        await complete_season(league)
+
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    lines = [
+        line
+        for sent in list(league.bot.log_channel.sent) + await queued_log_lines(league.db_path)
+        for line in sent.splitlines()
+        if absent in line
+    ]
+    assert lines, "no line names the converter's absence"
+    for line in lines:
+        assert line.endswith(
+            f"{absent} To put it right: Inkscape is not installed on the machine running the bot, "
+            f"and the host must install it; no command posts the {word} again, and the text stands"
+        ), line

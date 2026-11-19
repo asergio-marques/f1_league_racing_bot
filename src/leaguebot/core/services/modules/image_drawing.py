@@ -36,6 +36,50 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
+from leaguebot.core.models.fault_source import FaultSource, source_of
+from leaguebot.framework.utils.interaction_errors import BOT_FAULT
+
+#: How the converter's absence is worded where a picture's line says what puts it right. A copy
+#: of the image module's `CONVERTER_NAME`, which core cannot import; a test pins that they agree.
+CONVERTER_ABSENT = (
+    "Inkscape is not installed on the machine running the bot, and the host must install it"
+)
+
+
+def picture_remedy(
+    source: FaultSource,
+    *,
+    template: str,
+    then: str | None = None,
+    otherwise: str | None = None,
+) -> str:
+    """What puts a picture right, worded by where its fault lies; the one wording every line reuses.
+
+    A fault the league can put right (`LEAGUE`) gives *template*, the line's own remedy. A fault
+    in the bot (`BOT`) says that it is the bot's and that its detail is in the host's log; the
+    converter's absence (`HOST`) says that the host must install it. Each then continues with
+    what posts the picture next, "once it is cleared" or "once it has", *then* being that step.
+    Where nothing posts it, *otherwise* is the line's own tail and stands in its place. Exactly
+    one of *then* and *otherwise* is given for a source that is not the league's.
+    """
+    if source is FaultSource.LEAGUE:
+        return template
+    if source is FaultSource.BOT:
+        return f"{BOT_FAULT}; " + (f"once it is cleared, {then}" if then else f"{otherwise}")
+    return f"{CONVERTER_ABSENT}; " + (f"once it has, {then}" if then else f"{otherwise}")
+
+
+def with_host_remedy(line: str, *, then: str | None = None, otherwise: str | None = None) -> str:
+    """*line*, the reason a picture was not drawn, with what puts it right added where the reason is
+    that Inkscape is not installed (the line is marked `HOST`, as the image module hands it back):
+    the host must install it, and *then* or *otherwise* says what posts the picture next, as
+    `picture_remedy` words it. A line for any other reason stands as it is: the posting module's
+    own fault catches add the remedy for those."""
+    if source_of(line) is not FaultSource.HOST:
+        return line
+    remedy = picture_remedy(FaultSource.HOST, template="", then=then, otherwise=otherwise)
+    return f"{line} To put it right: {remedy}"
+
 
 @dataclass(frozen=True)
 class CapacityProblem:
@@ -85,12 +129,15 @@ class CalendarPicture:
     module's words for why, with no final stop, or None where it drew. *notices* are the
     drawing's own words for what it survived. `draw_calendar` writes nothing to the log channel: a
     calendar is drawn inside a job, which records them among its own lines, once, and a command's
-    own output is the caller's to decide.
+    own output is the caller's to decide. *fault_source* says where the fault in *problem* lies,
+    for the line or reply that says what puts it right (`picture_remedy`): the league's where
+    there is no problem.
     """
 
     path: Path | None
     problem: str | None
     notices: tuple[str, ...] = field(default_factory=tuple)
+    fault_source: FaultSource = FaultSource.LEAGUE
 
 
 @dataclass(frozen=True)
@@ -103,13 +150,15 @@ class LineupPicture:
     to the log channel: the lineup of record and a review's are drawn inside a job, which records
     them among its own lines, once. `draw_lineup_for_command` runs in no job and reports them
     itself, handing back *log_link*, the link to the log message holding them, or None where it
-    posted none.
+    posted none. *fault_source* says where the fault in *problem* lies, as it does for
+    `CalendarPicture`.
     """
 
     path: Path | None
     problem: str | None
     notices: tuple[str, ...] = field(default_factory=tuple)
     log_link: str | None = None
+    fault_source: FaultSource = FaultSource.LEAGUE
 
 
 class ImageDrawing(Protocol):
@@ -187,7 +236,9 @@ class ImageDrawing(Protocol):
     ) -> CalendarPicture:
         """Draw *division*'s calendar of *rounds*, named against *tracks*. Hands back the
         picture drawn, or the problem naming why it could not be, and the notices it survived —
-        already reported to the log channel in one message."""
+        already reported to the log channel in one message. A refusal the league can put right (a
+        round whose track matches none) comes back as the problem, and the picture says where its
+        fault lies. Whatever is raised is a fault in the bot."""
 
     async def lineup_wanted(self) -> bool:
         """Whether this league conveys its lineup as a picture: both the module and the
@@ -203,7 +254,9 @@ class ImageDrawing(Protocol):
     async def draw_lineup(self, guild: Any, division_id: int) -> LineupPicture:
         """Draw *division_id*'s lineup in *guild*, as the lineup of record. Hands back the
         picture drawn, or the problem naming why it could not be, and the notices it survived
-        — already reported to the log channel in one message."""
+        — already reported to the log channel in one message. A refusal, even one met before the
+        render, comes back as the problem, and the picture says where its fault lies. Whatever is
+        raised is a fault in the bot."""
 
     async def draw_lineup_for_command(self, guild: Any, division_id: int) -> LineupPicture:
         """Draw *division_id*'s lineup in *guild*, as a command's own output rather than the
@@ -211,9 +264,11 @@ class ImageDrawing(Protocol):
         drawn, or the problem naming why it could not be — worded for the command's own
         refusal rather than the text fallback's — and the notices it survived, which it has reported
         to the log channel in one message, the command running in no job, with the link to that
-        message where one was posted. A fault reading the division itself (the
-        database cannot be opened) is let out, for the command's own failure path to report,
-        rather than turned into refusal words."""
+        message where one was posted. A refusal, even one met before the render, comes back as
+        the problem, and the picture says where its fault lies. Whatever is raised, a fault in the
+        bot while drawing or in reading the division itself (the database cannot be opened), is
+        let out, for the command's own failure path to report, rather than turned into refusal
+        words."""
 
     async def draw_review_lineup(
         self, guild: Any, division_id: int, *, include_uncommitted: bool,
@@ -224,8 +279,9 @@ class ImageDrawing(Protocol):
         the drivers a mid-season confirmation has not yet committed in it where
         *include_uncommitted*. Hands back the picture drawn, or the problem naming why it could
         not be, worded for the command's own refusal, and the notices it survived, for the review's
-        job to record among its own lines. A render that raises raises, with its words after
-        "❌"."""
+        job to record among its own lines. A refusal, even one met before the render, comes back
+        as the problem, and the picture says where its fault lies. Whatever is raised is a fault
+        in the bot, for the review to word by its kind."""
 
     def discard_picture(self, path: Path | None) -> None:
         """Release a path `draw_calendar`, `draw_lineup`, `draw_lineup_for_command` or

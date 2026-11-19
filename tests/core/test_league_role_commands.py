@@ -406,7 +406,8 @@ async def test_a_league_role_saves_its_value_and_audit_together(
         f"log channel."
     )
     assert _lines(bot) == [
-        f"❌ `{command}` failed for {NAMED} — OperationalError. The details are in the host's log."
+        f"❌ `{command}` failed for {NAMED} — "
+        "the bot could not read or write its database. The details are in the host's log."
     ]
     assert await stopped_job(db_path) is None
 
@@ -663,7 +664,8 @@ async def test_a_fault_giving_the_replacement_leaves_the_role_saved(
         f"hand.{others}"
     )
     assert _lines(bot) == [
-        f"❌ `{command}` failed for {NAMED} — RuntimeError. The details are in the host's log."
+        f"❌ `{command}` failed for {NAMED} — "
+        "the bot hit an internal fault. The details are in the host's log."
     ]
     assert await stopped_job(db_path) is None
 

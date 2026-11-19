@@ -302,7 +302,8 @@ async def test_a_weather_disable_whose_jobs_cannot_be_removed_leaves_weather_off
     lines = await log_lines(league)
     assert lines.count(f"{NAMED} | /module disable weather | Success") == 1
     assert [line for line in lines if line.startswith("❌ ")] == [
-        f"❌ `/module disable` failed for {NAMED} — RuntimeError. The details are in the host's log."
+        f"❌ `/module disable` failed for {NAMED} — "
+        "the bot hit an internal fault. The details are in the host's log."
     ]
     assert await stopped_job(league.db_path) is None
 
@@ -405,7 +406,8 @@ async def test_a_results_enable_whose_sweep_cannot_be_armed_leaves_results_on_an
     lines = await log_lines(league)
     assert lines.count(f"{NAMED} | /module enable results | Success") == 1
     assert [line for line in lines if line.startswith("❌ ")] == [
-        f"❌ `/module enable` failed for {NAMED} — RuntimeError. The details are in the host's log."
+        f"❌ `/module enable` failed for {NAMED} — "
+        "the bot hit an internal fault. The details are in the host's log."
     ]
     assert await stopped_job(league.db_path) is None
 
@@ -451,7 +453,8 @@ async def test_a_results_enable_that_cannot_be_written_says_the_module_is_still_
         "is cleared. The fault is recorded in the log channel."
     )
     assert await log_lines(league) == [
-        f"❌ `/module enable` failed for {NAMED} — IntegrityError. The details are in the host's log."
+        f"❌ `/module enable` failed for {NAMED} — "
+        "the bot could not read or write its database. The details are in the host's log."
     ]
 
 
@@ -833,7 +836,8 @@ async def test_an_attendance_enable_that_cannot_be_audited_leaves_the_module_off
         cursor = await db.execute("SELECT COUNT(*) FROM attendance_config")
         assert (await cursor.fetchone())[0] == 0
     assert await log_lines(league) == [
-        f"❌ `/module enable` failed for {NAMED} — IntegrityError. The details are in the host's log."
+        f"❌ `/module enable` failed for {NAMED} — "
+        "the bot could not read or write its database. The details are in the host's log."
     ]
 
 
@@ -880,7 +884,8 @@ async def test_a_weather_enable_that_cannot_be_written_says_the_module_is_still_
     assert "Module remains disabled" not in replied
     [line] = await log_lines(league)
     assert line == (
-        f"❌ `/module enable` failed for {NAMED} — IntegrityError. The details are in the host's log."
+        f"❌ `/module enable` failed for {NAMED} — "
+        "the bot could not read or write its database. The details are in the host's log."
     )
     assert "disk I/O error" not in line
 

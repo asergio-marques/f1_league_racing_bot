@@ -589,7 +589,8 @@ async def test_a_signup_channel_edit_fault_goes_to_the_failure_path(tmp_path):
     lines = await log_lines(league)
     [failed] = [line for line in lines if line.startswith("❌ ")]
     assert failed.startswith(f"❌ `/signup channel` failed for {NAMED} (")
-    assert "— RuntimeError." in failed
+    assert "— the bot hit an internal fault." in failed
+    assert "RuntimeError" not in failed
     assert not any("gateway closed" in line for line in lines)
 
 

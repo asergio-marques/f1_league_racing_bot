@@ -192,7 +192,8 @@ def _assert_failure_recorded(cog, interaction, phase: str) -> None:
     assert len(lines) == 1
     line = lines[0]
     assert "`/test-mode advance`" in line
-    assert "failed for Maintainer (<@77>) — RuntimeError." in line
+    assert "failed for Maintainer (<@77>) — the bot hit an internal fault." in line
+    assert "RuntimeError" not in line
     assert f"at {named}" in line
 
 

@@ -25,6 +25,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from leaguebot.core.models.fault_source import FaultWords
+
 if TYPE_CHECKING:
     import discord
 
@@ -120,7 +122,7 @@ async def render_check_in(
         lines.append(ImageRenderService.format_notices(decision.notices, subject=what))
     if not decision.posts_image:
         if decision.problem is not None:
-            lines.append(fault(what, decision.problem.detail))
+            lines.append(FaultWords(fault(what, decision.problem.detail), decision.problem.source))
         return None, tuple(lines)
     png = decision.png_paths[0]
     return discord.File(str(png), filename=Path(png).name), tuple(lines)

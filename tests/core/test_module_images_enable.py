@@ -302,7 +302,8 @@ async def test_an_image_enable_that_cannot_be_written_says_the_module_is_still_o
     )
     assert "disk I/O error" not in replied
     assert await log_lines(league) == [
-        f"❌ `/module enable` failed for {NAMED} — IntegrityError. The details are in the host's log."
+        f"❌ `/module enable` failed for {NAMED} — "
+        "the bot could not read or write its database. The details are in the host's log."
     ]
 
 

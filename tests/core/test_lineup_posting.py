@@ -609,6 +609,58 @@ async def test_a_lineup_fallen_back_to_text_is_recorded_by_every_change_that_pos
             assert words not in told, told
 
 
+#: The posting job's line where the lineup fell back to text for a fault that is not the
+#: league's: the problem in the words given, and the remedy by where the fault lies.
+POSTED_AS_TEXT_BY_SOURCE = (
+    "the bot | posting the lineup of **Pro** | Lineup posted as text\n"
+    "  division: Pro\n"
+    "  problem: {problem}\n"
+    "  to put it right: {remedy}; once {once}, the picture is posted with the next change to "
+    "the division's drivers"
+)
+
+
+@pytest.mark.parametrize(("answers", "problem", "remedy", "once"), [
+    pytest.param(dict(fault=RuntimeError("KeyError: 7")), "the bot hit an internal fault",
+                 "the fault is in the bot, and its detail is in the host's log", "it is cleared",
+                 id="the drawing raising"),
+    pytest.param(dict(problem="the bot hit an internal fault", fault_source="bot"),
+                 "the bot hit an internal fault",
+                 "the fault is in the bot, and its detail is in the host's log", "it is cleared",
+                 id="a fault in the bot"),
+    pytest.param(dict(problem="Inkscape is not installed on this host", fault_source="host"),
+                 "Inkscape is not installed on this host",
+                 "Inkscape is not installed on the machine running the bot, and the host must "
+                 "install it", "it has",
+                 id="the converter absent"),
+])
+async def test_a_lineup_whose_drawing_fails_says_what_puts_it_right_by_where_the_fault_lies(
+    tmp_path, monkeypatch, answers, problem, remedy, once,
+):
+    """Pro's lineup asked of the queue, as a driver command asks it, while its drawing raises
+    "KeyError: 7", comes back with a fault in the bot, or comes back with the converter absent.
+    The lineup is posted as text and the queue does not stop; the "Lineup posted as text" line
+    names the problem by its kind, never the raised words, and says what puts it right by where
+    the fault lies: that the fault is the bot's and its detail in the host's log, or that the
+    host must install Inkscape, then that the next change to the division's drivers posts the
+    picture, and never to fix the template."""
+    from leaguebot.core.models.fault_source import FaultSource
+    from tests.support.lineup_drawing import LineupDrawingStub
+
+    if "fault_source" in answers:
+        answers = dict(answers, fault_source=FaultSource(answers["fault_source"]))
+    league, _ = await _lineup_asked(tmp_path, monkeypatch, LineupDrawingStub(**answers))
+
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    logged = list(league.bot.log_channel.sent)
+    assert not [line for line in logged if "KeyError" in line], logged
+    assert not [line for line in logged if "fix the lineup template" in line], logged
+    line = POSTED_AS_TEXT_BY_SOURCE.format(problem=problem, remedy=remedy, once=once)
+    assert sum(each.startswith(line) for each in logged) == 1, logged
+
+
 @pytest.mark.parametrize("form", ["text", "image"])
 async def test_the_lineup_s_id_and_audit_are_saved_with_its_post(tmp_path, monkeypatch, form):
     """Once the post job is done, and before the deletion after it runs, the division records

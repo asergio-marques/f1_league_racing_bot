@@ -29,6 +29,7 @@ from dataclasses import dataclass
 
 import discord
 
+from leaguebot.core.models.fault_source import FaultWords
 from leaguebot.image.models.image_module import PostingOrigin
 from leaguebot.image.models.standings_drawing import (  # noqa: F401 — STANDINGS_ASPECT re-exported
     CONSTRUCTORS_TEMPLATE_KEY,
@@ -74,14 +75,18 @@ def fault(what: str, detail: str) -> str:
 
 
 def lines_of(what: str, decision) -> tuple[str, ...]:
-    """The lines a render's notices and problem make, naming *what* they pertain to."""
+    """The lines a render's notices and problem make, naming *what* they pertain to.
+
+    The problem's line is marked with where its fault lies (`FaultWords`): the posting module that
+    writes the line adds what puts it right, as the picture's fault calls for.
+    """
     from leaguebot.image.services.render.image_render_service import ImageRenderService
 
     lines: list[str] = []
     if decision.notices:
         lines.append(ImageRenderService.format_notices(decision.notices, subject=what))
     if decision.problem is not None:
-        lines.append(fault(what, decision.problem.detail))
+        lines.append(FaultWords(fault(what, decision.problem.detail), decision.problem.source))
     return tuple(lines)
 
 

@@ -19,6 +19,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 
+from leaguebot.core.models.fault_source import FaultSource, FaultWords
+
 
 # ── Persisted entities ────────────────────────────────────────────────────
 
@@ -129,7 +131,12 @@ PROBLEM_UNRESOLVED_VALUE = "UNRESOLVED_VALUE"
 PROBLEM_UNKNOWN_FIELD = "UNKNOWN_FIELD"
 PROBLEM_ASSET_UNRESOLVED = "ASSET_UNRESOLVED"
 PROBLEM_CAPACITY_EXCEEDED = "CAPACITY_EXCEEDED"
+#: The converter wrote an image larger than Discord accepts: the league can shrink its canvas
+#: or artwork. Any other conversion failure is a :data:`PROBLEM_DRAWING_FAULT`.
 PROBLEM_RASTERISER = "RASTERISER"
+#: The converter is not installed on the machine running the bot. It keeps its words, and only the
+#: host can put it right.
+PROBLEM_CONVERTER_ABSENT = "CONVERTER_ABSENT"
 #: A wrapped field the template gives no leading, or no room, to lay out (XIV.5, v4.8.0).
 #: Both are **structural** — read off the template alone — so both are complete at every one
 #: of the three validity moments and refuse at each. A `shape-inside` naming a rectangle the
@@ -142,8 +149,13 @@ PROBLEM_WRAP_NO_EXTENT = "WRAP_NO_EXTENT"
 #: uniformly and no traceback escapes into a Discord surface.
 PROBLEM_UNKNOWN_IMAGE_TYPE = "UNKNOWN_IMAGE_TYPE"
 
+#: A fault in the bot met while drawing a graphic: in assembling its data, filling its template
+#: or converting it. Like :data:`PROBLEM_UNKNOWN_IMAGE_TYPE` no league can provoke or put it
+#: right, so its detail is the kind of fault in plain words and the exception is for the log.
+PROBLEM_DRAWING_FAULT = "DRAWING_FAULT"
+
 #: Kinds a user can neither cause nor fix. Their detail is for the log, not the caller.
-INTERNAL_PROBLEM_KINDS = frozenset({PROBLEM_UNKNOWN_IMAGE_TYPE})
+INTERNAL_PROBLEM_KINDS = frozenset({PROBLEM_UNKNOWN_IMAGE_TYPE, PROBLEM_DRAWING_FAULT})
 
 
 @dataclass
@@ -164,6 +176,20 @@ class Problem:
     def is_internal(self) -> bool:
         """True when a user could neither have caused this nor act on it."""
         return self.kind in INTERNAL_PROBLEM_KINDS
+
+    @property
+    def source(self) -> FaultSource:
+        """Where the fault lies: the bot's for an internal kind, the host's where the converter
+        is absent, otherwise the league's."""
+        if self.kind == PROBLEM_CONVERTER_ABSENT:
+            return FaultSource.HOST
+        return FaultSource.BOT if self.is_internal else FaultSource.LEAGUE
+
+    @property
+    def words(self) -> FaultWords:
+        """The problem's detail, marked with where its fault lies, for a line that carries it to a
+        posting module, which adds what puts it right."""
+        return FaultWords(self.detail, self.source)
 
     def message(self, label: str | None = None) -> str:
         """The sentence shown to a user.

@@ -11,6 +11,7 @@ import aiosqlite
 import discord
 
 from leaguebot.core.models.channel_needs import Needs
+from leaguebot.core.models.fault_source import FaultSource, source_of
 from leaguebot.core.services.drivers.driver_names import read_driver_names
 from leaguebot.framework.utils.hooks import AwaitedHook
 from leaguebot.framework.utils.in_a_job import posts_in_a_job
@@ -117,6 +118,12 @@ class PostedTable(NamedTuple):
     def at_discord(self) -> bool:
         """Whether *fault* was Discord's end of the upload, not the drawing."""
         return isinstance(self.fault, UploadFault)
+
+    @property
+    def fault_source(self) -> FaultSource:
+        """Where *fault* lies, as its words are marked (`FaultWords`): the league's where they
+        are not, as the words of a refusal or of Discord's are not."""
+        return FaultSource.LEAGUE if self.fault is None else source_of(self.fault)
 
 
 class UploadFault(str):
@@ -708,7 +715,7 @@ async def produce_session_results(
             # A fault in drawing the picture goes on the table for the job to say why the text
             # stands.
             log.error("results: image path failed for session %s: %s", session_result.id, exc, exc_info=True)
-            fault = fault_of(exc)
+            fault = drawing.drawing_fault(exc)
         if file is not None:
             try:
                 message_id = await post_standing(
@@ -968,7 +975,7 @@ async def produce_standings(
                 "the textual standings stand",
                 round_id,
             )
-            fault = fault_of(exc)
+            fault = drawing.drawing_fault(exc)
         if drawn is not None and drawn.applicable:
             lines = drawn.lines
             pictures: list[PostedTable] = []

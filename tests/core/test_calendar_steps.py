@@ -295,9 +295,9 @@ POSTED_AS_TEXT_IN_A_CANCELLED_SEASON = (
 
 def _drawing_fails(league: Any, monkeypatch: Any) -> CalendarDrawingStub:
     """The league conveys its calendar as a picture, and every drawing of one, through the drawing
-    the builder handed the calendar job, raises; gives the drawing."""
-    return draw_calendars_with(league.bot, monkeypatch,
-                               CalendarDrawingStub(fault=RuntimeError(PROBLEM)))
+    the builder handed the calendar job, comes back with `PROBLEM`, a template problem the league
+    puts right; gives the drawing."""
+    return draw_calendars_with(league.bot, monkeypatch, CalendarDrawingStub(problem=PROBLEM))
 
 
 async def _approved(tmp_path: Any, monkeypatch: Any) -> tuple[Any, Any]:
@@ -387,6 +387,86 @@ async def test_a_calendar_fallen_back_to_text_is_recorded_by_every_change_that_p
         told = reply(asked)
         for words in (PROBLEM, "posted as text", "Not notified", "Image notices"):
             assert words not in told, told
+
+
+#: The `post_calendar` job's line where the calendar fell back to text for a fault that is not
+#: the league's: the problem in the words given, and the remedy by where the fault lies.
+POSTED_AS_TEXT_BY_SOURCE = (
+    " | Calendar posted as text\n"
+    "  division: {division}\n"
+    "  problem: {problem}\n"
+    "  to put it right: {remedy}; once {once}, run `/division calendar-sync` while the season is "
+    "still being raced"
+)
+#: The remedy's opening for a fault in the bot, and for the converter's absence.
+BOT_REMEDY = "the fault is in the bot, and its detail is in the host's log"
+HOST_REMEDY = ("Inkscape is not installed on the machine running the bot, and the host must "
+               "install it")
+
+
+@pytest.mark.parametrize(("cancelled", "answers", "problem", "remedy", "once"), [
+    pytest.param(False, dict(fault=RuntimeError("KeyError: 7")), "the bot hit an internal fault",
+                 BOT_REMEDY, "it is cleared", id="the drawing raising"),
+    pytest.param(False, dict(problem="the bot hit an internal fault", fault_source="bot"),
+                 "the bot hit an internal fault", BOT_REMEDY, "it is cleared",
+                 id="a fault in the bot"),
+    pytest.param(False, dict(problem="Inkscape is not installed on this host",
+                             fault_source="host"),
+                 "Inkscape is not installed on this host", HOST_REMEDY, "it has",
+                 id="the converter absent"),
+    pytest.param(True, dict(fault=RuntimeError("KeyError: 7")), "the bot hit an internal fault",
+                 None, None, id="the drawing raising in a cancelled season"),
+    pytest.param(True, dict(problem="Inkscape is not installed on this host",
+                            fault_source="host"),
+                 "Inkscape is not installed on this host", None, None,
+                 id="the converter absent in a cancelled season"),
+])
+async def test_a_calendar_whose_drawing_fails_says_what_puts_it_right_by_where_the_fault_lies(
+    tmp_path, monkeypatch, cancelled, answers, problem, remedy, once,
+):
+    """Season 3's placements approved by the admin, Pro's and Am's calendars drawn by a drawing
+    that raises "KeyError: 7", that comes back with a fault in the bot, or that comes back with
+    the converter absent. Each calendar is posted as text and the queue does not stop; the
+    `post_calendar` job's line names the problem by its kind, never the raised words, and says
+    what puts it right by where the fault lies: that the fault is the bot's and its detail in the
+    host's log, or that the host must install Inkscape, then the command that posts it again,
+    and never to fix the template. Where season 3 is instead cancelled with `/season cancel` and
+    Pro's calendar is drawn by a drawing that raises, or that comes back with the converter
+    absent, the line names the problem the same way and still says nothing puts it right, as no
+    command posts the calendar again once the season is cancelled."""
+    if cancelled:
+        league = await ongoing_league(tmp_path, images=True)
+    else:
+        league = await season_league(tmp_path, monkeypatch=monkeypatch, images=True)
+    if "fault_source" in answers:
+        from leaguebot.core.models.fault_source import FaultSource
+
+        answers = dict(answers, fault_source=FaultSource(answers["fault_source"]))
+    draw_calendars_with(league.bot, monkeypatch, CalendarDrawingStub(**answers))
+    if cancelled:
+        await cancel_season(league)
+    else:
+        await press_approve(league)
+    assert not league.errors, league.errors
+
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    logged = list(league.bot.log_channel.sent)
+    assert not [line for line in logged if "KeyError" in line], logged
+    assert not [line for line in logged if "fix the calendar template" in line], logged
+    if cancelled:
+        opening = f"Admin (`<@{ADMIN_ID}>`) | `/season cancel`"
+        lines = [opening + POSTED_AS_TEXT_IN_A_CANCELLED_SEASON.format(
+            division="Pro", problem=problem)]
+    else:
+        opening = (f"Admin (`<@{ADMIN_ID}>`) | the \u2705 Approve button of "
+                   "`/season placements-review`")
+        lines = [opening + POSTED_AS_TEXT_BY_SOURCE.format(
+            division=division, problem=problem, remedy=remedy, once=once)
+            for division in ("Pro", "Am")]
+    for line in lines:
+        assert sum(each.startswith(line) for each in logged) == 1, logged
 
 
 #: What the drawing of Pro's calendar notes in the tests below, which it draws as a picture.

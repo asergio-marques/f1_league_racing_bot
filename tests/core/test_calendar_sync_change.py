@@ -222,13 +222,21 @@ async def test_a_retried_calendar_sync_posts_the_text(tmp_path, monkeypatch):
     ) in _outcome(interaction)
 
 
+@pytest.mark.parametrize(("answers", "words"), [
+    pytest.param(dict(problem="the template has no rows"), "the template has no rows",
+                 id="a template problem"),
+    pytest.param(dict(fault=RuntimeError("KeyError: 7")), "the bot hit an internal fault",
+                 id="the drawing raising"),
+])
 async def test_a_calendar_sync_whose_render_fails_posts_nothing_and_says_the_old_calendar_stands(
-    tmp_path, monkeypatch,
+    tmp_path, monkeypatch, answers, words,
 ):
-    """A commanded posting: the render failing posts nothing and deletes nothing (XIV.7)."""
+    """A commanded posting: the render failing posts nothing and deletes nothing (XIV.7). Pro's
+    calendar synced while its drawing comes back with a template problem, or raises "KeyError:
+    7": the reply and the refusal's line give the template problem in its words, and a raised
+    fault by its kind alone, never its own words."""
     league = await ongoing_league(tmp_path, images=True)
-    draw_calendars_with(league.bot, monkeypatch,
-                        CalendarDrawingStub(fault=RuntimeError("the template has no rows")))
+    draw_calendars_with(league.bot, monkeypatch, CalendarDrawingStub(**answers))
 
     interaction = await _sync(league)
     await run_queue(league.bot)
@@ -237,13 +245,14 @@ async def test_a_calendar_sync_whose_render_fails_posts_nothing_and_says_the_old
     assert CALENDAR_MESSAGE in league.channel(PRO_CALENDAR).messages
     assert await _calendar_id(league) == str(CALENDAR_MESSAGE)
     assert _outcome(interaction) == (
-        "❌ The calendar for **Pro** was not posted — the template has no rows\n"
+        f"\u274c The calendar for **Pro** was not posted \u2014 {words}\n"
         "Nothing was deleted; the previous calendar still stands."
     )
     refusals = [line for line in league.bot.log_channel.sent
                 if "`/division calendar-sync` refused for" in line]
     assert len(refusals) == 1
-    assert "the template has no rows" in refusals[0]
+    assert words in refusals[0]
+    assert "KeyError" not in refusals[0]
 
 
 async def test_a_calendar_sync_asked_before_the_season_is_done_is_refused_when_it_runs(tmp_path):

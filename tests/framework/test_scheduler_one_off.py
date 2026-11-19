@@ -391,7 +391,8 @@ async def test_a_failing_job_keeps_its_traceback(services, caplog, arm, job_id, 
     [line] = report.await_args.args
     assert line.startswith("❌ The bot's timed job ")
     assert "a_kind" in line
-    assert "RuntimeError" in line
+    assert "the bot hit an internal fault" in line
+    assert "RuntimeError" not in line
     assert "the handler broke" not in line
     if key is None:
         assert "(key" not in line

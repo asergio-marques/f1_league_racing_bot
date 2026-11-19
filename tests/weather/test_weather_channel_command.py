@@ -650,8 +650,8 @@ async def test_a_fault_in_the_save_saves_neither_the_channel_nor_its_audit(tmp_p
         "recorded in the log channel."
     )
     assert _lines(cog) == [
-        f"❌ `/weather channel` failed for {NAMED} — OperationalError. The details are in the "
-        f"host's log."
+        f"❌ `/weather channel` failed for {NAMED} — the bot could not read or write its "
+        f"database. The details are in the host's log."
     ]
     assert await stopped_job(db_path) is None
 

@@ -24,8 +24,11 @@ from pathlib import Path
 
 from dataclasses import dataclass, field as dataclass_field
 
+from leaguebot.framework.utils.interaction_errors import describe_fault
 from leaguebot.image.models.image_constants import NOTICE_TIER_COLOURS_NOT_APPLIED
 from leaguebot.image.models.image_module import (
+    PROBLEM_CONVERTER_ABSENT,
+    PROBLEM_DRAWING_FAULT,
     PROBLEM_NOT_SVG,
     PROBLEM_RASTERISER,
     PROBLEM_UNKNOWN_IMAGE_TYPE,
@@ -339,7 +342,19 @@ _RASTERISE_TIMEOUT_SECONDS = 120
 
 
 class RasterisationError(Exception):
-    """The converter failed. A problem, never a notice."""
+    """The converter failed. A problem, never a notice: a fault in the bot, named by its kind and
+    raised where the caller asks for it, unless it is a `ConverterAbsent` or a
+    `RasterisationRefused`, which keep their words."""
+
+
+class ConverterAbsent(RasterisationError):
+    """The converter is not installed, found so by the conversion itself. It keeps its words and
+    is the host's to put right."""
+
+
+class RasterisationRefused(RasterisationError):
+    """The converter wrote an image larger than Discord accepts. It keeps its words, and is the
+    league's to put right by shrinking a canvas or artwork."""
 
 
 def rasterise(svg: bytes, destination: Path, canvas: tuple[int, int]) -> Path:
@@ -350,7 +365,7 @@ def rasterise(svg: bytes, destination: Path, canvas: tuple[int, int]) -> Path:
     """
     executable = find_converter()
     if executable is None:
-        raise RasterisationError(f"{CONVERTER_NAME} is not installed on this host.")
+        raise ConverterAbsent(f"{CONVERTER_NAME} is not installed on this host.")
 
     width, height = canvas
     source = destination.with_suffix(".svg")
@@ -403,7 +418,7 @@ def rasterise(svg: bytes, destination: Path, canvas: tuple[int, int]) -> Path:
     size = destination.stat().st_size
     if size > MAX_ATTACHMENT_BYTES:
         discard_render(destination)
-        raise RasterisationError(
+        raise RasterisationRefused(
             f"the rendered image is {size / 1024 / 1024:.1f} MB, above Discord's "
             f"{MAX_ATTACHMENT_BYTES // 1024 // 1024} MB attachment limit."
         )
@@ -638,6 +653,19 @@ class _Drawn:
     notices: list[RenderNotice] = dataclass_field(default_factory=list)
 
 
+def _drawing_problem(exc: Exception, image_type: str, refusal_words: str) -> Problem:
+    """The problem a failed build or fill comes back as. A `DrawingRefused` is the league's to
+    put right and keeps its own words (*refusal_words*); any other exception is a fault in the
+    bot, named by its kind alone, its detail being in the log the caller has just written."""
+    if isinstance(exc, DrawingRefused):
+        return Problem(
+            kind=PROBLEM_UNRESOLVED_VALUE, detail=refusal_words, template_key=image_type
+        )
+    return Problem(
+        kind=PROBLEM_DRAWING_FAULT, detail=describe_fault(exc), template_key=image_type
+    )
+
+
 def _draw(
     path: Path,
     image_type: str,
@@ -656,17 +684,20 @@ def _draw(
     either through a slot.
 
     A template that cannot be read, a spec that cannot be built, data the verify finds unfit, a
-    fill that fails and a field the fill cannot resolve come back as a problem, and a palette that
-    cannot be applied and what the fill substituted as notices: the render's own fallback, which
-    the posting paths fall back from to text. A fault the verify meets in counting the template's
-    mandatory ids is not caught here: it leaves the worker and `off_the_loop` raises it out of
-    the render, for the caller's place-5 fallback.
+    fill that fails and a field the fill cannot resolve come back as a problem, and a palette
+    that cannot be applied and what the fill substituted as notices: the render's own fallback,
+    which the posting paths fall back from to text. A refusal the league can put right is a
+    problem in its own words; a fault in the bot is an internal problem naming only its kind. A
+    fault the verify meets in counting the template's mandatory ids is not caught here: it
+    leaves the worker and `off_the_loop` raises it out of the render, for the caller's place-5
+    fallback.
 
     What the builder or the fill raises is a problem only when it is a `DrawingRefused`, an error
     the league caused and can put right. Any other exception is a fault in the bot, and a caller
     with no fallback to text (the preview) asks for it raised (*raise_faults*), so that it reaches
     its command's failure path and is not shown to a league in Python's words. The posting paths
-    keep the default and fall back as before.
+    keep the default and fall back from an internal problem, whose detail is the kind of fault
+    and never the exception's message.
     """
     from leaguebot.image.utils.svg_document import SvgError, load_svg
     from leaguebot.image.utils.svg_fill import fill
@@ -698,10 +729,8 @@ def _draw(
             raise
         log.exception("render: spec build failed for %s", image_type)
         return _Drawn(
-            problem=Problem(
-                kind=PROBLEM_UNRESOLVED_VALUE,
-                detail=f"the data for this image could not be assembled — {exc}",
-                template_key=image_type,
+            problem=_drawing_problem(
+                exc, image_type, f"the data for this image could not be assembled — {exc}"
             ),
             notices=notices,
         )
@@ -721,10 +750,8 @@ def _draw(
             raise
         log.exception("render: fill failed for %s", image_type)
         return _Drawn(
-            problem=Problem(
-                kind=PROBLEM_UNRESOLVED_VALUE,
-                detail=f"the template could not be filled — {exc}",
-                template_key=image_type,
+            problem=_drawing_problem(
+                exc, image_type, f"the template could not be filled — {exc}"
             ),
             notices=notices,
         )
@@ -804,12 +831,16 @@ class ImageRenderService:
         exception the data build or the fill raises that is not a `DrawingRefused` is raised out
         of the render, to the caller's command-failure path, instead of being returned as a
         problem. A refusal the league can put right still comes back as a problem. The posting
-        paths leave it off and fall back from the problem as ever.
+        paths leave it off and fall back from the problem as ever. The converter's own failures
+        follow the same rule: a timeout, a failure to run, a non-zero exit and a missing output
+        file are faults, raised or returned as an internal problem naming only their kind, while
+        the converter's absence and an image larger than Discord accepts come back as problems
+        in their own words either way.
         """
         if not converter_available():
             return RenderOutcome(
                 problem=Problem(
-                    kind=PROBLEM_RASTERISER,
+                    kind=PROBLEM_CONVERTER_ABSENT,
                     detail=f"{CONVERTER_NAME} is not installed on this host.",
                     template_key=image_type,
                 )
@@ -873,11 +904,35 @@ class ImageRenderService:
             # asyncio bot that would stall the scheduler, the retry worker and every
             # in-flight interaction for its duration.
             png = await asyncio.to_thread(rasterise, drawn.svg, destination, drawn.canvas)
-        except RasterisationError as exc:
+        except ConverterAbsent as exc:
+            return RenderOutcome(
+                problem=Problem(
+                    kind=PROBLEM_CONVERTER_ABSENT,
+                    detail=str(exc),
+                    template_key=image_type,
+                ),
+                notices=notices,
+            )
+        except RasterisationRefused as exc:
             return RenderOutcome(
                 problem=Problem(
                     kind=PROBLEM_RASTERISER,
                     detail=str(exc),
+                    template_key=image_type,
+                ),
+                notices=notices,
+            )
+        except RasterisationError as exc:
+            # The converter timed out, could not be run, exited with an error or wrote nothing:
+            # a fault in the bot or its host, which no league can put right, so it is named by
+            # its kind, the converter's own text going to the log alone.
+            if raise_faults:
+                raise
+            log.error("render: conversion failed for %s: %s", image_type, exc, exc_info=True)
+            return RenderOutcome(
+                problem=Problem(
+                    kind=PROBLEM_DRAWING_FAULT,
+                    detail=describe_fault(exc),
                     template_key=image_type,
                 ),
                 notices=notices,

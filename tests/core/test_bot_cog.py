@@ -1193,7 +1193,8 @@ async def test_a_core_setting_saves_its_value_and_audit_together(
         f"log channel."
     )
     assert _delivered(bot, CONFIGURED_LOG) == [
-        f"❌ `{command}` failed for {_NAMED} — OperationalError. The details are in the host's log."
+        f"❌ `{command}` failed for {_NAMED} — "
+        "the bot could not read or write its database. The details are in the host's log."
     ]
     assert all(not bot.test_channels[cid].sent for cid in bot.test_channels if cid != CONFIGURED_LOG)
     assert await stopped_job(db_path) is None
@@ -2080,7 +2081,7 @@ async def test_bot_factory_reset_erases_nothing_without_a_backup(tmp_path, monke
     assert "the disk is full" not in reply
     [line] = _log_lines(bot)
     assert line.startswith(
-        f"❌ `/bot factory-reset` failed for admin (<@{OWNER_ID}>) — BackupFault."
+        f"❌ `/bot factory-reset` failed for admin (<@{OWNER_ID}>) — the bot hit an internal fault."
     )
     assert "the disk is full" not in line
     assert await ConfigService(db_path).get_league_server_id() == SERVER_ID

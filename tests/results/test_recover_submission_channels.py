@@ -520,7 +520,7 @@ async def test_a_round_that_cannot_be_recovered_is_reported_and_the_others_still
     assert round_failures(error) == {ROUND_ID: refused}
     assert lines == [
         "❌ The bot's start-up step `orphaned submission channels` failed for round 3 in "
-        "**Pro** — RecoveryFailed. The details are in the host's log."
+        "**Pro** — the bot hit an internal fault. The details are in the host's log."
     ]
 
 

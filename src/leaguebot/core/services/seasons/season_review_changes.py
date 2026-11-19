@@ -70,6 +70,8 @@ from typing import TYPE_CHECKING, Any, NamedTuple, TypeVar
 import aiosqlite
 import discord
 
+from leaguebot.core.models.fault_source import FaultSource
+from leaguebot.core.services.modules.image_drawing import picture_remedy
 from leaguebot.framework.db.database import get_connection
 from leaguebot.framework.models.change import (
     ChangeOrigin,
@@ -99,6 +101,7 @@ from leaguebot.framework.services.queue.change_types import (
 from leaguebot.framework.utils.channels import as_text_channel
 from leaguebot.framework.services.posting.notice_handler import delete_notice, send_notice
 from leaguebot.framework.utils.in_a_job import posts_in_a_job
+from leaguebot.framework.utils.interaction_errors import describe_fault
 from leaguebot.framework.utils.league_server import league_guild
 from leaguebot.framework.utils.log_lines import (
     abandoned_line, drawn_notices_line, drawn_notices_section, name_of_member,
@@ -139,11 +142,17 @@ class DrawnPicture(NamedTuple):
 class PictureNotDrawn(RuntimeError):
     """A review's picture the renderer would not draw, with the render notices it was drawn with
     before it failed, which the job that posts the picture records among its own lines beside the
-    fault: what a drawing noticed is not lost with the picture."""
+    fault: what a drawing noticed is not lost with the picture. *fault* is the drawing's own
+    words for why, and *source* says where the fault lies: the league's own template or artwork
+    unless the drawing said otherwise. Whatever else a drawing raises is a fault in the bot."""
 
-    def __init__(self, fault: str, notices: tuple[str, ...] = ()) -> None:
+    def __init__(
+        self, fault: str, notices: tuple[str, ...] = (),
+        source: FaultSource = FaultSource.LEAGUE,
+    ) -> None:
         super().__init__(fault)
         self.notices = notices
+        self.source = source
 
 
 #: Draws a review's picture to a file, raising where it will not draw: the file alone, or the file
@@ -414,13 +423,35 @@ def _view(ctx: OutcomeContext, name: str) -> list[Any]:
     return [view for view in ctx.steps if view.name == name]
 
 
-def _faults(ctx: OutcomeContext) -> list[tuple[str, str]]:
-    """Each picture that would not draw, as its name and the fault, in the order drawn."""
+def _faults(ctx: OutcomeContext) -> list[tuple[str, str, FaultSource]]:
+    """Each picture that would not draw, as its name, the fault and where it lies, in the order
+    drawn."""
     return [
-        (str(view.payload["picture"]["name"]), str(view.result["fault"]))
+        (
+            str(view.payload["picture"]["name"]), str(view.result["fault"]),
+            FaultSource(view.result.get("fault_source", FaultSource.BOT.value)),
+        )
         for view in _view(ctx, DRAW_AND_POST)
         if view.result and view.result.get("fault")
     ]
+
+
+def _remedies(faults: list[tuple[str, str, FaultSource]], review: str) -> str:
+    """What puts the pictures right, one sentence for each source among *faults*, in the order
+    league, bot, host: to correct the template, or that the fault is in the bot, or that the host
+    must install the converter, each with running *review* again."""
+    present = {source for _, _, source in faults}
+    sentences = []
+    for source in (FaultSource.LEAGUE, FaultSource.BOT, FaultSource.HOST):
+        if source not in present:
+            continue
+        if source is FaultSource.LEAGUE:
+            sentences.append(
+                f"Correct the template or the assets it names, then run `{review}` again.")
+            continue
+        words = picture_remedy(source, template="", then=f"run `{review}` again")
+        sentences.append(f"{words[0].upper()}{words[1:]}.")
+    return " ".join(sentences)
 
 
 def _posted_ids(ctx: OutcomeContext) -> list[int]:
@@ -492,6 +523,7 @@ def season_review_post_change(
         channel = await _channel_of(ctx)
         picture = ctx.step_payload["picture"]
         fault: str | None = None
+        fault_source = FaultSource.BOT
         drawn: Path | None = None
         notices: tuple[str, ...] = ()
         # The worker thread inherits the loop recorded here (`await_from_worker`).
@@ -501,9 +533,13 @@ def season_review_post_change(
             drawn, notices = (made.path, made.notices) if isinstance(made, DrawnPicture) else (made, ())
         except Exception as exc:  # noqa: BLE001 — a render fault is no stop, it withholds Approve
             log.error("season review: %s did not draw: %s", picture["name"], exc, exc_info=True)
-            fault = str(exc) or type(exc).__name__
             if isinstance(exc, PictureNotDrawn):
-                notices = exc.notices
+                # The drawing's own words, and where it says the fault lies.
+                fault, fault_source, notices = str(exc), exc.source, exc.notices
+            else:
+                # Anything else raised is a fault in the bot, named by its kind: the exception's
+                # own words are in the host's log, above.
+                fault = describe_fault(exc)
         message: discord.Message | None = None
         if drawn is not None:
             attachment = discord.File(str(drawn), filename=drawn.name)
@@ -538,6 +574,7 @@ def season_review_post_change(
         if fault is None:
             return StepResult(result=result, lines=lines, linked=linked)
         result["fault"] = fault
+        result["fault_source"] = fault_source.value
         line = (
             f"{ctx.named} | {ctx.payload['review']} | Picture not drawn\n"
             f"  picture: {picture['name']}\n  fault: {fault}"
@@ -650,7 +687,7 @@ def season_review_post_change(
         if not faults:
             # A review that drew with notices says it was posted, so that the section has a reply.
             return f"\u2705 Review posted.\n\n{section}" if section else ""
-        body = "\n".join(f"\u2022 **{name}**: {fault}" for name, fault in faults)
+        body = "\n".join(f"\u2022 **{name}**: {fault}" for name, fault, _ in faults)
         # The review's family words what is withheld: a season's approval, or the placements'
         # (or the configuration's) confirmation, as the review's other faults say.
         withheld = {
@@ -662,8 +699,8 @@ def season_review_post_change(
             "\u26d4 **A graphic could not be drawn for this review.**\n"
             f"{body}\n"
             f"Its section was shown as text, and {withheld} "
-            "while that stands, so no question was posted. Correct the template or the assets "
-            f"it names, then run `{ctx.payload['review']}` again."
+            f"while that stands, so no question was posted. "
+            f"{_remedies(faults, str(ctx.payload['review']))}"
         )
         return f"{text}\n\n{section}" if section else text
 

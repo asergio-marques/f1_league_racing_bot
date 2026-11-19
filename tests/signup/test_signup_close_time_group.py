@@ -528,7 +528,8 @@ async def test_a_close_timer_that_cannot_be_armed_or_removed_leaves_the_time_sav
     lines = await log_lines(league)
     [failed] = [line for line in lines if line.startswith("❌ ")]
     assert failed.startswith(f"❌ `/signup close-time {name}` failed for ")
-    assert "— RuntimeError." in failed
+    assert "— the bot hit an internal fault." in failed
+    assert "RuntimeError" not in failed
     assert not any("scheduler down" in line for line in lines)
 
 

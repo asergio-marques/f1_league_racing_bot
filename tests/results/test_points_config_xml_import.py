@@ -348,7 +348,8 @@ async def test_an_xml_import_database_fault_names_the_config_in_one_failure_line
     assert f"<@{MEMBER_ID}>" in line
     assert "/results config xml-import" in line
     assert CONFIG in line
-    assert "OperationalError" in line
+    assert "the bot could not read or write its database" in line
+    assert "OperationalError" not in line
     assert "no such table" not in line
 
 

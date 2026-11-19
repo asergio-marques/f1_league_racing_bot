@@ -258,6 +258,86 @@ async def test_the_rsvp_render_body_runs_and_labels_itself(tmp_path, monkeypatch
     assert seen["classes"] == ["track", "flag"]
 
 
+# ── A fault met in drawing a picture riding on a post ───────────────────
+
+
+async def _draw_check_in_call(drawing):
+    return await drawing.attach_check_in_call(
+        division_name="Pro", round_number=4, round_format="NORMAL",
+        scheduled_at=datetime(2026, 6, 1, 18, 0, tzinfo=timezone.utc),
+        track_name="Silverstone", season_number=3,
+    )
+
+
+async def _draw_sheet(drawing):
+    return await drawing.draw_attendance_sheet(
+        SimpleNamespace(), what="Season 3 Pro — attendance after round 4"
+    )
+
+
+async def _draw_banner(drawing):
+    return await drawing.draw_banner(
+        SimpleNamespace(division_name="Pro", round_number=4, season_number=3)
+    )
+
+
+@pytest.mark.parametrize(
+    "aspect,render,draw,raised,said",
+    [
+        pytest.param(
+            "image_rsvp_post", "render_check_in", _draw_check_in_call,
+            RuntimeError("KeyError: 7"), "the bot hit an internal fault",
+            id="check_in_call-a_fault_in_the_bot",
+        ),
+        pytest.param(
+            "image_attendance_post", "render_sheet", _draw_sheet,
+            RuntimeError("KeyError: 7"), "the bot hit an internal fault",
+            id="sheet-a_fault_in_the_bot",
+        ),
+        pytest.param(
+            "image_attendance_post", "render_sheet", _draw_sheet,
+            "refused", "round 4 of Pro records no attendance",
+            id="sheet-a_refusal",
+        ),
+        pytest.param(
+            "image_verdict_banner_post", "render_banner", _draw_banner,
+            RuntimeError("KeyError: 7"), "the bot hit an internal fault",
+            id="banner-a_fault_in_the_bot",
+        ),
+    ],
+)
+async def test_a_picture_riding_on_a_post_names_a_fault_in_the_bot_by_its_kind(
+    monkeypatch, aspect, render, draw, raised, said,
+):
+    """Pro's round 4 check-in call, its attendance sheet and its verdict banner, each drawn with
+    its render raising: the post goes out without its picture, and the one line the drawing hands
+    back names a fault in the bot by its kind alone, never in the exception's words, which go to
+    the host's log. A refusal the league can put right (the sheet's round recording no
+    attendance) keeps its own words."""
+    import importlib
+
+    from leaguebot.image.models.attendance_drawing import AttendanceDataError
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
+
+    if raised == "refused":
+        raised = AttendanceDataError(said)
+    module = importlib.import_module(f"leaguebot.image.services.aspects.{aspect}")
+    monkeypatch.setattr(module, render, AsyncMock(side_effect=raised))
+    bot = MagicMock()
+    drawing = ImageDrawing(
+        bot.module_service, bot.image_config_service, bot.image_validity_service,
+        renderer=bot.image_render_service, post_log=AsyncMock(), db_path="unused.db",
+    )
+    monkeypatch.setattr(drawing, "aspect_wanted", AsyncMock(return_value=True))
+
+    attachment, lines = await draw(drawing)
+
+    assert attachment is None
+    assert len(lines) == 1
+    assert lines[0].endswith(f": {said}")
+    assert "KeyError" not in lines[0]
+
+
 # ── The guard against this recurring ──────────────────────────────────────
 
 

@@ -479,7 +479,7 @@ async def test_a_round_start_that_cannot_be_asked_is_reported_once_and_the_next_
     assert round_failures(error) == {ROUND_3: refused}
     assert lines == [
         "❌ The bot's start-up step `missed round starts` failed for round 3 in **Pro** — "
-        "RecoveryFailed. The details are in the host's log."
+        "the bot hit an internal fault. The details are in the host's log."
     ]
 
 

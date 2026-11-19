@@ -814,24 +814,56 @@ async def test_a_sync_s_sanction_card_names_the_driver(tmp_path, request, pictur
         assert "5101" not in drawn[0]["driver_name"]
 
 
+#: The words the render gives where Inkscape is not installed, which the log channel keeps.
+CONVERTER_ABSENT_WORDS = "Inkscape is not installed on this host."
+#: What the sanction card's line says puts its picture right where Inkscape is not installed.
+CONVERTER_ABSENT_REMEDY = (
+    "Inkscape is not installed on the machine running the bot, and the host must install it; "
+    "no command posts a sanction's card again, and the text card stands"
+)
+
+
+@pytest.mark.parametrize("fault", [
+    pytest.param("bot"),
+    pytest.param("converter absent"),
+])
 async def test_a_sync_s_sanction_card_whose_picture_fails_is_posted_as_text_and_says_why(
-    tmp_path, drawn, monkeypatch,
+    tmp_path, request, monkeypatch, fault,
 ):
-    """As above, the verdict graphic on, but the image module's step that builds the picture
-    raises a fault it does not catch itself (a file it reads cannot be opened). Manager 77 runs
-    `/attendance sync` from round 1 and the queue is run. The card is posted as text naming the
-    driver and their move to reserve, the queue runs to the end, and the log channel gains one
-    line naming round 1 of Division 1, the verdict picture, the fault, that the card went out as
-    text, and that no command posts it again."""
+    """As above, the verdict graphic on, but the card's picture is not drawn: ("bot") the image
+    module's step that builds the picture raises a fault it does not catch itself (a file it
+    reads cannot be opened); ("converter absent") the render comes back not drawn, as Inkscape is
+    not installed on the host. Manager 77 runs `/attendance sync` from round 1 and the queue is
+    run. The card is posted as text naming the driver and their move to reserve, and the queue
+    runs to the end. For the fault in the bot, the log channel gains one line naming round 1 of
+    Division 1, the verdict picture, the fault by its kind alone and never in the words it was
+    raised with, that the card went out as text, that the fault is in the bot with its detail in
+    the host's log, and that no command posts it again. Without Inkscape, the log channel keeps
+    the render's words, and says the host must install it and that no command posts the card
+    again."""
     from leaguebot.image.services.aspects import image_verdict_post
 
-    fault = "the verdict picture's file could not be opened"
-
-    async def _fails(*_args: Any, **_kwargs: Any) -> Any:
-        raise OSError(fault)
-
-    monkeypatch.setattr(image_verdict_post, "build_drawing", _fails)
+    raised = "the verdict picture's file could not be opened"
     league = await _league(tmp_path, autosack=None, autoreserve=3)
+    if fault == "bot":
+        request.getfixturevalue("drawn")
+
+        async def _fails(*_args: Any, **_kwargs: Any) -> Any:
+            raise OSError(raised)
+
+        monkeypatch.setattr(image_verdict_post, "build_drawing", _fails)
+    else:
+        from leaguebot.image.models.image_module import Problem, RenderOutcome
+
+        answer_switch(league.bot.module_service, "images", True)
+        league.bot.image_config_service.get_toggles = AsyncMock(return_value={"verdicts": True})
+        league.bot.image_validity_service.template_reports = AsyncMock(
+            return_value={"verdicts_template": MagicMock(valid=True)}
+        )
+        league.bot.image_render_service.render = AsyncMock(return_value=RenderOutcome(
+            problem=Problem(kind="CONVERTER_ABSENT", detail=CONVERTER_ABSENT_WORDS,
+                            template_key="verdicts_template"),
+        ))
     await _a_member_owed_an_autoreserve(league)
 
     await _sync(league)
@@ -840,14 +872,24 @@ async def test_a_sync_s_sanction_card_whose_picture_fails_is_posted_as_text_and_
     assert await stopped_job(league.db_path) is None
     [card] = [each for each in league.verdicts() if "<@5101>" in each]
     assert "Moved to Reserve" in card
-    faults = [line.lower() for line in league.log_lines() if fault in line]
+    if fault == "converter absent":
+        lines = [line for line in league.log_lines() if CONVERTER_ABSENT_WORDS in line]
+        assert any(CONVERTER_ABSENT_REMEDY in line for line in lines), (
+            "\n".join(league.log_lines())
+        )
+        return
+    assert not [line for line in league.log_lines() if raised in line], league.log_lines()
+    internal = "the bot hit an internal fault"
+    faults = [line.lower() for line in league.log_lines() if internal in line]
     assert len(faults) == 1, league.log_lines()
     [line] = faults
     assert "division 1" in line and "round 1" in line, line
     assert "verdict" in line and ("picture" in line or "image" in line), line
     assert "text" in line, line
-    assert "to put it right: fix the verdict template; no command posts a sanction's card again" \
-        in line, line
+    assert (
+        "to put it right: the fault is in the bot, and its detail is in the host's log; "
+        "no command posts a sanction's card again, and the text card stands"
+    ) in line, line
 
 
 #: The detail of the one render notice the sanction card's picture below is drawn with.

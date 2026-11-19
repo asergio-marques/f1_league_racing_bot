@@ -243,7 +243,8 @@ async def test_a_database_the_recovery_cannot_read_is_reported_in_the_log_channe
 
     assert error is not None
     assert lines == [
-        "❌ The bot's start-up step `RSVP views and deadlines` failed — OperationalError. "
+        "❌ The bot's start-up step `RSVP views and deadlines` failed — the bot could not read or "
+        "write its database. "
         "The details are in the host's log."
     ]
     bot.add_view.assert_not_called()
@@ -467,7 +468,7 @@ async def test_a_failing_deadline_run_does_not_stop_the_startup(tmp_path):
     assert round_failures(error, module="attendance") == {ROUND_ID: refused}
     assert lines == [
         "❌ The bot's start-up step `RSVP views and deadlines` failed for round 3 in "
-        "**Division 1** — RecoveryFailed. The details are in the host's log."
+        "**Division 1** — the bot hit an internal fault. The details are in the host's log."
     ]
 
 

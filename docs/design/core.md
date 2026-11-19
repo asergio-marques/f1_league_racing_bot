@@ -599,6 +599,27 @@ and the calendar's in `post_division_calendar`, whose `commanded` parameter tell
 asked for from one that was not (`test_an_uncommanded_posting_falls_back_to_the_text`). The lineup's
 and the calendar's post job ask for text on every try after the first (`as_text`).
 
+**A fallback line says what puts the picture right by where its fault lies.** There are three
+places, which `FaultSource` names (`core/models/fault_source.py`, plain data with no Discord and no
+database): the league's own template or artwork, the bot, and the host that has not installed
+Inkscape. The pictures carry it (`CalendarPicture` and `LineupPicture`, `fault_source`), a posting's
+result and the review's result carry it as a field because a job's result is persisted, and a path
+that carries only words carries it in them (`FaultWords`, a `str` marked with its source, which
+`source_of` reads back and takes a plain string as the league's). The wording of each is one place,
+`picture_remedy` in `image_drawing.py`, beside the protocol, since core owns it and no module may
+own another's; what each says is the image specification's ("Errors and the rejection of input"),
+`CONVERTER_ABSENT` naming the converter as the image module's `CONVERTER_NAME` does, which a test
+holds it to, as core cannot import it. Each posting module adds the remedy to its own line, with its
+own step (`picture_remedy`, or `with_host_remedy` for a line the image module marked as the
+converter's absence), because the image module only draws and never writes another module's re-post
+step; a line where nothing posts the picture again ends with its own tail instead of the step. Where
+core catches a fault the drawing raised (`render_for_command`, `post_division_calendar`,
+`_refresh_lineup_post`, `draw_and_post`), it words it by its kind alone (`describe_fault`), the
+detail being in the host's log, and records the bot as its source; a picture not drawn
+(`PictureNotDrawn`) keeps its words and the source the drawing gave it. The fault paragraph of the
+review's reply ends with one sentence for each source among its pictures, in the order league, bot,
+host, since one review may hold pictures of each.
+
 **Who a post may mention is stated where it is sent** (`architecture.md`, "Posting to Discord"); who
 that is, is the core specification's ("The record of what changed", "How a change is carried out").
 `post_cancellation_notice` and `post_cancellation_message` post with the mentions their caller, a

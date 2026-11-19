@@ -801,7 +801,8 @@ async def test_a_fault_in_the_save_saves_neither_the_channel_nor_its_audit(
     entry's write fails on the database as the queue runs the change. The channel is not saved
     either: Division 1 still has none of its channels and no audit entry stands. The manager is
     told in `setting_change`'s words that nothing was saved and to run it again; the log channel
-    gets the one failure line and no success line; the queue is not stopped."""
+    gets the one failure line, naming the fault by its kind, and no success line; the queue is not
+    stopped."""
     from leaguebot.framework.services.queue import change_queue
 
     db_path = await _make_db(tmp_path)
@@ -822,8 +823,8 @@ async def test_a_fault_in_the_save_saves_neither_the_channel_nor_its_audit(
         f"to retry. The fault is recorded in the log channel."
     )
     assert _lines(cog) == [
-        f"❌ `/results channel {which}` failed for {NAMED} — OperationalError. The details are "
-        f"in the host's log."
+        f"❌ `/results channel {which}` failed for {NAMED} — the bot could not read or write its "
+        f"database. The details are in the host's log."
     ]
     assert await stopped_job(db_path) is None
 

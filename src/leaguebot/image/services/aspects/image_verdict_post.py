@@ -32,6 +32,7 @@ from leaguebot.core.services.drivers.driver_names import (
     read_driver_records,
     read_nationality_collected,
 )
+from leaguebot.core.models.fault_source import FaultWords, source_of
 from leaguebot.image.models.image_module import PostingOrigin
 from leaguebot.image.services.aspects.image_verdict_service import VerdictDrawing, VerdictKind
 
@@ -271,14 +272,18 @@ def fault(what: str, detail: str) -> str:
 
 
 def lines_of(what: str, render: VerdictRender) -> tuple[str, ...]:
-    """The lines a render's notices and problem make, naming *what* they pertain to."""
+    """The lines a render's notices and problem make, naming *what* they pertain to.
+
+    The problem's line is marked with where its fault lies (`FaultWords`): the posting module that
+    writes the line adds what puts it right, as the picture's fault calls for.
+    """
     from leaguebot.image.services.render.image_render_service import ImageRenderService
 
     lines: list[str] = []
     if render.notices:
         lines.append(ImageRenderService.format_notices(render.notices, subject=what))
     if render.problem:
-        lines.append(fault(what, render.problem))
+        lines.append(FaultWords(fault(what, render.problem), source_of(render.problem)))
     return tuple(lines)
 
 
@@ -321,14 +326,14 @@ async def render_verdict(
 
     if decision.rejects:
         return VerdictRender(
-            problem=(decision.problem.detail if decision.problem else None),
+            problem=(decision.problem.words if decision.problem else None),
             rejects=True,
             notices=decision.notices,
         )
 
     if not decision.posts_image:
         return VerdictRender(
-            problem=(decision.problem.detail if decision.problem else None),
+            problem=(decision.problem.words if decision.problem else None),
             notices=decision.notices,
         )
 

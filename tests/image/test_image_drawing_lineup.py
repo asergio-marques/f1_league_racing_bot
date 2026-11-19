@@ -53,8 +53,9 @@ def _guild():
 def _drawing(db_path=":memory:", *, images_on=True, aspect_on=True, valid=True, outcome=None):
     """Image's drawing over doubles of its services: the module, the `lineup` aspect and the
     lineup template's validity as given, the packaged directories configured, and a renderer
-    giving *outcome* (nothing drawn by default), keeping the spec builder it was handed in
-    `captured`. Handed the database path, as the builder hands it."""
+    giving *outcome* (nothing drawn by default), keeping the spec builder it was handed, and the
+    rest of what it was asked with, in `captured`. Handed the database path, as the builder hands
+    it."""
     from leaguebot.image.services.render.image_drawing import ImageDrawing
 
     modules = MagicMock()
@@ -82,6 +83,7 @@ def _drawing(db_path=":memory:", *, images_on=True, aspect_on=True, valid=True, 
     async def _render(image_type, spec_builder, **kwargs):
         captured["image_type"] = image_type
         captured["builder"] = spec_builder
+        captured["kwargs"] = kwargs
         return outcome or NS(problem=None, notices=[], png_paths=[])
 
     renderer = MagicMock()
@@ -276,10 +278,11 @@ async def test_a_lineup_drawn_inside_a_job_hands_its_notices_back_and_logs_nothi
     season review: the drawing writes nothing to the log channel itself, and hands both notices
     back with the picture, for the job that posts it to record once among its own lines (the
     owner's decision on #288: code inside a job never calls `post_log`). Nothing reaches the
-    lineup channel."""
+    lineup channel. The review's lineup, which has no text to fall back to, asks the render for a
+    fault in the bot raised; the lineup of record, which does, does not."""
     _portraits_spied(monkeypatch)
     guild, channel, _ = _guild()
-    drawing, _, post_log, _ = _drawing(
+    drawing, captured, post_log, _ = _drawing(
         db_path, outcome=NS(problem=None, notices=_two_lineup_notices(), png_paths=[])
     )
 
@@ -290,6 +293,7 @@ async def test_a_lineup_drawn_inside_a_job_hands_its_notices_back_and_logs_nothi
     assert "a fallback flag stood in for Zara's" in picture.notices
     assert "a fallback portrait stood in for Zara's" in picture.notices
     channel.send.assert_not_awaited()
+    assert bool(captured["kwargs"].get("raise_faults")) is (draw == "draw_review_lineup")
 
 
 #: The problem's words /team lineup's refusal carries, as `Problem.message("the lineup")` gives
@@ -299,30 +303,46 @@ _INTERNAL_WORDS = (
 )
 
 
+#: The converter's absence, in the words the render gives it.
+_ABSENT_WORDS = "Inkscape is not installed on this host."
+
+
 @pytest.mark.parametrize(
-    "draw,drawn,problem",
+    "draw,drawn,problem,source",
     [
-        pytest.param("draw_lineup", "a picture", None, id="of_record-a_picture"),
-        pytest.param("draw_lineup", "a field problem", "the template has no rows",
+        pytest.param("draw_lineup", "a picture", None, "LEAGUE", id="of_record-a_picture"),
+        pytest.param("draw_lineup", "a field problem", "the template has no rows", "LEAGUE",
                      id="of_record-a_problem"),
-        pytest.param("draw_lineup_for_command", "a picture", None, id="for_command-a_picture"),
+        pytest.param("draw_lineup", "a converter absent", _ABSENT_WORDS, "HOST",
+                     id="of_record-a_converter_absent"),
+        pytest.param("draw_lineup_for_command", "a picture", None, "LEAGUE",
+                     id="for_command-a_picture"),
         pytest.param("draw_lineup_for_command", "a field problem",
-                     "the lineup: `team_1` — the template has no rows",
+                     "the lineup: `team_1` — the template has no rows", "LEAGUE",
                      id="for_command-a_field_problem"),
-        pytest.param("draw_lineup_for_command", "an internal problem", _INTERNAL_WORDS,
+        pytest.param("draw_lineup_for_command", "an internal problem", _INTERNAL_WORDS, "BOT",
                      id="for_command-an_internal_problem"),
+        pytest.param("draw_lineup_for_command", "a converter absent",
+                     f"the lineup: {_ABSENT_WORDS}", "HOST",
+                     id="for_command-a_converter_absent"),
     ],
 )
 async def test_the_lineup_drawing_hands_back_the_picture_the_problem_and_the_notices(
-    db_path, monkeypatch, tmp_path, draw, drawn, problem,
+    db_path, monkeypatch, tmp_path, draw, drawn, problem, source,
 ):
     """Pro's lineup drawn, with one notice: the drawing hands core the picture's path where it was
     drawn, or the problem's words where it could not be, and the notices' words either way. It
     posts nothing to Pro's lineup channel. Drawn as the lineup of record, the problem is its bare
     detail, which the text lineup's fallback line carries. Drawn as `/team lineup`'s output, it
     is the words the command's refusal reads today: the lineup and the field at fault named before
-    the detail, and an internal fault, which no league can act on, never detailed."""
+    the detail, and an internal fault, which no league can act on, never detailed. The converter's
+    absence keeps its words either way. The picture says where its fault lies: the league's for a
+    field at fault or none, the bot's for an internal fault, the host's for the converter's
+    absence. `/team lineup`, which has no text to fall back to, asks the render for a fault in the
+    bot raised; the lineup of record does not."""
+    from leaguebot.core.models.fault_source import FaultSource
     from leaguebot.image.models.image_module import (
+        PROBLEM_CONVERTER_ABSENT,
         PROBLEM_UNKNOWN_IMAGE_TYPE,
         PROBLEM_UNRESOLVED_VALUE,
         Problem,
@@ -341,19 +361,57 @@ async def test_the_lineup_drawing_hands_back_the_picture_the_problem_and_the_not
                                    detail="the template has no rows", field_id="team_1"),
         "an internal problem": Problem(kind=PROBLEM_UNKNOWN_IMAGE_TYPE,
                                        detail="no renderer for lineup_template"),
+        "a converter absent": Problem(kind=PROBLEM_CONVERTER_ABSENT, detail=_ABSENT_WORDS),
     }.get(drawn)
     outcome = (
         NS(problem=None, notices=[notice], png_paths=[png]) if fault is None
         else NS(problem=fault, notices=[notice], png_paths=[])
     )
     guild, channel, _ = _guild()
-    drawing, *_ = _drawing(db_path, outcome=outcome)
+    drawing, captured, *_ = _drawing(db_path, outcome=outcome)
 
     picture = await getattr(drawing, draw)(guild, DIVISION_ID)
 
     assert picture.path == (png if fault is None else None)
     assert picture.problem == problem
+    assert picture.fault_source is FaultSource[source]
     assert tuple(picture.notices) == ("a fallback flag stood in for Zara's",)
+    channel.send.assert_not_awaited()
+    assert bool(captured["kwargs"].get("raise_faults")) is (draw == "draw_lineup_for_command")
+
+
+#: Each way a lineup is drawn, what it is handed beyond the guild and the division, and the words
+#: its problem gives a division that no longer exists.
+REFUSED_DRAWS = [
+    pytest.param("draw_lineup", {}, "the division no longer exists", id="of_record"),
+    pytest.param("draw_lineup_for_command", {}, "the lineup: the division no longer exists",
+                 id="for_command"),
+    pytest.param("draw_review_lineup", {"include_uncommitted": True},
+                 "❌ the lineup: the division no longer exists", id="for_review"),
+]
+
+
+@pytest.mark.parametrize("draw,handed,problem", REFUSED_DRAWS)
+async def test_a_lineup_refused_before_its_render_comes_back_as_its_problem(
+    db_path, monkeypatch, draw, handed, problem,
+):
+    """A lineup asked for a division that no longer exists, as the lineup of record, as
+    `/team lineup`'s output and for a season review: the refusal comes back as the picture's
+    problem, in the words each draw gives a problem, naming no division by its number. Nothing is
+    raised and nothing is rendered, and the fault is the league's."""
+    from leaguebot.core.models.fault_source import FaultSource
+
+    _portraits_spied(monkeypatch)
+    guild, channel, _ = _guild()
+    drawing, captured, *_ = _drawing(db_path)
+
+    picture = await getattr(drawing, draw)(guild, 999, **handed)
+
+    assert picture.problem == problem
+    assert "999" not in picture.problem
+    assert picture.path is None
+    assert picture.fault_source is FaultSource.LEAGUE
+    assert "builder" not in captured
     channel.send.assert_not_awaited()
 
 

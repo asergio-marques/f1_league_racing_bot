@@ -69,6 +69,7 @@ from leaguebot.framework.services.queue.change_types import (
     StepView,
 )
 from leaguebot.framework.services.posting.notice_handler import send_notice
+from leaguebot.core.services.modules.image_drawing import with_host_remedy
 from leaguebot.core.services.seasons.season_service import division_on, round_facts_on
 from leaguebot.core.services.rounds.round_moments import clean_up_moment
 from leaguebot.core.services.rounds.round_steps import judge_kept, named_now, round_number_now
@@ -317,6 +318,10 @@ def forecast_steps(*, now: Callable[[], datetime], drawing: ImageDrawing) -> dic
             attachment, lines = await drawing.attach_forecast(
                 round_id, phase,
                 values=forecast_values(phase, payload, payload if phase == 1 else first),
+            )
+            lines = tuple(
+                with_host_remedy(line, then="the next forecast is posted with its picture")
+                for line in lines
             )
         try:
             parts = await forecast_cleanup_service.post_phase_message(

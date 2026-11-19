@@ -384,7 +384,7 @@ async def test_one_round_failing_its_recovery_stops_none_of_the_others(tmp_path)
     assert "round 1 in **Division 1**" in str(error), str(error)
     assert sweep["lines"] == [
         "❌ The bot's start-up step `missed phases` failed for round 1 in **Division 1** — "
-        "RecoveryFailed. The details are in the host's log."
+        "the bot hit an internal fault. The details are in the host's log."
     ]
 
 
@@ -418,7 +418,7 @@ async def test_a_round_whose_start_cannot_be_read_fails_its_missed_phases_alone(
     assert isinstance(failures[2], ValueError), failures
     assert sweep["lines"] == [
         "❌ The bot's start-up step `missed phases` failed for round 2 in **Division 1** — "
-        "RecoveryFailed. The details are in the host's log."
+        "the bot hit an internal fault. The details are in the host's log."
     ]
 
 

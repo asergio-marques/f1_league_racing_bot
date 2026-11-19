@@ -341,7 +341,7 @@ async def test_a_call_that_cannot_be_asked_is_reported_once_and_the_next_round_s
     assert round_failures(error, module="attendance") == {ROUND_ID + 1: refused}
     assert lines == [
         "❌ The bot's start-up step `missed check-in calls` failed for round 5 in "
-        "**Division 1** — RecoveryFailed. The details are in the host's log."
+        "**Division 1** — the bot hit an internal fault. The details are in the host's log."
     ]
 
 

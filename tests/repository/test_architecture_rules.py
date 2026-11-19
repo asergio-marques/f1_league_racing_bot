@@ -3176,8 +3176,10 @@ CATCH_ALLS_ALLOWED = {
     ("image/services/render/image_render_service.py", "_draw"):
         "place 5, the graphic's own assembling: a tier's colours that cannot be applied are drawn "
         "in the template's own, with a render notice; data that cannot be assembled or a template "
-        "that cannot be filled comes back as a problem, from which the caller falls back to text; "
-        "a caller with no fallback, the preview, has a fault in the bot raised to it instead",
+        "that cannot be filled comes back as a problem, from which the caller falls back to text, "
+        "a refusal the league can put right in its words and a fault in the bot by its kind; a "
+        "caller that asks `raise_faults` (the preview, `/team lineup`, the review's lineup) has a "
+        "fault in the bot raised to it instead",
     ("image/services/render/image_drawing.py", "ImageDrawing.artwork_signature"):
         "a stated exception: artwork that cannot be read is signed as such, and the rest still is",
     ("image/services/render/image_drawing.py", "ImageDrawing.attach_forecast"):

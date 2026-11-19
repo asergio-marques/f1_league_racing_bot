@@ -196,7 +196,8 @@ async def test_a_reader_that_raises_never_breaks_the_posting(monkeypatch, round_
     """The image settings' switch reader raises "boom" for a phase 2 forecast. The text stands,
     and the fault is handed back for the log channel, naming the forecast where its round can be
     read, as a league reads it (round 4 in **Division 1**), and only its phase where reading the
-    round raises too: naming in a log line never fails the line (#287, B3, B8)."""
+    round raises too: naming in a log line never fails the line (#287, B3, B8). The fault is a
+    fault in the bot, named by its kind alone, never in the reader's own words."""
     import leaguebot.image.services.aspects.image_weather_post as post
 
     bot = _bot()
@@ -208,7 +209,8 @@ async def test_a_reader_that_raises_never_breaks_the_posting(monkeypatch, round_
     file, lines = await _image_drawing(bot).attach_forecast(1, 2, values=_values())
 
     [line] = lines
-    assert file is None and "boom" in line
+    assert file is None and "the bot hit an internal fault" in line
+    assert "boom" not in line
     assert line.startswith(f"⚠️ Weather image — {named}: "), line
 
 
@@ -242,17 +244,22 @@ def test_the_mystery_notice_is_named_as_itself_rather_than_a_phase():
 @pytest.mark.parametrize(
     ("reads", "reason"),
     [
-        (AsyncMock(side_effect=RuntimeError("no round")), "no round"),
-        (AsyncMock(return_value=None), "the round could not be found"),
+        pytest.param(
+            AsyncMock(side_effect=RuntimeError("no round")), "the bot hit an internal fault",
+            id="round-read-raises",
+        ),
+        pytest.param(
+            AsyncMock(return_value=None), "the round could not be found", id="round-not-found",
+        ),
     ],
-    ids=["round-read-raises", "round-not-found"],
 )
 async def test_a_mystery_round_notice_whose_round_cannot_be_read_is_named_as_the_notice(
     monkeypatch, reads, reason,
 ):
     """Weather posts a mystery round's notice, telling the picture it is the notice (phase 0), and
     the round cannot be read, its read raising or finding nothing. The line still names it the
-    mystery round notice, never as a phase, though no round can be named (#287, B12, p9)."""
+    mystery round notice, never as a phase, though no round can be named (#287, B12, p9). A read
+    that raises is a fault in the bot, named by its kind alone."""
     import leaguebot.image.services.aspects.image_weather_post as post
 
     monkeypatch.setattr(post, "build_drawing_for_round", reads)

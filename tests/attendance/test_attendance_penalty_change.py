@@ -603,7 +603,8 @@ async def test_a_capacity_read_that_faults_ends_on_a_fault_and_never_stops_the_l
     penalty is 1 and auto-sack at 3. Season 1 is ongoing, or has moved on to Pending completion
     (*ongoing*). Reading the Reserve teams' capacity, the change's job before its save, faults.
     Manager 77 runs `/attendance config no-show-penalty 5` and the queue is run. The queue does
-    not stop, and the log channel has the read's failure line, naming the manager and the fault.
+    not stop, and the log channel has the read's failure line, naming the manager and the kind of
+    fault.
     With the season ongoing the save refuses to recalculate on a capacity nobody read and is
     undone whole: the penalty stays 1, no audit entry is written, round 1 is not recalculated,
     the driver is still seated, and the manager is told nothing was saved. With no season ongoing
@@ -616,8 +617,11 @@ async def test_a_capacity_read_that_faults_ends_on_a_fault_and_never_stops_the_l
     interaction = await _ask_penalty(league, "no-show-penalty", 5)
 
     assert await stopped_job(league.db_path) is None
-    assert any(line.startswith("❌") and f"failed for {NAMED} — OperationalError" in line
-               for line in league.log_lines())
+    assert any(
+        line.startswith("❌")
+        and f"failed for {NAMED} — the bot could not read or write its database" in line
+        for line in league.log_lines()
+    )
     assert await _attendance(league.db_path, 1) == {"attended": None, "points_awarded": None}
     assert await _seated(league.db_path) == [DRIVER_PROFILE]
     if ongoing:

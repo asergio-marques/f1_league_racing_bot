@@ -27,6 +27,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from leaguebot.framework.db.database import get_connection
 
 
@@ -109,7 +111,7 @@ async def test_an_amendment_that_cannot_be_recovered_is_reported_and_the_others_
     assert round_failures(error) == {league_of.ROUND_ID: refused}
     assert lines == [
         "❌ The bot's start-up step `orphaned amend channels` failed for round 3 in **Pro** — "
-        "RecoveryFailed. The details are in the host's log."
+        "the bot hit an internal fault. The details are in the host's log."
     ]
 
 

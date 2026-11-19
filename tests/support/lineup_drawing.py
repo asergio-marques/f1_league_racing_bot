@@ -18,10 +18,11 @@ class LineupDrawingStub:
 
     *wanted* is whether the league draws its lineup. A drawing raises *fault* where one is given;
     otherwise it hands back *picture* (a PNG's path, or None), *problem* (the words for why it
-    could not be drawn, or None), *notices* (their words) and, where *log_link* is given, the link
-    to the log channel's message the drawing reported the notices in. *by_division* answers a
-    division named in it, by id, its own way instead: a mapping of `picture`, `problem`,
-    `notices`, `log_link` and `fault` overriding those above, so a batch can have one division
+    could not be drawn, or None), *notices* (their words), where *log_link* is given, the link
+    to the log channel's message the drawing reported the notices in, and, where *fault_source*
+    is given, where the picture's fault lies. *by_division* answers a division named in it, by
+    id, its own way instead: a mapping of `picture`, `problem`, `notices`, `log_link`,
+    `fault_source` and `fault` overriding those above, so a batch can have one division
     drawn and the next refused.
     `wanted_asked` counts the times it was asked whether the league draws its lineup; `drawn`
     names each division drawn as the lineup of record, by id, in order, and `drawn_for_command`
@@ -30,6 +31,7 @@ class LineupDrawingStub:
     def __init__(self, *, wanted: bool = True, picture: Path | None = None,
                  problem: str | None = None, notices: tuple[str, ...] = (),
                  fault: Exception | None = None, log_link: str | None = None,
+                 fault_source: Any = None,
                  by_division: dict[int, dict[str, Any]] | None = None) -> None:
         self.wanted = wanted
         self.picture = picture
@@ -37,6 +39,7 @@ class LineupDrawingStub:
         self.notices = tuple(notices)
         self.fault = fault
         self.log_link = log_link
+        self.fault_source = fault_source
         self.by_division = dict(by_division or {})
         self.wanted_asked = 0
         self.drawn: list[int] = []
@@ -51,11 +54,13 @@ class LineupDrawingStub:
         if fault is not None:
             raise fault
         log_link = own.get("log_link", self.log_link)
+        fault_source = own.get("fault_source", self.fault_source)
         return LineupPicture(
             path=own.get("picture", self.picture),
             problem=own.get("problem", self.problem),
             notices=tuple(own.get("notices", self.notices)),
             **({"log_link": log_link} if log_link is not None else {}),
+            **({"fault_source": fault_source} if fault_source is not None else {}),
         )
 
     async def lineup_wanted(self) -> bool:

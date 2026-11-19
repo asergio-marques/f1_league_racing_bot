@@ -237,7 +237,8 @@ async def test_the_scheduler_is_resumed_even_when_the_save_fails(live):
     assert "partly done" not in reply
     [line] = _log_lines(cog)
     assert line.startswith(
-        f"❌ `/test-mode backup save` failed for Manager (<@{USER_ID}>) — BackupFault."
+        f"❌ `/test-mode backup save` failed for Manager (<@{USER_ID}>) — "
+        "the bot hit an internal fault."
     )
 
 
@@ -259,7 +260,8 @@ async def test_a_save_whose_scheduler_copy_fails_says_the_previous_backup_is_unc
     assert "not a database" not in reply
     [line] = _log_lines(cog)
     assert line.startswith(
-        f"❌ `/test-mode backup save` failed for Manager (<@{USER_ID}>) — BackupFault."
+        f"❌ `/test-mode backup save` failed for Manager (<@{USER_ID}>) — "
+        "the bot hit an internal fault."
     )
     assert bs.backup_path(live.db).read_bytes() == league_backup
     assert cog.bot.scheduler_service.events == ["pause", "resume"] * 2
@@ -287,7 +289,8 @@ async def test_a_save_that_fails_unexpectedly_reaches_the_failure_line(live, mon
     assert "the disk is full" not in reply
     [line] = _log_lines(cog)
     assert line.startswith(
-        f"❌ `/test-mode backup save` failed for Manager (<@{USER_ID}>) — OSError."
+        f"❌ `/test-mode backup save` failed for Manager (<@{USER_ID}>) — "
+        "the bot hit an internal fault."
     )
     assert cog.bot.scheduler_service.events == ["pause", "resume"]
 
@@ -526,7 +529,7 @@ async def test_a_staging_fault_says_nothing_was_restored(live, monkeypatch):
     assert "the disk is full" not in reply
     [line] = _log_lines(cog)
     assert line.startswith("❌ ")
-    assert f"failed for Manager (<@{USER_ID}>) — BackupFault." in line
+    assert f"failed for Manager (<@{USER_ID}>) — the bot hit an internal fault." in line
     assert "the disk is full" not in line
 
 
@@ -580,7 +583,7 @@ async def test_an_unexpected_staging_error_may_have_been_partly_done(live, monke
     assert "boom" not in reply
     [line] = _log_lines(cog)
     assert line.startswith("❌ ")
-    assert f"failed for Manager (<@{USER_ID}>) — RuntimeError." in line
+    assert f"failed for Manager (<@{USER_ID}>) — the bot hit an internal fault." in line
 
 
 async def test_a_staged_restore_is_recorded(live):

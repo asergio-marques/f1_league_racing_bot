@@ -627,7 +627,9 @@ async def test_a_reason_lapse_that_fails_is_reported(tmp_path, monkeypatch):
     failed = [line for line in _lines(league) if line.startswith("❌")]
     assert len(failed) == 1, _lines(league)
     assert failed[0].startswith("❌ The bot's timed job `"), failed[0]
-    assert failed[0].endswith(" failed — RuntimeError. The details are in the host's log."), failed[0]
+    assert failed[0].endswith(
+        " failed — the bot hit an internal fault. The details are in the host's log."
+    ), failed[0]
     assert "secret detail" not in failed[0]
 
 

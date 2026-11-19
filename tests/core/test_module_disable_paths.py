@@ -221,7 +221,8 @@ async def test_an_image_disable_that_cannot_be_written_leaves_the_module_on(tmp_
         "fault is recorded in the log channel."
     )
     assert await log_lines(league) == [
-        f"❌ `/module disable` failed for Admin (`<@{MEMBER_ID}>`) — IntegrityError. "
+        f"❌ `/module disable` failed for Admin (`<@{MEMBER_ID}>`) — "
+        "the bot could not read or write its database. "
         "The details are in the host's log."
     ]
 
@@ -363,7 +364,7 @@ async def test_an_attendance_disable_that_cannot_be_written_leaves_the_module_on
         "fault is recorded in the log channel."
     )
     assert await log_lines(league) == [
-        f"❌ `/module disable` failed for {NAMED} — IntegrityError. "
+        f"❌ `/module disable` failed for {NAMED} — the bot could not read or write its database. "
         "The details are in the host's log."
     ]
 
@@ -602,6 +603,6 @@ async def test_a_signup_enable_that_cannot_be_written_says_the_module_is_still_o
     assert await _signup_config(league.db_path) is None
     assert last_said(asked) == SIGNUP_STILL_OFF
     assert await log_lines(league) == [
-        f"❌ `/module enable` failed for {NAMED} — IntegrityError. "
+        f"❌ `/module enable` failed for {NAMED} — the bot could not read or write its database. "
         "The details are in the host's log."
     ]

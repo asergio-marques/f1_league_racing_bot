@@ -90,11 +90,12 @@ def failure_line(
 
     The line of a failure with a member to name: `report_failure` writes it, and so does the
     change queue for a change that faults. A Discord event's has none, and is formed by
-    `event_failure_line`. The kind of fault is the error's type, or *kind* where given: for a
-    fault that is no exception of Discord's or the bot's own, but the bot's words for what failed.
+    `event_failure_line`. The kind of fault is `describe_fault`'s plain words, never the error's type
+    or message, or *kind* where given: for a fault that is no exception of Discord's or the bot's
+    own, but the bot's words for what failed.
     """
     return (
-        f"❌ {what} failed for {named} — {kind.rstrip('.') if kind else type(error).__name__}. "
+        f"❌ {what} failed for {named} — {kind.rstrip('.') if kind else describe_fault(error)}. "
         f"The details are in the host's log."
     )
 
@@ -102,11 +103,12 @@ def failure_line(
 def event_failure_line(event: str, error: BaseException) -> str:
     """The log channel's line for the Discord event *event* whose handling failed with *error*.
 
-    The failure line's shape, with no member to name: an event has none.
+    The failure line's shape, with no member to name: an event has none. The kind of fault is
+    `describe_fault`'s plain words, never the error's type or message.
     """
     return (
         f"❌ The bot's handling of the Discord event `{event}` failed — "
-        f"{type(error).__name__}. The details are in the host's log."
+        f"{describe_fault(error)}. The details are in the host's log."
     )
 
 
@@ -116,12 +118,13 @@ def job_failure_line(job: str, error: BaseException, *, key: int | str | None = 
     The failure line's shape, with no member to name: a job has none. *job* is the kind of the job
     or the name of the work; *key*, where the job has one, follows it labelled as a key, outside
     the code span (`rsvp_notice` (key 12)). Timed jobs and the bot's own background work read
-    alike, as "timed job".
+    alike, as "timed job". The kind of fault is `describe_fault`'s plain words, never the error's
+    type or message.
     """
     named = f"`{job}`" if key is None else f"`{job}` (key {key})"
     return (
         f"❌ The bot's timed job {named} failed — "
-        f"{type(error).__name__}. The details are in the host's log."
+        f"{describe_fault(error)}. The details are in the host's log."
     )
 
 
@@ -129,8 +132,8 @@ def start_up_failure_line(step: str, error: BaseException) -> str:
     """The log channel's line for the start-up step *step* (named as it signed up, or what the
     start-up ran if it has no name of its own) that failed with *error*.
 
-    The failure line's shape, as `event_failure_line` has it: what failed, the kind of fault, and
-    that the detail is in the host's log. Where *error* says which rounds the step failed for
+    The failure line's shape, as `event_failure_line` has it: what failed, the kind of fault in
+    `describe_fault`'s plain words, and that the detail is in the host's log. Where *error* says which rounds the step failed for
     (`RoundsFailed`), the line names them, in core's form, joined with commas and "and"; a step
     that failed as a whole names none.
     """
@@ -141,8 +144,14 @@ def start_up_failure_line(step: str, error: BaseException) -> str:
         named = f" for {joined}"
     return (
         f"❌ The bot's start-up step `{step}` failed{named} — "
-        f"{type(error).__name__}. The details are in the host's log."
+        f"{describe_fault(error)}. The details are in the host's log."
     )
+
+
+#: How a fault in the bot is worded where a picture's line says what puts it right: that the
+#: fault is the bot's, and that its detail is in the host's log, which `describe_fault`'s kind
+#: words never carry.
+BOT_FAULT = "the fault is in the bot, and its detail is in the host's log"
 
 
 def describe_fault(error: BaseException) -> str:

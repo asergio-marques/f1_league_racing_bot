@@ -301,18 +301,32 @@ async def test_the_calendar_post_notifies_nobody(tmp_path, as_graphic):
 
 
 #: The review's calendar picture through the drawing, case by case: what the drawing answers,
-#: then the outcome's action, its message and its notices, and whether the PNG is handed back.
+#: then the outcome's action, its message and its notices, whether the PNG is handed back, and
+#: where the picture's fault lies (`FaultSource`'s value; the stub is handed the source itself).
 _COMMAND_CASES = {
-    "not wanted": (dict(wanted=False), cps.NOT_APPLICABLE, None, [], False),
+    "not wanted": (dict(wanted=False), cps.NOT_APPLICABLE, None, [], False, "league"),
     "drawn": (dict(notices=("round 12 did not fit",)), cps.DREW, None,
-              ["round 12 did not fit"], True),
+              ["round 12 did not fit"], True, "league"),
     "a problem": (dict(problem="the template has no rows", notices=("round 12 did not fit",)),
                   cps.REJECTED,
                   "\u274c The calendar image could not be drawn \u2014 the template has no rows",
-                  ["round 12 did not fit"], False),
-    "no PNG": (dict(), cps.REJECTED, "\u274c The calendar image could not be drawn.", [], False),
-    "raised": (dict(fault=RuntimeError("Inkscape is not installed")), cps.REJECTED,
-               "\u274c Inkscape is not installed", [], False),
+                  ["round 12 did not fit"], False, "league"),
+    "a fault in the bot": (dict(problem="the bot hit an internal fault", fault_source="bot"),
+                           cps.REJECTED,
+                           "\u274c The calendar image could not be drawn \u2014 "
+                           "the bot hit an internal fault",
+                           [], False, "bot"),
+    "the converter absent": (dict(problem="Inkscape is not installed on this host",
+                                  fault_source="host"),
+                             cps.REJECTED,
+                             "\u274c The calendar image could not be drawn \u2014 "
+                             "Inkscape is not installed on this host",
+                             [], False, "host"),
+    "no PNG": (dict(), cps.REJECTED, "\u274c The calendar image could not be drawn.", [], False,
+               "league"),
+    "raised": (dict(fault=RuntimeError("KeyError: 7")), cps.REJECTED,
+               "\u274c The calendar image could not be drawn \u2014 the bot hit an internal fault",
+               [], False, "bot"),
 }
 
 
@@ -320,15 +334,20 @@ _COMMAND_CASES = {
 async def test_the_review_s_calendar_picture_is_drawn_through_the_drawing(tmp_path, case):
     """Elite's calendar of two rounds at Silverstone asked as the review's picture of season 3,
     through a drawing answering as the case says: the league not drawing its calendar; a picture
-    drawn with a notice; a problem with a notice; no PNG; or the drawing raising. The drawing is
-    asked once whether the league draws its calendar, draws Elite only where it does, and the
-    outcome carries the action, the words and the notices the case expects, and the PNG where one
-    was drawn."""
-    answers, action, message, notices, drew = _COMMAND_CASES[case]
+    drawn with a notice; a problem with a notice; a fault in the bot; the converter absent; no
+    PNG; or the drawing raising. The drawing is asked once whether the league draws its calendar,
+    draws Elite only where it does, and the outcome carries the action, the words and the notices
+    the case expects, the PNG where one was drawn, and where the picture's fault lies: a raised
+    fault is named by its kind, never by its own words, and is the bot's."""
+    from leaguebot.core.models.fault_source import FaultSource
+
+    answers, action, message, notices, drew, source = _COMMAND_CASES[case]
     png = tmp_path / "calendar.png"
     png.write_bytes(b"\x89PNG")
     if drew:
         answers = dict(answers, picture=png)
+    if "fault_source" in answers:
+        answers = dict(answers, fault_source=FaultSource(answers["fault_source"]))
     drawing = CalendarDrawingStub(**answers)
 
     outcome = await cps.render_for_command(drawing, _division(), _rounds(), TRACKS,
@@ -340,3 +359,5 @@ async def test_the_review_s_calendar_picture_is_drawn_through_the_drawing(tmp_pa
     assert outcome.message == message
     assert list(outcome.notices) == notices
     assert outcome.png_path == (png if drew else None)
+    assert outcome.fault_source is FaultSource(source)
+    assert "KeyError" not in (outcome.message or "")

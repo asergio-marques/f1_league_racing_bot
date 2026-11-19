@@ -3452,7 +3452,7 @@ async def test_a_check_fault_as_a_member_s_change_starts_ends_it_as_a_failure_wh
     assert updated_reply(interaction) == "❌ `/checked` could not be checked."
     lines = await _lines(env)
     assert [line for line in lines if line.startswith("❌ `/checked` failed for ")] == [
-        f"❌ `/checked` failed for {NAMED} — RuntimeError. The details are in the host's log."
+        f"❌ `/checked` failed for {NAMED} — the bot hit an internal fault. The details are in the host's log."
     ]
     assert not any(line.startswith("⛔") for line in lines)
     assert await stopped_job(env.db_path) is None

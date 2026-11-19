@@ -41,6 +41,7 @@ if TYPE_CHECKING:
     from leaguebot.image.models.image_catalogues import FieldCatalogue
 
 from leaguebot.image.models.switch import SWITCH_KEY
+from leaguebot.core.models.fault_source import FaultSource, FaultWords
 from leaguebot.core.services.modules.image_drawing import (
     CalendarPicture,
     CapacityProblem,
@@ -50,12 +51,19 @@ from leaguebot.core.services.modules.image_drawing import (
 )
 from leaguebot.framework.services.switches.module_service import ModuleService, SwitchNotSignedUp
 from leaguebot.framework.utils.hooks import AwaitedHook
+from leaguebot.framework.utils.interaction_errors import describe_fault
 from leaguebot.framework.utils.paths import resolve_within_project_root
 from leaguebot.image.models.image_catalogues import (
     catalogue_for,
     declared_capacities,
     reserve_capacity_problem,
     row_capacity_problem,
+)
+from leaguebot.image.models.image_module import (
+    PROBLEM_UNRESOLVED_VALUE,
+    DrawingRefused,
+    Problem,
+    RenderOutcome,
 )
 from leaguebot.image.models.results_drawing import ResultsDrawing
 from leaguebot.image.models.standings_drawing import StandingsDrawing
@@ -137,6 +145,12 @@ CALENDAR_ASPECT = "calendar"
 STANDINGS_ASPECT = image_standings_post.STANDINGS_ASPECT
 
 
+def _source_of(outcome: RenderOutcome) -> FaultSource:
+    """Where the fault in *outcome*'s problem lies: the league's where there is no problem, and
+    for a refusal met before the render, which carries a problem of the league's own kind."""
+    return outcome.problem.source if outcome.problem is not None else FaultSource.LEAGUE
+
+
 def _rows_and_rounds(catalogue: FieldCatalogue, path: Path) -> tuple[int, int]:
     """The rows and the round columns a standings template at *path* draws, nought for
     none.
@@ -214,6 +228,18 @@ class ImageDrawing:
         self._driver_names_read = (
             driver_names_read if driver_names_read is not None else AwaitedHook()
         )
+
+    @staticmethod
+    def drawing_fault(error: Exception) -> str:
+        """The words for the fault *error* is, as a picture's line or a posting's reports it.
+
+        A `DrawingRefused` is the league's to put right and keeps its own words. Anything else
+        met while drawing is a fault in the bot, named by its kind alone and marked as the bot's
+        (`FaultWords`), its detail being in the host's log, where the caller has written it.
+        """
+        if isinstance(error, DrawingRefused):
+            return str(error)
+        return FaultWords(describe_fault(error), FaultSource.BOT)
 
     async def _drawn_template(self, aspect: str, template_key: str) -> Path | None:
         """The template's path where the module and *aspect* are both drawn and the template
@@ -529,7 +555,7 @@ class ImageDrawing:
             raise  # a module that never signed up is a fault in the bot's assembly, not a reading
         except Exception as exc:  # noqa: BLE001 — never break a posting on this reader
             log.error("weather: enablement check failed: %s", exc, exc_info=True)
-            return False, f"it could not be read whether a picture is due: {exc}"
+            return False, f"it could not be read whether a picture is due: {describe_fault(exc)}"
 
     async def attach_forecast(
         self, round_id: int, phase: int, *, values: ForecastValues
@@ -605,7 +631,7 @@ class ImageDrawing:
             log.error(
                 "weather: could not attach a graphic to round %s: %s", round_id, exc, exc_info=True
             )
-            return None, (weather.fault(what, str(exc)),)
+            return None, (weather.fault(what, self.drawing_fault(exc)),)
 
     # ── The check-in call ────────────────────────────────────────────────────
 
@@ -666,7 +692,7 @@ class ImageDrawing:
             raise  # a module that never signed up is a fault in the bot's assembly, not a reading
         except Exception as exc:  # noqa: BLE001 — the call must post whatever happens here
             log.error("rsvp: the check-in graphic could not be drawn: %s", exc, exc_info=True)
-            return None, (image_rsvp_post.fault(what, str(exc)),)
+            return None, (image_rsvp_post.fault(what, self.drawing_fault(exc)),)
 
     # ── The attendance sheet ─────────────────────────────────────────────────
 
@@ -706,7 +732,7 @@ class ImageDrawing:
             raise  # a module that never signed up is a fault in the bot's assembly, not a reading
         except Exception as exc:  # noqa: BLE001 — the sheet must post whatever happens here
             log.error("attendance: the sheet's graphic could not be drawn: %s", exc, exc_info=True)
-            return None, (image_attendance_post.fault(what, str(exc)),)
+            return None, (image_attendance_post.fault(what, self.drawing_fault(exc)),)
 
     # ── The verdict ──────────────────────────────────────────────────────────
 
@@ -806,7 +832,7 @@ class ImageDrawing:
             raise  # a module that never signed up is a fault in the bot's assembly, not a reading
         except Exception as exc:  # noqa: BLE001 — a banner never costs a batch its heading
             log.error("verdict banner: the graphic could not be drawn: %s", exc, exc_info=True)
-            return None, (banner.fault(what, str(exc)),)
+            return None, (banner.fault(what, self.drawing_fault(exc)),)
 
     # ── A session's results ──────────────────────────────────────────────────
 
@@ -994,19 +1020,26 @@ class ImageDrawing:
         """Draw *division*'s calendar of *rounds*, named against *tracks*: the two gates
         already asked through `calendar_wanted`, the asset directories resolved absolutely, the
         file named, and the render. The notices come back with the picture, for the job that
-        posts it to record among its own lines: the drawing writes nothing to the log channel."""
+        posts it to record among its own lines: the drawing writes nothing to the log channel. A
+        round at a track the server does not hold, which the league can put right, comes back as
+        the picture's problem in its own words, with no render made."""
         config = await self._config.get_config()
 
-        drawing = resolve_drawing(
-            division_name=division.name,
-            division_tier=getattr(division, "tier", None),
-            season_number=season_number,
-            rounds=rounds,
-            tracks=tracks,
-            date_format=getattr(config, "date_format", None),
-            time_format=getattr(config, "time_format", None),
-            time_zone=getattr(config, "time_zone", None),
-        )
+        try:
+            drawing = resolve_drawing(
+                division_name=division.name,
+                division_tier=getattr(division, "tier", None),
+                season_number=season_number,
+                rounds=rounds,
+                tracks=tracks,
+                date_format=getattr(config, "date_format", None),
+                time_format=getattr(config, "time_format", None),
+                time_zone=getattr(config, "time_zone", None),
+            )
+        except DrawingRefused as exc:
+            # The league's to put right (a round at a track the server does not hold), and found
+            # before any render: the refusal is the picture's problem in its own words.
+            return CalendarPicture(path=None, problem=str(exc))
 
         # The calendar draws both imagery classes, so it needs both directories (044). They
         # are resolved by the helper every other posting path uses, which anchors them to the
@@ -1031,7 +1064,9 @@ class ImageDrawing:
         problem = outcome.problem.detail if outcome.problem is not None else None
         notices = tuple(each.detail for each in outcome.notices)
         path = outcome.png_paths[0] if outcome.png_paths else None
-        return CalendarPicture(path=path, problem=problem, notices=notices)
+        return CalendarPicture(
+            path=path, problem=problem, notices=notices, fault_source=_source_of(outcome)
+        )
 
     # ── The lineup ───────────────────────────────────────────────────────────
 
@@ -1043,18 +1078,23 @@ class ImageDrawing:
     async def _render_lineup(
         self, guild: Any, division_id: int, *,
         include_uncommitted: bool = False, obtain_missing_portraits: bool = False,
+        raise_faults: bool = False,
     ) -> Any:
         """The gates already asked through `lineup_wanted`, the division's seats read from the
         database, the portraits refreshed at the league's own trigger, and the render: what
         every lineup drawn needs before they part. Nothing is reported to the log channel here:
         each caller hands the notices back or reports them, as it runs in a job or not. Hands
         back the division row and the render's outcome, for each to word the problem its own
-        way.
+        way. A refusal the league can put right, met before the render (the division is gone,
+        a team too long for its slot), comes back as the outcome's problem with no division and
+        no render made.
 
         *include_uncommitted* draws a placement not yet confirmed in, which the lineup of record
         leaves out (#220), and is for a mid-season review. *obtain_missing_portraits* obtains
         the portrait of each seated driver who has none, whichever update trigger the league
-        chose, and is for a season review alone.
+        chose, and is for a season review alone. *raise_faults* has the render raise a fault in
+        the bot rather than return it as a problem, for a caller with no text to fall back to
+        (`/team lineup`, the review's lineup).
         """
         from leaguebot.image.services.portraits.driver_portrait_service import refresh_before_render
         from leaguebot.image.services.aspects.image_lineup_post import build_drawing
@@ -1062,10 +1102,19 @@ class ImageDrawing:
             build_fill_spec as build_lineup_fill_spec,
         )
 
-        _division, drawing, members = await build_drawing(
-            self._db_path, self._driver_names_read, guild, division_id,
-            include_uncommitted=include_uncommitted,
-        )
+        try:
+            _division, drawing, members = await build_drawing(
+                self._db_path, self._driver_names_read, guild, division_id,
+                include_uncommitted=include_uncommitted,
+            )
+        except DrawingRefused as exc:
+            # The league's to put right, and found before any render: the refusal is the
+            # picture's problem in its own words, as the render gives one of its own.
+            return None, RenderOutcome(
+                problem=Problem(
+                    kind=PROBLEM_UNRESOLVED_VALUE, detail=str(exc), template_key=LINEUP_TEMPLATE_KEY
+                )
+            )
 
         config = await self._config.get_config()
         directories, directory_faults = resolve_configured_directories(
@@ -1093,6 +1142,7 @@ class ImageDrawing:
             ),
             filename_stem=stem_for_drawing(drawing, LINEUP_TEMPLATE_KEY),
             division_name=drawing.division_name,
+            raise_faults=raise_faults,
         )
         return _division, outcome
 
@@ -1105,7 +1155,9 @@ class ImageDrawing:
         problem = outcome.problem.detail if outcome.problem is not None else None
         notices = tuple(each.detail for each in outcome.notices)
         path = outcome.png_paths[0] if outcome.png_paths else None
-        return LineupPicture(path=path, problem=problem, notices=notices)
+        return LineupPicture(
+            path=path, problem=problem, notices=notices, fault_source=_source_of(outcome)
+        )
 
     async def draw_lineup_for_command(self, guild: Any, division_id: int) -> LineupPicture:
         """Draw *division_id*'s lineup in *guild*, as a command's output: the problem, where
@@ -1116,7 +1168,7 @@ class ImageDrawing:
         message before this returns, naming the lineup and the division, as well as handed
         back for its own output, with the link to that message (`LineupPicture.log_link`), or
         None where no message was posted. (`post_log` contains its own failures.)"""
-        division, outcome = await self._render_lineup(guild, division_id)
+        division, outcome = await self._render_lineup(guild, division_id, raise_faults=True)
 
         log_link: str | None = None
         if outcome.notices:
@@ -1130,7 +1182,10 @@ class ImageDrawing:
         problem = outcome.problem.message("the lineup") if outcome.problem is not None else None
         notices = tuple(each.detail for each in outcome.notices)
         path = outcome.png_paths[0] if outcome.png_paths else None
-        return LineupPicture(path=path, problem=problem, notices=notices, log_link=log_link)
+        return LineupPicture(
+            path=path, problem=problem, notices=notices, log_link=log_link,
+            fault_source=_source_of(outcome),
+        )
 
     async def draw_review_lineup(
         self, guild: Any, division_id: int, *, include_uncommitted: bool,
@@ -1138,24 +1193,22 @@ class ImageDrawing:
         """Draw *division_id*'s lineup in *guild* for a season review, which is drawn inside the
         review's job: each seated driver's missing portrait obtained, and the uncommitted
         drivers drawn in where *include_uncommitted*. A commanded drawing rejects rather than
-        falling back (Constitution XIV.7), so a fault comes back as the problem's words after
-        "❌", a render that raises as a `RuntimeError` of its own words after "❌", and a lineup not drawn at all (a switch off, no
-        server) with no words. The notices come back for the job to record."""
+        falling back (Constitution XIV.7), so a refusal the league can put right comes back as
+        the problem's words after "❌", and a lineup not drawn at all (a switch off, no server)
+        with no words. A fault in the bot is raised as it is, for the review's job to word by its
+        kind. The notices come back for the job to record."""
         if guild is None or not await self.lineup_wanted():
             return LineupPicture(path=None, problem=None)
-        try:
-            _division, outcome = await self._render_lineup(
-                guild, division_id,
-                include_uncommitted=include_uncommitted, obtain_missing_portraits=True,
-            )
-        except Exception as exc:
-            # Raised again with the words a commanded drawing gives a fault, for the review's
-            # job to record as the picture's fault: nothing is swallowed here.
-            raise RuntimeError(f"❌ {exc}") from exc
+        _division, outcome = await self._render_lineup(
+            guild, division_id,
+            include_uncommitted=include_uncommitted, obtain_missing_portraits=True,
+            raise_faults=True,
+        )
         notices = tuple(each.detail for each in outcome.notices)
         if outcome.problem is not None:
             return LineupPicture(
-                path=None, problem=f"❌ {outcome.problem.message('the lineup')}", notices=notices
+                path=None, problem=f"❌ {outcome.problem.message('the lineup')}", notices=notices,
+                fault_source=outcome.problem.source,
             )
         path = outcome.png_paths[0] if outcome.png_paths else None
         return LineupPicture(path=path, problem=None, notices=notices)

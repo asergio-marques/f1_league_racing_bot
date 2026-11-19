@@ -24,6 +24,7 @@ from leaguebot.core.models.classification_occasion import ClassificationOccasion
 from leaguebot.core.models.round import RoundFormat, RoundStatus
 from leaguebot.core.services.drivers.driver_service import driver_identities_on
 from leaguebot.core.services.drivers.team_service import TeamService
+from leaguebot.core.services.modules.image_drawing import with_host_remedy
 from leaguebot.core.services.seasons.season_service import (
     RoundFacts,
     division_on,
@@ -33,6 +34,7 @@ from leaguebot.core.services.seasons.season_service import (
 from leaguebot.framework.utils.channels import as_text_channel
 from leaguebot.framework.services.posting.standing_post_handler import post_standing
 from leaguebot.framework.utils.in_a_job import posts_in_a_job
+from leaguebot.framework.utils.interaction_errors import describe_fault
 from leaguebot.framework.utils.league_bot import LeagueBot
 
 if TYPE_CHECKING:
@@ -621,7 +623,10 @@ async def _sheet_attachment(
         label = _sheet_label(division_name, facts, occasion, round_id)
         picture, drawn = await drawing.draw_attendance_sheet(sheet, what=label)
         if lines is not None:
-            lines.extend(drawn)
+            lines.extend(
+                with_host_remedy(line, then="run `/attendance sync` to post the sheet again")
+                for line in drawn
+            )
         return picture
     except Exception as exc:  # noqa: BLE001 — the sheet must post whatever happens here
         _stop_on_unreadable_grid(exc)
@@ -629,7 +634,11 @@ async def _sheet_attachment(
             "post_attendance_sheet: the graphic could not be drawn for division %s: %s",
             division_id, exc, exc_info=True,
         )
-        _note(faults, f"the graphic could not be drawn, so the sheet is posted as text: {exc}")
+        _note(
+            faults,
+            "the graphic could not be drawn, so the sheet is posted as text: "
+            f"{drawing.drawing_fault(exc)}",
+        )
         return None
 
 
@@ -693,7 +702,7 @@ async def _round_grid(
                 _note(
                     faults,
                     f"the track registry could not be read, so the round headings are drawn "
-                    f"without their flags: {exc}",
+                    f"without their flags: {describe_fault(exc)}",
                 )
                 tracks = {}
 
@@ -761,7 +770,11 @@ async def _seat_teams(
             "post_attendance_sheet: the teams of division %s could not be read, so they are "
             "drawn without names or badges", division_id, exc_info=True,
         )
-        _note(faults, f"the teams could not be read, so they are drawn without names or badges: {exc}")
+        _note(
+            faults,
+            "the teams could not be read, so they are drawn without names or badges: "
+            f"{describe_fault(exc)}",
+        )
         return {}, {}
     wanted = set(user_ids)
     names = {

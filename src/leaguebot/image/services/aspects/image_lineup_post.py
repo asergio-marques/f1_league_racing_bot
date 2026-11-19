@@ -133,7 +133,7 @@ async def build_drawing(
     if division is None:
         from leaguebot.image.services.aspects.image_lineup_service import LineupDataError
 
-        raise LineupDataError(f"division {division_id} no longer exists")
+        raise LineupDataError("the division no longer exists")
     season_id = division.season_id
 
     teams = await seated_teams(

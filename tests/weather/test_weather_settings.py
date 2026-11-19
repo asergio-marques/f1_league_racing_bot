@@ -265,8 +265,8 @@ async def test_a_check_fault_when_a_deadline_runs_says_nothing_was_saved_records
     }
     lines = await log_lines(league)
     assert [line for line in lines if line.startswith("❌ ")] == [
-        f"❌ `/weather config phase-1-deadline` failed for {NAMED} — RuntimeError. "
-        "The details are in the host's log."
+        f"❌ `/weather config phase-1-deadline` failed for {NAMED} — the bot hit an internal "
+        "fault. The details are in the host's log."
     ]
     assert not any(line.startswith("⛔") for line in lines)
     assert [a["new_value"] for a in await audit_rows(league.db_path)] == [{"phase_2_days": 3}]

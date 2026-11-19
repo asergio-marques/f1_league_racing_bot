@@ -449,7 +449,8 @@ class TestTheNationalityCommand:
             "to retry. The fault is recorded in the log channel."
         )
         assert _lines(league) == [
-            f"❌ `/test-mode nationality` failed for {_NAMED} — OperationalError. The details "
+            f"❌ `/test-mode nationality` failed for {_NAMED} — "
+            "the bot could not read or write its database. The details "
             f"are in the host's log."
         ]
         assert await stopped_job(league.db_path) is None

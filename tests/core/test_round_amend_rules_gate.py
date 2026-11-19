@@ -546,7 +546,8 @@ async def test_a_failed_round_amend_confirmation_goes_to_report_failure(tmp_path
     assert "The amendment failed" not in reply
     [line] = _lines(cog)
     assert "`/round amend` of round 1 failed for Manager (<@88>)" in line
-    assert "OperationalError" in line
+    assert "— the bot could not read or write its database." in line
+    assert "OperationalError" not in line
     assert view.is_finished()
 
 
@@ -701,18 +702,24 @@ async def test_a_confirmed_round_amend_whose_reply_fails_still_records_what_chan
 
 
 @pytest.mark.parametrize(
-    "where, error, message",
+    "where, kind, error, message",
     [
-        pytest.param("the ask fails", "OperationalError", "database is locked",
-                     id="the ask fails"),
-        pytest.param("before amending", "OperationalError", "database is locked",
-                     id="before amending"),
-        pytest.param("the first answer fails", "RuntimeError", "gateway closed",
-                     id="the first answer fails"),
+        pytest.param(
+            "the ask fails", "the bot could not read or write its database",
+            "OperationalError", "database is locked", id="the ask fails",
+        ),
+        pytest.param(
+            "before amending", "the bot could not read or write its database",
+            "OperationalError", "database is locked", id="before amending",
+        ),
+        pytest.param(
+            "the first answer fails", "the bot hit an internal fault",
+            "RuntimeError", "gateway closed", id="the first answer fails",
+        ),
     ],
 )
 async def test_a_round_amend_confirmation_that_fails_elsewhere_stops_its_view(
-    tmp_path, where, error, message,
+    tmp_path, where, kind, error, message,
 ):
     """A fault in the Confirm press — asking the change queue for the amendment of round 1 of
     Div A, reading the round before it, or the press not even acknowledged, its defer failing —
@@ -746,7 +753,8 @@ async def test_a_round_amend_confirmation_that_fails_elsewhere_stops_its_view(
     [line] = _lines(cog)
     assert line.startswith("❌ ")
     assert f"failed for Manager (<@{USER_ID}>)" in line
-    assert error in line
+    assert f"— {kind}." in line
+    assert error not in line
     assert message not in line
 
 

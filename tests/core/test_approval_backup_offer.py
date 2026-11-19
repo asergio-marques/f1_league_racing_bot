@@ -651,4 +651,5 @@ async def test_a_backup_stopped_by_a_fault_is_recorded_and_the_approval_goes_on(
     assert len(lines) == 1, lines
     assert lines[0].startswith("❌ "), lines[0]
     assert "Save, then approve" in lines[0], lines[0]
-    assert f"failed for Alex (<@77>) — {type(error).__name__}." in lines[0], lines[0]
+    assert "failed for Alex (<@77>) — the bot hit an internal fault." in lines[0], lines[0]
+    assert type(error).__name__ not in lines[0], lines[0]
