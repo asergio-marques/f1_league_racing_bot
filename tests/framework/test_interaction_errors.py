@@ -423,3 +423,11 @@ def test_describe_fault_names_the_kind_in_plain_words(error, kind):
     from leaguebot.framework.utils.interaction_errors import describe_fault
 
     assert describe_fault(error) == kind
+
+
+@pytest.mark.xfail(strict=True, reason="#584: the framework has no BOT_FAULT wording yet")
+def test_a_fault_in_the_bot_is_worded_as_the_bot_s_with_its_detail_in_the_host_s_log():
+    """The words every picture's remedy opens with where the fault is the bot's, not the league's."""
+    from leaguebot.framework.utils.interaction_errors import BOT_FAULT
+
+    assert BOT_FAULT == "the fault is in the bot, and its detail is in the host's log"
