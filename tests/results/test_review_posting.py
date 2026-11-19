@@ -1747,8 +1747,28 @@ async def test_a_picture_sent_before_a_later_failure_is_removed_before_the_next_
 
 #: What the image module's posting step raises in these tests: a fault its own catches let
 #: through (the drawn picture's file cannot be opened to attach), where a fault in drawing or
-#: rasterising is caught there and already reported in the log channel by the image module.
+#: rasterising is caught there and already reported in the log channel by the image module. It is a
+#: fault in the bot, whose words never reach the log channel.
 PICTURE_FILE_FAULT = "the drawn picture could not be opened"
+#: How the log channel names a fault in the bot: by its kind alone.
+FAULT_IN_THE_BOT = "the bot hit an internal fault"
+#: What the results composer refuses with in these tests: a fault the league can put right, which
+#: keeps its words.
+REFUSED = "the session names a driver the league has no record of"
+#: The words the render gives where Inkscape is not installed, which the log channel keeps.
+CONVERTER_ABSENT_WORDS = "Inkscape is not installed on this host."
+#: What a line says puts a picture right where Inkscape is not installed, before what posts it.
+CONVERTER_ABSENT_REMEDY = (
+    "Inkscape is not installed on the machine running the bot, and the host must install it; "
+    "once it has, "
+)
+#: The xfail reason of a fault in the bot still named in its own words.
+NAMED_BY_ITS_WORDS = (
+    "#584: a picture's fault in the bot is named in its own words and its line says to fix the "
+    "template"
+)
+#: The xfail reason of the converter's absence with no remedy beside it.
+NO_HOST_REMEDY = "#584: the picture's line says nothing of what puts the converter's absence right"
 
 
 def _fault_line(league: _League) -> str:
@@ -1760,65 +1780,146 @@ def _fault_line(league: _League) -> str:
     return lines[0].lower()
 
 
-def _says_why(line: str, picture: str) -> bool:
+def _says_why(line: str, picture: str, source: str) -> bool:
     """*line* names the *picture* that failed ("results", "standings"), says the post went out
-    as text in its place, gives the fault, and says what puts it right: to fix the template, then
-    run the sync command that posts it again."""
+    as text in its place, gives the fault, and says what puts it right, by where the fault lies
+    (*source*): for a fault in the bot ("bot"), its kind alone, never the words it was raised with,
+    and that the fault is the bot's, its detail in the host's log, and that the sync command posts
+    it again once it is cleared; for the league's own ("league"), its words, and to fix the
+    template, then run that sync command."""
     sync = "rounds" if picture == "results" else "standings"
+    if source == "bot":
+        said = (FAULT_IN_THE_BOT in line and PICTURE_FILE_FAULT not in line
+                and "to put it right: the fault is in the bot, and its detail is in the host's "
+                f"log; once it is cleared, run `/results {sync} sync`" in line)
+    else:
+        said = (REFUSED in line
+                and f"to put it right: fix the {picture} template, then run `/results {sync} sync`"
+                in line)
     return (picture in line and ("picture" in line or "image" in line)
-            and "text" in line and PICTURE_FILE_FAULT in line
-            and f"to put it right: fix the {picture} template, then run `/results {sync} sync`"
-            in line)
+            and "text" in line and said)
 
 
+def _says_the_host_must_install_it(league: _League, sync: str) -> bool:
+    """The log channel keeps the render's words for Inkscape's absence on a line naming round 3
+    of Pro, and that line says the host must install it, and that `/results {sync} sync` posts
+    the picture once it has."""
+    lines = [line for line in league.bot.log_channel.sent if CONVERTER_ABSENT_WORDS in line]
+    return any(
+        "Pro" in line and "round 3" in line.lower()
+        and f"{CONVERTER_ABSENT_REMEDY}run `/results {sync} sync`" in line
+        for line in lines
+    )
+
+
+def _render_without_the_converter(aspect: str) -> Any:
+    """The image module's render of *aspect*'s picture ("results", "standings") comes back not
+    drawn, for want of Inkscape on the host, and the text is posted in its place. Gives the
+    patch, to enter."""
+    from leaguebot.image.models.image_module import Problem
+    from leaguebot.image.services.render.image_render_service import (
+        POST_TEXT_FALLBACK,
+        PostingDecision,
+    )
+
+    template = "results_race_template" if aspect == "results" else "standings_drivers_template"
+    return patch(
+        f"leaguebot.image.services.aspects.image_{aspect}_post.render_png",
+        new=AsyncMock(return_value=PostingDecision(action=POST_TEXT_FALLBACK, problem=Problem(
+            kind="CONVERTER_ABSENT", detail=CONVERTER_ABSENT_WORDS, template_key=template,
+        ))),
+    )
+
+
+@pytest.mark.parametrize("source", [
+    pytest.param("bot", marks=pytest.mark.xfail(strict=True, reason=NAMED_BY_ITS_WORDS)),
+    "league",
+    pytest.param("converter absent", marks=pytest.mark.xfail(strict=True, reason=NO_HOST_REMEDY)),
+])
 async def test_a_results_picture_that_fails_posts_the_table_as_text_and_says_why_in_the_log(
-    tmp_path,
+    tmp_path, source,
 ):
-    """Round 3's results are posted again with image generation on, and the image module's
-    posting step for the results picture raises a fault its own catches let through (the drawn
-    picture cannot be opened). Today the results module logs that on the host alone. The table
-    goes out as text in the results channel, the queue runs to the end, and the log channel
-    gains one line naming round 3 of Pro, the results picture, the fault, and that the table
-    went out as text."""
+    """Round 3's results are posted again with image generation on, and the results picture is
+    not posted: ("bot") the image module's posting step raises a fault its own catches let
+    through (the drawn picture cannot be opened), a fault in the bot; ("league") the results
+    composer refuses the drawing, naming a driver the league has no record of, a fault the
+    league can put right; ("converter absent") the render comes back not drawn, as Inkscape is
+    not installed on the host. The table goes out as text in the results channel and the queue
+    runs to the end. For the first two, the log channel gains one line naming round 3 of Pro,
+    the results picture, the fault (a fault in the bot by its kind alone, a refusal in its own
+    words), that the table went out as text, and what puts it right by where the fault lies.
+    Without Inkscape, the log channel keeps the render's words on a line naming round 3 of Pro,
+    and says the host must install it and that `/results rounds sync` posts it once it has."""
+    from leaguebot.image.models.results_drawing import ResultsDataError
     from leaguebot.image.services.aspects.image_standings_post import StandingsDrawn
 
     league = await _league(tmp_path)
     answer_switch(league.bot.module_service, "images", True)
-    with _pictures_are_due("results", "standings"), patch(
-        "leaguebot.image.services.render.image_drawing.ImageDrawing.draw_results",
-        new=AsyncMock(side_effect=OSError(PICTURE_FILE_FAULT)),
-    ), patch(
-        "leaguebot.image.services.render.image_drawing.ImageDrawing.draw_standings",
-        new=AsyncMock(return_value=StandingsDrawn()),
-    ):
+    with contextlib.ExitStack() as stack:
+        composed = stack.enter_context(_pictures_are_due("results", "standings"))
+        stack.enter_context(patch(
+            "leaguebot.image.services.render.image_drawing.ImageDrawing.draw_standings",
+            new=AsyncMock(return_value=StandingsDrawn()),
+        ))
+        if source == "bot":
+            stack.enter_context(patch(
+                "leaguebot.image.services.render.image_drawing.ImageDrawing.draw_results",
+                new=AsyncMock(side_effect=OSError(PICTURE_FILE_FAULT)),
+            ))
+        elif source == "league":
+            composed.side_effect = ResultsDataError(REFUSED)
+        else:
+            composed.return_value = MagicMock(
+                season_number=1, division_name="Pro", round_number=3,
+                session_name="Feature Race",
+            )
+            stack.enter_context(_render_without_the_converter("results"))
         await _ask(league)
         await run_queue(league.bot)
 
     assert await stopped_job(league.db_path) is None
     [new] = league.sent_to(RESULTS_CHANNEL)
     assert "Round 3" in league.channel(RESULTS_CHANNEL).messages[new].content
+    if source == "converter absent":
+        assert _says_the_host_must_install_it(league, "rounds"), league.bot.log_channel.sent
+        return
     line = _fault_line(league)
-    assert _says_why(line, "results"), line
+    assert _says_why(line, "results", source), line
 
 
+@pytest.mark.parametrize("source", [
+    pytest.param("bot", marks=pytest.mark.xfail(strict=True, reason=NAMED_BY_ITS_WORDS)),
+    pytest.param("converter absent", marks=pytest.mark.xfail(strict=True, reason=NO_HOST_REMEDY)),
+])
 async def test_a_standings_picture_that_fails_posts_the_standings_as_text_and_says_why_in_the_log(
-    tmp_path,
+    tmp_path, source,
 ):
-    """Round 3's standings are posted again with image generation on, and the image module's
-    posting step for the standings pictures raises a fault its own catches let through (the
-    drawn picture cannot be opened). Today the results module logs that on the host alone. The
-    standings stand as text in the standings channel, the queue runs to the end, and the log
-    channel gains one line naming round 3 of Pro, the standings picture, the fault, and that the
-    standings went out as text."""
+    """Round 3's standings are posted again with image generation on, and the standings
+    pictures are not posted: ("bot") the image module's posting step for them raises a fault its
+    own catches let through (the drawn picture cannot be opened), a fault in the bot; ("converter
+    absent") their renders come back not drawn, as Inkscape is not installed on the host. The
+    standings stand as text in the standings channel and the queue runs to the end. For the
+    fault in the bot, the log channel gains one line naming round 3 of Pro, the standings
+    picture, the fault by its kind alone and never the words it was raised with, that the
+    standings went out as text, and that the fault is the bot's, its detail in the host's log,
+    and that `/results standings sync` posts it once it is cleared. Without Inkscape, the log
+    channel keeps the render's words on a line naming round 3 of Pro, and says the host must
+    install it and that `/results standings sync` posts it once it has."""
     league = await _league(tmp_path)
     answer_switch(league.bot.module_service, "images", True)
-    with _pictures_are_due("results", "standings"), patch(
-        "leaguebot.image.services.render.image_drawing.ImageDrawing.draw_results",
-        new=AsyncMock(return_value=(None, ())),
-    ), patch(
-        "leaguebot.image.services.render.image_drawing.ImageDrawing.draw_standings",
-        new=AsyncMock(side_effect=OSError(PICTURE_FILE_FAULT)),
-    ):
+    with contextlib.ExitStack() as stack:
+        stack.enter_context(_pictures_are_due("results", "standings"))
+        stack.enter_context(patch(
+            "leaguebot.image.services.render.image_drawing.ImageDrawing.draw_results",
+            new=AsyncMock(return_value=(None, ())),
+        ))
+        if source == "bot":
+            stack.enter_context(patch(
+                "leaguebot.image.services.render.image_drawing.ImageDrawing.draw_standings",
+                new=AsyncMock(side_effect=OSError(PICTURE_FILE_FAULT)),
+            ))
+        else:
+            stack.enter_context(_render_without_the_converter("standings"))
         await _ask(league)
         await run_queue(league.bot)
 
@@ -1827,18 +1928,23 @@ async def test_a_standings_picture_that_fails_posts_the_standings_as_text_and_sa
     texts = [standings.messages[mid].content for kind, ch, mid in league.events
              if ch == STANDINGS_CHANNEL and kind in ("send", "edit") and mid in standings.messages]
     assert texts and all("Round 3" in text for text in texts)
+    if source == "converter absent":
+        assert _says_the_host_must_install_it(league, "standings"), league.bot.log_channel.sent
+        return
     line = _fault_line(league)
-    assert _says_why(line, "standings"), line
+    assert _says_why(line, "standings", source), line
 
 
+@pytest.mark.xfail(strict=True, reason=NAMED_BY_ITS_WORDS)
 async def test_a_picture_fallback_line_names_the_amendment_while_the_season_is_pending_completion(
     tmp_path,
 ):
     """Season 1 is pending completion, where the two sync commands are refused (results spec
-    :587), and round 3's results and standings are posted again with both pictures failing. The
-    queue runs to the end and the log channel gains one line for each picture, each telling a
-    manager to fix the template and amend the round with `/results rounds amend`, and neither
-    naming a sync command (results spec :589)."""
+    :587), and round 3's results and standings are posted again with both pictures failing on a
+    fault in the bot. The queue runs to the end and the log channel gains one line for each
+    picture, each naming the fault by its kind alone, saying the fault is the bot's and its
+    detail is in the host's log, and that once it is cleared the round is amended with
+    `/results rounds amend`, and neither naming a sync command (results spec :589)."""
     league = await _league(tmp_path)
     async with get_connection(league.db_path) as db:
         await db.execute("UPDATE seasons SET stage = 'PENDING_COMPLETION' WHERE id = ?",
@@ -1860,8 +1966,9 @@ async def test_a_picture_fallback_line_names_the_amendment_while_the_season_is_p
     assert len(lines) == 2, league.bot.log_channel.sent
     for picture in ("results", "standings"):
         [line] = [line for line in lines if f"{picture} picture" in line]
-        assert (f"to put it right: fix the {picture} template, then amend the round with "
-                "`/results rounds amend`") in line, line
+        assert FAULT_IN_THE_BOT in line and PICTURE_FILE_FAULT not in line, line
+        assert ("to put it right: the fault is in the bot, and its detail is in the host's log; "
+                "once it is cleared, amend the round with `/results rounds amend`") in line, line
         assert "sync" not in line, line
 
 
@@ -2053,15 +2160,17 @@ async def test_a_picture_whose_images_switch_nobody_signed_up_for_stops_its_job(
     assert league.sent_to(target) == []
 
 
+@pytest.mark.xfail(strict=True, reason=NAMED_BY_ITS_WORDS)
 @pytest.mark.parametrize("picture", ["results", "standings"])
 async def test_a_picture_that_cannot_be_drawn_keeps_its_line_when_its_text_is_refused(
     tmp_path, picture,
 ):
     """Round 3's results and standings are posted again with image generation on, and *picture*
-    cannot be drawn (the drawn file cannot be opened). Discord refuses every send to its channel
-    on the first try, so the text the picture fell back to is refused too and the queue stops;
-    the channel is let accept and a Retry posts the text. The log channel carries the picture's
-    line, naming the fault, once: it is not lost with the refused try."""
+    cannot be drawn (the drawn file cannot be opened, a fault in the bot). Discord refuses every
+    send to its channel on the first try, so the text the picture fell back to is refused too and
+    the queue stops; the channel is let accept and a Retry posts the text. The log channel carries
+    the picture's line, naming the fault by its kind and never in its own words, once: it is not
+    lost with the refused try."""
     from leaguebot.image.services.aspects.image_standings_post import StandingsDrawn
 
     league = await _league(tmp_path)
@@ -2087,9 +2196,10 @@ async def test_a_picture_that_cannot_be_drawn_keeps_its_line_when_its_text_is_re
 
     assert await stopped_job(league.db_path) is None
     lines = [line.lower() for line in league.bot.log_channel.sent
-             if PICTURE_FILE_FAULT in line.lower()]
+             if FAULT_IN_THE_BOT in line.lower()]
     assert len(lines) == 1, league.bot.log_channel.sent
     assert picture in lines[0] and "text" in lines[0], lines[0]
+    assert all(PICTURE_FILE_FAULT not in line.lower() for line in league.bot.log_channel.sent)
 
 
 class _SendsRefused:
