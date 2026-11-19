@@ -11,7 +11,9 @@ at once, each a job of its own, and `close`, which reads the round list for the 
 
 Every test drives the real cog and the real queue through `tests/support/season_league.py`'s
 `ongoing_league`, with "now" pinned. Pro's round 3 (id 213) is NOT_RUN 90 days out, its check-in
-call standing; round 4 (id 214) 120 days out. The weather phases are recorded rather than run
+call standing; round 4 (id 214) 120 days out. The tests under "What an amendment of a raced
+season's round leaves behind" amend Am's round 3 (id 223), which has no check-in call, unless they
+say otherwise. The weather phases are recorded rather than run
 (`phases`), patched before the league is built so that the builder's hooks reach the recorder
 however they bind it; the call is posted as attendance posts it, and read from what its check-in
 channel was sent (`reposts`).
@@ -462,15 +464,18 @@ async def test_the_rounds_are_renumbered_in_the_amendment_s_own_save(tmp_path):
 
 async def test_the_success_line_is_saved_with_the_amendment(tmp_path):
     """Round 3, ninety days out, moved a day later. The arming fails after the save, stopping
-    the queue, and the bot restarts: the success line, saved with the amendment, stands once in
-    the log channel, naming the round and both moments in UTC as a league has always read them,
-    with no offset, and once only after the arming goes through on Retry."""
+    the queue: the round already stands at its new moment and its success line, saved with the
+    amendment, is already in the log channel. The bot restarts: the line stands once, naming the
+    round and both moments in UTC as a league has always read them, with no offset, and once only
+    after the arming goes through on Retry."""
     league = await ongoing_league(tmp_path)
     old, new = _at(league, days=90), _at(league, days=91)
     await _amended(league, scheduled_at=new)
     league.arming_fails = RuntimeError("job store unavailable")
     await run_queue(league.bot)
     assert await _stopped_at(league) == "arm"
+    assert await _moment(league) == _when(league, days=91)
+    assert len(_success_lines(league)) == 1
 
     await league.restart()
     await run_queue(league.bot)
@@ -3249,99 +3254,17 @@ async def test_an_amendment_stopped_across_the_update_reads_each_module_s_window
 
 
 # ---------------------------------------------------------------------------
-# /round amend, carried out on the change queue (#439, slice 4b, amendment A)
+# What an amendment of a raced season's round leaves behind
 # ---------------------------------------------------------------------------
 #
-# These tests once called `AmendmentService.amend_round` on a bot double. The amendment is now a
-# change on the queue, so each runs `/round amend` through the cog on
-# `tests/support/season_league.py`'s ongoing season (season 3: Pro tier 1, Am tier 2), presses
-# the Confirm it offered as admin 77 and runs the queue, "now" pinned to the league's clock. Am's
-# round 3 (id 223), with no check-in call, is the round amended unless a test says otherwise;
-# Pro's round 3 (id 213) is used where its call must stand. Weather's phase runners are
-# recorded rather than run, patched before the league is built; a check-in call is posted by
-# attendance's own service and read from what its check-in channel was sent.
+# Am's round 3 (id 223), with no check-in call, is the round amended unless a test says
+# otherwise, placed by `_place` at Bahrain International Circuit, in the NORMAL format, at a
+# moment of the test's choosing; Pro's round 3 is used where its call must stand. `_amend` runs
+# the queue as well as pressing Confirm.
 
 BAHRAIN = "Bahrain International Circuit"
 SILVERSTONE = "Silverstone Circuit"
 AM_3 = round_id(AM, 3)
-PRO_3 = round_id(PRO, 3)
-
-
-@pytest.fixture
-def amend_phases(monkeypatch):
-    """Weather's draw of each phase, recording `(phase, round id)` in `ran`, then drawn as weather
-    draws it; a phase in `failing` raises its fault instead, as a fault of the bot's own
-    (`tests/support/weather_draws.py`)."""
-    from tests.support.weather_draws import recorded_draws
-
-    return recorded_draws(monkeypatch)
-
-
-def _amend_attendance_as_it_is(league, monkeypatch) -> None:
-    """Attendance's own service in the league's place, its writers included, drawing no picture
-    (the image module's check-in graphic gives none), so that a check-in call is posted and
-    recorded as attendance posts it, whichever of the bot's code posts it."""
-    from unittest.mock import AsyncMock
-
-    from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
-
-    monkeypatch.setattr(
-        league.bot.image_drawing, "attach_check_in_call", AsyncMock(return_value=(None, ()))
-    )
-    attendance = AttendanceService(league.db_path)
-    for name in dir(AttendanceService):
-        if not name.startswith("_") and callable(getattr(AttendanceService, name)):
-            setattr(league.bot.attendance_service, name, getattr(attendance, name))
-
-
-class _AmendReposts:
-    """What the `reposts` fixture saw of the league it wrapped: the check-in calls posted."""
-
-    def __init__(self) -> None:
-        self.league = None
-
-    @property
-    def posted(self) -> list[tuple[int, int]]:
-        """`(round id, division id)` of each check-in call sent since the league was built: a
-        send to a check-in channel whose message stands recorded as a round's call."""
-        if self.league is None:
-            return []
-        checkins = {DIVISIONS[division][3].checkin for division in DIVISIONS}
-        sent = [(cid, mid) for kind, cid, mid in self.league.events
-                if kind == "send" and cid in checkins]
-        with contextlib.closing(sqlite3.connect(self.league.db_path)) as db, db:
-            calls = {(int(channel), int(message)): (rid, division)
-                     for rid, division, message, channel in db.execute(
-                         "SELECT round_id, division_id, message_id, channel_id "
-                         "FROM rsvp_embed_messages")}
-        return [calls[each] for each in sent if each in calls]
-
-
-@pytest.fixture
-def amend_reposts(monkeypatch):
-    """The check-in call posted as attendance posts it, by whichever of the bot's code posts it
-    (#439, slice 6b, C28: today `repost_rsvp_call` whole, then the call's own jobs), and read
-    from what Discord was sent, so that no test leans on either.
-
-    It wraps this module's `ongoing_league`: the league each test builds gets attendance's own
-    service (`_attendance_as_it_is`), and the fixture keeps it. `posted` is `(round id,
-    division id)` of each call sent to a check-in channel and recorded as the round's call."""
-    record = _AmendReposts()
-    built = ongoing_league
-
-    async def _wrapped(*args, **kwargs):
-        league = await built(*args, **kwargs)
-        _amend_attendance_as_it_is(league, monkeypatch)
-        record.league = league
-        return league
-
-    monkeypatch.setattr(sys.modules[__name__], "ongoing_league", _wrapped)
-    return record
-
-
-def _amend_at(league, delta: timedelta) -> str:
-    """The moment *delta* from "now", as `/round amend` takes it."""
-    return (league.clock.now + delta).strftime("%Y-%m-%dT%H:%M:%S")
 
 
 def _utc(moment) -> datetime:
@@ -3378,15 +3301,6 @@ async def _round_audits(league) -> list[dict]:
         "SELECT change_type, old_value, new_value FROM audit_entries "
         "WHERE change_type LIKE 'round.%' ORDER BY change_type"
     )
-
-
-def _amend_success_lines(league) -> list[str]:
-    return [line for line in league.bot.log_channel.sent if "| /round amend | Success" in line]
-
-
-async def _amend_stopped_at(league) -> str | None:
-    job = await stopped_job(league.db_path)
-    return job["name"] if job else None
 
 
 # ---------------------------------------------------------------------------
@@ -3455,7 +3369,7 @@ async def test_a_round_amendment_writes_one_line_naming_the_member_the_round_and
 
     await _amend(league, track=SILVERSTONE, format="SPRINT")
 
-    [line] = _amend_success_lines(league)
+    [line] = _success_lines(league)
     head, _, body = line.partition("\n")
     assert head == "Admin (`<@77>`) | /round amend | Success"
     assert "round 3" in body.lower()
@@ -3476,43 +3390,32 @@ async def test_a_round_amendment_line_leaves_out_a_field_given_at_the_value_it_h
 
     await _amend(league, track=BAHRAIN, format="SPRINT")
 
-    [line] = _amend_success_lines(league)
+    [line] = _success_lines(league)
     head, _, body = line.partition("\n")
     assert head == "Admin (`<@77>`) | /round amend | Success"
     assert "  format: NORMAL → SPRINT" in body.splitlines()
     assert "track:" not in body
 
 
-@pytest.mark.parametrize("fault_in", [
-    pytest.param("arming the round's jobs"),
-    "re-running a phase",
-])
 async def test_a_round_amendment_that_fails_after_the_save_still_leaves_its_line(
-    tmp_path, request, fault_in
+    tmp_path, phases
 ):
     """Admin moves Am's round 3, 90 days out with no forecast drawn, from Bahrain International
     Circuit to Silverstone Circuit and brings it forward to an hour from now, so that every phase
-    falls due at once, with weather on. The amendment is saved, then fails: the scheduler cannot arm the round's jobs again, or the first overdue forecast cannot
-    be drawn. The queue stops at that job; the round stands amended, and its one success line,
-    saved with the amendment, has been written, so the record holds what changed."""
-    # Only the draw's case records the draws, before the league is built: the arming case stops
-    # before any draw is made.
-    amend_phases = request.getfixturevalue("phases") if fault_in == "re-running a phase" else None
+    falls due at once, with weather on. The amendment is saved, then the first overdue forecast
+    cannot be drawn. The queue stops at that job; the round stands amended, and its one success
+    line, saved with the amendment, has been written, so the record holds what changed. The
+    arming failing after the save is `test_the_success_line_is_saved_with_the_amendment`'s
+    case."""
     league = await ongoing_league(tmp_path, weather=True)
     await _place(league, at=timedelta(days=90))
-    fault = RuntimeError("the fault after the save")
-    if amend_phases is None:
-        league.arming_fails = fault
-    else:
-        amend_phases.failing[1] = fault
+    phases.failing[1] = RuntimeError("the fault after the save")
 
-    await _amend(league, track=SILVERSTONE, scheduled_at=_amend_at(league, timedelta(hours=1)))
+    await _amend(league, track=SILVERSTONE, scheduled_at=_at(league, hours=1))
 
-    assert await _amend_stopped_at(league) == (
-        "arm" if fault_in == "arming the round's jobs" else "draw_forecast"
-    )
+    assert await _stopped_at(league) == "draw_forecast"
     assert (await _round(league))["track_name"] == SILVERSTONE
-    [line] = _amend_success_lines(league)
+    [line] = _success_lines(league)
     assert line.startswith("Admin (`<@77>`) | /round amend | Success\n")
     assert f"  track: {BAHRAIN} → {SILVERSTONE}" in line.splitlines()
 
@@ -3522,7 +3425,7 @@ async def test_a_round_amendment_that_fails_after_the_save_still_leaves_its_line
 # ---------------------------------------------------------------------------
 
 
-async def test_amending_two_fields_amends_once(tmp_path, amend_phases):
+async def test_amending_two_fields_amends_once(tmp_path, phases):
     """Amending a round's track and its date together is one amendment, not two.
 
     `/round amend` called the service once per field the manager gave, so changing both ran the
@@ -3538,12 +3441,12 @@ async def test_amending_two_fields_amends_once(tmp_path, amend_phases):
     await _place(league, at=timedelta(days=90))
     await posted_forecast(league, AM_3, 1, 8101)
 
-    await _amend(league, track=SILVERSTONE, scheduled_at=_amend_at(league, timedelta(days=97)))
+    await _amend(league, track=SILVERSTONE, scheduled_at=_at(league, days=97))
 
     rnd = await _round(league)
     # Both fields landed, in one amendment.
     assert rnd["track_name"] == SILVERSTONE
-    assert _utc(rnd["scheduled_at"]) == _utc(_amend_at(league, timedelta(days=97)))
+    assert _utc(rnd["scheduled_at"]) == _when(league, days=97)
 
     # One audit entry per field — the one thing that is right to do twice.
     assert [a["change_type"] for a in await _round_audits(league)] == [
@@ -3552,10 +3455,10 @@ async def test_amending_two_fields_amends_once(tmp_path, amend_phases):
 
     # Everything else exactly once; both horizons stay in the future, so no overdue phase re-runs.
     assert len(league.texts(DIVISIONS[AM][3].forecast)) == 1
-    assert len(_amend_success_lines(league)) == 1
+    assert len(_success_lines(league)) == 1
     assert league.unarmed == [AM_3]
     assert league.armed == [("weather", [AM_3])]
-    assert amend_phases.ran == []
+    assert phases.ran == []
 
 
 # ---------------------------------------------------------------------------
@@ -3588,7 +3491,7 @@ async def test_a_phase_that_would_still_have_run_is_kept(tmp_path):
             AM_3, phase_number, league.clock.now.isoformat(),
         )
 
-    await _amend(league, scheduled_at=_amend_at(league, timedelta(days=4)))
+    await _amend(league, scheduled_at=_at(league, days=4))
 
     flags = await _round(league)
     results = {
@@ -3634,8 +3537,8 @@ async def test_amending_a_round_rearms_it_at_the_configured_horizons(tmp_path):
     await _amend(league, track=SILVERSTONE)
 
     [armed] = leads_armed(league.bot.round_jobs)
-    amend_phases = {lead.kind: lead.offset for lead in armed["leads"] if lead.kind.startswith("weather_p")}
-    assert amend_phases == {
+    phases = {lead.kind: lead.offset for lead in armed["leads"] if lead.kind.startswith("weather_p")}
+    assert phases == {
         "weather_p1": -timedelta(days=7),
         "weather_p2": -timedelta(days=3),
         "weather_p3": -timedelta(hours=4),
@@ -3666,7 +3569,7 @@ async def test_amending_a_round_rearms_its_check_in(tmp_path):
     league = await ongoing_league(tmp_path, attendance=True)
     await _place(league, at=timedelta(days=90))
 
-    await _amend(league, scheduled_at=_amend_at(league, timedelta(days=100)))
+    await _amend(league, scheduled_at=_at(league, days=100))
 
     [armed] = leads_armed(league.bot.round_jobs)
     # Armed against the league's own timings, and named for the right season and tier.
@@ -3679,7 +3582,7 @@ async def test_amending_a_round_rearms_its_check_in(tmp_path):
     assert "rsvp_cleanup" in check_in
     assert (armed["season_number"], armed["division_tier"]) == (3, 2)
     # And against the round as amended, not as it stood.
-    assert _utc(armed["rnd"].scheduled_at) == _utc(_amend_at(league, timedelta(days=100)))
+    assert _utc(armed["rnd"].scheduled_at) == _when(league, days=100)
     # Judged against the queue's clock.
     assert armed["now"] == league.clock.now
 
@@ -3691,7 +3594,7 @@ async def test_amending_a_round_arms_no_check_in_while_attendance_is_disabled(tm
     league = await ongoing_league(tmp_path, attendance=False, weather=True)
     await _place(league, at=timedelta(days=90))
 
-    await _amend(league, scheduled_at=_amend_at(league, timedelta(days=100)))
+    await _amend(league, scheduled_at=_at(league, days=100))
 
     [armed] = leads_armed(league.bot.round_jobs)
     assert any(lead.kind.startswith("weather_p") for lead in armed["leads"])
@@ -3718,7 +3621,7 @@ async def test_amending_a_round_rearms_its_results_job_with_weather_off(tmp_path
     league = await ongoing_league(tmp_path)
     await _place(league, at=timedelta(days=90))
 
-    await _amend(league, scheduled_at=_amend_at(league, timedelta(days=100)))
+    await _amend(league, scheduled_at=_at(league, days=100))
 
     [armed] = leads_armed(league.bot.round_jobs)
     assert armed["rnd"].id == AM_3
@@ -3733,7 +3636,7 @@ async def test_the_results_job_is_not_armed_twice_when_weather_is_on(tmp_path):
     league = await ongoing_league(tmp_path, weather=True)
     await _place(league, at=timedelta(days=90))
 
-    await _amend(league, scheduled_at=_amend_at(league, timedelta(days=100)))
+    await _amend(league, scheduled_at=_at(league, days=100))
 
     [armed] = leads_armed(league.bot.round_jobs)
     assert [lead.kind for lead in armed["leads"]].count("results") == 1
@@ -3746,11 +3649,11 @@ async def test_the_results_job_is_not_armed_twice_when_weather_is_on(tmp_path):
 
 
 async def _call_rows(league) -> list[dict]:
-    return await league.rows("SELECT * FROM rsvp_embed_messages WHERE round_id = ?", PRO_3)
+    return await league.rows("SELECT * FROM rsvp_embed_messages WHERE round_id = ?", R3)
 
 
 async def test_a_standing_call_is_taken_down_when_the_round_moves_out_of_its_window(
-    tmp_path, amend_reposts
+    tmp_path, reposts
 ):
     """Moved far enough that the call would not have gone out, so the one standing is withdrawn.
 
@@ -3761,31 +3664,31 @@ async def test_a_standing_call_is_taken_down_when_the_round_moves_out_of_its_win
     and is moved 40 days out: the call's messages and its record go, and no call is posted again.
     """
     league = await ongoing_league(tmp_path, attendance=True)
-    await _place(league, PRO_3, at=timedelta(days=2))
+    await _place(league, R3, at=timedelta(days=2))
 
-    await _amend(league, "Pro", scheduled_at=_amend_at(league, timedelta(days=40)))
+    await _amend(league, "Pro", scheduled_at=_at(league, days=40))
 
     assert await _call_rows(league) == []
-    checkin = league.channel(DIVISIONS[PRO][3].checkin)
+    checkin = league.channel(PRO_CH.checkin)
     assert not any(mid in checkin.messages for mid in CALL_MESSAGES)
-    assert amend_reposts.posted == []
+    assert reposts.posted == []
 
 
-async def test_a_standing_call_is_posted_again_when_its_window_has_passed(tmp_path, amend_reposts):
+async def test_a_standing_call_is_posted_again_when_its_window_has_passed(tmp_path, reposts):
     """The call was due and is still open, so it goes out again carrying what changed.
 
     Attendance on; Pro's round 3, two days out (the call, 5 days before, is behind us; the
     deadline, 2 hours before, is not), has its call standing and its track amended: the call is
     posted again, once."""
     league = await ongoing_league(tmp_path, attendance=True)
-    await _place(league, PRO_3, at=timedelta(days=2))
+    await _place(league, R3, at=timedelta(days=2))
 
     await _amend(league, "Pro", track=SILVERSTONE)
 
-    assert amend_reposts.posted == [(PRO_3, PRO)]
+    assert reposts.posted == [(R3, PRO)]
 
 
-async def test_a_closed_check_in_is_left_alone(tmp_path, amend_reposts):
+async def test_a_closed_check_in_is_left_alone(tmp_path, reposts):
     """Past its deadline the check-in is settled and the reserves are distributed against it.
 
     Reopening it would unsettle a grid already told who is racing, so nothing is posted and
@@ -3797,13 +3700,13 @@ async def test_a_closed_check_in_is_left_alone(tmp_path, amend_reposts):
     the call stands as it was, and none is posted.
     """
     league = await ongoing_league(tmp_path, attendance=True)
-    await _place(league, PRO_3, at=timedelta(hours=1))
+    await _place(league, R3, at=timedelta(hours=1))
 
     await _amend(league, "Pro", offered=False, track=SILVERSTONE)
 
-    assert amend_reposts.posted == []
+    assert reposts.posted == []
     assert len(await _call_rows(league)) == 1
-    checkin = league.channel(DIVISIONS[PRO][3].checkin)
+    checkin = league.channel(PRO_CH.checkin)
     assert all(mid in checkin.messages for mid in CALL_MESSAGES)
 
 
@@ -3819,7 +3722,7 @@ def _amend_change(league, changes: str, days_out: timedelta) -> dict:
     deadline has passed (*days_out* inside two hours), which the rules refuse."""
     offered = days_out > timedelta(hours=2)
     if changes == "moved-out":
-        return {"offered": offered, "scheduled_at": _amend_at(league, timedelta(days=40))}
+        return {"offered": offered, "scheduled_at": _at(league, days=40)}
     return {"offered": offered, "track": SILVERSTONE}
 
 
@@ -3829,7 +3732,7 @@ def _amend_change(league, changes: str, days_out: timedelta) -> dict:
     ids=["call-withdrawn", "call-reposted", "check-in-closed"],
 )
 async def test_reopening_a_check_in_clears_the_mark_of_one_taken_down(
-    tmp_path, amend_reposts, days_out, changes, cleared
+    tmp_path, reposts, days_out, changes, cleared
 ):
     """A round's check-in marked taken down, then reopened by an amendment, is no longer taken
     down (#425): test mode reads the mark, and would otherwise never offer the new call. A
@@ -3853,7 +3756,7 @@ async def test_reopening_a_check_in_clears_the_mark_of_one_taken_down(
     ids=["call-withdrawn", "call-reposted", "check-in-closed"],
 )
 async def test_reopening_a_check_in_forgets_the_distribution_of_the_call_it_replaces(
-    tmp_path, amend_reposts, days_out, changes, forgotten
+    tmp_path, reposts, days_out, changes, forgotten
 ):
     """A check-in reopened by an amendment carries its answers over, not its distribution
     (#429). The reserves were placed against the call being withdrawn, and the call that
