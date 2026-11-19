@@ -59,7 +59,12 @@ from leaguebot.image.models.image_catalogues import (
     reserve_capacity_problem,
     row_capacity_problem,
 )
-from leaguebot.image.models.image_module import DrawingRefused
+from leaguebot.image.models.image_module import (
+    PROBLEM_UNRESOLVED_VALUE,
+    DrawingRefused,
+    Problem,
+    RenderOutcome,
+)
 from leaguebot.image.models.results_drawing import ResultsDrawing
 from leaguebot.image.models.standings_drawing import StandingsDrawing
 from leaguebot.image.models.image_constants import (
@@ -1065,7 +1070,9 @@ class ImageDrawing:
         every lineup drawn needs before they part. Nothing is reported to the log channel here:
         each caller hands the notices back or reports them, as it runs in a job or not. Hands
         back the division row and the render's outcome, for each to word the problem its own
-        way.
+        way. A refusal the league can put right, met before the render (the division is gone,
+        a team too long for its slot), comes back as the outcome's problem with no division and
+        no render made.
 
         *include_uncommitted* draws a placement not yet confirmed in, which the lineup of record
         leaves out (#220), and is for a mid-season review. *obtain_missing_portraits* obtains
@@ -1080,10 +1087,19 @@ class ImageDrawing:
             build_fill_spec as build_lineup_fill_spec,
         )
 
-        _division, drawing, members = await build_drawing(
-            self._db_path, self._driver_names_read, guild, division_id,
-            include_uncommitted=include_uncommitted,
-        )
+        try:
+            _division, drawing, members = await build_drawing(
+                self._db_path, self._driver_names_read, guild, division_id,
+                include_uncommitted=include_uncommitted,
+            )
+        except DrawingRefused as exc:
+            # The league's to put right, and found before any render: the refusal is the
+            # picture's problem in its own words, as the render gives one of its own.
+            return None, RenderOutcome(
+                problem=Problem(
+                    kind=PROBLEM_UNRESOLVED_VALUE, detail=str(exc), template_key=LINEUP_TEMPLATE_KEY
+                )
+            )
 
         config = await self._config.get_config()
         directories, directory_faults = resolve_configured_directories(
