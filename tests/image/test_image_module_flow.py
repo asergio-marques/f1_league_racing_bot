@@ -1094,10 +1094,7 @@ async def test_a_converter_that_fails_is_named_by_its_kind(
 
 @pytest.mark.parametrize("raise_faults", [True, False], ids=["raises-faults", "falls-back"])
 @pytest.mark.parametrize(("converter", "kind", "words", "source"), [
-    pytest.param(
-        None, "CONVERTER_ABSENT", "Inkscape is not installed on this host.", "HOST",
-        id="gone-by-the-conversion",
-    ),
+    (None, "CONVERTER_ABSENT", "Inkscape is not installed on this host.", "HOST"),
     ("inkscape", "RASTERISER", "attachment limit", "LEAGUE"),
 ], ids=["gone-by-the-conversion", "too-large-for-discord"])
 async def test_a_converter_outcome_a_league_or_host_acts_on_keeps_its_words(
