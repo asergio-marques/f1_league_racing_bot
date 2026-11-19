@@ -1827,7 +1827,7 @@ def _render_without_the_converter(aspect: str) -> Any:
 @pytest.mark.parametrize("source", [
     "bot",
     "league",
-    "converter absent",
+    pytest.param("converter absent"),
 ])
 async def test_a_results_picture_that_fails_posts_the_table_as_text_and_says_why_in_the_log(
     tmp_path, source,
@@ -1882,7 +1882,7 @@ async def test_a_results_picture_that_fails_posts_the_table_as_text_and_says_why
 
 @pytest.mark.parametrize("source", [
     "bot",
-    "converter absent",
+    pytest.param("converter absent"),
 ])
 async def test_a_standings_picture_that_fails_posts_the_standings_as_text_and_says_why_in_the_log(
     tmp_path, source,

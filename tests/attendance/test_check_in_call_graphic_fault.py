@@ -65,7 +65,7 @@ def _sent(league: SeasonLeague) -> list[int]:
 
 
 @pytest.mark.parametrize("fault", [
-    "not drawn",
+    pytest.param("not drawn"),
     "no deadline",
     "none",
 ])
@@ -176,7 +176,7 @@ async def test_a_check_in_call_s_render_notices_reach_the_log_once_naming_the_ro
 
 @pytest.mark.parametrize("outcome", [
     "fault",
-    "converter absent",
+    pytest.param("converter absent"),
 ])
 async def test_a_check_in_call_s_render_fault_is_named_as_the_check_in_call_image(
     tmp_path, outcome

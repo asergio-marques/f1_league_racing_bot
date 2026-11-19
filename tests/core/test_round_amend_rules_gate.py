@@ -704,11 +704,11 @@ async def test_a_confirmed_round_amend_whose_reply_fails_still_records_what_chan
 @pytest.mark.parametrize(
     "where, error, message",
     [
-        pytest.param("the ask fails", "the bot could not read or write its database", "database is locked",
+        pytest.param("the ask fails", "OperationalError", "database is locked",
                      id="the ask fails"),
-        pytest.param("before amending", "the bot could not read or write its database", "database is locked",
+        pytest.param("before amending", "OperationalError", "database is locked",
                      id="before amending"),
-        pytest.param("the first answer fails", "the bot hit an internal fault", "gateway closed",
+        pytest.param("the first answer fails", "RuntimeError", "gateway closed",
                      id="the first answer fails"),
     ],
 )

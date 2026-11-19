@@ -824,8 +824,8 @@ CONVERTER_ABSENT_REMEDY = (
 
 
 @pytest.mark.parametrize("fault", [
-    "bot",
-    "converter absent",
+    pytest.param("bot"),
+    pytest.param("converter absent"),
 ])
 async def test_a_sync_s_sanction_card_whose_picture_fails_is_posted_as_text_and_says_why(
     tmp_path, request, monkeypatch, fault,

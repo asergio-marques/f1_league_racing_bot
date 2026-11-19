@@ -350,7 +350,7 @@ CONVERTER_ABSENT_REMEDY = (
 
 @pytest.mark.parametrize("kind, detail", [
     ("TEMPLATE_INVALID", SHEET_RENDER_FAULT),
-    ("CONVERTER_ABSENT", CONVERTER_ABSENT_WORDS),
+    pytest.param("CONVERTER_ABSENT", CONVERTER_ABSENT_WORDS),
 ], ids=["template fault", "converter absent"])
 async def test_a_sheet_s_render_fault_is_named_as_the_attendance_sheet_image(
     tmp_path, kind, detail

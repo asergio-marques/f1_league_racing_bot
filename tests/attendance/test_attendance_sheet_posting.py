@@ -721,11 +721,11 @@ def _drawing_that_draws_nothing(fault: str):
 
 
 @pytest.mark.parametrize("fault", [
-    "drawing",
-    "drawing at the final",
-    "track registry",
-    "teams",
-    "round unreadable",
+    pytest.param("drawing"),
+    pytest.param("drawing at the final"),
+    pytest.param("track registry"),
+    pytest.param("teams"),
+    pytest.param("round unreadable"),
     "none",
 ])
 @pytest.mark.asyncio
