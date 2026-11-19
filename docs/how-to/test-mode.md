@@ -269,6 +269,8 @@ Building a season to test one thing is slow, and testing the next thing usually 
 
 ## A workable order
 
+[`tests/e2e/`](../../tests/e2e/README.md) holds step-by-step specs of such a run, each step with the reply it expects, starting from [`00-base.md`](../../tests/e2e/00-base.md).
+
 1. `/season setup`, then `/test-mode toggle` while the season is in configuration — which seeds the points configurations on a server that holds none — and `/season config-review` to confirm it, which takes the season straight to placements.
 2. Build the divisions and calendar as normal. Filling a calendar by hand is tedious, and `tools/data-generator/calendar-data/` writes one for you — random circuits, a weekday and an evening slot per division, rounds a week apart — as the XML `/round add-xml` takes. See [the generator's README](../../tools/data-generator/README.md). **Keep every round still to come, and beyond the configured windows**: a round whose moment has passed is refused at confirmation whatever the modules, and a first round inside the check-in notice or a weather phase deadline is refused as well, test mode included. The generator's own dates, in the year after the run, clear them all.
 3. `/test-mode roster add` or `add-bulk` until each division is seated — with a `nationality` on each if you mean to look at the graphics — **before** confirming placements, since the roster commands work only in placements. `/test-mode roster list` to collect the mention strings.
