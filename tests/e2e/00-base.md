@@ -146,7 +146,7 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
 
    **Expect:**
    - **Host log:** `Starting bot...`, then `Logged in as <bot user> (id=<bot id>)`, then
-     `Synced <n: the number of slash command groups> slash command(s)`.
+     `Synced <n: the number of top-level slash commands> slash command(s)`.
    - `bot.db` and `scheduler.db` now exist in the bot host folder.
    - Nothing posted on Discord: no log channel is set yet.
 
@@ -663,8 +663,9 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
         reserves. A blank seat is drawn with its name cleared and no flag, and raises no
         image notice (`image_lineup_service.put_seat_name`);
       - the report, one message per section: the first opening
-        `**Season Review (Season #1 — F1 25)**` and `**Modules**`, with the five modules each
-        `✅ Enabled`; one per module's settings, one headed `**Image output**`; then, for each
+        `**Season Review (Season #1 — F1 25)**` and `**Modules**`, with the five modules in the
+        order Weather, Signup, Results, Attendance, Images, each `✅ Enabled` and possibly ending
+        ` | <note>` (a note is not a fault); one per module's settings, one headed `**Image output**`; then, for each
         division, a banner `# DIVISION 1 (Tier 1)` (or `# DIVISION 2 (Tier 2)`) between two
         rules of `─`, and a message opening `📂 **Configuration**` with
         `  Role: <@&<Division N role id>>`, `  Calendar channel: <#<dN-calendar id>>`,
@@ -705,8 +706,9 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
       Season #1 (ID: 1)
       ```
       followed, where the calendars or lineups drew with notices, by a blank line and a
-      `⚠️ **Image notices**` section, each picture (`calendar — Season 1 Division 1`,
-      `lineup — Division 1`, and the same for Division 2) with its notices. No
+      `⚠️ **Image notices**` section, each picture with its notices: every calendar first
+      (`calendar — Season 1 Division 1`, then Division 2's), then every lineup
+      (`lineup — Division 1`, then Division 2's), not grouped by division. No
       `⚠️ **Not everything could be done**` section.
     - **Posts:**
       - `#bot-commands`: every message of the review (step 30) is deleted. Then
