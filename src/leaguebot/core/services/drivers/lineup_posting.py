@@ -47,6 +47,7 @@ from leaguebot.framework.models.change import (
     DrawnKept,
     drawn_kept,
 )
+from leaguebot.core.models.fault_source import FaultSource
 from leaguebot.core.services.drivers.division_seating import SeatOccupant, division_seating
 from leaguebot.framework.services.queue.change_queue import (
     ChangeQueue,
@@ -64,6 +65,7 @@ from leaguebot.framework.utils.channels import as_text_channel
 from leaguebot.core.services.modules.image_drawing import ImageDrawing
 from leaguebot.framework.services.posting.standing_post_handler import post_standing
 from leaguebot.framework.utils.in_a_job import posts_in_a_job
+from leaguebot.framework.utils.interaction_errors import describe_fault
 from leaguebot.framework.utils.league_server import league_guild
 from leaguebot.framework.utils.log_lines import drawn_notices_line
 
@@ -112,6 +114,8 @@ class LineupPosted:
     #: Whether *problem* was Discord refusing the picture rather than the drawing failing: the
     #: line then says the next change to the drivers posts it again, the template being sound.
     refused: bool = False
+    #: Where the fault in the picture lay, for the line to say what puts it right by it.
+    fault_source: FaultSource = FaultSource.LEAGUE
 
 
 class LineupPoster:
@@ -224,6 +228,7 @@ class LineupPoster:
 
         image_path: Path | None = None
         problem: str | None = None
+        fault_source = FaultSource.LEAGUE
         refused = False
         notices: tuple[str, ...] = ()
         drawing = self._drawing
@@ -235,11 +240,13 @@ class LineupPoster:
                 notices = tuple(picture.notices)
                 if picture.problem is not None:
                     problem = picture.problem
+                    fault_source = picture.fault_source
                 elif picture.path is not None:
                     image_path = picture.path
             except Exception as exc:  # noqa: BLE001 — never block a placement on this
                 log.error("_refresh_lineup_post: image path failed: %s", exc, exc_info=True)
-                problem = str(exc)
+                problem = describe_fault(exc)
+                fault_source = FaultSource.BOT
 
         # The drawn path is released whichever way this ends — posted, refused and fallen
         # back to text, or lost to a Discord fault that stops the queue at the posting — so it
@@ -280,13 +287,13 @@ class LineupPoster:
                 failure = StepFailedOnDiscord(f"the lineup could not be posted: {exc}")
                 setattr(failure, LINEUP_DRAWN_ATTRIBUTE, {
                     "division_name": div_name, "notices": list(notices), "problem": problem,
-                    "refused": refused,
+                    "refused": refused, "fault_source": fault_source.value,
                 })
                 raise failure from exc
 
             return LineupPosted(
                 new_msg_id, lineup_channel_id, lineup_message_id, div_name, "text",
-                problem=problem, notices=notices, refused=refused,
+                problem=problem, notices=notices, refused=refused, fault_source=fault_source,
             )
         finally:
             if drawing is not None:
@@ -351,7 +358,7 @@ def posted_result(posted: LineupPosted | None) -> dict[str, Any]:
         "new": posted.message_id, "old": posted.previous, "channel_id": posted.channel_id,
         "division_name": posted.division_name, "form": posted.form, "problem": posted.problem,
         RESULT_NOTICES: list(posted.notices), RESULT_DRAWN: _drawn_as(posted.division_name),
-        "refused": posted.refused,
+        "refused": posted.refused, "fault_source": posted.fault_source.value,
     }
 
 
