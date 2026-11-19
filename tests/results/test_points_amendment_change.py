@@ -1580,10 +1580,13 @@ async def _season_state(path: str, season_id: int):
     )
 
 
+@pytest.mark.xfail(strict=True, reason="#513: a refused Approve tells the admin to repair the "
+                   "channels whatever the fault")
 async def test_an_amendment_is_refused_when_the_guild_is_not_in_cache(tmp_path):
     """The bot is no longer in the league's server when Approve is pressed: the press is refused
     saying so, nothing is queued and the season stands as it was (#187). It used to overwrite
-    the points and then silently repost nothing at all."""
+    the points and then silently repost nothing at all. No channel is at fault, so the reply
+    does not tell the admin to repair the channels (#513)."""
     league = await points_league(tmp_path)
     panel = await open_panel(league)
     before = await points_state(league)
@@ -1594,6 +1597,39 @@ async def test_an_amendment_is_refused_when_the_guild_is_not_in_cache(tmp_path):
     reply = acknowledgement(press)
     assert reply.startswith(NOT_PUBLISHED)
     assert "not in this server" in reply
+    assert "Repair the channels" not in reply
+    assert await _approvals(league) == []
+    assert await points_state(league) == before
+
+
+@pytest.mark.xfail(strict=True, reason="#513: a season that cannot be read is refused as a "
+                   "publishing fault, saying twice that nothing changed and to repair the channels")
+async def test_an_amendment_is_refused_when_the_season_cannot_be_read(tmp_path):
+    """The panel is drawn while the season stands; then the approval's check finds the season
+    cannot be read (stubbed where `approval_faults` asks for it: the season itself stays live, as
+    a real removal is refused earlier, at the live-season read), and Approve is pressed. The press
+    is refused under a heading naming the season, not publishing, saying once that nothing has been
+    changed and naming no channel repair; one ⛔ line is logged with no detail beneath it, nothing
+    is queued, and the season's points, the staged changes and amendment mode stand as they
+    were."""
+    import re
+
+    league = await points_league(tmp_path)
+    panel = await open_panel(league)
+    before = await points_state(league)
+
+    with patch("leaguebot.results.services.points.points_amendment_faults.season_exists",
+               new=AsyncMock(return_value=False)):
+        press = await press_approve(league, panel)
+
+    reply = acknowledgement(press)
+    assert reply.startswith("⛔ Amendment not approved — the season could not be read.")
+    assert "could not be published" not in reply
+    assert len(re.findall(r"nothing (?:was|has been) changed", reply, re.IGNORECASE)) == 1
+    assert "**Nothing has been changed**" in reply
+    assert "Repair the channels" not in reply
+    [line] = _refusal_lines(league)
+    assert "\n" not in line
     assert await _approvals(league) == []
     assert await points_state(league) == before
 

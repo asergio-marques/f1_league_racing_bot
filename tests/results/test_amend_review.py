@@ -62,6 +62,11 @@ SEASON_ID = 1
 # ---------------------------------------------------------------------------
 
 
+#: Why every test that draws the panel fails until `approval_faults` gives its faults a kind:
+#: `_review` reports them as `ApprovalFaults`, which the plan of #513 adds.
+NOT_YET_KINDED = "#513: approval_faults gives no ApprovalFaults for the panel to read"
+
+
 def _make_cog(
     *,
     enabled: bool = True,
@@ -181,6 +186,7 @@ async def _review(
     diff: str = "P1: 25 → 26",
     panel_errors=None,
     panel_faults=None,
+    reported=None,
     held=(None, None),
 ):
     """Run the command, answering the panel with *press* ("approve", "reject" or None).
@@ -191,7 +197,8 @@ async def _review(
     returns where it does not wait.
 
     *panel_faults* is what `approval_faults` reports while the panel is drawn — the
-    channels the approval would have to post to (#187).
+    channels the approval would have to post to (#187), reported as channel faults. *reported*,
+    where given, is reported in their place: an `ApprovalFaults` of another kind (#513).
 
     *held* is the open round amendment the panel finds, if any (#345).
 
@@ -229,6 +236,16 @@ async def _review(
             return await original(self)
         return await _answer_panel(self)
 
+    async def _approval_faults(*_args, **_kwargs):
+        from leaguebot.results.services.points.points_amendment_faults import (
+            ApprovalFaultKind,
+            ApprovalFaults,
+        )
+
+        if reported is not None:
+            return reported
+        return ApprovalFaults(tuple(panel_faults or ()), ApprovalFaultKind.CHANNELS)
+
     discord.ui.View.wait = _wait  # type: ignore[assignment]
     try:
         with patch(
@@ -242,7 +259,7 @@ async def _review(
             new=AsyncMock(return_value=panel_errors or []),
         ) as validate, patch(
             "leaguebot.results.services.points.amendment_mode_service.approval_faults",
-            new=AsyncMock(return_value=panel_faults or []),
+            new=AsyncMock(side_effect=_approval_faults),
         ) as faults, patch(
             "leaguebot.results.services.points.amendment_mode_service.open_amendment_in_season",
             new=AsyncMock(side_effect=list(held)),
@@ -274,6 +291,7 @@ def _assert_refusal_recorded(cog, interaction) -> None:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_KINDED)
 async def test_the_panel_shows_the_staged_changes():
     """The diff is the whole basis for the decision — an admin approving a blank panel is
     approving whatever happens to be staged."""
@@ -340,6 +358,7 @@ async def test_the_command_is_refused_while_the_module_is_off():
     _assert_refusal_recorded(cog, interaction)
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_KINDED)
 async def test_the_command_defers_before_reading():
     """Reading the store and building a diff is more than a three-second job on a full
     season."""
@@ -356,6 +375,7 @@ async def test_the_command_defers_before_reading():
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_KINDED)
 async def test_an_out_of_order_table_is_named_in_the_panel():
     """So an admin can see what is wrong with it while deciding, rather than press Approve
     and be refused."""
@@ -374,6 +394,7 @@ async def test_an_out_of_order_table_is_named_in_the_panel():
     assert "P2 (26) is worth more than P1 (25)" in panel
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_KINDED)
 async def test_the_panel_says_how_to_repair_it():
     """An admin shown a fault with no next step reverts the whole amendment, which throws
     away every correct change staged alongside the broken one."""
@@ -387,6 +408,7 @@ async def test_the_panel_says_how_to_repair_it():
     assert "/results amend revert" in panel
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_KINDED)
 async def test_every_ordering_fault_is_listed():
     """Not the first: an admin repairing one at a time through four panels is four chances
     to give up and revert."""
@@ -402,6 +424,7 @@ async def test_every_ordering_fault_is_listed():
     assert "P5 beats P4" in panel
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_KINDED)
 async def test_a_sound_table_earns_no_warning():
     """The warning has to mean something; one on every panel would be read past."""
     cog = _make_cog()
@@ -412,6 +435,7 @@ async def test_a_sound_table_earns_no_warning():
     assert "cannot be approved" not in _panel(interaction)
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_KINDED)
 async def test_the_panel_does_not_refuse_the_button():
     """The fault is shown, not enforced here — an admin may still press Approve, and the
     change's check, when the queue is asked, is what actually stops it."""
@@ -433,6 +457,7 @@ async def test_the_panel_does_not_refuse_the_button():
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_KINDED)
 async def test_approving_asks_the_queue_for_the_season_s_approval():
     """One ask, of the points approval's kind, naming the season by id and number, through
     the press and under the command's name."""
@@ -455,6 +480,7 @@ async def test_approving_asks_the_queue_for_the_season_s_approval():
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_KINDED)
 async def test_rejecting_leaves_amendment_mode_active():
     """Rejection is "not these changes", not "abandon the amendment" — conflating the two
     would throw away an evening's staging on a misread button."""
@@ -474,6 +500,7 @@ _NOTHING_APPROVED = (
 )
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_KINDED)
 async def test_a_rejection_is_recorded_as_a_cancel():
     """Nothing happened to the season, and the line says so and what to do next (#482)."""
     cog = _make_cog()
@@ -488,6 +515,7 @@ async def test_a_rejection_is_recorded_as_a_cancel():
     assert not any(line.startswith(("⛔", "⌛")) for line in lines)
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_KINDED)
 async def test_a_panel_nobody_answers_changes_nothing():
     """The panel lapses after five minutes (#482): its buttons come down through the
     command's own interaction, the admin is told nothing was approved, and one lapse line
@@ -521,6 +549,7 @@ async def test_a_panel_nobody_answers_changes_nothing():
     assert not any(line.startswith(("⛔", "↩️")) for line in lines)
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_KINDED)
 async def test_posting_the_panel_writes_one_line_naming_who_ran_it():
     """A later cancel or lapse line reads against it (#482)."""
     cog = _make_cog()
@@ -536,6 +565,7 @@ async def test_posting_the_panel_writes_one_line_naming_who_ran_it():
     assert "Success" not in posted[0]
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_KINDED)
 async def test_a_press_is_answered_through_its_own_interaction():
     """The command's token can run out long before the approval finishes (D1): the queue is
     handed the press, not yet answered, so its acknowledgement is the press's own response,
@@ -575,6 +605,7 @@ async def test_a_press_is_answered_through_its_own_interaction():
 CHANNEL_FAULT = "**Alpha** — the standings channel (id 502) is not in the server."
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_KINDED)
 async def test_the_panel_names_a_channel_that_has_gone_missing():
     """The fault is shown while the decision is being taken, as the ordering's is."""
     cog = _make_cog()
@@ -587,6 +618,7 @@ async def test_the_panel_names_a_channel_that_has_gone_missing():
     assert CHANNEL_FAULT in panel
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_KINDED)
 async def test_the_panel_says_which_command_repairs_the_channel():
     """A refusal that does not say what to do next sends a manager hunting."""
     cog = _make_cog()
@@ -599,6 +631,7 @@ async def test_the_panel_says_which_command_repairs_the_channel():
     assert "/results amend review" in panel
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_KINDED)
 async def test_the_panel_says_nothing_would_be_changed():
     """The whole point of refusing before the write is that nothing is lost."""
     cog = _make_cog()
@@ -609,6 +642,7 @@ async def test_the_panel_says_nothing_would_be_changed():
     assert "nothing would" in _panel(interaction).lower()
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_KINDED)
 async def test_the_panel_names_both_faults_when_both_apply():
     """Two refusals, two repairs — a panel showing one would send the manager back twice.
 
@@ -635,6 +669,46 @@ async def test_the_panel_names_both_faults_when_both_apply():
     assert CHANNEL_FAULT in panel
 
 
+REACH_FAULT = (
+    "The bot is not in this server, so nothing can be reposted. "
+    "Check that it is still a member and try again."
+)
+
+
+@pytest.mark.xfail(strict=True, reason="#513: the panel tells the admin to repair the channels "
+                   "whatever the fault, and approval_faults gives no kind")
+@pytest.mark.parametrize("kind", ["REACH", "SEASON"], ids=["bot-not-in-server", "season-unread"])
+async def test_the_panel_names_no_channel_command_for_a_fault_that_is_not_a_channel(kind):
+    """The panel is drawn while the approval is refused for a fault that is not a channel's: the
+    bot is no longer in the league's server, or the season cannot be read. No channel command
+    would mend either, so the panel names none. The server fault is shown with its own next step,
+    and the panel says nothing would be changed; the season's is shown under a heading of its
+    own, "Nothing would be changed." beneath it, with no publishing heading and no bullet."""
+    from leaguebot.results.services.points.points_amendment_faults import (
+        ApprovalFaultKind,
+        ApprovalFaults,
+    )
+
+    cog = _make_cog()
+    interaction = _interaction()
+    line = REACH_FAULT if kind == "REACH" else "The season could not be read."
+
+    await _review(cog, interaction, reported=ApprovalFaults((line,), ApprovalFaultKind[kind]))
+
+    panel = _panel(interaction)
+    assert "Repair the channels" not in panel
+    if kind == "REACH":
+        assert REACH_FAULT in panel
+        assert "nothing would" in panel.lower()
+        assert "/results channel" not in panel
+    else:
+        assert "the season could not be read" in panel
+        assert "Nothing would be changed." in panel
+        assert "could not be published" not in panel
+        assert "•" not in panel
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_YET_KINDED)
 async def test_a_sound_season_earns_no_channel_warning():
     """The guard against crying wolf at a correctly configured league."""
     cog = _make_cog()
@@ -645,6 +719,7 @@ async def test_a_sound_season_earns_no_channel_warning():
     assert "could not be published" not in _panel(interaction)
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_KINDED)
 async def test_the_channels_are_checked_again_at_the_press():
     """The panel stays open for five minutes, so a channel can be deleted between the diff
     being drawn and the button being pressed. The change reads them again for that reason."""
@@ -665,6 +740,7 @@ async def test_the_channels_are_checked_again_at_the_press():
 AMENDING = {"round_number": 2, "division_name": "Pro", "channel_id": 8200}
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_KINDED)
 async def test_the_panel_names_a_round_being_amended():
     cog = _make_cog()
     interaction = _interaction()
@@ -676,6 +752,7 @@ async def test_the_panel_names_a_round_being_amended():
     assert "Round 2 of **Pro** is being amended in <#8200>" in panel
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_KINDED)
 async def test_an_amendment_finished_after_the_panel_was_drawn_does_not_refuse():
     cog = _make_cog()
 
