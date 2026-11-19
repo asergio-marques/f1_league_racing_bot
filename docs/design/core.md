@@ -608,16 +608,17 @@ that carries only words carries it in them (`FaultWords`, a `str` marked with it
 `source_of` reads back and takes a plain string as the league's). The wording of each is one place,
 `picture_remedy` in `image_drawing.py`, beside the protocol, since core owns it and no module may
 own another's; what each says is the image specification's ("Errors and the rejection of input"),
-`CONVERTER_ABSENT` being a copy of the image module's `CONVERTER_NAME` that a test holds to it, as
-core cannot import it. Each posting module adds the remedy to its own line, with its own step
-(`picture_remedy`, or `with_host_remedy` for a line the image module marked as the converter's
-absence), because the image module only draws and never writes another module's re-post step; a
-line where nothing posts the picture again ends with its own tail instead of the step. Where core catches a fault the
-drawing raised (`render_for_command`, `post_division_calendar`, `_refresh_lineup_post`,
-`draw_and_post`), it words it by its kind alone (`describe_fault`), the detail being in the host's
-log, and records the bot as its source; a refusal the image module hands back, with the league as
-its source, keeps its words. The review's reply closes with one sentence for each source among its
-pictures, in the order league, bot, host, since one review may hold pictures of each.
+`CONVERTER_ABSENT` naming the converter as the image module's `CONVERTER_NAME` does, which a test
+holds it to, as core cannot import it. Each posting module adds the remedy to its own line, with its
+own step (`picture_remedy`, or `with_host_remedy` for a line the image module marked as the
+converter's absence), because the image module only draws and never writes another module's re-post
+step; a line where nothing posts the picture again ends with its own tail instead of the step. Where
+core catches a fault the drawing raised (`render_for_command`, `post_division_calendar`,
+`_refresh_lineup_post`, `draw_and_post`), it words it by its kind alone (`describe_fault`), the
+detail being in the host's log, and records the bot as its source; a picture not drawn
+(`PictureNotDrawn`) keeps its words and the source the drawing gave it. The fault paragraph of the
+review's reply ends with one sentence for each source among its pictures, in the order league, bot,
+host, since one review may hold pictures of each.
 
 **Who a post may mention is stated where it is sent** (`architecture.md`, "Posting to Discord"); who
 that is, is the core specification's ("The record of what changed", "How a change is carried out").
