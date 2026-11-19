@@ -656,7 +656,7 @@ async def test_a_render_with_no_fallback_raises_a_fault_in_the_bot(monkeypatch, 
     CalendarDataError("Division 1 holds no round to draw"),
     CapacityError("the template declares no round to fill"),
 ], ids=["calendar-data", "capacity"])
-async def test_a_render_with_no_fallback_still_returns_the_leagues_own_refusal(
+async def test_a_render_returns_the_leagues_own_refusal_whether_or_not_it_raises_faults(
     monkeypatch, refusal
 ):
     """The calendar drawn by a caller with no fallback, its data refused for a reason the league
