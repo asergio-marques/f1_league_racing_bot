@@ -36,7 +36,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
-from leaguebot.core.models.fault_source import FaultSource
+from leaguebot.core.models.fault_source import FaultSource, source_of
 from leaguebot.framework.utils.interaction_errors import BOT_FAULT
 
 #: How the converter's absence is worded where a picture's line says what puts it right. A copy
@@ -67,6 +67,18 @@ def picture_remedy(
     if source is FaultSource.BOT:
         return f"{BOT_FAULT}; " + (f"once it is cleared, {then}" if then else f"{otherwise}")
     return f"{CONVERTER_ABSENT}; " + (f"once it has, {then}" if then else f"{otherwise}")
+
+
+def with_host_remedy(line: str, *, then: str | None = None, otherwise: str | None = None) -> str:
+    """*line*, the reason a picture was not drawn, with what puts it right added where the reason is
+    that Inkscape is not installed (the line is marked `HOST`, as the image module hands it back):
+    the host must install it, and *then* or *otherwise* says what posts the picture next, as
+    `picture_remedy` words it. A line for any other reason stands as it is: the posting module's
+    own fault catches add the remedy for those."""
+    if source_of(line) is not FaultSource.HOST:
+        return line
+    remedy = picture_remedy(FaultSource.HOST, template="", then=then, otherwise=otherwise)
+    return f"{line} To put it right: {remedy}"
 
 
 @dataclass(frozen=True)
