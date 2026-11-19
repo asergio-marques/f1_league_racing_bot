@@ -218,6 +218,8 @@ async def test_save_pauses_the_scheduler_and_resumes_it(live):
     assert cog.bot.scheduler_service.events == ["pause", "resume"]
 
 
+@pytest.mark.xfail(strict=True, reason="#584: a command failure line names the exception's class, "
+                   "not the kind of fault")
 async def test_the_scheduler_is_resumed_even_when_the_save_fails(live):
     """A backup that leaves the bot's scheduler paused has broken the season to save it.
 
@@ -237,10 +239,13 @@ async def test_the_scheduler_is_resumed_even_when_the_save_fails(live):
     assert "partly done" not in reply
     [line] = _log_lines(cog)
     assert line.startswith(
-        f"❌ `/test-mode backup save` failed for Manager (<@{USER_ID}>) — BackupFault."
+        f"❌ `/test-mode backup save` failed for Manager (<@{USER_ID}>) — "
+        "the bot hit an internal fault."
     )
 
 
+@pytest.mark.xfail(strict=True, reason="#584: a command failure line names the exception's class, "
+                   "not the kind of fault")
 async def test_a_save_whose_scheduler_copy_fails_says_the_previous_backup_is_unchanged(live):
     """Neither backup is replaced until both copies are taken, so a scheduler copy that fails
     leaves the previous pair standing, and the reply may say so (#482, special case 11)."""
@@ -259,12 +264,15 @@ async def test_a_save_whose_scheduler_copy_fails_says_the_previous_backup_is_unc
     assert "not a database" not in reply
     [line] = _log_lines(cog)
     assert line.startswith(
-        f"❌ `/test-mode backup save` failed for Manager (<@{USER_ID}>) — BackupFault."
+        f"❌ `/test-mode backup save` failed for Manager (<@{USER_ID}>) — "
+        "the bot hit an internal fault."
     )
     assert bs.backup_path(live.db).read_bytes() == league_backup
     assert cog.bot.scheduler_service.events == ["pause", "resume"] * 2
 
 
+@pytest.mark.xfail(strict=True, reason="#584: a command failure line names the exception's class, "
+                   "not the kind of fault")
 async def test_a_save_that_fails_unexpectedly_reaches_the_failure_line(live, monkeypatch):
     """A fault the save did not undo — here the second backup cannot be written once the first
     has been replaced — reaches the tree's failure handler: the standard reply saying the save
@@ -287,7 +295,8 @@ async def test_a_save_that_fails_unexpectedly_reaches_the_failure_line(live, mon
     assert "the disk is full" not in reply
     [line] = _log_lines(cog)
     assert line.startswith(
-        f"❌ `/test-mode backup save` failed for Manager (<@{USER_ID}>) — OSError."
+        f"❌ `/test-mode backup save` failed for Manager (<@{USER_ID}>) — "
+        "the bot hit an internal fault."
     )
     assert cog.bot.scheduler_service.events == ["pause", "resume"]
 
@@ -500,6 +509,8 @@ async def test_a_restore_confirmation_left_unanswered_is_recorded_as_lapsed(live
     assert any("Nothing was restored." in text for text in beneath)
 
 
+@pytest.mark.xfail(strict=True, reason="#584: a command failure line names the exception's class, "
+                   "not the kind of fault")
 async def test_a_staging_fault_says_nothing_was_restored(live, monkeypatch):
     """A staging stopped by a copy that failed removes what it staged, so it undid itself: the
     standard failure reply states "Nothing was restored.", never the error, and a failure line is
@@ -526,7 +537,7 @@ async def test_a_staging_fault_says_nothing_was_restored(live, monkeypatch):
     assert "the disk is full" not in reply
     [line] = _log_lines(cog)
     assert line.startswith("❌ ")
-    assert f"failed for Manager (<@{USER_ID}>) — BackupFault." in line
+    assert f"failed for Manager (<@{USER_ID}>) — the bot hit an internal fault." in line
     assert "the disk is full" not in line
 
 
@@ -555,6 +566,8 @@ async def test_a_backup_found_unreadable_at_the_confirmation_is_refused_and_reco
     assert line.endswith(f" refused for Manager (<@{USER_ID}>) — {reason}")
 
 
+@pytest.mark.xfail(strict=True, reason="#584: a command failure line names the exception's class, "
+                   "not the kind of fault")
 async def test_an_unexpected_staging_error_may_have_been_partly_done(live, monkeypatch):
     """Any error but a copy fault may have left a file staged, so the reply keeps the default
     "may have been partly done", never "Nothing has been changed", and a failure line is written
@@ -580,7 +593,7 @@ async def test_an_unexpected_staging_error_may_have_been_partly_done(live, monke
     assert "boom" not in reply
     [line] = _log_lines(cog)
     assert line.startswith("❌ ")
-    assert f"failed for Manager (<@{USER_ID}>) — RuntimeError." in line
+    assert f"failed for Manager (<@{USER_ID}>) — the bot hit an internal fault." in line
 
 
 async def test_a_staged_restore_is_recorded(live):

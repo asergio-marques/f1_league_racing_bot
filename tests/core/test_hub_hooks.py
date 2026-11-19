@@ -416,15 +416,24 @@ _INTERACTION_ROLE = (
     _success("/bot interaction-role", "interaction_role_id"),
 )
 _BASE_ROLE = ("handle_base_role", "base_role_id", "/bot base-role", "Base role", _BASE_ROLE_SET)
+_NAMED_BY_ITS_CLASS = (
+    "#584: a command failure line names the exception's class, not the kind of fault"
+)
 
 
 @pytest.mark.parametrize(
     "setting,fault,raised",
     [
         pytest.param(_INTERACTION_ROLE, _REFUSED, False, id="refused"),
-        pytest.param(_INTERACTION_ROLE, RuntimeError("x"), True, id="raises"),
+        pytest.param(
+            _INTERACTION_ROLE, RuntimeError("x"), True, id="raises",
+            marks=pytest.mark.xfail(strict=True, reason=_NAMED_BY_ITS_CLASS),
+        ),
         pytest.param(_BASE_ROLE, _REFUSED, False, id="base-role-refused"),
-        pytest.param(_BASE_ROLE, RuntimeError("x"), True, id="base-role-raises"),
+        pytest.param(
+            _BASE_ROLE, RuntimeError("x"), True, id="base-role-raises",
+            marks=pytest.mark.xfail(strict=True, reason=_NAMED_BY_ITS_CLASS),
+        ),
     ],
 )
 async def test_hub_permissions_that_fail_after_a_role_setting_leave_it_saved(
@@ -451,7 +460,8 @@ async def test_hub_permissions_that_fail_after_a_role_setting_leave_it_saved(
     if raised:
         assert last_said(asked) == f"✅ **{label}** set to <@&{NEW_ROLE}>.\n{NOT_UPDATED}"
         line = (
-            f"❌ `{command}` failed for {NAMED} — RuntimeError. The details are in the host's log."
+            f"❌ `{command}` failed for {NAMED} — "
+            "the bot hit an internal fault. The details are in the host's log."
         )
     else:
         assert last_said(asked) == f"✅ **{label}** set to <@&{NEW_ROLE}>."

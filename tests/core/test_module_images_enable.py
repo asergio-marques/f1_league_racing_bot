@@ -282,6 +282,8 @@ async def test_a_failed_enable_leaves_the_module_off(tmp_path):
     }
 
 
+@pytest.mark.xfail(strict=True, reason="#584: a command failure line names the exception's class, "
+                   "not the kind of fault")
 async def test_an_image_enable_that_cannot_be_written_says_the_module_is_still_off(tmp_path):
     """The audit write fails inside the enable's one save. The member gets the standard
     failure reply, saying the module is still off and what to do next, with no error text; the
@@ -302,7 +304,8 @@ async def test_an_image_enable_that_cannot_be_written_says_the_module_is_still_o
     )
     assert "disk I/O error" not in replied
     assert await log_lines(league) == [
-        f"❌ `/module enable` failed for {NAMED} — IntegrityError. The details are in the host's log."
+        f"❌ `/module enable` failed for {NAMED} — "
+        "the bot could not read or write its database. The details are in the host's log."
     ]
 
 
