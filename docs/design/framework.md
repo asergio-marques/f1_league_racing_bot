@@ -395,17 +395,17 @@ catches of `attempt_delivery` and of `_post_own_line` (which `post_own_line` cal
 for the next try, and the worker's own line falls back to the host's log.
 
 **A failure line names the kind of fault, never the exception.** `describe_fault`
-(`framework/utils/interaction_errors.py`) words the kind in plain words: that the bot could not
-read or write its database, that Discord refused or failed a request, or that the bot hit an
-internal fault. `failure_line`, `event_failure_line`, `job_failure_line` and `start_up_failure_line`
-each print it where they once printed the exception's type, so that a command's, a button's, a
-form's, a setting's, a change's, an event's, a timed job's and a start-up step's lines read alike
-and no Python class reaches the log channel; the detail is the host's log's
-(`test_a_job_failure_line_names_the_job_and_the_kind_of_fault`). It does not follow a cause,
-so an error that gathers several faults reads as an internal fault. `BOT_FAULT` sits beside it:
-the words a line that sends a manager to the host uses for a fault in the bot, which a picture's
-remedy reuses (core's `picture_remedy`; the framework holds no rule of what a picture's fault
-asks, and so holds neither the converter's absence nor the sources).
+(`framework/utils/interaction_errors.py`) words the kind in plain words: that the bot could not read
+or write its database, that Discord refused or failed a request, or that the bot hit an internal
+fault. `failure_line`, `event_failure_line`, `job_failure_line` and `start_up_failure_line` each
+print it in place of the exception, so that a command's, a button's, a form's, a setting's, a
+change's, an event's, a timed job's and a start-up step's lines read alike and no Python class
+reaches the log channel (core specification, "When a command fails"); the detail is the host's log's
+(`test_a_job_failure_line_names_the_job_and_the_kind_of_fault`). It does not follow a cause, so an
+error that gathers several faults reads as an internal fault. `BOT_FAULT` sits beside it: the words
+a line that sends a manager to the host uses for a fault in the bot, which a picture's remedy reuses
+(core's `picture_remedy`; the framework holds no rule of what a picture's fault asks, and so holds
+neither the converter's absence nor the sources).
 
 `report_failure` never raises: its reply and its line are each tried on their own. Its docstring
 gives the reason for the reply's words. The tree steps aside for a command with its own error
