@@ -566,3 +566,77 @@ async def test_a_discarded_classification_whose_done_save_failed_is_named_for_re
         "SELECT * FROM classification_posts WHERE division_id = ? AND occasion = ?",
         PRO, occasion.value,
     ) == []
+
+
+#: What the opening or final standings' line says where nothing posts their picture again.
+_NOTHING_POSTS_IT = "no command posts the final classification again, and the text stands"
+
+
+@pytest.mark.parametrize(("source", "fault", "put_right"), [
+    pytest.param(
+        "league", "the template has no rows",
+        f"fix the standings template; {_NOTHING_POSTS_IT}", id="league",
+    ),
+    pytest.param(
+        "bot", "the bot hit an internal fault",
+        f"the fault is in the bot, and its detail is in the host's log; {_NOTHING_POSTS_IT}",
+        id="bot",
+        marks=pytest.mark.xfail(
+            strict=True,
+            reason="#584: the standings' line sends a fault in the bot to the template",
+        ),
+    ),
+    pytest.param(
+        "host", "Inkscape is not installed on this host.",
+        "Inkscape is not installed on the machine running the bot, and the host must install it; "
+        f"{_NOTHING_POSTS_IT}",
+        id="host",
+        marks=pytest.mark.xfail(
+            strict=True,
+            reason="#584: the standings' line sends the converter's absence to the template",
+        ),
+    ),
+    pytest.param(
+        "discord", "Discord refused the picture (Missing Access)", _NOTHING_POSTS_IT,
+        id="discord",
+    ),
+])
+def test_a_standings_picture_line_says_what_puts_it_right_by_where_the_fault_lies(
+    source, fault, put_right,
+):
+    """Pro's final classification went out as text where its drivers' picture was due, and the
+    job writes its line to the log channel. The picture was not posted for one of four reasons:
+    the league's template refused it ("league"), a fault in the bot ("bot"), Inkscape not
+    installed on the host ("host"), or Discord refusing the upload ("discord"). The line keeps
+    the fault's words, and says what puts it right by where the fault lies: to fix the standings
+    template; that the fault is the bot's, with its detail in the host's log; that the host must
+    install Inkscape; or, where Discord refused it, nothing of a template. Each ends saying that
+    no command posts the final classification again and the text stands."""
+    from types import SimpleNamespace
+
+    from leaguebot.results.services.publishing.results_post_service import UploadFault
+    from leaguebot.results.services.standings.season_standings_posts import (
+        _refused_picture_line,
+    )
+
+    if source == "discord":
+        words: str = UploadFault(fault)
+    elif source == "league":
+        words = fault
+    else:
+        from leaguebot.core.models.fault_source import FaultSource, FaultWords
+
+        words = FaultWords(fault, FaultSource[source.upper()])
+    ctx = SimpleNamespace(
+        named="Admin (`<@4242>`)", what="the season's completion",
+        step_payload={"division_name": "Pro"},
+    )
+
+    line = _refused_picture_line(ctx, "drivers", words, subject="final classification")
+
+    assert line == (
+        "Admin (`<@4242>`) | the season's completion | Standings posted as text\n"
+        "  division: Pro\n"
+        f"  problem: the drivers picture of the final classification could not be posted: {fault}\n"
+        f"  to put it right: {put_right}"
+    )
