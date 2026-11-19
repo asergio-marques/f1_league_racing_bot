@@ -10,6 +10,8 @@ the cog handlers call. The gate tests here are:
 """
 from __future__ import annotations
 
+import subprocess
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -966,11 +968,19 @@ async def test_wrapped_text_lands_inside_its_box_in_the_rasterised_png(tmp_path)
     assert above_box == 0, "text leaked above the box — shape-inside was left on the element"
 
 
+@pytest.mark.parametrize("raise_faults", [True, False], ids=["raises-faults", "falls-back"])
+@pytest.mark.xfail(
+    strict=True, reason="#584: the converter's absence is not a problem of its own, for the host"
+)
 async def test_absent_converter_is_reported_and_no_render_attempted(
-    db_path, module_service, config_service, template_dir, monkeypatch, tmp_path
+    db_path, module_service, config_service, template_dir, monkeypatch, tmp_path, raise_faults
 ):
-    """SC-007: the reason is stated and nothing is rendered while the binary is missing."""
+    """SC-007: the reason is stated and nothing is rendered while the binary is missing, by a
+    caller that falls back to text and by one that asks for its faults raised alike: the absence
+    keeps its words, as the host's to put right, and nothing is raised."""
     import leaguebot.image.services.render.image_render_service as render_module
+    from leaguebot.core.models.fault_source import FaultSource
+    from leaguebot.image.models.image_module import PROBLEM_CONVERTER_ABSENT
 
     monkeypatch.setattr("leaguebot.framework.utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
@@ -987,11 +997,13 @@ async def test_absent_converter_is_reported_and_no_render_attempted(
 
     service = _render_service(config_service, module_service)
     outcome = await service.render(
-        "calendar_template", lambda root: None, output_dir=tmp_path
+        "calendar_template", lambda root: None, output_dir=tmp_path, raise_faults=raise_faults
     )
 
     assert outcome.problem is not None
-    assert "inkscape" in outcome.problem.detail.lower()
+    assert outcome.problem.kind == PROBLEM_CONVERTER_ABSENT
+    assert outcome.problem.detail == "Inkscape is not installed on this host."
+    assert outcome.problem.source is FaultSource.HOST
     assert outcome.png_paths == []
     assert attempted == [], "a render was attempted with no converter present"
 
@@ -1003,6 +1015,121 @@ async def test_absent_converter_message_names_the_binary_and_the_env_var():
     assert "Inkscape" in message
     assert "INKSCAPE" in message
     assert "package" in message.lower()
+
+
+def _drawn_and_converting(monkeypatch, run):
+    """A render service whose template is valid and whose drawing succeeds, the converter found
+    at the start of the render, so that only the conversion is left to answer: *run* stands in
+    for the converter's process, and is a callable or an exception it raises."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    import leaguebot.image.services.render.image_render_service as render_module
+
+    monkeypatch.setattr(render_module, "converter_available", lambda **_: True)
+    monkeypatch.setattr(render_module, "find_converter", lambda **_: "inkscape")
+    monkeypatch.setattr(
+        render_module, "_draw",
+        lambda *_args: render_module._Drawn(svg=b"<svg/>", canvas=(100, 100)),
+    )
+
+    def _run(command, **_kwargs):
+        if isinstance(run, BaseException):
+            raise run
+        return run(command)
+
+    monkeypatch.setattr(subprocess, "run", _run)
+    validity = MagicMock()
+    validity.template_reports = AsyncMock(return_value={"calendar_template": SimpleNamespace(
+        valid=True, reason=None, resolved_path=Path("calendar_template.svg"),
+    )})
+    return render_module.ImageRenderService(MagicMock(), validity)
+
+
+def _exits(code: int, stderr: bytes = b""):
+    return lambda command: subprocess.CompletedProcess(command, code, b"", stderr)
+
+
+def _writes(size: int):
+    """A converter that exits cleanly having written *size* bytes where it was told to."""
+    def run(command):
+        destination = next(
+            arg.split("=", 1)[1] for arg in command if arg.startswith("--export-filename=")
+        )
+        Path(destination).write_bytes(b"x" * size)
+        return subprocess.CompletedProcess(command, 0, b"", b"")
+
+    return run
+
+
+@pytest.mark.parametrize("raise_faults", [True, False], ids=["raises-faults", "falls-back"])
+@pytest.mark.parametrize("run", [
+    _exits(1, b"loading\n** (inkscape): CRITICAL: /home/bot/calendar.svg is broken"),
+    OSError("[Errno 13] Permission denied: 'inkscape'"),
+    subprocess.TimeoutExpired(["inkscape"], 120),
+    _exits(0),
+], ids=["exits-1", "cannot-be-run", "times-out", "writes-nothing"])
+@pytest.mark.xfail(
+    strict=True, reason="#584: a converter's failure is named in the converter's own words"
+)
+async def test_a_converter_that_fails_is_named_by_its_kind(
+    monkeypatch, tmp_path, run, raise_faults
+):
+    """A calendar drawn in full, whose conversion to an image fails: the converter exits with an
+    error, cannot be started, runs past its time or writes no file. A caller that falls back to
+    text gets an internal problem naming only the kind of fault, never the converter's output,
+    and no picture; a caller that asks for its faults raised has the converter's error raised."""
+    from leaguebot.core.models.fault_source import FaultSource
+    from leaguebot.image.models.image_module import PROBLEM_DRAWING_FAULT
+    from leaguebot.image.services.render.image_render_service import RasterisationError
+
+    service = _drawn_and_converting(monkeypatch, run)
+
+    if raise_faults:
+        with pytest.raises(RasterisationError):
+            await service.render("calendar_template", None, output_dir=tmp_path, raise_faults=True)
+        return
+
+    outcome = await service.render("calendar_template", None, output_dir=tmp_path)
+
+    assert outcome.problem.kind == PROBLEM_DRAWING_FAULT
+    assert outcome.problem.is_internal
+    assert outcome.problem.source is FaultSource.BOT
+    assert outcome.problem.detail == "the bot hit an internal fault"
+    assert outcome.png_paths == []
+
+
+@pytest.mark.parametrize("raise_faults", [True, False], ids=["raises-faults", "falls-back"])
+@pytest.mark.parametrize(("converter", "kind", "words", "source"), [
+    (None, "CONVERTER_ABSENT", "Inkscape is not installed on this host.", "HOST"),
+    ("inkscape", "RASTERISER", "attachment limit", "LEAGUE"),
+], ids=["gone-by-the-conversion", "too-large-for-discord"])
+@pytest.mark.xfail(
+    strict=True, reason="#584: a converter's outcome does not say where its fault lies"
+)
+async def test_a_converter_outcome_a_league_or_host_acts_on_keeps_its_words(
+    monkeypatch, tmp_path, converter, kind, words, source, raise_faults
+):
+    """A calendar drawn in full, whose conversion meets something a league or the host can put
+    right: the converter is no longer found when the conversion starts, or the image it writes
+    is larger than Discord accepts. Whether or not the caller asks for its faults raised, the
+    outcome keeps its own words and says whose it is to put right, and nothing is raised."""
+    import leaguebot.image.models.image_module as image_module
+    import leaguebot.image.services.render.image_render_service as render_module
+    from leaguebot.core.models.fault_source import FaultSource
+
+    service = _drawn_and_converting(
+        monkeypatch, _writes(render_module.MAX_ATTACHMENT_BYTES + 1)
+    )
+    monkeypatch.setattr(render_module, "find_converter", lambda **_: converter)
+
+    outcome = await service.render(
+        "calendar_template", None, output_dir=tmp_path, raise_faults=raise_faults
+    )
+
+    assert outcome.problem.kind == getattr(image_module, f"PROBLEM_{kind}")
+    assert words in outcome.problem.detail
+    assert outcome.problem.source is FaultSource[source]
+    assert outcome.png_paths == []
 
 
 async def test_absent_converter_makes_enabled_aspects_invalid_at_review(
