@@ -269,7 +269,9 @@ def points_amendment_change(
     module_service: ModuleService,
     driver_names_read: AwaitedHook | None = None,
 ) -> ChangeType:
-    """The change that approves a season's staged points; see the module. *attendance* is the
+    """The change that approves a season's staged points; see the module. A refusal for the faults
+    `approval_faults` returns offers the channel commands only for a channel fault, and names the
+    season alone, with no publishing heading, where it cannot be read. *attendance* is the
     hook the builder hands every change type that reaches attendance, *drawing* the image module's, which draws the verdicts' pictures, *now* the queue's clock,
     and *module_service* the module switches its check of the channels asks of."""
 
@@ -320,6 +322,11 @@ def points_amendment_change(
             db_path, season_id, ctx.bot, module_service=module_service, attendance=attendance,
             drawing=drawing,
         )
+        if faults.kind is ApprovalFaultKind.SEASON:
+            return Verdict.refuse(
+                "⛔ Amendment not approved — the season could not be read. **Nothing has been "
+                "changed** — not the season's points, not the staged changes, not amendment mode."
+            )
         if faults.lines:
             bullets = "\n• ".join(faults.lines)
             repair = (
