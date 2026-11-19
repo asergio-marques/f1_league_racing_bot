@@ -708,7 +708,7 @@ async def produce_session_results(
             # A fault in drawing the picture goes on the table for the job to say why the text
             # stands.
             log.error("results: image path failed for session %s: %s", session_result.id, exc, exc_info=True)
-            fault = fault_of(exc)
+            fault = drawing.drawing_fault(exc)
         if file is not None:
             try:
                 message_id = await post_standing(
@@ -968,7 +968,7 @@ async def produce_standings(
                 "the textual standings stand",
                 round_id,
             )
-            fault = fault_of(exc)
+            fault = drawing.drawing_fault(exc)
         if drawn is not None and drawn.applicable:
             lines = drawn.lines
             pictures: list[PostedTable] = []

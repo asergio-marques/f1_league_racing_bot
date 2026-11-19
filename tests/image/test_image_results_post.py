@@ -634,10 +634,6 @@ async def test_an_unexpected_fault_in_the_image_path_never_blocks_the_posting(tm
     [
         pytest.param(
             "bot", "the bot hit an internal fault", "BOT", id="a_fault_in_the_bot",
-            marks=pytest.mark.xfail(
-                strict=True,
-                reason="#584: the results picture's fault is named in the exception's own words",
-            ),
         ),
         pytest.param(
             "refused", "no driver sits in seat 7", "LEAGUE", id="a_refusal"),

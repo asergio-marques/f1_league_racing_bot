@@ -30,7 +30,6 @@ from leaguebot.core.services.seasons import season_service
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.image.models.verdict_kind import VerdictKind
 from leaguebot.results.services.publishing.results_post_service import (
-    fault_of,
     picture_fallback_line,
 )
 from leaguebot.results.utils import results_formatter
@@ -580,7 +579,7 @@ async def _send_verdict(
             # A fault the drawing does not hand back as a line, so it goes back with the message
             # for the job to say why the text stands.
             log.exception("verdict graphic failed for driver %s", driver_discord_id)
-            fault = fault_of(exc)
+            fault = drawing.drawing_fault(exc)
             attachment = None
 
     if attachment is not None:
