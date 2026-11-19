@@ -1014,19 +1014,26 @@ class ImageDrawing:
         """Draw *division*'s calendar of *rounds*, named against *tracks*: the two gates
         already asked through `calendar_wanted`, the asset directories resolved absolutely, the
         file named, and the render. The notices come back with the picture, for the job that
-        posts it to record among its own lines: the drawing writes nothing to the log channel."""
+        posts it to record among its own lines: the drawing writes nothing to the log channel. A
+        round at a track the server does not hold, which the league can put right, comes back as
+        the picture's problem in its own words, with no render made."""
         config = await self._config.get_config()
 
-        drawing = resolve_drawing(
-            division_name=division.name,
-            division_tier=getattr(division, "tier", None),
-            season_number=season_number,
-            rounds=rounds,
-            tracks=tracks,
-            date_format=getattr(config, "date_format", None),
-            time_format=getattr(config, "time_format", None),
-            time_zone=getattr(config, "time_zone", None),
-        )
+        try:
+            drawing = resolve_drawing(
+                division_name=division.name,
+                division_tier=getattr(division, "tier", None),
+                season_number=season_number,
+                rounds=rounds,
+                tracks=tracks,
+                date_format=getattr(config, "date_format", None),
+                time_format=getattr(config, "time_format", None),
+                time_zone=getattr(config, "time_zone", None),
+            )
+        except DrawingRefused as exc:
+            # The league's to put right (a round at a track the server does not hold), and found
+            # before any render: the refusal is the picture's problem in its own words.
+            return CalendarPicture(path=None, problem=str(exc))
 
         # The calendar draws both imagery classes, so it needs both directories (044). They
         # are resolved by the helper every other posting path uses, which anchors them to the
