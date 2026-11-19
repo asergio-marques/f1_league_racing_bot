@@ -14,10 +14,10 @@ import pytest
 
 from leaguebot.framework.services.switches.module_service import SwitchNotSignedUp
 from tests.support.points_league import BETA_ATTENDANCE, SEASON_ID, points_league
+from tests.support.switches import answer_switch
 
 #: Why the tests of the faults' kind fail until `approval_faults` gives one.
 NO_KIND = "#513: approval_faults returns a bare list of lines, with no kind"
-from tests.support.switches import answer_switch
 
 
 def _switches(answer: object) -> MagicMock:
