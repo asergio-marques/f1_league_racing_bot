@@ -447,6 +447,24 @@ def _verdict_put_right(source: FaultSource) -> str:
     )
 
 
+def with_host_remedy_lines(
+    lines: tuple[str, ...], put_right: "Callable[[FaultSource], str]"
+) -> tuple[str, ...]:
+    """*lines*, each of a picture not drawn for want of Inkscape (marked `HOST`, as the image module
+    hands it back) given what puts it right, as *put_right* words it for the converter's absence."""
+    return tuple(
+        f"{line} To put it right: {put_right(FaultSource.HOST)}"
+        if source_of(line) is FaultSource.HOST else line
+        for line in lines
+    )
+
+
+def banner_lines(lines: tuple[str, ...]) -> tuple[str, ...]:
+    """The lines of a round's verdict banner, each of a banner not drawn for want of Inkscape given
+    what puts it right: the same amendment that announces the round's verdicts again."""
+    return with_host_remedy_lines(lines, _verdict_put_right)
+
+
 class VerdictRefused(Exception):
     """Discord refused the post of a verdict, as a picture or, where the picture could not be
     drawn, as the text that stands in its place, *cause* being its refusal. The picture is drawn
@@ -476,7 +494,7 @@ def _refused_stop(
     with its picture's lines kept on it for the job to hand back once the text posts."""
     stop = StepFailedOnDiscord(
         f"{what} could not be posted: {refused.cause}"
-    ).carrying(refused.lines)
+    ).carrying(with_host_remedy_lines(refused.lines, put_right))
     setattr(stop, FALLBACK_ATTRIBUTE, _fallback_lines(
         SentVerdict(None, refused.fault, refused.lines), division_name, round_number, put_right,
     ))
@@ -505,11 +523,12 @@ def _fallback_lines(
     fault = sent.fault
     if fault is None and not sent.lines:
         return None
+    drawn = with_host_remedy_lines(sent.lines, put_right)
 
     def lines(named: str, what: str) -> tuple[str, ...]:
         if fault is None:
-            return sent.lines
-        return sent.lines + (picture_fallback_line(
+            return drawn
+        return drawn + (picture_fallback_line(
             named, what, picture="verdict", division=division_name,
             round_number=round_number, fault=fault, put_right=put_right(source_of(fault)),
         ),)

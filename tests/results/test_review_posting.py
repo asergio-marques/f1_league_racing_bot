@@ -1762,8 +1762,6 @@ CONVERTER_ABSENT_REMEDY = (
     "Inkscape is not installed on the machine running the bot, and the host must install it; "
     "once it has, "
 )
-#: The xfail reason of the converter's absence with no remedy beside it.
-NO_HOST_REMEDY = "#584: the picture's line says nothing of what puts the converter's absence right"
 
 
 def _fault_line(league: _League) -> str:
@@ -1829,7 +1827,7 @@ def _render_without_the_converter(aspect: str) -> Any:
 @pytest.mark.parametrize("source", [
     "bot",
     "league",
-    pytest.param("converter absent", marks=pytest.mark.xfail(strict=True, reason=NO_HOST_REMEDY)),
+    "converter absent",
 ])
 async def test_a_results_picture_that_fails_posts_the_table_as_text_and_says_why_in_the_log(
     tmp_path, source,
@@ -1884,7 +1882,7 @@ async def test_a_results_picture_that_fails_posts_the_table_as_text_and_says_why
 
 @pytest.mark.parametrize("source", [
     "bot",
-    pytest.param("converter absent", marks=pytest.mark.xfail(strict=True, reason=NO_HOST_REMEDY)),
+    "converter absent",
 ])
 async def test_a_standings_picture_that_fails_posts_the_standings_as_text_and_says_why_in_the_log(
     tmp_path, source,

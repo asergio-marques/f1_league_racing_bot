@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 
-from leaguebot.core.models.fault_source import FaultSource
+from leaguebot.core.models.fault_source import FaultSource, FaultWords
 
 
 # ── Persisted entities ────────────────────────────────────────────────────
@@ -184,6 +184,12 @@ class Problem:
         if self.kind == PROBLEM_CONVERTER_ABSENT:
             return FaultSource.HOST
         return FaultSource.BOT if self.is_internal else FaultSource.LEAGUE
+
+    @property
+    def words(self) -> FaultWords:
+        """The problem's detail, marked with where its fault lies, for a line that carries it to a
+        posting module, which adds what puts it right."""
+        return FaultWords(self.detail, self.source)
 
     def message(self, label: str | None = None) -> str:
         """The sentence shown to a user.

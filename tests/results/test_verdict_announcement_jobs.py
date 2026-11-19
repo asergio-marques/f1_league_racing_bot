@@ -917,10 +917,7 @@ CONVERTER_ABSENT_REMEDY = (
 
 @pytest.mark.parametrize("fault", [
     "bot",
-    pytest.param("converter absent", marks=pytest.mark.xfail(
-        strict=True,
-        reason="#584: the verdict's line says nothing of what puts the converter's absence right",
-    )),
+    "converter absent",
 ])
 async def test_a_verdict_whose_picture_fails_is_announced_as_text_and_says_why_in_the_log(
     tmp_path, request, monkeypatch, fault,
@@ -1007,11 +1004,6 @@ _FAULTED_PICTURES = [
         "verdict_banner", "verdict_banner_template", "Verdict banner",
         "CONVERTER_ABSENT", CONVERTER_ABSENT_WORDS,
         id="verdict_banner-converter absent",
-        marks=pytest.mark.xfail(
-            strict=True,
-            reason="#584: the banner's line says nothing of what puts the converter's absence "
-            "right",
-        ),
     ),
 ])
 async def test_a_verdict_picture_s_render_fault_is_named_by_its_own_picture(

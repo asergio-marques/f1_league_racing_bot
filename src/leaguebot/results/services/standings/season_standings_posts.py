@@ -29,7 +29,7 @@ again.
 from __future__ import annotations
 
 import json
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Iterable, Sequence
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any, NoReturn
 
@@ -45,7 +45,7 @@ from leaguebot.framework.models.change import (
 )
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
 from leaguebot.core.models.fault_source import source_of
-from leaguebot.core.services.modules.image_drawing import picture_remedy
+from leaguebot.core.services.modules.image_drawing import picture_remedy, with_host_remedy
 from leaguebot.framework.services.queue.change_types import Step, StepContext
 from leaguebot.framework.services.switches.module_service import ModuleService
 from leaguebot.core.services.seasons.season_lifecycle_service import require_guild
@@ -92,6 +92,14 @@ def _refused_picture_line(
         f"posted: {fault}\n"
         f"  to put it right: {put_right}"
     )
+
+
+def _with_host_remedy(lines: Iterable[str], *, subject: str) -> tuple[str, ...]:
+    """*lines*, each of a picture of the *subject* not drawn for want of Inkscape given what puts
+    it right: the host must install it, and no command then posts the picture again
+    (`with_host_remedy`)."""
+    tail = f"no command posts the {subject} again, and the text stands"
+    return tuple(with_host_remedy(line, otherwise=tail) for line in lines)
 
 
 def _refused_picture_lines(
@@ -203,6 +211,10 @@ async def keeping(removed: dict[str, Any] | None, what: str) -> AsyncIterator[No
         ) from failure
 
 
+#: What each stranding's *what* calls the standings a line of its picture speaks of.
+_SUBJECTS = {"opening": "opening standings", "final": "final classification"}
+
+
 async def produce_stranding(
     what: str, channel_id, posting, kept: dict[str, Any] | None = None
 ) -> "list[PostedTable]":
@@ -222,7 +234,9 @@ async def produce_stranding(
         return await posting
     except Exception as failure:
         stranded = [int(each) for each in getattr(failure, "left_standing", None) or []]
-        lines = drawn_lines_kept(kept) + tuple(getattr(failure, DRAWN_LINES_ATTRIBUTE, ()))
+        lines = drawn_lines_kept(kept) + _with_host_remedy(
+            getattr(failure, DRAWN_LINES_ATTRIBUTE, ()), subject=_SUBJECTS[what]
+        )
         if stranded:
             raise StepFailedOnDiscord(
                 f"the {what} standings were posted in part and the rest was refused",
@@ -572,8 +586,8 @@ def opening_steps(
         return StepResult(result=posted_result(
             division_id, ClassificationOccasion.SEASON_OPENING, tables,
             channel_id,
-        ), lines=drawn_lines_kept(ctx.kept) + tuple(
-            line for table in tables for line in table.lines
+        ), lines=drawn_lines_kept(ctx.kept) + _with_host_remedy(
+            (line for table in tables for line in table.lines), subject="opening standings"
         ) + _refused_picture_lines(ctx, tables, subject="opening standings"))
 
     async def still_due(_ctx: StepContext) -> bool:
@@ -634,8 +648,8 @@ def final_steps(
         return StepResult(result=posted_result(
             division_id, ClassificationOccasion.SEASON_FINAL, tables,
             channel_id,
-        ), lines=drawn_lines_kept(ctx.kept) + tuple(
-            line for table in tables for line in table.lines
+        ), lines=drawn_lines_kept(ctx.kept) + _with_host_remedy(
+            (line for table in tables for line in table.lines), subject="final classification"
         ) + _refused_picture_lines(ctx, tables, subject="final classification"))
 
     async def still_due(_ctx: StepContext) -> bool:

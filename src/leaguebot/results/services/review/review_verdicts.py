@@ -613,6 +613,7 @@ async def _announce_heading(ctx: StepContext, drawing: ImageDrawing) -> StepResu
     attachment = None
     if ctx.tries == 0:
         attachment, drawn = await drawing.draw_banner(heading)
+        drawn = vas.banner_lines(drawn)
     try:
         if attachment is None:
             text: str | None = verdict_banner_drawing.heading_text(heading)
