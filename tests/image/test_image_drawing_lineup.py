@@ -266,9 +266,7 @@ async def test_a_lineup_drawn_for_a_command_reports_its_notices_to_the_log_chann
 #: a season review draws (`draw_review_lineup`, its uncommitted drivers in it).
 IN_A_JOB_DRAWS = [
     pytest.param("draw_lineup", id="of_record"),
-    pytest.param("draw_review_lineup", id="for_review", marks=pytest.mark.xfail(
-        strict=True, reason="#584: the review's lineup does not ask for its faults raised"
-    )),
+    pytest.param("draw_review_lineup", id="for_review"),
 ]
 
 

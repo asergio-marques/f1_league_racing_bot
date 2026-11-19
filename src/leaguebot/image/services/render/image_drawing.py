@@ -1058,6 +1058,7 @@ class ImageDrawing:
     async def _render_lineup(
         self, guild: Any, division_id: int, *,
         include_uncommitted: bool = False, obtain_missing_portraits: bool = False,
+        raise_faults: bool = False,
     ) -> Any:
         """The gates already asked through `lineup_wanted`, the division's seats read from the
         database, the portraits refreshed at the league's own trigger, and the render: what
@@ -1069,7 +1070,9 @@ class ImageDrawing:
         *include_uncommitted* draws a placement not yet confirmed in, which the lineup of record
         leaves out (#220), and is for a mid-season review. *obtain_missing_portraits* obtains
         the portrait of each seated driver who has none, whichever update trigger the league
-        chose, and is for a season review alone.
+        chose, and is for a season review alone. *raise_faults* has the render raise a fault in
+        the bot rather than return it as a problem, for a caller with no text to fall back to
+        (`/team lineup`, the review's lineup).
         """
         from leaguebot.image.services.portraits.driver_portrait_service import refresh_before_render
         from leaguebot.image.services.aspects.image_lineup_post import build_drawing
@@ -1108,6 +1111,7 @@ class ImageDrawing:
             ),
             filename_stem=stem_for_drawing(drawing, LINEUP_TEMPLATE_KEY),
             division_name=drawing.division_name,
+            raise_faults=raise_faults,
         )
         return _division, outcome
 
@@ -1131,7 +1135,7 @@ class ImageDrawing:
         message before this returns, naming the lineup and the division, as well as handed
         back for its own output, with the link to that message (`LineupPicture.log_link`), or
         None where no message was posted. (`post_log` contains its own failures.)"""
-        division, outcome = await self._render_lineup(guild, division_id)
+        division, outcome = await self._render_lineup(guild, division_id, raise_faults=True)
 
         log_link: str | None = None
         if outcome.notices:
@@ -1162,6 +1166,7 @@ class ImageDrawing:
             _division, outcome = await self._render_lineup(
                 guild, division_id,
                 include_uncommitted=include_uncommitted, obtain_missing_portraits=True,
+                raise_faults=True,
             )
         except Exception as exc:
             # Raised again with the words a commanded drawing gives a fault, for the review's
