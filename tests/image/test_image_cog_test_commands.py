@@ -272,7 +272,6 @@ class TestTheReply:
 
         assert "round 3" in interaction.followup.messages[0]
 
-    @pytest.mark.xfail(strict=True, reason="#454: a preview's problem is still shown as Python's repr")
     @pytest.mark.parametrize("field_id, said", [
         (None, "❌ Lineup: the template is invalid"),
         ("row_1_name", "❌ Lineup: `row_1_name` — the template is invalid"),

@@ -173,7 +173,7 @@ async def send_preview(
     for label, template_key, outcome in outcomes:
         if outcome.problem:
             # A problem means no image at all: never a partial one (XIV.4).
-            lines.append(f"❌ {label}: {outcome.problem}")
+            lines.append(f"❌ {label}: {outcome.problem.message()}")
         else:
             lines.append(f"✅ {label}")
             for index, path in enumerate(outcome.png_paths):
