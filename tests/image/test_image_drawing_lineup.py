@@ -327,7 +327,6 @@ _ABSENT_WORDS = "Inkscape is not installed on this host."
                      id="for_command-a_converter_absent"),
     ],
 )
-@pytest.mark.xfail(strict=True, reason="#584: a lineup's picture does not say where its fault lies")
 async def test_the_lineup_drawing_hands_back_the_picture_the_problem_and_the_notices(
     db_path, monkeypatch, tmp_path, draw, drawn, problem, source,
 ):
@@ -393,10 +392,6 @@ REFUSED_DRAWS = [
 
 
 @pytest.mark.parametrize("draw,handed,problem", REFUSED_DRAWS)
-@pytest.mark.xfail(
-    strict=True,
-    reason="#584: a lineup refused before its render is raised, naming the division by number",
-)
 async def test_a_lineup_refused_before_its_render_comes_back_as_its_problem(
     db_path, monkeypatch, draw, handed, problem,
 ):

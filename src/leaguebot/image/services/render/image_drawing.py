@@ -145,6 +145,12 @@ CALENDAR_ASPECT = "calendar"
 STANDINGS_ASPECT = image_standings_post.STANDINGS_ASPECT
 
 
+def _source_of(outcome: RenderOutcome) -> FaultSource:
+    """Where the fault in *outcome*'s problem lies: the league's where there is no problem, and
+    for a refusal met before the render, which carries a problem of the league's own kind."""
+    return outcome.problem.source if outcome.problem is not None else FaultSource.LEAGUE
+
+
 def _rows_and_rounds(catalogue: FieldCatalogue, path: Path) -> tuple[int, int]:
     """The rows and the round columns a standings template at *path* draws, nought for
     none.
@@ -1058,7 +1064,9 @@ class ImageDrawing:
         problem = outcome.problem.detail if outcome.problem is not None else None
         notices = tuple(each.detail for each in outcome.notices)
         path = outcome.png_paths[0] if outcome.png_paths else None
-        return CalendarPicture(path=path, problem=problem, notices=notices)
+        return CalendarPicture(
+            path=path, problem=problem, notices=notices, fault_source=_source_of(outcome)
+        )
 
     # ── The lineup ───────────────────────────────────────────────────────────
 
@@ -1147,7 +1155,9 @@ class ImageDrawing:
         problem = outcome.problem.detail if outcome.problem is not None else None
         notices = tuple(each.detail for each in outcome.notices)
         path = outcome.png_paths[0] if outcome.png_paths else None
-        return LineupPicture(path=path, problem=problem, notices=notices)
+        return LineupPicture(
+            path=path, problem=problem, notices=notices, fault_source=_source_of(outcome)
+        )
 
     async def draw_lineup_for_command(self, guild: Any, division_id: int) -> LineupPicture:
         """Draw *division_id*'s lineup in *guild*, as a command's output: the problem, where
@@ -1172,7 +1182,10 @@ class ImageDrawing:
         problem = outcome.problem.message("the lineup") if outcome.problem is not None else None
         notices = tuple(each.detail for each in outcome.notices)
         path = outcome.png_paths[0] if outcome.png_paths else None
-        return LineupPicture(path=path, problem=problem, notices=notices, log_link=log_link)
+        return LineupPicture(
+            path=path, problem=problem, notices=notices, log_link=log_link,
+            fault_source=_source_of(outcome),
+        )
 
     async def draw_review_lineup(
         self, guild: Any, division_id: int, *, include_uncommitted: bool,
@@ -1194,7 +1207,8 @@ class ImageDrawing:
         notices = tuple(each.detail for each in outcome.notices)
         if outcome.problem is not None:
             return LineupPicture(
-                path=None, problem=f"❌ {outcome.problem.message('the lineup')}", notices=notices
+                path=None, problem=f"❌ {outcome.problem.message('the lineup')}", notices=notices,
+                fault_source=outcome.problem.source,
             )
         path = outcome.png_paths[0] if outcome.png_paths else None
         return LineupPicture(path=path, problem=None, notices=notices)

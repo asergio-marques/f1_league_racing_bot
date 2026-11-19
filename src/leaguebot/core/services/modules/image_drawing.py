@@ -117,12 +117,15 @@ class CalendarPicture:
     module's words for why, with no final stop, or None where it drew. *notices* are the
     drawing's own words for what it survived. `draw_calendar` writes nothing to the log channel: a
     calendar is drawn inside a job, which records them among its own lines, once, and a command's
-    own output is the caller's to decide.
+    own output is the caller's to decide. *fault_source* says where the fault in *problem* lies,
+    for the line or reply that says what puts it right (`picture_remedy`): the league's where
+    there is no problem.
     """
 
     path: Path | None
     problem: str | None
     notices: tuple[str, ...] = field(default_factory=tuple)
+    fault_source: FaultSource = FaultSource.LEAGUE
 
 
 @dataclass(frozen=True)
@@ -135,13 +138,15 @@ class LineupPicture:
     to the log channel: the lineup of record and a review's are drawn inside a job, which records
     them among its own lines, once. `draw_lineup_for_command` runs in no job and reports them
     itself, handing back *log_link*, the link to the log message holding them, or None where it
-    posted none.
+    posted none. *fault_source* says where the fault in *problem* lies, as it does for
+    `CalendarPicture`.
     """
 
     path: Path | None
     problem: str | None
     notices: tuple[str, ...] = field(default_factory=tuple)
     log_link: str | None = None
+    fault_source: FaultSource = FaultSource.LEAGUE
 
 
 class ImageDrawing(Protocol):

@@ -181,7 +181,6 @@ _ABSENT_WORDS = "Inkscape is not installed on this host."
         pytest.param("a converter absent", _ABSENT_WORDS, "HOST", id="a_converter_absent"),
     ],
 )
-@pytest.mark.xfail(strict=True, reason="#584: a calendar's picture does not say where its fault lies")
 async def test_the_drawing_hands_back_the_picture_the_problem_and_the_notices(
     tmp_path, drawn, problem, source,
 ):
@@ -222,9 +221,6 @@ async def test_the_drawing_hands_back_the_picture_the_problem_and_the_notices(
     assert tuple(picture.notices) == ("a fallback flag stood in for Monaco's",)
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#584: a calendar whose track cannot be named is raised, not handed back",
-)
 async def test_a_calendar_whose_track_cannot_be_named_comes_back_as_its_problem():
     """Elite's calendar asked for with a round at Monza, which matches no track on this server:
     the drawing hands the refusal back as the picture's problem, in its own words, rather than
