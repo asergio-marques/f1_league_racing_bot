@@ -431,7 +431,7 @@ through `ImageDrawing.drawing_fault`: a `DrawingRefused` in its own words, any o
 string: formatting or joining a `FaultWords` drops its mark, which `source_of` then reads as the
 league's. So a line made at these catches carries the kind of fault and no remedy, and the posting
 modules on these paths add one only for the converter's absence, which they know by the mark the
-render's own problem lines carry (`lines_of`, built with `FaultWords`). Where another module
+render's own problem line carries (`FaultWords`). Where another module
 posts the picture, the catch is the caller's, of place 5, the post itself falling back to text:
 results' `produce_session_results`, `produce_standings` and `_send_verdict` read the fault through
 the drawing they already hold (`drawing_fault`), so that its mark survives to their line; core's
