@@ -344,7 +344,7 @@ CONVERTER_ABSENT_WORDS = "Inkscape is not installed on this host."
 #: What the sheet's line says puts its picture right where Inkscape is not installed.
 CONVERTER_ABSENT_REMEDY = (
     "Inkscape is not installed on the machine running the bot, and the host must install it; "
-    "once it has, the next round's sheet is drawn with the next sync"
+    "once it has, run `/attendance sync` to post the sheet again"
 )
 
 
@@ -364,8 +364,8 @@ async def test_a_sheet_s_render_fault_is_named_as_the_attendance_sheet_image(
     with no picture, and the queue runs to the end; the log channel gives the fault on one line
     headed "⚠️ Attendance sheet image", the name `/images config toggle` offers, naming season 3,
     Pro and round 1, and nothing in the log calls it a results image. Where Inkscape is not
-    installed, the line keeps the render's words and says that the host must install it, and that
-    the next round's sheet is drawn with the next sync once it has."""
+    installed, the line keeps the render's words and says that the host must install it, and to
+    run `/attendance sync` to post the sheet again once it has."""
     from leaguebot.image.models.image_module import Problem, RenderOutcome
     from leaguebot.image.services.aspects.image_attendance_post import (
         ATTENDANCE_ASPECT,
