@@ -229,23 +229,66 @@ def _pictures_due(league: Any, *, valid: bool = True) -> None:
     })
 
 
-@pytest.mark.parametrize("cause, reason", [
-    pytest.param("invalid drawing file", "the template file is too small"),
-    pytest.param("unreadable switch", "the images switch could not be read"),
-    pytest.param("unreadable round", "the round could not be read"),
-    pytest.param("drawing fault", "the drawing broke"),
-    pytest.param("round not found", "the round could not be found"),
-    pytest.param("images off", None),
-    pytest.param("weather pictures off", None),
-    pytest.param("images off, round unreadable", None),
-    pytest.param("weather pictures off, round unreadable", None),
+#: How a fault in the bot met in drawing a forecast's picture is named in its line: by its kind.
+FAULT_IN_THE_BOT = "the bot hit an internal fault"
+#: The words the render gives where Inkscape is not installed, which the line keeps.
+CONVERTER_ABSENT_WORDS = "Inkscape is not installed on this host."
+#: What a forecast's line says puts its picture right where Inkscape is not installed.
+CONVERTER_ABSENT_REMEDY = (
+    "Inkscape is not installed on the machine running the bot, and the host must install it; "
+    "once it has, the next forecast is posted with its picture"
+)
+
+
+@pytest.mark.parametrize("cause, reason, raised", [
+    pytest.param(
+        "invalid drawing file", "the template file is too small", None, id="invalid drawing file",
+    ),
+    pytest.param(
+        "unreadable switch", FAULT_IN_THE_BOT, "the images switch could not be read",
+        id="unreadable switch",
+        marks=pytest.mark.xfail(
+            strict=True, reason="#584: a switch that cannot be read is named in its own words",
+        ),
+    ),
+    pytest.param(
+        "unreadable round", FAULT_IN_THE_BOT, "the round could not be read",
+        id="unreadable round",
+        marks=pytest.mark.xfail(
+            strict=True, reason="#584: a round that cannot be read is named in its own words",
+        ),
+    ),
+    pytest.param(
+        "drawing fault", FAULT_IN_THE_BOT, "the drawing broke", id="drawing fault",
+        marks=pytest.mark.xfail(
+            strict=True, reason="#584: a fault in drawing the forecast is named in its own words",
+        ),
+    ),
+    pytest.param(
+        "converter absent", CONVERTER_ABSENT_WORDS, None, id="converter absent",
+        marks=pytest.mark.xfail(
+            strict=True,
+            reason="#584: the forecast's line says nothing of what puts the converter's absence right",
+        ),
+    ),
+    pytest.param("round not found", "the round could not be found", None, id="round not found"),
+    pytest.param("images off", None, None, id="images off"),
+    pytest.param("weather pictures off", None, None, id="weather pictures off"),
+    pytest.param(
+        "images off, round unreadable", None, None, id="images off, round unreadable",
+    ),
+    pytest.param(
+        "weather pictures off, round unreadable", None, None,
+        id="weather pictures off, round unreadable",
+    ),
     pytest.param(
         "mystery notice, round not found",
-        "⚠️ Weather image — the mystery round notice: the round could not be found",
+        "⚠️ Weather image — the mystery round notice: the round could not be found", None,
+        id="mystery notice, round not found",
     ),
 ])
 async def test_a_forecast_posted_as_text_where_a_picture_was_due_logs_why(
-    tmp_path, monkeypatch, cause, reason,
+    tmp_path, monkeypatch, cause, reason, raised,
 ):
     """Phase 1 asked with pictures due, but its picture not drawn: the template file is invalid,
     the images switch cannot be read, the round cannot be read for the picture, the round cannot
@@ -256,17 +299,25 @@ async def test_a_forecast_posted_as_text_where_a_picture_was_due_logs_why(
     criterion 4). Where round 3 is a mystery round, its notice is posted in place of Phase 1
     (weather spec, "Mystery rounds"), and a picture that cannot find its round names it the
     mystery round notice, never a phase (image spec, "Weather image generation", "Generation and
-    posting"; criterion 13)."""
+    posting"; criterion 13). A switch or a round that cannot be read, or a drawing that raises,
+    is a fault in the bot, and its line names it by its kind alone, never in the exception's
+    words. Where Inkscape is not installed, the line keeps the render's words and says that the
+    host must install it, and that the next forecast is posted with its picture once it has."""
+    from leaguebot.image.models.image_module import Problem, RenderOutcome
     from leaguebot.image.services.aspects import image_weather_post
 
     mystery = cause.startswith("mystery")
     league = await _league(tmp_path, mystery=mystery)
     _pictures_due(league, valid=cause != "invalid drawing file")
     if cause == "unreadable switch":
-        answer_switch(league.bot.module_service, "images", RuntimeError(reason))
+        answer_switch(league.bot.module_service, "images", RuntimeError(raised))
     elif cause == "drawing fault":
         monkeypatch.setattr(image_weather_post, "render_forecast",
-                            AsyncMock(side_effect=RuntimeError(reason)))
+                            AsyncMock(side_effect=RuntimeError(raised)))
+    elif cause == "converter absent":
+        league.bot.image_render_service.render = AsyncMock(return_value=RenderOutcome(
+            problem=Problem(kind="CONVERTER_ABSENT", detail=CONVERTER_ABSENT_WORDS),
+        ))
     elif cause.endswith("round not found"):
         monkeypatch.setattr(image_weather_post, "build_drawing_for_round",
                             AsyncMock(return_value=None))
@@ -292,6 +343,10 @@ async def test_a_forecast_posted_as_text_where_a_picture_was_due_logs_why(
         assert "could not be read" not in written
     else:
         assert reason in written
+    if raised is not None:
+        assert raised not in written
+    if cause == "converter absent":
+        assert CONVERTER_ABSENT_REMEDY in written
     if mystery:
         assert [line for line in written.splitlines() if "Weather image" in line] == [reason]
 
