@@ -1603,8 +1603,6 @@ async def test_an_amendment_is_refused_when_the_guild_is_not_in_cache(tmp_path):
     assert await points_state(league) == before
 
 
-@pytest.mark.xfail(strict=True, reason="#513: a season that cannot be read is refused as a "
-                   "publishing fault, saying twice that nothing changed and to repair the channels")
 async def test_an_amendment_is_refused_when_the_season_cannot_be_read(tmp_path):
     """The panel is drawn while the season stands; then the approval's check finds the season
     cannot be read (stubbed where `approval_faults` asks for it: the season itself stays live, as
