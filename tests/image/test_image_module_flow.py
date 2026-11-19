@@ -1065,9 +1065,6 @@ def _writes(size: int):
     subprocess.TimeoutExpired(["inkscape"], 120),
     _exits(0),
 ], ids=["exits-1", "cannot-be-run", "times-out", "writes-nothing"])
-@pytest.mark.xfail(
-    strict=True, reason="#584: a converter's failure is named in the converter's own words"
-)
 async def test_a_converter_that_fails_is_named_by_its_kind(
     monkeypatch, tmp_path, run, raise_faults
 ):

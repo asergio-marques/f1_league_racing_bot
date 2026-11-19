@@ -342,7 +342,9 @@ _RASTERISE_TIMEOUT_SECONDS = 120
 
 
 class RasterisationError(Exception):
-    """The converter failed. A problem, never a notice."""
+    """The converter failed. A problem, never a notice: a fault in the bot, named by its kind and
+    raised where the caller asks for it, unless it is a `ConverterAbsent` or a
+    `RasterisationRefused`, which keep their words."""
 
 
 class ConverterAbsent(RasterisationError):
@@ -828,7 +830,11 @@ class ImageRenderService:
         exception the data build or the fill raises that is not a `DrawingRefused` is raised out
         of the render, to the caller's command-failure path, instead of being returned as a
         problem. A refusal the league can put right still comes back as a problem. The posting
-        paths leave it off and fall back from the problem as ever.
+        paths leave it off and fall back from the problem as ever. The converter's own failures
+        follow the same rule: a timeout, a failure to run, a non-zero exit and a missing output
+        file are faults, raised or returned as an internal problem naming only their kind, while
+        the converter's absence and an image larger than Discord accepts come back as problems
+        in their own words either way.
         """
         if not converter_available():
             return RenderOutcome(
@@ -906,11 +912,26 @@ class ImageRenderService:
                 ),
                 notices=notices,
             )
-        except RasterisationError as exc:
+        except RasterisationRefused as exc:
             return RenderOutcome(
                 problem=Problem(
                     kind=PROBLEM_RASTERISER,
                     detail=str(exc),
+                    template_key=image_type,
+                ),
+                notices=notices,
+            )
+        except RasterisationError as exc:
+            # The converter timed out, could not be run, exited with an error or wrote nothing:
+            # a fault in the bot or its host, which no league can put right, so it is named by
+            # its kind, the converter's own text going to the log alone.
+            if raise_faults:
+                raise
+            log.error("render: conversion failed for %s: %s", image_type, exc, exc_info=True)
+            return RenderOutcome(
+                problem=Problem(
+                    kind=PROBLEM_DRAWING_FAULT,
+                    detail=describe_fault(exc),
                     template_key=image_type,
                 ),
                 notices=notices,
