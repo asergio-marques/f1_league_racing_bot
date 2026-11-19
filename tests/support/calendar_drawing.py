@@ -17,7 +17,8 @@ class CalendarDrawingStub:
 
     *wanted* is whether the league draws its calendar, or the error asking raises. A drawing
     raises *fault* where one is given; otherwise it hands back *picture* (a PNG's path, or None),
-    *problem* (the words for why it could not be drawn, or None) and *notices* (their words).
+    *problem* (the words for why it could not be drawn, or None), *notices* (their words) and,
+    where *fault_source* is given, where the picture's fault lies, handed back on the picture.
     `wanted_asked` counts the times it was asked whether the league draws its calendar; `drawn`
     names each division drawn, in order; `asked` holds, for each drawing in turn, the
     division's name, its rounds' track names and the season number it was handed; `discarded`
@@ -25,12 +26,13 @@ class CalendarDrawingStub:
 
     def __init__(self, *, wanted: bool | Exception = True, picture: Path | None = None,
                  problem: str | None = None, notices: tuple[str, ...] = (),
-                 fault: Exception | None = None) -> None:
+                 fault: Exception | None = None, fault_source: Any = None) -> None:
         self.wanted = wanted
         self.picture = picture
         self.problem = problem
         self.notices = tuple(notices)
         self.fault = fault
+        self.fault_source = fault_source
         self.wanted_asked = 0
         self.drawn: list[str] = []
         self.asked: list[dict[str, Any]] = []
@@ -52,7 +54,10 @@ class CalendarDrawingStub:
                            "season_number": season_number})
         if self.fault is not None:
             raise self.fault
-        return CalendarPicture(path=self.picture, problem=self.problem, notices=self.notices)
+        return CalendarPicture(
+            path=self.picture, problem=self.problem, notices=self.notices,
+            **({"fault_source": self.fault_source} if self.fault_source is not None else {}),
+        )
 
     def discard_picture(self, path: Path | None) -> None:
         self.discarded.append(path)
