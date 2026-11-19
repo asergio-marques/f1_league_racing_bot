@@ -327,6 +327,7 @@ async def _nothing_saved(db_path: str) -> None:
             assert (await cursor.fetchone())[0] == 0, f"the import saved into {table}"
 
 
+@pytest.mark.xfail(strict=True, reason="#584: a failure line names the fault by its class")
 async def test_an_xml_import_database_fault_names_the_config_in_one_failure_line(tmp_path):
     """Neither a traceback nor the database's own words are actionable at a manager. The
     standard failure reply says the fault is the bot's, that nothing from the import was
@@ -348,7 +349,8 @@ async def test_an_xml_import_database_fault_names_the_config_in_one_failure_line
     assert f"<@{MEMBER_ID}>" in line
     assert "/results config xml-import" in line
     assert CONFIG in line
-    assert "OperationalError" in line
+    assert "the bot could not read or write its database" in line
+    assert "OperationalError" not in line
     assert "no such table" not in line
 
 
