@@ -283,3 +283,215 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
       ``  <full name> — `<shorthand>` → <@&<role id>>``: the four teams of the Fixture, then
       ``  Reserve — `Reserve` → <@&<Reserve role id>>`` last.
     - **Log:** nothing; it is a view.
+
+---
+
+## Part B — The season, test mode, the divisions and the calendar
+
+### Setting up the season
+
+21. **Do:** `/season setup game_edition:25`
+
+    **Expect:**
+    - **Ack:** `Starting the season setup`
+    - **Then:**
+      ```
+      ✅ Season setup started. **Season #1 (F1 25)** is being configured.
+
+      Use `/division add` for each division, then `/round add` for each round.
+      When done, run `/season placements-review` to review and approve.
+      ```
+      (The reply's next steps are not this spec's order: `/division add` is refused until the
+      configuration is confirmed. Follow the spec.)
+    - **Log:**
+      ```
+      <you> | /season setup | Success
+        season: Season #1 (F1 25)
+      ```
+
+22. **Do:** `/test-mode toggle`
+
+    **Expect:**
+    - **Ack:** `Turning test mode on`
+    - **Then:**
+      ```
+      ✅ Test mode **enabled**. Use `/test-mode advance` to step through phases, or `/test-mode review` to inspect season status.
+      📌 Added default point configs: **Standard, Half Points**
+      ```
+    - **Log:**
+      ```
+      <you> | /test-mode toggle | Success
+        test_mode: enabled
+        seeded_configs: Standard, Half Points
+      ```
+
+### Confirming the configuration
+
+23. **Do:** `/season config-review`
+
+    **Expect:**
+    - **Ack:** `Posting the review of /season config-review`
+    - **Then:** the acknowledgement is left as it is.
+      > UNVERIFIED: a review with nothing at fault and no pictures has an empty outcome
+      > (`season_review_post_change`'s `outcome` returns `""`), so the update is expected to
+      > fail and the acknowledgement to stand unchanged. Record what the reply shows.
+    - **Posts** (`#bot-commands`, public), one message per section; the parts that identify them:
+      - the first, opening `**Configuration Review (Season #1 — F1 25)**`, then
+        `  Test mode: ✅ On`, then under `**Modules**` the five lines `  Signup: ✅ Enabled`,
+        `  Results: ✅ Enabled`, `  Attendance: ✅ Enabled`, `  Weather: ✅ Enabled`,
+        `  Images: ✅ Enabled`; then `**Roles**` with `  Base role: <@&<Members role id>>` and
+        `  Driver role: <@&<Driver role id>>`; then `**Teams**`, one line per team of the form
+        `  <shorthand> → <@&<role id>>`, Reserve among them. No line reading
+        `⚠️ **Reserve team has no role assigned**`.
+      - one message per module's settings, and one headed `**Image output**`;
+      - no message opening `⛔ **The configuration cannot be confirmed yet.**`;
+      - last, the question, with a **✅ Confirm configuration** button:
+        ```
+        📋 **Do you confirm this season's configuration?**
+        Reviewed by <@<your id>>. Confirmation is open to them or to a league admin for the next 5 minutes. Once confirmed, the team list, the game edition, test mode and the signup module are fixed for this season.
+        ```
+    - **Log:** `<you> | /season config-review | Review posted`
+
+24. **Do:** within five minutes, press **✅ Confirm configuration** on the question.
+
+    **Expect:**
+    - **Ack:** `Confirming season 1's configuration`
+    - **Then:** ``✅ Season #1's configuration is confirmed. The season is now in placements — build its divisions and calendar, place its drivers, then run `/season placements-review`.``
+    - **Posts:** every message step 23 posted in `#bot-commands` is deleted.
+    - **Log:**
+      ```
+      <you> | /season config-review | Confirmed
+        season: Season #1
+        stage: PLACEMENTS
+      ```
+
+### The divisions
+
+25. **Do:** `/division add name:Division 1 role:@Division 1 tier:1`
+
+    **Expect:**
+    - **Ack:** `Adding division **Division 1** (Tier 1)`
+    - **Then:**
+      ```
+      ✅ Division **Division 1** (Tier 1) added.
+      Role: <@&<Division 1 role id>>
+
+      **Divisions:**
+        📂 **Division 1** (Tier 1) | <@&<Division 1 role id>>
+      ```
+    - **Log:**
+      ```
+      <you> | /division add | Success
+        division: Division 1, tier: 1
+      ```
+
+26. **Do:** `/division add name:Division 2 role:@Division 2 tier:2`
+
+    **Expect:**
+    - **Ack:** `Adding division **Division 2** (Tier 2)`
+    - **Then:**
+      ```
+      ✅ Division **Division 2** (Tier 2) added.
+      Role: <@&<Division 2 role id>>
+
+      **Divisions:**
+        📂 **Division 1** (Tier 1) | <@&<Division 1 role id>>
+        📂 **Division 2** (Tier 2) | <@&<Division 2 role id>>
+      ```
+    - **Log:**
+      ```
+      <you> | /division add | Success
+        division: Division 2, tier: 2
+      ```
+
+### The calendar
+
+27. **Do:** `/round add-xml`. In the form **Add rounds from XML**, paste the following into
+    **XML payload**, with `<YEAR+1>` replaced by the year after the run (six places), and submit.
+
+    ```xml
+    <config>
+      <division name="Division 1">
+        <round>
+          <datetime><YEAR+1>-03-01T20:00</datetime>
+          <timezone>Europe/London</timezone>
+          <format>Normal</format>
+          <track>12</track>
+        </round>
+        <round>
+          <datetime><YEAR+1>-03-08T20:00</datetime>
+          <timezone>Europe/London</timezone>
+          <format>Sprint</format>
+          <track>14</track>
+        </round>
+        <round>
+          <datetime><YEAR+1>-03-15T20:00</datetime>
+          <timezone>Europe/London</timezone>
+          <format>Mystery</format>
+        </round>
+      </division>
+      <division name="Division 2">
+        <round>
+          <datetime><YEAR+1>-03-01T21:00</datetime>
+          <timezone>Europe/London</timezone>
+          <format>Normal</format>
+          <track>16</track>
+        </round>
+        <round>
+          <datetime><YEAR+1>-03-08T21:00</datetime>
+          <timezone>Europe/London</timezone>
+          <format>Sprint</format>
+          <track>13</track>
+        </round>
+        <round>
+          <datetime><YEAR+1>-03-15T21:00</datetime>
+          <timezone>Europe/London</timezone>
+          <format>Normal</format>
+          <track>15</track>
+        </round>
+      </division>
+    </config>
+    ```
+
+    **Expect:**
+    - **Ack:** `Adding 6 rounds to **Division 1** and **Division 2**`
+    - **Then:**
+      ```
+      ✅ Added rounds to 2 division(s).
+        **Division 1**: 3 round(s) in total
+        **Division 2**: 3 round(s) in total
+      ```
+    - **Log:**
+      ```
+      <you> | /round add-xml | Success
+        division: Division 1, now holds 3 round(s)
+        division: Division 2, now holds 3 round(s)
+      ```
+
+### The division channels
+
+28. **Do**, for **Division 1**, each command of the table below with `name:Division 1` and
+    the `#d1-` channel it names.
+
+    | Do | Ack | Then | Log, first line |
+    |---|---|---|---|
+    | `/division calendar-channel name:Division 1 channel:#d1-calendar` | `Setting the calendar channel for **Division 1** to <#<d1-calendar id>>` | `✅ Calendar channel for **Division 1** set to <#<d1-calendar id>>.` | `<you> \| /division calendar-channel \| Success` |
+    | `/division lineup-channel name:Division 1 channel:#d1-lineup` | `Setting the lineup channel for **Division 1** to <#<d1-lineup id>>` | `✅ Lineup channel for **Division 1** set to <#<d1-lineup id>>.` | `<you> \| /division lineup-channel \| Success` |
+    | `/weather channel name:Division 1 channel:#d1-weather` | `Setting the weather forecast channel for **Division 1** to <#<d1-weather id>>` | `✅ Weather forecast channel for **Division 1** set to <#<d1-weather id>>.` | `<you> \| /weather channel \| Success` |
+    | `/results channel results name:Division 1 channel:#d1-results` | `Setting the results channel for **Division 1** to <#<d1-results id>>` | `✅ Results channel for **Division 1** set to <#<d1-results id>>.` | `<you> \| /results channel results \| Success` |
+    | `/results channel standings name:Division 1 channel:#d1-standings` | `Setting the standings channel for **Division 1** to <#<d1-standings id>>` | `✅ Standings channel for **Division 1** set to <#<d1-standings id>>.` | `<you> \| /results channel standings \| Success` |
+    | `/results channel verdicts name:Division 1 channel:#d1-verdicts` | `Setting the verdicts channel for **Division 1** to <#<d1-verdicts id>>` | `✅ Verdicts channel for Division 1 set to #d1-verdicts.` | `<you> \| /results channel verdicts \| Success` |
+    | `/attendance channel rsvp name:Division 1 channel:#d1-rsvp` | `Setting the RSVP channel for **Division 1** to <#<d1-rsvp id>>` | `✅ RSVP channel for Division 1 set to <#<d1-rsvp id>>.` | `<you> \| /attendance channel rsvp \| Success` |
+    | `/attendance channel attendance name:Division 1 channel:#d1-attendance` | `Setting the attendance channel for **Division 1** to <#<d1-attendance id>>` | `✅ Attendance channel for Division 1 set to <#<d1-attendance id>>.` | `<you> \| /attendance channel attendance \| Success` |
+
+    **Expect**, for each row: the **Ack**, then the acknowledgement updated to **Then**, and a
+    **Log** line of three lines, the first as the table gives it, then:
+    ```
+      division: Division 1
+      channel: #<the channel's name, e.g. d1-calendar>
+    ```
+
+29. **Do** step 28 again for **Division 2**: every command with `name:Division 2` and the
+    matching `#d2-` channel.
+
+    **Expect:** as step 28, with `Division 2` and the `#d2-` channels throughout.
