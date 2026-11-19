@@ -345,6 +345,16 @@ class RasterisationError(Exception):
     """The converter failed. A problem, never a notice."""
 
 
+class ConverterAbsent(RasterisationError):
+    """The converter is not installed, found so by the conversion itself. It keeps its words and
+    is the host's to put right."""
+
+
+class RasterisationRefused(RasterisationError):
+    """The converter wrote an image larger than Discord accepts. It keeps its words, and is the
+    league's to put right by shrinking a canvas or artwork."""
+
+
 def rasterise(svg: bytes, destination: Path, canvas: tuple[int, int]) -> Path:
     """Convert *svg* to a PNG at *destination*. Blocking — call it off the event loop.
 
@@ -353,7 +363,7 @@ def rasterise(svg: bytes, destination: Path, canvas: tuple[int, int]) -> Path:
     """
     executable = find_converter()
     if executable is None:
-        raise RasterisationError(f"{CONVERTER_NAME} is not installed on this host.")
+        raise ConverterAbsent(f"{CONVERTER_NAME} is not installed on this host.")
 
     width, height = canvas
     source = destination.with_suffix(".svg")
@@ -406,7 +416,7 @@ def rasterise(svg: bytes, destination: Path, canvas: tuple[int, int]) -> Path:
     size = destination.stat().st_size
     if size > MAX_ATTACHMENT_BYTES:
         discard_render(destination)
-        raise RasterisationError(
+        raise RasterisationRefused(
             f"the rendered image is {size / 1024 / 1024:.1f} MB, above Discord's "
             f"{MAX_ATTACHMENT_BYTES // 1024 // 1024} MB attachment limit."
         )
@@ -887,6 +897,15 @@ class ImageRenderService:
             # asyncio bot that would stall the scheduler, the retry worker and every
             # in-flight interaction for its duration.
             png = await asyncio.to_thread(rasterise, drawn.svg, destination, drawn.canvas)
+        except ConverterAbsent as exc:
+            return RenderOutcome(
+                problem=Problem(
+                    kind=PROBLEM_CONVERTER_ABSENT,
+                    detail=str(exc),
+                    template_key=image_type,
+                ),
+                notices=notices,
+            )
         except RasterisationError as exc:
             return RenderOutcome(
                 problem=Problem(

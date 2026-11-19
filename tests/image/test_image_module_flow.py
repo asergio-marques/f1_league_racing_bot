@@ -1099,9 +1099,7 @@ async def test_a_converter_that_fails_is_named_by_its_kind(
 @pytest.mark.parametrize(("converter", "kind", "words", "source"), [
     pytest.param(
         None, "CONVERTER_ABSENT", "Inkscape is not installed on this host.", "HOST",
-        id="gone-by-the-conversion", marks=pytest.mark.xfail(
-            strict=True, reason="#584: a converter's outcome does not say where its fault lies"
-        ),
+        id="gone-by-the-conversion",
     ),
     ("inkscape", "RASTERISER", "attachment limit", "LEAGUE"),
 ], ids=["gone-by-the-conversion", "too-large-for-discord"])
