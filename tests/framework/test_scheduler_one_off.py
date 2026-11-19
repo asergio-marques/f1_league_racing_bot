@@ -358,7 +358,6 @@ EVERY_ARMING = [
 ]
 
 
-@pytest.mark.xfail(strict=True, reason="#584: the failure line still names the exception's class, not the kind of fault")
 @pytest.mark.parametrize("arm, job_id, key", EVERY_ARMING)
 async def test_a_failing_job_keeps_its_traceback(services, caplog, arm, job_id, key):
     """A job of the kind `a_kind` is armed on a paused scheduler, and the kind's handler raises

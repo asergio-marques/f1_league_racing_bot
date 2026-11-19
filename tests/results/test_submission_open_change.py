@@ -448,8 +448,6 @@ async def test_a_round_whose_start_passed_while_the_bot_was_down_opens_at_the_re
     assert "Results submission open for **Round 3** (Pro)" in league.texts(made)[0]
 
 
-@pytest.mark.xfail(strict=True, reason="#584: a start-up failure line names the exception's class, "
-                   "not the kind of fault")
 async def test_a_round_start_that_cannot_be_asked_is_reported_once_and_the_next_round_s_still_is(
     tmp_path,
 ):

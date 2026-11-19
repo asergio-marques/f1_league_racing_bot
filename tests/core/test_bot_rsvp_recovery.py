@@ -227,8 +227,6 @@ async def test_a_switched_off_module_s_buttons_are_not_re_armed(tmp_path):
     bot.add_view.assert_not_called()
 
 
-@pytest.mark.xfail(strict=True, reason="#584: a start-up failure line names the exception's class, "
-                   "not the kind of fault")
 async def test_a_database_the_recovery_cannot_read_is_reported_in_the_log_channel(tmp_path):
     """The restart finds a standing call, but the database holding the rounds cannot be opened.
     Run through the start-up sweep, attendance's "RSVP views and deadlines" step re-arms no
@@ -425,8 +423,6 @@ async def test_a_deadline_of_zero_hours_falls_at_the_round(tmp_path):
     assert await _recover(bot) == 0
 
 
-@pytest.mark.xfail(strict=True, reason="#584: a start-up failure line names the exception's class, "
-                   "not the kind of fault")
 async def test_a_failing_deadline_run_does_not_stop_the_startup(tmp_path):
     """Division 1 has two calls standing whose deadlines passed while the bot was down: round 3
     (id 5) raced an hour ago and round 4 (id 6) half an hour ago. At the restart the queue

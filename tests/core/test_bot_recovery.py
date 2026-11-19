@@ -70,8 +70,6 @@ async def test_each_orphan_is_reported_separately(tmp_path):
     assert len(lines) == 2
 
 
-@pytest.mark.xfail(strict=True, reason="#584: a start-up failure line names the exception's class, "
-                   "not the kind of fault")
 async def test_an_amendment_that_cannot_be_recovered_is_reported_and_the_others_still_are(
     tmp_path,
 ):

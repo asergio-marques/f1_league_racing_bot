@@ -610,7 +610,6 @@ async def test_a_reason_that_lapses_after_the_signup_moved_on_says_so(
     assert await _driver_state(league) == state
 
 
-@pytest.mark.xfail(strict=True, reason="#584: the job's failure line names the exception's class")
 async def test_a_reason_lapse_that_fails_is_reported(tmp_path, monkeypatch):
     """Manager 77 presses Reject on Kimi's panel and types no reason; when the five minutes run
     out, writing the lapse's line faults unexpectedly. One ❌ line in the log channel names the

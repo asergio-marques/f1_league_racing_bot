@@ -320,7 +320,6 @@ def _handler_records(caplog) -> list[logging.LogRecord]:
     ]
 
 
-@pytest.mark.xfail(strict=True, reason="#584: the failure line still names the exception's class, not the kind of fault")
 async def test_a_failed_event_goes_to_the_host_log_and_the_log_channel(caplog):
     """A listener that raises reaches the one error handler for Discord events, which the
     builder attaches to the bot (architecture.md, "Errors and failures"): the full error goes to
@@ -366,7 +365,6 @@ async def test_the_event_error_handler_never_raises(log_channel, caplog):
 # ── Timed jobs and background work (#453) ─────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason="#584: the failure line still names the exception's class, not the kind of fault")
 def test_a_job_failure_line_names_the_job_and_the_kind_of_fault():
     """A timed job or background task that fails has no member to name: its line names the job
     and the kind of fault, as the event line does, and says the detail is in the host's log.

@@ -932,8 +932,6 @@ async def test_login_starts_the_retry_loop_once(tmp_path, monkeypatch):
     assert starts == [()]
 
 
-@pytest.mark.xfail(strict=True, reason="#584: a timed job's failure line names the "
-                   "exception's class, not the kind of fault")
 async def test_a_timed_job_s_failure_line_is_kept_when_the_log_channel_refuses_it(
         tmp_path, monkeypatch, caplog):
     """The bot `build` makes, its league set up and its log channel refusing every post (Missing
@@ -1336,8 +1334,6 @@ async def test_migrations_run_before_the_bot_connects(tmp_path, monkeypatch):
     assert bot.lines == []
 
 
-@pytest.mark.xfail(strict=True, reason="#584: a start-up failure line names the "
-                   "exception's class, not the kind of fault")
 async def test_a_refused_command_sync_is_reported_to_the_log_channel(tmp_path, monkeypatch,
                                                                       caplog):
     """The bot reports itself ready, its start-up runs, and Discord refuses the slash command sync
