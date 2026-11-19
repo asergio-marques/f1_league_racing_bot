@@ -256,7 +256,7 @@ every driver is answered below.
 | Division | Answers, Round 1 | Placements expected |
 |---|---|---|
 | Division 1 | Adam Archer (`ALP`) **declines**; every other driver, both reserves included, **accepts** (Victor Vance only after the last notice) | Willem Wouters → **Alpha Racing** (tier 2); Xavier Xu → **Standby** |
-| Division 2 | every driver, both reserves included, **accepts** | Rory Reid → **Bravo Motorsport** (tier 1, no driver at all); Stefan Sommer → **Charlie GP** (tier 4, a seat empty) |
+| Division 2 | every driver, both reserves included, **accepts**, but Diego Duarte, who stays **tentative** and races | Rory Reid → **Bravo Motorsport** (tier 1, no driver at all); Stefan Sommer → **Charlie GP** (tier 4, a seat empty) |
 
 **The empty seats are filled.** Division 2's empty `BRV` and half-empty `CHL` both draw a reserve.
 A placed reserve who does not race is charged a no-show (4 points, as step 8 sets it),
@@ -2463,9 +2463,10 @@ season ends.
      - `#d1-standings`, drivers: Kevin Keller 114, Hiro Hayashi 102, Rafael Rossi 81, Emil Engel
        73, Bruno Bianchi 60, Samuel Shaw 50, Olivier Orsini 43, Mateo Morales 32, Carlos Cortes 25,
        Ian Irwin 22, Ugo Ulivi 18, Liam Lavoie 10, Adam Archer 9, Gabriel Gomes 7, Willem Wouters 4,
-       Quinn Quayle 3, Felix Fournier 2, then the seven on 0: Tomas Torres, Pim Prasert, Jari
-       Jokinen, Niels Nygaard, Dirk Dekker, Victor Vance and Xavier Xu — twenty-four, both reserves
-       having raced. Teams: Foxtrot Motorsport 124, Delta Racing 109, India Motorsport 84, Charlie GP
+       Quinn Quayle 3, Felix Fournier 2, then the seven on 0 — Tomas Torres, Pim Prasert, Jari
+       Jokinen, Niels Nygaard, Dirk Dekker, Victor Vance and Xavier Xu, in the order the countback
+       decides: twenty-four, both reserves having raced. Pim Prasert, in Reserve now, is still
+       shown, having raced. Teams: Foxtrot Motorsport 124, Delta Racing 109, India Motorsport 84, Charlie GP
        75, Alpha Racing 73, Juliett GP 50, Hotel Racing 43, Golf GP 32, Bravo Motorsport 25, Echo
        Racing 22, Kilo Racing 18. Ian Irwin and Echo Racing carry the round Ian Irwin missed.
      - `#d2-standings`, drivers: Yuki Yamada 108, Finn Fischer 102, Aaron Abbott 85, Lucas Lambert
@@ -2656,11 +2657,16 @@ paste of step 136 ready before step 135.
          new picture, the old one deleted after it. After Round 1: Hiro Hayashi 35, Kevin Keller 29,
          Emil Engel 24, Rafael Rossi 22, …; teams Delta Racing 37, Foxtrot Motorsport 32, …. After
          Round 3: Kevin Keller 109, Hiro Hayashi 107, the rest as step 131; teams
-         Foxtrot Motorsport 118, Delta Racing 113, the rest as step 131. The
+         Foxtrot Motorsport 119, Delta Racing 114, the rest as step 131. The
          opening classification posted at approval is left where it stands;
        - `#d1-attendance`: the attendance sheet again, a new picture, the old one deleted; its
-         totals unchanged, a swap of places moving nobody's attendance;
-       - `#d1-verdicts`: Rafael Rossi's verdict, posted again.
+         totals unchanged (Pim Prasert 7, Dirk Dekker 4, Adam Archer 3, Ian Irwin 3, Victor Vance
+         2), a swap of places moving nobody's attendance. Nobody is sanctioned: the sheet's rows
+         are recalculated, not judged;
+         > UNVERIFIED: that an amendment's recalculation judges no threshold. Were it to judge the
+         > auto-sack of 6, Pim Prasert is in Reserve and nobody else in Division 1 stands at 6.
+       - `#d1-verdicts`: Rafael Rossi's verdict, posted again. Round 2's verdicts (Bruno Bianchi's
+         penalty and its correction) and Round 3's sanction card are not Round 1's, and stand.
          > UNVERIFIED: whether the kept penalty's verdict (and its banner) is posted again and the
          > earlier one deleted (`_remember_superseded_announcements_on`). Record what
          > `#d1-verdicts` holds after the rebuild.
@@ -2739,12 +2745,14 @@ The subject is how a picture's notices are headed in `#bot-log`.
 | Check-in call | The check-in picture, with the call's embed and buttons | `#dN-rsvp` | `<@&<Division N role id>>` | `check-in call of round <R> in Season 1 **Division N**` |
 | Results, each session | One per session: two for a Normal or Mystery round, four for a Sprint | `#dN-results` | `**Season 1 Division N Round <R> — <session>**`, then `Provisional Results`, `Post-Race Penalty Results` or `Final Results` | `Season 1 Division N round <R> — <session>` |
 | Standings, after each round | Drivers, then constructors | `#dN-standings` | `**Season 1 Division N Round <R> — <last session>**`, then the label | `Season 1 Division N round <R> — drivers standings` (and `— constructors standings`) |
-| Attendance, at each report approval | The attendance sheet | `#dN-attendance` | `**Attendance Standings**` | `Season 1 Division N — attendance after round <R>` |
-| Verdicts, where a penalty is applied | A banner over the batch, then one verdict per driver | `#dN-verdicts` | the verdict: `<@<driver id>>` | `Season 1 · Division N · Round <R> · <session> · <driver>`; the banner `Season 1 · Division N · Round <R> · Verdict banner` |
+| Attendance, at each report approval and at `/attendance sync` | The attendance sheet; posted twice where a threshold is crossed, the second marking the driver sanctioned | `#dN-attendance` | `**Attendance Standings**` | `Season 1 Division N — attendance after round <R>` |
+| Verdicts, where a penalty or a correction is applied | A banner over the batch, then one verdict per penalty, no further action included | `#dN-verdicts` | the verdict: `<@<driver id>>` | `Season 1 · Division N · Round <R> · <session> · <driver>`; the banner `Season 1 · Division N · Round <R> · Verdict banner` |
+| A threshold crossed (Division 1 Round 3, Division 2 Round 3) | The sanction's card, then the lineup again | `#dN-verdicts`, `#dN-lineup` | see steps 108 and 129 | not settled from `src/`: record it |
 | Completion (Part H) | Final standings (drivers, constructors), final attendance sheet | `#dN-standings`, `#dN-attendance` | none | `Season 1 Division N — Final Classification — drivers standings`; `Season 1 Division N — attendance, Final Classification` |
 
 Wherever Division 2's pictures draw teams, `Bravo Motorsport` is drawn with no driver of its own
-and `Charlie GP` with one; a standings picture still lists `Bravo Motorsport`, on zero.
+and `Charlie GP` with one, and, from the end of Round 3, `Hotel Racing` with one in each
+division; a standings picture still lists `Bravo Motorsport`, on zero.
 
 ### Previews
 
@@ -2783,7 +2791,8 @@ Image render notices — <title> — <division>, round <R>:
 
      **Expect:** title `Lineup`, one picture, `✅ Lineup`: eleven team blocks and a reserve block;
      `Bravo Motorsport` with both seats blank, `Charlie GP` with `Aaron Abbott` and a blank seat,
-     and `Rory Reid` and `Stefan Sommer` in the reserve block: the lineup draws seats, not a round's
+     `Hotel Racing` with `Jonas Janssen` and a blank seat since Kai Kimura was sacked (step
+     129), and `Rory Reid` and `Stefan Sommer` in the reserve block: the lineup draws seats, not a round's
      placements. **Log:** headed `Image render notices — Lineup — Division 2:`.
 
 142. **Do:** `/images test results division:Division 2 round:2`
@@ -2901,7 +2910,8 @@ backup is gone.
          on it. Division 1's carries the amended totals of Part F (Kevin Keller 109, Hiro Hayashi
          107); Division 2's `Bravo Motorsport` on 0. The last round's standings stay where they are;
        - `#d1-attendance`, `#d2-attendance`: the **final attendance sheet**, one picture, with no
-         text;
+         text: Division 1's as step 131 gives it, Pim Prasert on 7 marked as moved to
+         reserve; Division 2's, Kai Kimura on 8 marked as sacked;
        - `#d1-weather`: the mystery notice of step 99 is **deleted**. It is recorded
          as a forecast (its phase 0), and the completion clears every forecast posted under test mode
          (`forecast_deletes`, with no round named), though no clean-up ever took it down;
@@ -2941,7 +2951,9 @@ backup is gone.
      - `0`: every fake driver is deleted.
      - `45|0`: a history entry for each of the 45 fake drivers, reserves included, kept by its
        synthetic ID with its profile link cleared, so a fake driver created again under the same
-       ID holds it again.
+       ID holds it again. Pim Prasert, moved to Reserve, and Kai Kimura, sacked, keep theirs: an
+       entry is written for every division a driver was ever placed in, whatever became of the
+       placement (`write_driver_history_entries_on`).
      - `0`: test mode is off.
 
      No command shows a driver's history on Discord; this is where to read it.
