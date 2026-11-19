@@ -44,6 +44,7 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
+from leaguebot.core.models.fault_source import FaultSource
 from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.framework.models.change import StepFailedOnDiscord
 from leaguebot.core.services.drivers.placement_service import PlacementService
@@ -254,15 +255,23 @@ async def test_an_inapplicable_graphic_falls_through_to_the_text(tmp_path):
     assert posted.problem is None
 
 
-@pytest.mark.parametrize("answer", [
-    pytest.param({"problem": "the template has no rows"}, id="a problem"),
-    pytest.param({"fault": RuntimeError("the template has no rows")}, id="a fault"),
+@pytest.mark.parametrize(("answer", "problem", "source"), [
+    pytest.param(
+        {"problem": "the template has no rows"}, "the template has no rows", FaultSource.LEAGUE,
+        id="a problem",
+    ),
+    pytest.param(
+        {"fault": RuntimeError("the template has no rows")}, "the bot hit an internal fault",
+        FaultSource.BOT, id="a fault",
+    ),
 ])
-async def test_a_failing_graphic_falls_through_to_the_text(tmp_path, answer):
+async def test_a_failing_graphic_falls_through_to_the_text(tmp_path, answer, problem, source):
     """A placement must never be blocked by a graphic that would not render: the seat is
     already assigned by the time this runs, and no lineup at all is worse than a text one. Pro's
     drawing hands back the problem "the template has no rows", or raises it: the text embed is
-    posted in Pro's lineup channel, and what was posted carries the problem, for the job's line."""
+    posted in Pro's lineup channel, and what was posted carries the problem, for the job's line.
+    A problem handed back keeps its words and is the league's to put right; a raised fault is a
+    fault in the bot, named by its kind and never by its message (#584)."""
     db_path = await _make_db(tmp_path, name="lineup_imgfail", drivers=ONE_DRIVER)
     channel = _channel()
     drawing = LineupDrawingStub(**answer)
@@ -273,7 +282,8 @@ async def test_a_failing_graphic_falls_through_to_the_text(tmp_path, answer):
     channel.send.assert_awaited_once()
     assert "<@4242>" in _embed(channel).description
     assert posted.form == "text"
-    assert posted.problem == "the template has no rows"
+    assert posted.problem == problem
+    assert posted.fault_source is source
 
 
 def _refusing_pictures(*, text_too: bool = False):
