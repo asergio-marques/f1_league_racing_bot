@@ -1889,7 +1889,8 @@ backup is gone.
      part in, switched test mode off — which deleted every fake driver — and marked the season
      completed, last.
 
-118. **Check the history on the host.** From the bot host folder, with the bot running or not:
+118. **Check the history on the host.** From the bot host folder, with the bot running or not,
+     and the `sqlite3` command-line tool installed on the host:
 
      ```
      sqlite3 bot.db "SELECT COUNT(*) FROM driver_profiles WHERE is_test_driver = 1;"

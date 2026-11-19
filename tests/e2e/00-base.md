@@ -116,7 +116,8 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
 ### Before the bot starts
 
 1. **Prepare the server by hand.** In Discord, outside the bot:
-   - create every role and channel in the Fixture;
+   - create every role and channel in the Fixture; on a re-run, clear the Fixture's posting
+     channels first, since a previous run's posts remain in them;
    - give yourself `@League Admin`;
    - drag the bot's own role **above** every role in the Fixture;
    - give the bot, in every Fixture channel, View Channel, Send Messages, Embed Links, Attach
