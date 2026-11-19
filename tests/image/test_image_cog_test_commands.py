@@ -801,16 +801,7 @@ class TestThePreviewDiscardsItsPictures:
 # ── A preview that cannot be assembled (#442) ─────────────────────────────
 
 
-_RENDER_NOT_YET_RAISING = "#454: a preview does not yet ask the render to raise a fault in the bot"
-
-
-@pytest.mark.parametrize("where", [
-    "build",
-    pytest.param("render", marks=pytest.mark.xfail(strict=True, reason=_RENDER_NOT_YET_RAISING)),
-    pytest.param(
-        "second-render", marks=pytest.mark.xfail(strict=True, reason=_RENDER_NOT_YET_RAISING)
-    ),
-])
+@pytest.mark.parametrize("where", ["build", "render", "second-render"])
 async def test_a_preview_that_cannot_be_assembled_goes_to_the_failure_path(tmp_path, where):
     """A fault in the bot while the preview's data is gathered, or while one of its pictures is
     drawn, is the bot's. It is not answered here with the error's text: it goes on to the
