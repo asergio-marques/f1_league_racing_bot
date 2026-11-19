@@ -30,11 +30,11 @@ from leaguebot.image.models.image_catalogues import (
     catalogue_for,
     row_crop_fields,
 )
+from leaguebot.image.models.image_module import DrawingRefused
 from leaguebot.image.utils.asset_resolver import normalise
 from leaguebot.image.utils.country_data import country_for_nationality
 from leaguebot.image.utils.svg_document import FieldIndex
 from leaguebot.image.utils.svg_fill import FillSpec
-from leaguebot.image.models.image_module import DrawingRefused
 
 log = logging.getLogger(__name__)
 

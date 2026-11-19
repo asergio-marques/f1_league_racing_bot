@@ -33,9 +33,9 @@ from leaguebot.image.models.image_catalogues import (
     catalogue_for,
 )
 from leaguebot.image.models.forecast_values import ForecastValues
+from leaguebot.image.models.image_module import DrawingRefused
 from leaguebot.image.utils.svg_document import FieldIndex
 from leaguebot.image.utils.svg_fill import FillSpec
-from leaguebot.image.models.image_module import DrawingRefused
 
 log = logging.getLogger(__name__)
 

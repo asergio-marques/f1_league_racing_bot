@@ -7,6 +7,7 @@ values on a template and works none of them out. Pure: no Discord, no database, 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+
 from leaguebot.image.models.image_module import DrawingRefused
 
 #: The aspect a results picture is switched by, which a caller asks the drawing's gate about.

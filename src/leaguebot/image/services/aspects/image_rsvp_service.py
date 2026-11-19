@@ -35,10 +35,10 @@ from leaguebot.image.models.image_catalogues import (
     CapacityError,
     catalogue_for,
 )
+from leaguebot.image.models.image_module import DrawingRefused
 from leaguebot.image.utils.date_formatting import format_date_and_time
 from leaguebot.image.utils.svg_document import FieldIndex
 from leaguebot.image.utils.svg_fill import FillSpec
-from leaguebot.image.models.image_module import DrawingRefused
 
 log = logging.getLogger(__name__)
 
