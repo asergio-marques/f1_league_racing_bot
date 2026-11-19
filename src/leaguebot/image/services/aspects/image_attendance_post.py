@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from leaguebot.core.models.fault_source import FaultWords, source_of
 from leaguebot.image.models.image_module import PostingOrigin
 
 if TYPE_CHECKING:
@@ -62,14 +63,18 @@ def fault(what: str, detail: str) -> str:
 
 
 def lines_of(what: str, render: SheetRender) -> tuple[str, ...]:
-    """The lines a render's notices and problem make, naming *what* they pertain to."""
+    """The lines a render's notices and problem make, naming *what* they pertain to.
+
+    The problem's line is marked with where its fault lies (`FaultWords`): the posting module that
+    writes the line adds what puts it right, as the picture's fault calls for.
+    """
     from leaguebot.image.services.render.image_render_service import ImageRenderService
 
     lines: list[str] = []
     if render.notices:
         lines.append(ImageRenderService.format_notices(render.notices, subject=what))
     if render.problem:
-        lines.append(fault(what, render.problem))
+        lines.append(FaultWords(fault(what, render.problem), source_of(render.problem)))
     return tuple(lines)
 
 
@@ -115,14 +120,14 @@ async def render_sheet(
 
     if decision.rejects:
         return SheetRender(
-            problem=(decision.problem.detail if decision.problem else None),
+            problem=(decision.problem.words if decision.problem else None),
             rejects=True,
             notices=decision.notices,
         )
 
     if not decision.posts_image:
         return SheetRender(
-            problem=(decision.problem.detail if decision.problem else None),
+            problem=(decision.problem.words if decision.problem else None),
             notices=decision.notices,
         )
 

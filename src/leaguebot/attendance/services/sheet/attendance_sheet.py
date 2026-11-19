@@ -24,6 +24,7 @@ from leaguebot.core.models.classification_occasion import ClassificationOccasion
 from leaguebot.core.models.round import RoundFormat, RoundStatus
 from leaguebot.core.services.drivers.driver_service import driver_identities_on
 from leaguebot.core.services.drivers.team_service import TeamService
+from leaguebot.core.services.modules.image_drawing import with_host_remedy
 from leaguebot.core.services.seasons.season_service import (
     RoundFacts,
     division_on,
@@ -622,7 +623,10 @@ async def _sheet_attachment(
         label = _sheet_label(division_name, facts, occasion, round_id)
         picture, drawn = await drawing.draw_attendance_sheet(sheet, what=label)
         if lines is not None:
-            lines.extend(drawn)
+            lines.extend(
+                with_host_remedy(line, then="run `/attendance sync` to post the sheet again")
+                for line in drawn
+            )
         return picture
     except Exception as exc:  # noqa: BLE001 — the sheet must post whatever happens here
         _stop_on_unreadable_grid(exc)

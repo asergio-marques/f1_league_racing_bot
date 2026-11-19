@@ -176,11 +176,7 @@ async def test_a_check_in_call_s_render_notices_reach_the_log_once_naming_the_ro
 
 @pytest.mark.parametrize("outcome", [
     "fault",
-    pytest.param("converter absent", marks=pytest.mark.xfail(
-        strict=True,
-        reason="#584: the check-in call's line says nothing of what puts the converter's absence "
-        "right",
-    )),
+    "converter absent",
 ])
 async def test_a_check_in_call_s_render_fault_is_named_as_the_check_in_call_image(
     tmp_path, outcome

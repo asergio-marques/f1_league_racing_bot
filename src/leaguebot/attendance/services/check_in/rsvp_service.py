@@ -23,6 +23,7 @@ from leaguebot.attendance.services.check_in.attendance_config_service import (
 )
 from leaguebot.core.services.drivers.driver_service import driver_test_names_on
 from leaguebot.core.services.drivers.team_service import TeamService
+from leaguebot.core.services.modules.image_drawing import with_host_remedy
 from leaguebot.framework.services.switches.module_service import SwitchNotSignedUp
 from leaguebot.core.services.seasons.season_service import division_round_states_on, round_facts_on
 from leaguebot.results.services.standings.standings_service import team_positions_in_round_on
@@ -296,7 +297,7 @@ async def _checkin_attachment(
             derive_checkin_deadline(scheduled_at, deadline_hours)
             if deadline_hours is not None and scheduled_at is not None else None
         )
-        return await drawing.attach_check_in_call(
+        attachment, drawn = await drawing.attach_check_in_call(
             division_name=division_name,
             round_number=round_number,
             round_format=round_format,
@@ -307,6 +308,10 @@ async def _checkin_attachment(
             season_number=season_number,
             division_tier=division_tier,
             deadline_at=deadline_at,
+        )
+        return attachment, tuple(
+            with_host_remedy(line, then="the next check-in call is posted with its picture")
+            for line in drawn
         )
     except SwitchNotSignedUp:
         raise

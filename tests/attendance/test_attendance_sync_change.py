@@ -825,11 +825,7 @@ CONVERTER_ABSENT_REMEDY = (
 
 @pytest.mark.parametrize("fault", [
     "bot",
-    pytest.param("converter absent", marks=pytest.mark.xfail(
-        strict=True,
-        reason="#584: the sanction card's line says nothing of what puts the converter's absence "
-        "right",
-    )),
+    "converter absent",
 ])
 async def test_a_sync_s_sanction_card_whose_picture_fails_is_posted_as_text_and_says_why(
     tmp_path, request, monkeypatch, fault,
