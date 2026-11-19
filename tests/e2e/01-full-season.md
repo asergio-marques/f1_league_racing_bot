@@ -7,7 +7,7 @@ completion. Read [the README](README.md) first for the step format and how to re
 and run [`00-base.md`](00-base.md) first: this spec reuses its **Fixture** throughout, every
 name, value and driver, and its conventions for the acknowledgement and the log line.
 
-> **Still being written.** Still to come: the pictures, the completion. Until they are in, the steps below cannot be run as they stand: the advance offers steps between them that are not written yet.
+> **Still being written.** Still to come: the completion. Until they are in, the steps below cannot be run as they stand: the advance offers steps between them that are not written yet.
 
 **Run it once per base.** Completing the season deletes the saved backup (Part H), so this spec
 cannot be restored once it is done: run `00-base.md` again before the next run.
@@ -1632,4 +1632,186 @@ paste of step 98 ready before step 97.
      - **Reply:** Division 1's `Round 1` line still reads `Results: ✅ finalized`: an amendment
        leaves the round final.
      - **Log:** nothing; it is a view.
+
+---
+
+## Part G — The pictures
+
+Every image output is on, so every timed posting of the season went out as a picture. This part
+says what each step drew and where, how its image notices read, and then previews each kind on
+demand. The previews change nothing, so they may be run at any point of the season; they are
+written here for after the amendment, before the completion.
+
+### Artwork and image notices
+
+The base ships no league artwork: `resources/league/` holds only its `.gitkeep` files. Every
+picture therefore draws the **packaged fallbacks** — `resources/defaults/<class>/fallback.svg`
+for a flag, a team badge, a track or a driver portrait — and the bot's own closed-set files for
+the markers, weather icons and tyres. That is no fault, and nothing posts as text for it, but each
+picture **reports** what it fell back on, as image notices:
+
+- **A timed posting** (a forecast, a check-in call, a results table, a standings picture, an
+  attendance sheet, a verdict, a banner, a final classification) writes its notices to `#bot-log`,
+  in one of two forms. A posting that names the change it ran for writes one line of its job
+  (`drawn_notices_line`):
+  ```
+  <you or System> | <the change> | Image render notices — <what was drawn>:
+    • <notice>
+  ```
+  and the others a block of their own (`format_notices`):
+  ```
+  Image render notices — <subject: what was drawn, as the table below names it>:
+    [ASSET_FALLBACK_USED] ×<n: how many>
+      • <image type> — no `flag` image is supplied for “<a nationality>”; the directory's fallback was drawn instead. (×<n>)
+      • <image type> — no `team` image is supplied for “<a team>”; the directory's fallback was drawn instead. (×<n>)
+  ```
+  A notice met once names its field (`• <image type> / `<field id>` — …`); one met many times is
+  counted (`(×<n>)`). A closed-set class drawn from the bot's own file reads instead
+  ``the configured `<class>` directory has no image for “<datum>”; the bot's own `<slug>.svg` was drawn instead.``
+  A division logo's fallback is blank by design and raises no notice.
+  > UNVERIFIED: which postings take which form, each `<datum>` as drawn, and any notice of
+  > another kind (`FONT_SUBSTITUTED`, `FIELD_REDUCED`), which depends on the host's fonts. Record
+  > what appears.
+- **A command that draws** (a review, the approval) ends its reply with `⚠️ **Image notices**`,
+  as `00-base.md` steps 30 and 32 say.
+- **A preview** ends its reply with `⚠️ **Notices** — the render survived these:` and a link to
+  the same block in `#bot-log`.
+
+No picture should post as text in this spec. A line in `#bot-log` beginning `⚠️` that names a
+picture which was not drawn (for example `⚠️ Weather image — …`) is a failure: report it.
+
+### What each step drew
+
+The subject is how a picture's notices are headed in `#bot-log`.
+
+| Step | Picture | Channel | Message text with it | Notices headed |
+|---|---|---|---|---|
+| Approval (`00-base.md` step 32) | Calendar, lineup, opening standings (drivers, constructors), opening attendance sheet | `#dN-calendar`, `#dN-lineup`, `#dN-standings`, `#dN-attendance` | as `00-base.md` step 32 | the approval's reply |
+| Weather Phase 1, 2, 3 | The forecast, one per phase, the last superseding the one before; a Sprint round's on the sprint templates | `#dN-weather` | `<@&<Division N role id>>` alone | `round <R> in **Division N**, phase <P>` |
+| Mystery notice | The mystery notice | `#d1-weather` | none | `round 3 in **Division 1**, the mystery round notice` |
+| Check-in call | The check-in picture, with the call's embed and buttons | `#dN-rsvp` | `<@&<Division N role id>>` | `check-in call of round <R> in Season 1 **Division N**` |
+| Results, each session | One per session: two for a Normal or Mystery round, four for a Sprint | `#dN-results` | `**Season 1 Division N Round <R> — <session>**`, then `Provisional Results`, `Post-Race Penalty Results` or `Final Results` | `Season 1 Division N round <R> — <session>` |
+| Standings, after each round | Drivers, then constructors | `#dN-standings` | `**Season 1 Division N Round <R> — <last session>**`, then the label | `Season 1 Division N round <R> — drivers standings` (and `— constructors standings`) |
+| Attendance, at each report approval | The attendance sheet | `#dN-attendance` | `**Attendance Standings**` | `Season 1 Division N — attendance after round <R>` |
+| Verdicts, where a penalty is applied | A banner over the batch, then one verdict per driver | `#dN-verdicts` | the verdict: `<@<driver id>>` | `Season 1 · Division N · Round <R> · <session> · <driver>`; the banner `Season 1 · Division N · Round <R> · Verdict banner` |
+| Completion (Part H) | Final standings (drivers, constructors), final attendance sheet | `#dN-standings`, `#dN-attendance` | none | `Season 1 Division N — Final Classification — drivers standings`; `Season 1 Division N — attendance, Final Classification` |
+
+Wherever Division 2's pictures draw teams, `Bravo Motorsport` is drawn with no driver of its own
+and `Charlie GP` with one; a standings picture still lists `Bravo Motorsport`, on zero.
+
+### Previews
+
+A preview draws the league's own season and answers you alone, after a moment, with the pictures
+attached. It writes no log line of its own: `#bot-log` receives only its notice block, where
+there is one. Its reply, in every step below:
+
+```
+**Preview — <title>** for `<division>`, round <R> — season 1
+✅ <label of the first picture>
+✅ <label of the next picture>
+…
+
+⚠️ **Notices** — the render survived these: ([see them in the log](<link to the #bot-log message>))
+  [ASSET_FALLBACK_USED] ×<n>
+    • <image type> — <detail> (×<n>)
+```
+
+with `, round <R>` left out for the calendar and the lineup. No line saying the season's
+placements are yet to be confirmed, none saying the division has no seated driver, none about
+drivers recording no nationality, and no `⚠️ **Asset directories**` section. A `❌ <label>: …`
+line in place of a `✅` is a failure. Its **Log**, where it has notices:
+
+```
+Image render notices — <title> — <division>, round <R>:
+  [ASSET_FALLBACK_USED] ×<n>
+    • <image type> — <detail> (×<n>)
+```
+
+102. **Do:** `/images test calendar division:Division 2`
+
+     **Expect:** title `Calendar`, one picture, `✅ Calendar`: Division 2's three rounds on their
+     dates. **Log:** the notice block, headed `Image render notices — Calendar — Division 2:`.
+
+103. **Do:** `/images test lineup division:Division 2`
+
+     **Expect:** title `Lineup`, one picture, `✅ Lineup`: eleven team blocks and a reserve block;
+     `Bravo Motorsport` with both seats blank, `Charlie GP` with `Aaron Abbott` and a blank seat,
+     and `Rory Reid` and `Stefan Sommer` in the reserve block: the lineup draws seats, not a round's
+     placements. **Log:** headed `Image render notices — Lineup — Division 2:`.
+
+104. **Do:** `/images test results division:Division 2 round:2`
+
+     **Expect:** title `Results`, four pictures, in this order: `✅ Results — Sprint Qualifying`,
+     `✅ Results — Sprint Race`, `✅ Results — Feature Qualifying`, `✅ Results — Feature Race`. Each
+     draws Division 2's own drivers by name, reserves left out, in an invented finishing order.
+     **Log:** headed `Image render notices — Results — Division 2, round 2:`.
+
+105. **Do:** `/images test standings division:Division 2 round:2`
+
+     **Expect:** title `Standings`, two pictures, `✅ Standings — drivers` and
+     `✅ Standings — constructors`, each with the season's three rounds as a grid and an invented
+     classification up to round 2. The constructors list all eleven racing teams, `Bravo
+     Motorsport` among them. **Log:** headed `Image render notices — Standings — Division 2, round 2:`.
+
+106. **Do:** `/images test attendance division:Division 2 round:2`
+
+     **Expect:** title `Attendance sheet`, one picture, `✅ Attendance sheet`: Division 2's racing
+     drivers, rounds 1 and 2 filled with invented records, round 3 empty. **Log:** headed
+     `Image render notices — Attendance sheet — Division 2, round 2:`.
+
+107. **Do:** `/images test rsvp division:Division 2 round:2`
+
+     **Expect:** title `Check-in call`, one picture, `✅ Check-in call`, naming Circuit de
+     Spa-Francorchamps and the round's date. **Log:** headed
+     `Image render notices — Check-in call — Division 2, round 2:`.
+
+108. **Do:** `/images test verdict division:Division 2 round:2`
+
+     **Expect:** title `Verdict`, five pictures, one per sanction, in this order:
+     `✅ Verdict 1 — 5 seconds added`, `✅ Verdict 2 — 10 seconds added`,
+     `✅ Verdict 3 — 3 seconds removed`, `✅ Verdict 4 — Disqualified`,
+     `✅ Verdict 5 — No further action`, each for the same driver of the division.
+     **Log:** headed `Image render notices — Verdict — Division 2, round 2:`.
+     > UNVERIFIED: which driver is drawn (`context.drivers[0]`, in the order the preview reads the
+     > division's seats).
+
+109. **Do:** `/images test verdict-banner division:Division 2 round:2`
+
+     **Expect:** title `Verdict banner`, one picture, `✅ Verdict banner`: Season 1, Division 2,
+     Round 2 and its grand prix. **Log:** headed
+     `Image render notices — Verdict banner — Division 2, round 2:`, where it has notices.
+
+110. **Do**, in turn: `/images test weather-p1 division:Division 2 round:2`, then
+     `/images test weather-p2 division:Division 2 round:2`, then
+     `/images test weather-p3 division:Division 2 round:2`.
+
+     **Expect**, for each: titles `Weather — phase 1`, `Weather — phase 2`, `Weather — phase 3`,
+     one picture each (`✅ Weather — phase <P>`); phases 2 and 3 drawn on the sprint templates, with
+     the four sessions. **Log:** headed `Image render notices — Weather — phase <P> — Division 2, round 2:`.
+
+111. **Do:** `/images test weather-mystery division:Division 1 round:3`
+
+     **Expect:** title `Mystery notice`, one picture, `✅ Mystery notice`, naming no circuit.
+     **Log:** headed `Image render notices — Mystery notice — Division 1, round 3:`, where it has
+     notices.
+
+112. **A refusal.** **Do:** `/images test weather-mystery division:Division 2 round:2`
+
+     **Expect:**
+     - **Reply:** ``⛔ Round 2 of `Division 2` is not a mystery round, so there is no mystery notice to draw.``
+     - **Log:** nothing: a preview's refusal is answered and not recorded.
+
+113. **A refusal.** **Do:** `/images test weather-p1 division:Division 1 round:3`
+
+     **Expect:**
+     - **Reply:** ``⛔ Round 3 of `Division 1` is a mystery round, which carries no forecast. Use `/images test weather-mystery` for its notice.``
+     - **Log:** nothing.
+
+114. **A refusal.** **Do:** `/images test results division:Division 2 round:4`
+
+     **Expect:**
+     - **Reply:** ``⛔ `Division 2` has no round 4. It holds rounds: 1, 2, 3.``
+     - **Log:** nothing.
+
+Nothing posts in any league channel during these steps.
 
