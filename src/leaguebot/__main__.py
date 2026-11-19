@@ -1389,7 +1389,7 @@ async def _when_ready(bot: LeagueBot) -> None:
     once per process, and returns at once where the guard is spent: a second ready runs no recovery
     and syncs nothing (architecture.md, "Start-up runs once, in one function"). A recovery called
     from here directly would undo work still in progress, saying the bot had restarted when it had
-    not.
+    not. `test_a_second_ready_runs_no_start_up_step_and_syncs_nothing` pins it.
     """
     # Ready is reported once the bot has logged in, which is when it has a user.
     assert bot.user is not None
