@@ -110,8 +110,8 @@ session is in.
    - `bot.staged.db` and `scheduler.staged.db` now exist in the bot host folder, with
      `bot.prerestore.db` and `scheduler.prerestore.db` beside them.
 
-4. **Restart the bot.** Stop it; from a terminal run `python -m leaguebot` again, or
-   under a service let it come back on its own.
+4. **Restart the bot.** From a terminal, stop it and run `python -m leaguebot` again; under a
+   service, restart the service (`systemctl restart <unit>`).
 
    **Expect:**
    - **Host log:** `Started on a restored database.`, before `Logged in as <bot user> (id=<bot id>)`.

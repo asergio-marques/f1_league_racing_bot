@@ -30,7 +30,7 @@ name and value the other specs reuse: channels, roles, divisions, teams and driv
 1. `/test-mode backup restore`, and press **♻️ Restore** on the question it asks.
 2. **Restart the bot.** A restore is only staged; the bot swaps the files in as it starts, so
    nothing changes until the restart. From a terminal, stop it and run it again; under a service,
-   stop it and it comes back on its own. The host's log says `Started on a restored database.`
+   restart the service (`systemctl restart <unit>`). The host's log says `Started on a restored database.`
 3. Carry on with the spec's first step.
 
 **A spec that ends the season deletes the backup.** Completing a test season switches test mode
