@@ -339,15 +339,33 @@ async def test_an_old_sheet_discord_will_not_delete_stops_the_queue_and_once_dis
 
 #: The detail of the template fault the sheet's render below fails on.
 SHEET_RENDER_FAULT = "the template declares no `total_points` field"
+#: The words the render gives where Inkscape is not installed, which the line keeps.
+CONVERTER_ABSENT_WORDS = "Inkscape is not installed on this host."
+#: What the sheet's line says puts its picture right where Inkscape is not installed.
+CONVERTER_ABSENT_REMEDY = (
+    "Inkscape is not installed on the machine running the bot, and the host must install it; "
+    "once it has, the next round's sheet is drawn with the next sync"
+)
 
 
-async def test_a_sheet_s_render_fault_is_named_as_the_attendance_sheet_image(tmp_path):
+@pytest.mark.parametrize("kind, detail", [
+    ("TEMPLATE_INVALID", SHEET_RENDER_FAULT),
+    pytest.param("CONVERTER_ABSENT", CONVERTER_ABSENT_WORDS, marks=pytest.mark.xfail(
+        strict=True,
+        reason="#584: the sheet's line says nothing of what puts the converter's absence right",
+    )),
+], ids=["template fault", "converter absent"])
+async def test_a_sheet_s_render_fault_is_named_as_the_attendance_sheet_image(
+    tmp_path, kind, detail
+):
     """The image module is on with the attendance graphic switched on and its template valid,
-    and the image module's render of Pro's sheet fails on a template fault. Alex runs
-    `/attendance sync` for Pro from round 1: the sheet posts once, as text with no picture, and
-    the queue runs to the end; the log channel gives the fault on one line headed "⚠️ Attendance
-    sheet image", the name `/images config toggle` offers, naming season 3, Pro and round 1, and
-    nothing in the log calls it a results image."""
+    and the image module's render of Pro's sheet fails on a template fault, or for want of
+    Inkscape. Alex runs `/attendance sync` for Pro from round 1: the sheet posts once, as text
+    with no picture, and the queue runs to the end; the log channel gives the fault on one line
+    headed "⚠️ Attendance sheet image", the name `/images config toggle` offers, naming season 3,
+    Pro and round 1, and nothing in the log calls it a results image. Where Inkscape is not
+    installed, the line keeps the render's words and says that the host must install it, and that
+    the next round's sheet is drawn with the next sync once it has."""
     from leaguebot.image.models.image_module import Problem, RenderOutcome
     from leaguebot.image.services.aspects.image_attendance_post import (
         ATTENDANCE_ASPECT,
@@ -362,8 +380,7 @@ async def test_a_sheet_s_render_fault_is_named_as_the_attendance_sheet_image(tmp
         return_value={ATTENDANCE_TEMPLATE_KEY: MagicMock(valid=True)}
     )
     league.bot.image_render_service.render = AsyncMock(return_value=RenderOutcome(
-        problem=Problem(kind="TEMPLATE_INVALID", detail=SHEET_RENDER_FAULT,
-                        template_key=ATTENDANCE_TEMPLATE_KEY),
+        problem=Problem(kind=kind, detail=detail, template_key=ATTENDANCE_TEMPLATE_KEY),
     ))
 
     await _sync_pro(league)
@@ -373,10 +390,12 @@ async def test_a_sheet_s_render_fault_is_named_as_the_attendance_sheet_image(tmp
     assert _sends(league) == 1
     assert league.channel(SHEET).files[-1] is None
     log = await _said(league)
-    [line] = [line for line in log.splitlines() if SHEET_RENDER_FAULT in line]
+    [line] = [line for line in log.splitlines() if detail in line]
     named = "⚠️ Attendance sheet image — Season 3 Pro — attendance after round 1"
     assert line.startswith(named), line
     assert "Results image" not in log, log
+    if kind == "CONVERTER_ABSENT":
+        assert CONVERTER_ABSENT_REMEDY in line, line
 
 
 #: The detail of the one render notice the sheet's render below comes back with.

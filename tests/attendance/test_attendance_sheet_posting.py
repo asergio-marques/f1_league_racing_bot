@@ -698,8 +698,14 @@ async def test_the_opening_sheet_reads_the_seats_rather_than_the_attendance_reco
 
 def _drawing_that_draws_nothing(fault: str):
     """The image drawing of a league that draws the sheet and draws nothing of it: the sheet goes
-    out as text, and the drawing raises where *fault* is "drawing"."""
+    out as text, and the drawing raises where *fault* is "drawing". A fault raised is worded as
+    the image module's own drawing words it (`ImageDrawing.drawing_fault`)."""
     from types import SimpleNamespace
+
+    def _drawing_fault(error: BaseException) -> str:
+        from leaguebot.image.services.render.image_drawing import ImageDrawing
+
+        return ImageDrawing.drawing_fault(error)
 
     async def _draw(*_args, **_kwargs):
         if fault == "drawing":
@@ -710,15 +716,26 @@ def _drawing_that_draws_nothing(fault: str):
         attendance_wanted=AsyncMock(return_value=True),
         draw_attendance_sheet=AsyncMock(side_effect=_draw),
         discard_attachment=discard_attachment,
+        drawing_fault=_drawing_fault,
     )
 
 
+#: Why a fault in the bot met in drawing the sheet fails until #584 is built.
+_NAMED_BY_ITS_WORDS = "#584: a fault in the bot drawing the sheet is named in its own words"
+
+
 @pytest.mark.parametrize("fault", [
-    "drawing",
-    "drawing at the final",
-    "track registry",
-    "teams",
-    "round unreadable",
+    pytest.param("drawing", marks=pytest.mark.xfail(strict=True, reason=_NAMED_BY_ITS_WORDS)),
+    pytest.param(
+        "drawing at the final", marks=pytest.mark.xfail(strict=True, reason=_NAMED_BY_ITS_WORDS),
+    ),
+    pytest.param(
+        "track registry", marks=pytest.mark.xfail(strict=True, reason=_NAMED_BY_ITS_WORDS),
+    ),
+    pytest.param("teams", marks=pytest.mark.xfail(strict=True, reason=_NAMED_BY_ITS_WORDS)),
+    pytest.param(
+        "round unreadable", marks=pytest.mark.xfail(strict=True, reason=_NAMED_BY_ITS_WORDS),
+    ),
     "none",
 ])
 @pytest.mark.asyncio
@@ -732,7 +749,9 @@ async def test_a_sheet_whose_graphic_falls_back_is_told_as_a_line_of_its_job(
     round, and with it its season, cannot be read from the database; (none) nothing fails. The
     sheet posts each time, and the job's result and lines carry one line naming the sheet as its
     notices name it, by season 3, Division 1 and round 3, and what the graphic fell back from, and
-    none where nothing failed; a round that cannot be read costs the line its season alone."""
+    none where nothing failed; a round that cannot be read costs the line its season alone. Each
+    fault here is a fault in the bot, and its line names it by its kind alone, never in the words
+    it was raised with."""
     from types import SimpleNamespace
 
     from leaguebot.core.services.drivers.team_service import TeamService
@@ -783,23 +802,24 @@ async def test_a_sheet_whose_graphic_falls_back_is_told_as_a_line_of_its_job(
         )
 
     assert posted is not None and channel.sent_content is not None
+    internal = "the bot hit an internal fault"
     expected = {
         "drawing at the final": [
-            "the graphic could not be drawn, so the sheet is posted as text: template unreadable"
+            f"the graphic could not be drawn, so the sheet is posted as text: {internal}"
         ],
         "drawing": [
-            "the graphic could not be drawn, so the sheet is posted as text: template unreadable"
+            f"the graphic could not be drawn, so the sheet is posted as text: {internal}"
         ],
         "track registry": [
             "the track registry could not be read, so the round headings are drawn without their "
-            "flags: track registry unreadable"
+            f"flags: {internal}"
         ],
         "teams": [
-            "the teams could not be read, so they are drawn without names or badges: "
-            "teams unreadable"
+            f"the teams could not be read, so they are drawn without names or badges: {internal}"
         ],
         "round unreadable": [
-            "the graphic could not be drawn, so the sheet is posted as text: round unreadable"
+            "the graphic could not be drawn, so the sheet is posted as text: "
+            "the bot could not read or write its database"
         ],
         "none": [],
     }[fault]
@@ -812,6 +832,7 @@ async def test_a_sheet_whose_graphic_falls_back_is_told_as_a_line_of_its_job(
     assert list(posted.faults) == lines
     assert result.get("faults", []) == lines
     assert list(attendance_sheet.sheet_lines(result)) == lines
+    assert not [line for line in lines if "unreadable" in line], lines
     if fault == "teams":
         assert not drawn["team_names"], "a team named though the teams could not be read"
         assert not drawn["team_keys"], "a badge keyed though the teams could not be read"

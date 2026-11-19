@@ -30,8 +30,14 @@ from tests.support.switches import answer_switch
 
 CHECK_IN = DIVISIONS[PRO][3].checkin
 ROUND_4 = round_id(PRO, 4)
-#: The clause the log channel is given for a graphic that could not be drawn at all.
-NOT_DRAWN = "the graphic could not be drawn, so the call is posted without it: template unreadable"
+#: What the drawing below raises: a fault in the bot, whose words never reach the log channel.
+RAISED = "template unreadable"
+#: The clause the log channel is given for a graphic that could not be drawn at all: the fault in
+#: the bot named by its kind alone.
+NOT_DRAWN = (
+    "the graphic could not be drawn, so the call is posted without it: "
+    "the bot hit an internal fault"
+)
 #: The clause the log channel is given for a graphic drawn without its deadline.
 NO_DEADLINE = "the deadline could not be read, so the check-in graphic is drawn without it"
 
@@ -58,12 +64,19 @@ def _sent(league: SeasonLeague) -> list[int]:
     return [mid for kind, cid, mid in league.events if kind == "send" and cid == CHECK_IN]
 
 
-@pytest.mark.parametrize("fault", ["not drawn", "no deadline", "none"])
+@pytest.mark.parametrize("fault", [
+    pytest.param("not drawn", marks=pytest.mark.xfail(
+        strict=True, reason="#584: a drawing that raises is named in its own words",
+    )),
+    "no deadline",
+    "none",
+])
 async def test_a_call_whose_graphic_cannot_be_drawn_is_told_as_a_line_of_its_job(
     tmp_path, monkeypatch, fault
 ):
-    """(not drawn) the drawing raises: the call posts without a picture and the log channel is
-    told so. (no deadline) the configuration read for the deadline raises: the graphic is drawn
+    """(not drawn) the drawing raises, a fault in the bot: the call posts without a picture and
+    the log channel is told so, naming the fault by its kind alone and never in the words it was
+    raised with. (no deadline) the configuration read for the deadline raises: the graphic is drawn
     without it, the call posts with it, and the log channel is told so. (none) the graphic is drawn
     whole: no such line is written. Each line written names season 3, Pro and round 4."""
     from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
@@ -73,7 +86,7 @@ async def test_a_call_whose_graphic_cannot_be_drawn_is_told_as_a_line_of_its_job
 
     async def _attach(*_args: Any, **_kwargs: Any) -> tuple[discord.File | None, tuple[str, ...]]:
         if fault == "not drawn":
-            raise RuntimeError("template unreadable")
+            raise RuntimeError(RAISED)
         picture.write_bytes(b"png")
         return discord.File(str(picture), filename="checkin.png"), ()
 
@@ -96,6 +109,7 @@ async def test_a_call_whose_graphic_cannot_be_drawn_is_told_as_a_line_of_its_job
     # Each line names the season, the division and the round.
     heading = f"Season 3 **{DIVISIONS[PRO][0]}** — check-in call of round 4: "
     assert lines == [heading + clause for clause in expected]
+    assert RAISED not in league.log()
 
 
 # ---------------------------------------------------------------------------
@@ -106,12 +120,19 @@ async def test_a_call_whose_graphic_cannot_be_drawn_is_told_as_a_line_of_its_job
 NOTICE_DETAIL = "no `flag` image for “Silverstone”"
 #: The detail of the fault the drawing below fails on.
 RENDER_FAULT = "the template declares no `round_number` field"
+#: The words the render gives where Inkscape is not installed, which the line keeps.
+CONVERTER_ABSENT_WORDS = "Inkscape is not installed on this host."
+#: What the check-in call's line says puts its picture right where Inkscape is not installed.
+CONVERTER_ABSENT_REMEDY = (
+    "Inkscape is not installed on the machine running the bot, and the host must install it; "
+    "once it has, the next check-in call is posted with its picture"
+)
 
 
 def _draw_with(league: SeasonLeague, tmp_path: Any, outcome: str) -> None:
     """Image generation on for the check-in call, its template valid; its render, the image
-    module's own, comes back drawn with one notice (*outcome* "notice") or failed on a template
-    fault (*outcome* "fault")."""
+    module's own, comes back drawn with one notice (*outcome* "notice"), failed on a template
+    fault (*outcome* "fault") or failed for want of Inkscape (*outcome* "converter absent")."""
     from leaguebot.image.models.image_module import Problem, RenderNotice, RenderOutcome
 
     league.bot.image_config_service.get_toggles = AsyncMock(return_value={"rsvp": True})
@@ -125,6 +146,10 @@ def _draw_with(league: SeasonLeague, tmp_path: Any, outcome: str) -> None:
             image_type="rsvp_template", notice_kind="ASSET_FALLBACK_USED",
             detail=NOTICE_DETAIL, field_id="flag",
         )])
+    elif outcome == "converter absent":
+        drawn = RenderOutcome(problem=Problem(
+            kind="CONVERTER_ABSENT", detail=CONVERTER_ABSENT_WORDS, template_key="rsvp_template",
+        ))
     else:
         drawn = RenderOutcome(problem=Problem(
             kind="TEMPLATE_INVALID", detail=RENDER_FAULT, template_key="rsvp_template",
@@ -151,25 +176,40 @@ async def test_a_check_in_call_s_render_notices_reach_the_log_once_naming_the_ro
     assert f"check-in call of round 4 in Season 3 **{DIVISIONS[PRO][0]}**:" in heading, block
 
 
-async def test_a_check_in_call_s_render_fault_is_named_as_the_check_in_call_image(tmp_path):
-    """Pro's round 4's check-in call is drawn, and its render fails on a template fault. The call
-    posts without a picture, and the log channel gives the fault on one line headed "⚠️ Check-in
-    call image", the name `/images config toggle` offers, naming round 4, season 3 and Pro;
-    nothing in the log calls it a results image."""
+@pytest.mark.parametrize("outcome", [
+    "fault",
+    pytest.param("converter absent", marks=pytest.mark.xfail(
+        strict=True,
+        reason="#584: the check-in call's line says nothing of what puts the converter's absence "
+        "right",
+    )),
+])
+async def test_a_check_in_call_s_render_fault_is_named_as_the_check_in_call_image(
+    tmp_path, outcome
+):
+    """Pro's round 4's check-in call is drawn, and its render fails on a template fault ("fault")
+    or for want of Inkscape ("converter absent"). The call posts without a picture, and the log
+    channel gives the fault on one line headed "⚠️ Check-in call image", the name `/images config
+    toggle` offers, naming round 4, season 3 and Pro; nothing in the log calls it a results image.
+    Where Inkscape is not installed, the line keeps the render's words and says that the host must
+    install it, and that the next check-in call is posted with its picture once it has."""
     league = await _league(tmp_path)
-    _draw_with(league, tmp_path, "fault")
+    _draw_with(league, tmp_path, outcome)
 
     await _ask_and_run(league)
 
     assert await stopped_job(league.db_path) is None
     assert league.channel(CHECK_IN).files[-1] is None
     log = league.log()
-    [line] = [line for line in log.splitlines() if RENDER_FAULT in line]
+    detail = RENDER_FAULT if outcome == "fault" else CONVERTER_ABSENT_WORDS
+    [line] = [line for line in log.splitlines() if detail in line]
     named = (
         f"⚠️ Check-in call image — check-in call of round 4 in Season 3 **{DIVISIONS[PRO][0]}**: "
     )
     assert line.startswith(named), line
     assert "Results image" not in log, log
+    if outcome == "converter absent":
+        assert CONVERTER_ABSENT_REMEDY in line, line
 
 
 @pytest.mark.parametrize("outcome", ["notice", "fault"])
