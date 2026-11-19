@@ -632,3 +632,55 @@ def test_a_standings_picture_line_says_what_puts_it_right_by_where_the_fault_lie
         f"  problem: the drivers picture of the final classification could not be posted: {fault}\n"
         f"  to put it right: {put_right}"
     )
+
+
+@pytest.mark.parametrize("occasion, job, word", _OCCASIONS)
+async def test_a_classification_drawn_without_inkscape_says_the_host_must_install_it(
+    tmp_path, monkeypatch, occasion, job, word,  # noqa: ARG001 — job is the save tests'
+):
+    """Images and results on, the standings aspect on, and Inkscape not installed on the host:
+    each championship's render comes back with the converter's absence ("Inkscape is not
+    installed on this host."), so the opening classification (season 3 approved) or the final
+    one (the season completed) goes out as text. Every line the log channel is given for a
+    picture not drawn keeps those words and ends saying that the host must install Inkscape, and
+    that no command posts the classification again and the text stands."""
+    from types import SimpleNamespace
+
+    from leaguebot.image.models.image_module import PROBLEM_CONVERTER_ABSENT, Problem
+    from leaguebot.image.services.aspects import image_standings_post
+    from tests.support.change_queue import queued_log_lines
+    from tests.support.season_league import standings_pictures_are_due
+
+    absent = "Inkscape is not installed on this host."
+    if occasion is ClassificationOccasion.SEASON_OPENING:
+        league = await season_league(tmp_path, monkeypatch=monkeypatch, results=True, images=True)
+    else:
+        league = await pending_completion_league(tmp_path, images=True)
+    league.bot.image_config_service.is_aspect_enabled = AsyncMock(return_value=True)
+    standings_pictures_are_due(monkeypatch)
+    monkeypatch.setattr(image_standings_post, "render_png", AsyncMock(
+        return_value=SimpleNamespace(
+            notices=(), problem=Problem(PROBLEM_CONVERTER_ABSENT, absent),
+            posts_image=False, png_paths=(),
+        )
+    ))
+    if occasion is ClassificationOccasion.SEASON_OPENING:
+        await press_approve(league)
+    else:
+        await complete_season(league)
+
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    lines = [
+        line
+        for sent in list(league.bot.log_channel.sent) + await queued_log_lines(league.db_path)
+        for line in sent.splitlines()
+        if absent in line
+    ]
+    assert lines, "no line names the converter's absence"
+    for line in lines:
+        assert line.endswith(
+            f"{absent} To put it right: Inkscape is not installed on the machine running the bot, "
+            f"and the host must install it; no command posts the {word} again, and the text stands"
+        ), line
