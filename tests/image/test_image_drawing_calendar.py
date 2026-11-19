@@ -167,26 +167,80 @@ async def test_a_calendar_drawing_hands_its_notices_back_and_logs_nothing():
     assert "a fallback flag stood in for Monaco's" in picture.notices
 
 
-@pytest.mark.parametrize("drawn", ["a picture", "a problem"])
-async def test_the_drawing_hands_back_the_picture_the_problem_and_the_notices(tmp_path, drawn):
+#: The converter's absence, in the words the render gives it.
+_ABSENT_WORDS = "Inkscape is not installed on this host."
+
+
+@pytest.mark.parametrize(
+    "drawn,problem,source",
+    [
+        pytest.param("a picture", None, "LEAGUE", id="a_picture"),
+        pytest.param("a problem", "the template has no rows", "LEAGUE", id="a_problem"),
+        pytest.param("an internal problem", "the bot hit an internal fault", "BOT",
+                     id="an_internal_problem"),
+        pytest.param("a converter absent", _ABSENT_WORDS, "HOST", id="a_converter_absent"),
+    ],
+)
+@pytest.mark.xfail(strict=True, reason="#584: a calendar's picture does not say where its fault lies")
+async def test_the_drawing_hands_back_the_picture_the_problem_and_the_notices(
+    tmp_path, drawn, problem, source,
+):
     """Elite's calendar drawn, with one notice: the drawing hands core the picture's path where it
-    was drawn, or the problem's words where it could not be, and the notices' words either way."""
-    from leaguebot.image.models.image_module import RenderNotice
+    was drawn, or the problem's words where it could not be, and the notices' words either way.
+    The picture says where its fault lies: the league's for a field at fault or none, the bot's
+    for an internal fault, which comes back named by its kind alone, and the host's for the
+    converter's absence, which keeps its words."""
+    from leaguebot.core.models.fault_source import FaultSource
+    from leaguebot.image.models.image_module import (
+        PROBLEM_CONVERTER_ABSENT,
+        PROBLEM_DRAWING_FAULT,
+        PROBLEM_UNRESOLVED_VALUE,
+        Problem,
+        RenderNotice,
+    )
 
     png = tmp_path / "calendar.png"
     notice = RenderNotice(image_type="calendar", notice_kind="ASSET_FALLBACK_USED",
                           detail="a fallback flag stood in for Monaco's")
+    fault = {
+        "a problem": Problem(kind=PROBLEM_UNRESOLVED_VALUE, detail="the template has no rows"),
+        "an internal problem": Problem(kind=PROBLEM_DRAWING_FAULT,
+                                       detail="the bot hit an internal fault"),
+        "a converter absent": Problem(kind=PROBLEM_CONVERTER_ABSENT, detail=_ABSENT_WORDS),
+    }.get(drawn)
     outcome = (
-        NS(problem=None, notices=[notice], png_paths=[png]) if drawn == "a picture"
-        else NS(problem=NS(detail="the template has no rows"), notices=[notice], png_paths=[])
+        NS(problem=None, notices=[notice], png_paths=[png]) if fault is None
+        else NS(problem=fault, notices=[notice], png_paths=[])
     )
     drawing, *_ = _drawing(outcome=outcome)
 
     picture = await drawing.draw_calendar(_division(), _rounds(), TRACKS)
 
-    assert picture.path == (png if drawn == "a picture" else None)
-    assert picture.problem == (None if drawn == "a picture" else "the template has no rows")
+    assert picture.path == (png if fault is None else None)
+    assert picture.problem == problem
+    assert picture.fault_source is FaultSource[source]
     assert tuple(picture.notices) == ("a fallback flag stood in for Monaco's",)
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#584: a calendar whose track cannot be named is raised, not handed back",
+)
+async def test_a_calendar_whose_track_cannot_be_named_comes_back_as_its_problem():
+    """Elite's calendar asked for with a round at Monza, which matches no track on this server:
+    the drawing hands the refusal back as the picture's problem, in its own words, rather than
+    raising it. Nothing is rendered, and the fault is the league's."""
+    from leaguebot.core.models.fault_source import FaultSource
+
+    rounds = _rounds()
+    rounds[1].track_name = "Monza"
+    drawing, captured, *_ = _drawing()
+
+    picture = await drawing.draw_calendar(_division(), rounds, TRACKS)
+
+    assert picture.path is None
+    assert "matches no track" in picture.problem
+    assert picture.fault_source is FaultSource.LEAGUE
+    assert "builder" not in captured
 
 
 def test_a_released_calendar_is_removed_with_its_render_directory(tmp_path):
