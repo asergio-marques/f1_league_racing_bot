@@ -300,6 +300,8 @@ async def test_the_calls_owed_are_asked_in_the_order_their_rounds_race(tmp_path)
     assert asked == [ROUND_ID + 1, ROUND_ID]
 
 
+@pytest.mark.xfail(strict=True, reason="#584: a start-up failure line names the exception's class, "
+                   "not the kind of fault")
 async def test_a_call_that_cannot_be_asked_is_reported_once_and_the_next_round_s_still_is(
     tmp_path,
 ):
@@ -341,7 +343,7 @@ async def test_a_call_that_cannot_be_asked_is_reported_once_and_the_next_round_s
     assert round_failures(error, module="attendance") == {ROUND_ID + 1: refused}
     assert lines == [
         "❌ The bot's start-up step `missed check-in calls` failed for round 5 in "
-        "**Division 1** — RecoveryFailed. The details are in the host's log."
+        "**Division 1** — the bot hit an internal fault. The details are in the host's log."
     ]
 
 

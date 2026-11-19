@@ -390,6 +390,8 @@ def _swept_bot(db_path: str) -> MagicMock:
     return bot
 
 
+@pytest.mark.xfail(strict=True, reason="#584: a start-up failure line names the exception's class, "
+                   "not the kind of fault")
 async def test_a_database_the_clean_up_catch_up_cannot_read_is_reported_in_the_log_channel(
     tmp_path,
 ):
@@ -406,12 +408,15 @@ async def test_a_database_the_clean_up_catch_up_cannot_read_is_reported_in_the_l
 
     assert error is not None
     assert lines == [
-        "❌ The bot's start-up step `missed check-in clean-ups` failed — OperationalError. "
+        "❌ The bot's start-up step `missed check-in clean-ups` failed — the bot could not read or "
+        "write its database. "
         "The details are in the host's log."
     ]
     bot.change_queue.ask.assert_not_called()
 
 
+@pytest.mark.xfail(strict=True, reason="#584: a start-up failure line names the exception's class, "
+                   "not the kind of fault")
 async def test_a_clean_up_that_cannot_be_asked_is_reported_once_and_the_next_round_s_still_is(
     tmp_path,
 ):
@@ -455,10 +460,12 @@ async def test_a_clean_up_that_cannot_be_asked_is_reported_once_and_the_next_rou
     assert round_failures(error, module="attendance") == {22: refused}
     assert lines == [
         "❌ The bot's start-up step `missed check-in clean-ups` failed for round 2 in "
-        "**Division 1** — RecoveryFailed. The details are in the host's log."
+        "**Division 1** — the bot hit an internal fault. The details are in the host's log."
     ]
 
 
+@pytest.mark.xfail(strict=True, reason="#584: a start-up failure line names the exception's class, "
+                   "not the kind of fault")
 async def test_a_database_the_forecast_clean_up_catch_up_cannot_read_is_reported_in_the_log_channel(
     tmp_path,
 ):
@@ -475,12 +482,15 @@ async def test_a_database_the_forecast_clean_up_catch_up_cannot_read_is_reported
 
     assert error is not None
     assert lines == [
-        "❌ The bot's start-up step `missed forecast clean-ups` failed — OperationalError. "
+        "❌ The bot's start-up step `missed forecast clean-ups` failed — the bot could not read or "
+        "write its database. "
         "The details are in the host's log."
     ]
     asked.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason="#584: a start-up failure line names the exception's class, "
+                   "not the kind of fault")
 @pytest.mark.parametrize("gone, called", [
     pytest.param(False, "round 2 in **Division 1**", id="round-readable"),
     # Round 22's rows are deleted as its ask fails, so the error names it as core's
@@ -536,10 +546,12 @@ async def test_one_round_failing_its_recovery_stops_none_of_the_others(tmp_path,
     assert called in str(error) and "22" not in str(error), str(error)
     assert lines == [
         f"❌ The bot's start-up step `missed forecast clean-ups` failed for {called} — "
-        "RecoveryFailed. The details are in the host's log."
+        "the bot hit an internal fault. The details are in the host's log."
     ]
 
 
+@pytest.mark.xfail(strict=True, reason="#584: a start-up failure line names the exception's class, "
+                   "not the kind of fault")
 async def test_a_round_whose_start_cannot_be_read_fails_its_recovery_alone(tmp_path):
     """Division 1 has two Phase 3 forecasts standing: round 21's, raced 25 hours ago, and round
     22's, its start stored without its offset, which no writer produces and the bot refuses to
@@ -576,5 +588,5 @@ async def test_a_round_whose_start_cannot_be_read_fails_its_recovery_alone(tmp_p
     assert isinstance(failures[22], ValueError), failures
     assert lines == [
         "❌ The bot's start-up step `missed forecast clean-ups` failed for round 2 in "
-        "**Division 1** — RecoveryFailed. The details are in the host's log."
+        "**Division 1** — the bot hit an internal fault. The details are in the host's log."
     ]

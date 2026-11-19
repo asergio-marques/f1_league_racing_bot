@@ -27,6 +27,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from leaguebot.framework.db.database import get_connection
 
 
@@ -68,6 +70,8 @@ async def test_each_orphan_is_reported_separately(tmp_path):
     assert len(lines) == 2
 
 
+@pytest.mark.xfail(strict=True, reason="#584: a start-up failure line names the exception's class, "
+                   "not the kind of fault")
 async def test_an_amendment_that_cannot_be_recovered_is_reported_and_the_others_still_are(
     tmp_path,
 ):
@@ -109,7 +113,7 @@ async def test_an_amendment_that_cannot_be_recovered_is_reported_and_the_others_
     assert round_failures(error) == {league_of.ROUND_ID: refused}
     assert lines == [
         "❌ The bot's start-up step `orphaned amend channels` failed for round 3 in **Pro** — "
-        "RecoveryFailed. The details are in the host's log."
+        "the bot hit an internal fault. The details are in the host's log."
     ]
 
 

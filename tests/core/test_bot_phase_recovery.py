@@ -358,6 +358,8 @@ async def test_only_the_raced_round_of_two_is_passed_over(tmp_path):
     assert sorted(fired) == [(1, 2), (2, 2), (3, 2)]
 
 
+@pytest.mark.xfail(strict=True, reason="#584: a start-up failure line names the exception's class, "
+                   "not the kind of fault")
 async def test_one_round_failing_its_recovery_stops_none_of_the_others(tmp_path):
     """Rounds 1 and 2 of Division 1 are both past their Phase 1 horizon with Phase 1 not drawn,
     and the queue refuses round 1's ask. Run through the start-up sweep, the step still asks round
@@ -384,10 +386,12 @@ async def test_one_round_failing_its_recovery_stops_none_of_the_others(tmp_path)
     assert "round 1 in **Division 1**" in str(error), str(error)
     assert sweep["lines"] == [
         "❌ The bot's start-up step `missed phases` failed for round 1 in **Division 1** — "
-        "RecoveryFailed. The details are in the host's log."
+        "the bot hit an internal fault. The details are in the host's log."
     ]
 
 
+@pytest.mark.xfail(strict=True, reason="#584: a start-up failure line names the exception's class, "
+                   "not the kind of fault")
 async def test_a_round_whose_start_cannot_be_read_fails_its_missed_phases_alone(tmp_path):
     """Round 1 is past its Phase 1 horizon with Phase 1 not drawn; round 2, of the same live
     division, has its start stored without its offset, which no writer produces and the bot refuses
@@ -418,7 +422,7 @@ async def test_a_round_whose_start_cannot_be_read_fails_its_missed_phases_alone(
     assert isinstance(failures[2], ValueError), failures
     assert sweep["lines"] == [
         "❌ The bot's start-up step `missed phases` failed for round 2 in **Division 1** — "
-        "RecoveryFailed. The details are in the host's log."
+        "the bot hit an internal fault. The details are in the host's log."
     ]
 
 

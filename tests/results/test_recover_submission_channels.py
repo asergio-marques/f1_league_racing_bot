@@ -483,6 +483,8 @@ async def test_a_failing_re_prompt_does_not_stop_the_start_up(tmp_path):
     assert round_failures(raised.value) == {ROUND_ID: refused}
 
 
+@pytest.mark.xfail(strict=True, reason="#584: a start-up failure line names the exception's class, "
+                   "not the kind of fault")
 async def test_a_round_that_cannot_be_recovered_is_reported_and_the_others_still_are(tmp_path):
     """Rounds 3 (id 21) and 4 (id 22) of Pro were each mid-submission when the bot stopped. At the
     restart the queue refuses round 21's request for its submission restart. Run through the
@@ -520,7 +522,7 @@ async def test_a_round_that_cannot_be_recovered_is_reported_and_the_others_still
     assert round_failures(error) == {ROUND_ID: refused}
     assert lines == [
         "❌ The bot's start-up step `orphaned submission channels` failed for round 3 in "
-        "**Pro** — RecoveryFailed. The details are in the host's log."
+        "**Pro** — the bot hit an internal fault. The details are in the host's log."
     ]
 
 
