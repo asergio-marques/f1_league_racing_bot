@@ -38,7 +38,7 @@ early March is UTC.
 | 2 | `<YEAR+1>-03-08` 20:00 — Sprint — Hungaroring (14) | `<YEAR+1>-03-08` 21:00 — Sprint — Circuit de Spa-Francorchamps (13) |
 | 3 | `<YEAR+1>-03-15` 20:00 — Mystery | `<YEAR+1>-03-15` 21:00 — Normal — Circuit Zandvoort (15) |
 
-**Drivers.** Fake drivers, seated by `/test-mode roster add-bulk` (step 31).
+**Drivers.** Fake drivers, seated by `/test-mode roster add-bulk` (step 30).
 
 | ID | Driver | Team | Division | Nationality |
 |---|---|---|---|---|
@@ -495,3 +495,202 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
     matching `#d2-` channel.
 
     **Expect:** as step 28, with `Division 2` and the `#d2-` channels throughout.
+
+---
+
+## Part C — The drivers, the approval and the backup
+
+### Seating the drivers
+
+30. **Do:** `/test-mode roster add-bulk`. In the form **Import a test roster**, paste the
+    following into **Paste roster.csv, header and all**, and submit.
+
+    ```
+    ID,Driver name,Team,Division,Nationality
+    9000000000000000001,Adam Archer,ALP,Division 1,British
+    9000000000000000002,Bruno Bianchi,ALP,Division 1,Italian
+    9000000000000000003,Carlos Cortes,BRV,Division 1,Spanish
+    9000000000000000004,Dirk Dekker,BRV,Division 1,Dutch
+    9000000000000000005,Emil Engel,CHL,Division 1,German
+    9000000000000000006,Felix Fournier,CHL,Division 1,French
+    9000000000000000007,Gabriel Gomes,DLT,Division 1,Brazilian
+    9000000000000000008,Hiro Hayashi,DLT,Division 1,Japanese
+    9000000000000000009,Ian Irwin,Reserve,Division 1,Australian
+    9000000000000000010,Jari Jokinen,ALP,Division 2,Finnish
+    9000000000000000011,Kevin Keller,ALP,Division 2,American
+    9000000000000000012,Liam Lavoie,BRV,Division 2,Canadian
+    9000000000000000013,Mateo Morales,BRV,Division 2,Mexican
+    9000000000000000014,Niels Nygaard,CHL,Division 2,Danish
+    9000000000000000015,Olivier Orsini,CHL,Division 2,Monegasque
+    9000000000000000016,Pim Prasert,DLT,Division 2,Thai
+    9000000000000000017,Quinn Quayle,DLT,Division 2,British
+    9000000000000000018,Rafael Rossi,Reserve,Division 2,Italian
+    ```
+
+    **Expect:**
+    - **Ack:** `Seating 18 test drivers in **Division 1**, **Division 2**`
+    - **Then:**
+      ```
+      ✅ Seated **18** test driver(s) across 2 division(s): Division 1, Division 2.
+      `/test-mode roster list` shows a division's drivers with the mentions result submission wants.
+      ```
+    - **Log:**
+      ```
+      <you> | /test-mode roster add-bulk | Success
+        drivers_seated: 18
+        divisions: Division 1, Division 2
+      ```
+
+31. **Do:** `/test-mode roster list division:Division 1`
+
+    **Expect:**
+    - **Reply:** headed `**Fake Driver Roster — Division 1**`, then a code block whose first
+      two lines are the column heads `Name`, `Mention`, `Team`, `Nationality` and a rule of
+      86 `-`, then one row per driver: the nine Division 1 drivers of the Fixture, each with
+      its mention `<@9000000000000000001>` to `<@9000000000000000009>`, its team by full name
+      (`Alpha Racing`, `Bravo Motorsport`, `Charlie GP`, `Delta Racing`, `Reserve`) and its
+      nationality as the Fixture gives it. It ends:
+      ```
+      Copy mention strings above when submitting results in the format:
+      `Position, <@user_id>, <@&role_id>, ...`
+      ```
+    - **Log:** nothing; it is a view.
+
+32. **Do:** `/test-mode roster list division:Division 2`
+
+    **Expect:** as step 31, headed `**Fake Driver Roster — Division 2**`, with the nine
+    Division 2 drivers, `<@9000000000000000010>` to `<@9000000000000000018>`.
+
+### Approving the season
+
+33. **Do:** `/season placements-review`
+
+    **Expect:**
+    - **Ack:** `Posting the review of /season placements-review`
+    - **Then:** where any picture drew with notices — a fallback team badge or flag, where
+      `resources/league/` holds no artwork for it — the acknowledgement is updated to
+      `✅ Review posted.`, a blank line, and a section headed `⚠️ **Image notices**` naming
+      each picture with its notices beneath. Otherwise it is left as it is.
+      > UNVERIFIED: as in step 23, a review with no notices has an empty outcome, and the
+      > acknowledgement is expected to stand unchanged.
+    - **Posts** (`#bot-commands`, public), in this order:
+      - `🎨 Drawing the graphics for this review — one moment.`, deleted once the pictures are up;
+      - four pictures, each a message with a PNG attached: `📅 **Calendar**` (Division 1),
+        `🏎️ **Lineup**` (Division 1), `📅 **Calendar**` (Division 2), `🏎️ **Lineup**`
+        (Division 2). Look at each as a PNG: the calendar holds the division's three rounds on
+        their dates, round 3 of Division 1 as a mystery round; the lineup holds the four teams
+        with two drivers each and the reserve, each driver by name with the flag of their
+        nationality;
+      - the report, one message per section: the first opening
+        `**Season Review (Season #1 — F1 25)**` and `**Modules**`, with the five modules each
+        `✅ Enabled`; one per module's settings, one headed `**Image output**`; then, for each
+        division, a banner `# DIVISION 1 (Tier 1)` (or `# DIVISION 2 (Tier 2)`) between two
+        rules of `─`, and a message opening `📂 **Configuration**` with
+        `  Role: <@&<Division N role id>>`, `  Calendar channel: <#<dN-calendar id>>`,
+        `  Lineup channel: <#<dN-lineup id>>` and each module's channel lines;
+      - nothing reporting a fault, and no line naming a round as already run or inside a
+        window;
+      - last, the question, with a **✅ Approve** button:
+        ```
+        📋 **Do you accept this season configuration?**
+        Reviewed by <@<your id>>. Approval is open to them or to a server administrator for the next 5 minutes, after which this review expires and must be run again.
+        ```
+    - **Log:** `<you> | /season placements-review | Review posted`, and, where a picture drew
+      with notices, a line naming that picture and its notices.
+
+34. **Do:** within five minutes, press **✅ Approve** on the question.
+
+    **Expect:**
+    - **Reply**, with three buttons, **💾 Save, then approve**, **Approve without saving** and
+      **❌ Cancel**:
+      ```
+      💾 **Save the databases before approving?**
+      Approving arms the schedule, grants the roles and posts the lineups, which is a laborious thing to build again. Nothing is saved yet.
+      This review expires <timestamp: five minutes after the question was posted> whichever you choose, so answer before then.
+      ```
+    - Nothing posted, nothing in the log yet.
+
+35. **Do:** press **Approve without saving**.
+
+    **Expect:**
+    - **Ack** (a new message beneath the question): `Approving season 1`
+    - **Then:**
+      ```
+      ✅ **Season approved and activated!**
+      Season #1 (ID: 1)
+      ```
+      followed, where the calendars or lineups drew with notices, by a blank line and a
+      `⚠️ **Image notices**` section, each picture (`calendar — Season 1 Division 1`,
+      `lineup — Division 1`, and the same for Division 2) with its notices. No
+      `⚠️ **Not everything could be done**` section.
+    - **Posts:**
+      - `#bot-commands`: every message of the review (step 33) is deleted. Then
+        `🎨 Posting lineups, calendars and opening classifications — one moment.`, deleted once
+        the posts are made.
+      - `#d1-lineup`, `#d2-lineup`: the division's lineup, as a picture.
+      - `#d1-calendar`, `#d2-calendar`: the division's calendar, as a picture.
+      - `#d1-standings`, `#d2-standings`: the opening classification, as pictures, every driver
+        and team on zero with the season's rounds drawn empty.
+      - `#d1-attendance`, `#d2-attendance`: the opening attendance sheet, as a picture, every
+        driver on zero.
+      - Nothing in the weather, results, verdicts or RSVP channels.
+      > UNVERIFIED: the caption, if any, posted with each of these pictures, and how many
+      > messages the opening classification takes (drivers and teams).
+    - **Roles:** none granted. Fake drivers have no Discord account, and the approval grants
+      roles to real drivers only.
+    - **Log:**
+      ```
+      <you> | /season placements-review | Placements confirmed
+        season: 1
+        season_id: 1
+      ```
+
+### Saving the base
+
+36. **Do:** `/test-mode backup save`
+
+    **Expect:**
+    - **Reply:**
+      ```
+      ✅ Saved. The backup holds <size: the backup's size in KB> KB and replaces whatever was there before.
+      Lock it with `/test-mode backup lock` if you want to keep this one.
+      ```
+    - **Log:**
+      ```
+      <you> | /test-mode backup save | Success
+        size_kb: <size: as in the reply>
+      ```
+    - `bot.bkup.db` and `scheduler.bkup.db` now exist in the bot host folder.
+
+37. **Do:** `/test-mode backup lock`
+
+    **Expect:**
+    - **Reply:** ``🔒 Locked. `/test-mode backup save` will refuse to overwrite it until you run this again.``
+    - **Log:**
+      ```
+      <you> | /test-mode backup lock | Success
+        backup: locked
+      ```
+    - `backup.lock` now exists in the bot host folder.
+
+38. **A refusal.** **Do:** `/test-mode backup save`
+
+    **Expect:**
+    - **Reply:** ``⛔ the saved backup is locked, so it will not be overwritten. Unlock it with `/test-mode backup lock` first.``
+    - **Log:** ``⛔ `/test-mode backup save` refused for <you> — the saved backup is locked, so it will not be overwritten. Unlock it with `/test-mode backup lock` first.``
+
+39. **Do:** `/test-mode backup status`
+
+    **Expect:**
+    - **Reply:**
+      ```
+      📦 **Saved backup**
+        Taken: <timestamp: the moment of step 36, not step 38>
+        Size: <size: as in step 36> KB
+        Readable: yes
+        Locked: locked by <your display name> at <the moment of step 37, ISO 8601>
+      ```
+    - **Log:** nothing; it is a view.
+
+The base is built. Season #1 is ongoing in test mode, nothing has been advanced, and the locked
+backup holds this moment for every later spec to restore.
