@@ -629,7 +629,35 @@ async def test_an_unexpected_fault_in_the_image_path_never_blocks_the_posting(tm
     assert "file" not in sent[0][1]
 
 
-async def test_a_resolution_fault_is_reported_and_the_text_still_posts(tmp_path):
+@pytest.mark.parametrize(
+    "raised,fault,source",
+    [
+        pytest.param(
+            "bot", "the bot hit an internal fault", "BOT", id="a_fault_in_the_bot",
+            marks=pytest.mark.xfail(
+                strict=True,
+                reason="#584: the results picture's fault is named in the exception's own words",
+            ),
+        ),
+        pytest.param(
+            "refused", "no driver sits in seat 7", "LEAGUE", id="a_refusal",
+            marks=pytest.mark.xfail(
+                strict=True,
+                reason="#584: core has no source_of to read where the fault lies",
+            ),
+        ),
+    ],
+)
+async def test_a_resolution_fault_is_reported_and_the_text_still_posts(
+    tmp_path, raised, fault, source,
+):
+    """Main's round 5 Final Results, posted in a job, with composing the picture raising: the text
+    still posts, and the fault is handed back on the table for the job to say why the text stands.
+    A fault in the bot (a `RuntimeError` reading "no name could be resolved") is named by its kind
+    alone, never in its own words, and marked as the bot's; a refusal the league can put right (a
+    `ResultsDataError`) keeps its own words and is the league's."""
+    from leaguebot.core.models.fault_source import FaultSource, source_of
+    from leaguebot.image.models.results_drawing import ResultsDataError
     from leaguebot.image.services.aspects import image_results_post
     from leaguebot.results.services.publishing import results_drawing_composer
     from leaguebot.results.services.publishing.results_post_service import produce_session_results
@@ -637,11 +665,14 @@ async def test_a_resolution_fault_is_reported_and_the_text_still_posts(tmp_path)
     db_path, session_result = await _seeded(tmp_path)
     sent: list = []
     bot = _bot(db_path)
+    error = (
+        RuntimeError("no name could be resolved") if raised == "bot" else ResultsDataError(fault)
+    )
 
     with patch.object(
         results_drawing_composer,
         "build_drawing",
-        AsyncMock(side_effect=RuntimeError("no name could be resolved")),
+        AsyncMock(side_effect=error),
     ):
         with in_a_job():
             posted = await produce_session_results(
@@ -660,7 +691,9 @@ async def test_a_resolution_fault_is_reported_and_the_text_still_posts(tmp_path)
 
     # The fault is on the table for the job to say why the text stands, not logged from here.
     bot.output_router.post_log.assert_not_awaited()
-    assert posted.fault == "no name could be resolved"
+    assert posted.fault == fault
+    assert source_of(posted.fault) is FaultSource[source]
+    assert "no name could be resolved" not in posted.fault
     assert len(sent) == 1 and "file" not in sent[0][1]
 
 
