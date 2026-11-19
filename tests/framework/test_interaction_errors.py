@@ -87,6 +87,7 @@ def test_the_reply_opens_its_sentence_with_a_capital():
 # ── The log channel and the host's log ────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason="#584: the failure line still names the exception's class, not the kind of fault")
 async def test_a_failure_is_written_to_the_log_channel():
     interaction = _interaction()
 
@@ -96,11 +97,13 @@ async def test_a_failure_is_written_to_the_log_channel():
     line = interaction.client.output_router.post_log.await_args.args[0]
     assert "`/season approve`" in line
     assert f"<@{USER}>" in line
-    assert "KeyError" in line  # unwrapped from CommandInvokeError
+    assert "the bot hit an internal fault" in line  # unwrapped from CommandInvokeError
+    assert "KeyError" not in line
     assert "CommandInvokeError" not in line
     assert "Traceback" not in line
 
 
+@pytest.mark.xfail(strict=True, reason="#584: the failure line still names the exception's class, not the kind of fault")
 async def test_a_failure_names_the_member_by_display_name_and_mention():
     """As every line in the log channel does: the name for the reader, the mention for the
     account it was."""
@@ -110,11 +113,12 @@ async def test_a_failure_names_the_member_by_display_name_and_mention():
     await report_failure(interaction, KeyError("x"), what="`/season approve`")
 
     interaction.client.output_router.post_log.assert_awaited_once_with(
-        f"❌ `/season approve` failed for Alex (<@{USER}>) — KeyError. "
+        f"❌ `/season approve` failed for Alex (<@{USER}>) — the bot hit an internal fault. "
         "The details are in the host's log."
     )
 
 
+@pytest.mark.xfail(strict=True, reason="#584: the failure line still names the exception's class, not the kind of fault")
 async def test_a_failure_names_a_member_without_a_display_name_by_mention_alone():
     interaction = _interaction()
     interaction.user.display_name = None
@@ -122,7 +126,7 @@ async def test_a_failure_names_a_member_without_a_display_name_by_mention_alone(
     await report_failure(interaction, KeyError("x"), what="`/season approve`")
 
     interaction.client.output_router.post_log.assert_awaited_once_with(
-        f"❌ `/season approve` failed for <@{USER}> — KeyError. "
+        f"❌ `/season approve` failed for <@{USER}> — the bot hit an internal fault. "
         "The details are in the host's log."
     )
 
@@ -248,6 +252,7 @@ async def test_a_failure_before_any_command_was_found_is_still_answered():
 # ── Buttons, menus and forms ──────────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason="#584: the failure line still names the exception's class, not the kind of fault")
 async def test_a_failed_button_tells_the_member_and_the_log_channel():
     from leaguebot.framework.utils.league_server import LeagueView
 
@@ -264,9 +269,11 @@ async def test_a_failed_button_tells_the_member_and_the_log_channel():
     )
     line = interaction.client.output_router.post_log.await_args.args[0]
     assert line.startswith("❌ the “Approve” button failed")
-    assert "KeyError" in line
+    assert "the bot hit an internal fault" in line
+    assert "KeyError" not in line
 
 
+@pytest.mark.xfail(strict=True, reason="#584: the failure line still names the exception's class, not the kind of fault")
 async def test_a_failed_form_tells_the_member_and_the_log_channel():
     from leaguebot.framework.utils.league_server import LeagueModal
 
@@ -284,7 +291,8 @@ async def test_a_failed_form_tells_the_member_and_the_log_channel():
     )
     line = interaction.client.output_router.post_log.await_args.args[0]
     assert line.startswith("❌ the “Edit round” form failed")
-    assert "ValueError" in line
+    assert "the bot hit an internal fault" in line
+    assert "ValueError" not in line
 
 
 # ── Discord events ────────────────────────────────────────────────────────
@@ -292,7 +300,7 @@ async def test_a_failed_form_tells_the_member_and_the_log_channel():
 #: The log channel's line for a Discord event whose listener raised: the failure line's shape,
 #: with no member to name.
 EVENT_LINE = (
-    "❌ The bot's handling of the Discord event `on_message` failed — KeyError. "
+    "❌ The bot's handling of the Discord event `on_message` failed — the bot hit an internal fault. "
     "The details are in the host's log."
 )
 
@@ -312,10 +320,11 @@ def _handler_records(caplog) -> list[logging.LogRecord]:
     ]
 
 
+@pytest.mark.xfail(strict=True, reason="#584: the failure line still names the exception's class, not the kind of fault")
 async def test_a_failed_event_goes_to_the_host_log_and_the_log_channel(caplog):
     """A listener that raises reaches the one error handler for Discord events, which the
     builder attaches to the bot (architecture.md, "Errors and failures"): the full error goes to
-    the host's log, and one line, naming the event and the exception's type, to the log
+    the host's log, and one line, naming the event and the kind of fault, to the log
     channel."""
     from leaguebot.__main__ import create_bot
 
@@ -357,9 +366,10 @@ async def test_the_event_error_handler_never_raises(log_channel, caplog):
 # ── Timed jobs and background work (#453) ─────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason="#584: the failure line still names the exception's class, not the kind of fault")
 def test_a_job_failure_line_names_the_job_and_the_kind_of_fault():
     """A timed job or background task that fails has no member to name: its line names the job
-    and the exception's type, as the event line does, and says the detail is in the host's log.
+    and the kind of fault, as the event line does, and says the detail is in the host's log.
     Never the exception's message. A job with a key names it after the kind, labelled as a key
     and outside the code span, the form the README quotes."""
     from leaguebot.framework.utils.interaction_errors import job_failure_line
@@ -367,7 +377,7 @@ def test_a_job_failure_line_names_the_job_and_the_kind_of_fault():
     line = job_failure_line("log line retry", KeyError("secret detail"))
 
     assert line == (
-        "❌ The bot's timed job `log line retry` failed — KeyError. "
+        "❌ The bot's timed job `log line retry` failed — the bot hit an internal fault. "
         "The details are in the host's log."
     )
     assert "secret detail" not in line
@@ -375,7 +385,7 @@ def test_a_job_failure_line_names_the_job_and_the_kind_of_fault():
     keyed = job_failure_line("rsvp_notice", KeyError("secret detail"), key=12)
 
     assert keyed == (
-        "❌ The bot's timed job `rsvp_notice` (key 12) failed — KeyError. "
+        "❌ The bot's timed job `rsvp_notice` (key 12) failed — the bot hit an internal fault. "
         "The details are in the host's log."
     )
 

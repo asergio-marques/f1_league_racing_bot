@@ -98,6 +98,7 @@ async def test_a_database_it_cannot_read_does_not_kill_the_worker(caplog):
     post_log.assert_awaited_once_with(job_failure_line("log line retry", error), channel=channel)
 
 
+@pytest.mark.xfail(strict=True, reason="#584: the failure line still names the exception's class, not the kind of fault")
 async def test_one_entry_that_raises_does_not_stop_the_rest_or_the_loop(caplog):
     """Three kept lines, 101, 102 and 103, are due a retry; the database is locked as the first
     two are tried, so trying each of them raises `sqlite3.OperationalError`. The third is still
@@ -125,7 +126,8 @@ async def test_one_entry_that_raises_does_not_stop_the_rest_or_the_loop(caplog):
     [line] = post_log.await_args.args
     assert post_log.await_args.kwargs == {"channel": channel}
     assert line.startswith("❌")
-    assert "OperationalError" in line
+    assert "the bot could not read or write its database" in line
+    assert "OperationalError" not in line
     assert "2 kept lines" in line
     assert "database is locked" not in line
     assert "101" not in line and "102" not in line

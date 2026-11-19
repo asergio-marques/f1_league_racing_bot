@@ -358,6 +358,7 @@ EVERY_ARMING = [
 ]
 
 
+@pytest.mark.xfail(strict=True, reason="#584: the failure line still names the exception's class, not the kind of fault")
 @pytest.mark.parametrize("arm, job_id, key", EVERY_ARMING)
 async def test_a_failing_job_keeps_its_traceback(services, caplog, arm, job_id, key):
     """A job of the kind `a_kind` is armed on a paused scheduler, and the kind's handler raises
@@ -391,7 +392,8 @@ async def test_a_failing_job_keeps_its_traceback(services, caplog, arm, job_id, 
     [line] = report.await_args.args
     assert line.startswith("❌ The bot's timed job ")
     assert "a_kind" in line
-    assert "RuntimeError" in line
+    assert "the bot hit an internal fault" in line
+    assert "RuntimeError" not in line
     assert "the handler broke" not in line
     if key is None:
         assert "(key" not in line

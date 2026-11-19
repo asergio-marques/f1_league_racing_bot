@@ -301,74 +301,85 @@ def _failing_queue(record: _Recorder, starting: Any, error: BaseException) -> No
 
 @pytest.mark.parametrize("arrange, named, posted, ran, queue_started", [
     pytest.param(_failing_core_step, "expired review prompts",
-                 "❌ The bot's start-up step `expired review prompts` failed — _Fault. "
+                 "❌ The bot's start-up step `expired review prompts` failed — the bot hit an internal fault. "
                  "The details are in the host's log.",
                  ["expired review prompts", "hub", "amendment sweep", "missed phases"], True,
-                 id="a core step"),
+                 id="a core step",
+                 marks=pytest.mark.xfail(strict=True, reason="#584: the failure line still names the exception's class, not the kind of fault")),
     pytest.param(_failing_module_step, "RSVP views and deadlines",
-                 "❌ The bot's start-up step `RSVP views and deadlines` failed — _Fault. "
+                 "❌ The bot's start-up step `RSVP views and deadlines` failed — the bot hit an internal fault. "
                  "The details are in the host's log.",
                  ["hub", "missed check-in calls", "RSVP views and deadlines",
                   "missed check-in clean-ups", "missed phases"], True,
-                 id="a module's step"),
+                 id="a module's step",
+                 marks=pytest.mark.xfail(strict=True, reason="#584: the failure line still names the exception's class, not the kind of fault")),
     pytest.param(functools.partial(_failing_module_step_for_rounds,
                                    rounds=("round 2 in **Pro**",)),
                  "RSVP views and deadlines",
                  "❌ The bot's start-up step `RSVP views and deadlines` failed for round 2 in "
-                 "**Pro** — _Fault. The details are in the host's log.",
+                 "**Pro** — the bot hit an internal fault. The details are in the host's log.",
                  ["hub", "missed check-in calls", "RSVP views and deadlines",
                   "missed check-in clean-ups", "missed phases"], True,
-                 id="a module's step failing for one round"),
+                 id="a module's step failing for one round",
+                 marks=pytest.mark.xfail(strict=True, reason="#584: the failure line still names the exception's class, not the kind of fault")),
     pytest.param(functools.partial(_failing_module_step_for_rounds,
                                    rounds=("round 2 in **Pro**", "round 5 in **Am**")),
                  "RSVP views and deadlines",
                  "❌ The bot's start-up step `RSVP views and deadlines` failed for round 2 in "
-                 "**Pro** and round 5 in **Am** — _Fault. The details are in the host's log.",
+                 "**Pro** and round 5 in **Am** — the bot hit an internal fault. The details are in the host's log.",
                  ["hub", "missed check-in calls", "RSVP views and deadlines",
                   "missed check-in clean-ups", "missed phases"], True,
-                 id="a module's step failing for two rounds"),
+                 id="a module's step failing for two rounds",
+                 marks=pytest.mark.xfail(strict=True, reason="#584: the failure line still names the exception's class, not the kind of fault")),
     pytest.param(functools.partial(_failing_module_step_for_rounds,
                                    rounds=("round 2 in **Pro**", "round 5 in **Am**",
                                            "a round no longer there")),
                  "RSVP views and deadlines",
                  "❌ The bot's start-up step `RSVP views and deadlines` failed for round 2 in "
-                 "**Pro**, round 5 in **Am** and a round no longer there — _Fault. "
+                 "**Pro**, round 5 in **Am** and a round no longer there — the bot hit an internal fault. "
                  "The details are in the host's log.",
                  ["hub", "missed check-in calls", "RSVP views and deadlines",
                   "missed check-in clean-ups", "missed phases"], True,
-                 id="a module's step failing for three rounds, one gone"),
+                 id="a module's step failing for three rounds, one gone",
+                 marks=pytest.mark.xfail(strict=True, reason="#584: the failure line still names the exception's class, not the kind of fault")),
     pytest.param(functools.partial(_failing_module_step_for_rounds, rounds=()),
                  "RSVP views and deadlines",
-                 "❌ The bot's start-up step `RSVP views and deadlines` failed — _Fault. "
+                 "❌ The bot's start-up step `RSVP views and deadlines` failed — the bot hit an internal fault. "
                  "The details are in the host's log.",
                  ["hub", "missed check-in calls", "RSVP views and deadlines",
                   "missed check-in clean-ups", "missed phases"], True,
-                 id="a module's step whose error carries no round"),
+                 id="a module's step whose error carries no round",
+                 marks=pytest.mark.xfail(strict=True, reason="#584: the failure line still names the exception's class, not the kind of fault")),
     pytest.param(_failing_switch, "results",
-                 "❌ The bot's start-up step `results' switch` failed — SwitchNotSignedUp. "
+                 "❌ The bot's start-up step `results' switch` failed — the bot hit an internal fault. "
                  "The details are in the host's log.",
                  ["hub", "missed phases"], True,
-                 id="a module's switch read"),
+                 id="a module's switch read",
+                 marks=pytest.mark.xfail(strict=True, reason="#584: the failure line still names the exception's class, not the kind of fault")),
     pytest.param(functools.partial(_failing_switch, key="signup"), "signup",
-                 "❌ The bot's start-up step `signup's switch` failed — SwitchNotSignedUp. "
+                 "❌ The bot's start-up step `signup's switch` failed — the bot hit an internal fault. "
                  "The details are in the host's log.",
                  ["hub", "missed phases"], True,
-                 id="a module's switch read, its name not ending in s"),
+                 id="a module's switch read, its name not ending in s",
+                 marks=pytest.mark.xfail(strict=True, reason="#584: the failure line still names the exception's class, not the kind of fault")),
     pytest.param(_failing_list, "results",
-                 "❌ The bot's start-up step `results' start-up steps` failed — _Fault. "
+                 "❌ The bot's start-up step `results' start-up steps` failed — the bot hit an internal fault. "
                  "The details are in the host's log.",
                  ["hub", "missed phases"], True,
-                 id="a module's list of steps"),
+                 id="a module's list of steps",
+                 marks=pytest.mark.xfail(strict=True, reason="#584: the failure line still names the exception's class, not the kind of fault")),
     pytest.param(functools.partial(_failing_list, key="signup"), "signup",
-                 "❌ The bot's start-up step `signup's start-up steps` failed — _Fault. "
+                 "❌ The bot's start-up step `signup's start-up steps` failed — the bot hit an internal fault. "
                  "The details are in the host's log.",
                  ["hub", "missed phases"], True,
-                 id="a module's list of steps, its name not ending in s"),
+                 id="a module's list of steps, its name not ending in s",
+                 marks=pytest.mark.xfail(strict=True, reason="#584: the failure line still names the exception's class, not the kind of fault")),
     pytest.param(_failing_queue, "queue",
-                 "❌ The bot's start-up step `change queue start` failed — _Fault. "
+                 "❌ The bot's start-up step `change queue start` failed — the bot hit an internal fault. "
                  "The details are in the host's log.",
                  ["hub", "missed phases"], False,
-                 id="the queue's start"),
+                 id="the queue's start",
+                 marks=pytest.mark.xfail(strict=True, reason="#584: the failure line still names the exception's class, not the kind of fault")),
 ])
 async def test_a_failing_sweep_step_is_reported_to_the_log_channel_and_the_rest_carry_on(
     caplog, arrange, named, posted, ran, queue_started
