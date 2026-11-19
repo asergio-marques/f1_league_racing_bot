@@ -260,15 +260,23 @@ async def test_a_commanded_posting_refuses_and_posts_nothing(tmp_path):
     assert len(drawing.discarded) == 1
 
 
+@pytest.mark.xfail(strict=True, reason="#584: a drawing that raises is still named by its own "
+                                       "words, and the posting does not say where its fault lies")
 async def test_a_render_that_raises_is_reported_rather_than_propagated(tmp_path):
-    """A render fault reaching the approval would fail a season over a picture."""
+    """A render fault reaching the approval would fail a season over a picture. Pro's calendar
+    posted while its drawing raises "Inkscape is not installed": the textual calendar is posted,
+    the problem names the kind of fault and never the raised words, and the fault is the bot's."""
+    from leaguebot.core.models.fault_source import FaultSource
+
     db_path = await _make_db(tmp_path, name="cal_render_raises")
 
     result, channel, _ = await _post(
         db_path, drawing=CalendarDrawingStub(fault=RuntimeError("Inkscape is not installed"))
     )
 
-    assert "Inkscape is not installed" in result.problem
+    assert result.problem == "the bot hit an internal fault"
+    assert "Inkscape is not installed" not in result.problem
+    assert result.fault_source is FaultSource.BOT
     assert "Pro" in _sent_text(channel)
 
 
