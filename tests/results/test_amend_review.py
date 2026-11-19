@@ -653,8 +653,6 @@ REACH_FAULT = (
 )
 
 
-@pytest.mark.xfail(strict=True, reason="#513: the panel tells the admin to repair the channels "
-                   "whatever the fault, and approval_faults gives no kind")
 @pytest.mark.parametrize("kind", ["REACH", "SEASON"], ids=["bot-not-in-server", "season-unread"])
 async def test_the_panel_names_no_channel_command_for_a_fault_that_is_not_a_channel(kind):
     """The panel is drawn while the approval is refused for a fault that is not a channel's: the
