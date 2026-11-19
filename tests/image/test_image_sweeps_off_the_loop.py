@@ -583,9 +583,6 @@ def _parsed_where(monkeypatch) -> list[threading.Thread]:
     return threads
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#584: the render has no drawing-fault problem kind yet"
-)
 async def test_a_render_parses_its_template_off_the_loop(monkeypatch):
     """The calendar template rendered with a builder that fails after the parse: the parse runs
     once, in a worker thread and never on the loop, the builder's fault still comes back as a
@@ -658,9 +655,6 @@ async def test_a_render_with_no_fallback_raises_a_fault_in_the_bot(monkeypatch, 
 
 
 @pytest.mark.parametrize("where", ["data", "fill"])
-@pytest.mark.xfail(
-    strict=True, reason="#584: the render names a fault in the bot by the exception's message"
-)
 async def test_a_render_with_a_fallback_returns_a_fault_in_the_bot_in_plain_words(
     monkeypatch, where
 ):

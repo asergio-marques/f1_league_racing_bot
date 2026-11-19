@@ -24,8 +24,10 @@ from pathlib import Path
 
 from dataclasses import dataclass, field as dataclass_field
 
+from leaguebot.framework.utils.interaction_errors import describe_fault
 from leaguebot.image.models.image_constants import NOTICE_TIER_COLOURS_NOT_APPLIED
 from leaguebot.image.models.image_module import (
+    PROBLEM_DRAWING_FAULT,
     PROBLEM_NOT_SVG,
     PROBLEM_RASTERISER,
     PROBLEM_UNKNOWN_IMAGE_TYPE,
@@ -638,6 +640,19 @@ class _Drawn:
     notices: list[RenderNotice] = dataclass_field(default_factory=list)
 
 
+def _drawing_problem(exc: Exception, image_type: str, refusal_words: str) -> Problem:
+    """The problem a failed build or fill comes back as. A `DrawingRefused` is the league's to
+    put right and keeps its own words (*refusal_words*); any other exception is a fault in the
+    bot, named by its kind alone, its detail being in the log the caller has just written."""
+    if isinstance(exc, DrawingRefused):
+        return Problem(
+            kind=PROBLEM_UNRESOLVED_VALUE, detail=refusal_words, template_key=image_type
+        )
+    return Problem(
+        kind=PROBLEM_DRAWING_FAULT, detail=describe_fault(exc), template_key=image_type
+    )
+
+
 def _draw(
     path: Path,
     image_type: str,
@@ -658,7 +673,8 @@ def _draw(
     A template that cannot be read, a spec that cannot be built, data the verify finds unfit, a
     fill that fails and a field the fill cannot resolve come back as a problem, and a palette that
     cannot be applied and what the fill substituted as notices: the render's own fallback, which
-    the posting paths fall back from to text. A fault the verify meets in counting the template's
+    the posting paths fall back from to text. A refusal the league can put right is a problem in
+    its own words; a fault in the bot is an internal problem naming only its kind. A fault the verify meets in counting the template's
     mandatory ids is not caught here: it leaves the worker and `off_the_loop` raises it out of
     the render, for the caller's place-5 fallback.
 
@@ -666,7 +682,8 @@ def _draw(
     the league caused and can put right. Any other exception is a fault in the bot, and a caller
     with no fallback to text (the preview) asks for it raised (*raise_faults*), so that it reaches
     its command's failure path and is not shown to a league in Python's words. The posting paths
-    keep the default and fall back as before.
+    keep the default and fall back from an internal problem, whose detail is the kind of fault
+    and never the exception's message.
     """
     from leaguebot.image.utils.svg_document import SvgError, load_svg
     from leaguebot.image.utils.svg_fill import fill
@@ -698,10 +715,8 @@ def _draw(
             raise
         log.exception("render: spec build failed for %s", image_type)
         return _Drawn(
-            problem=Problem(
-                kind=PROBLEM_UNRESOLVED_VALUE,
-                detail=f"the data for this image could not be assembled — {exc}",
-                template_key=image_type,
+            problem=_drawing_problem(
+                exc, image_type, f"the data for this image could not be assembled — {exc}"
             ),
             notices=notices,
         )
@@ -721,10 +736,8 @@ def _draw(
             raise
         log.exception("render: fill failed for %s", image_type)
         return _Drawn(
-            problem=Problem(
-                kind=PROBLEM_UNRESOLVED_VALUE,
-                detail=f"the template could not be filled — {exc}",
-                template_key=image_type,
+            problem=_drawing_problem(
+                exc, image_type, f"the template could not be filled — {exc}"
             ),
             notices=notices,
         )
