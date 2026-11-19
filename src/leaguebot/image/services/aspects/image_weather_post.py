@@ -25,6 +25,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from leaguebot.core.models.fault_source import FaultWords, source_of
 from leaguebot.image.models.forecast_values import ForecastValues
 from leaguebot.image.models.image_module import PostingOrigin
 
@@ -42,7 +43,8 @@ class ForecastRender:
 
     *png* is None wherever the textual forecast should be posted instead — the module off, the
     aspect off, the template invalid, or the render having failed. The caller does not need to
-    know which: every one of them means "post the text you were going to post anyway".
+    know which: every one of them means "post the text you were going to post anyway". A *problem*
+    is marked with where its fault lies (`FaultWords`), which `lines_of` hands on to its line.
     """
 
     png: Path | None = None
@@ -85,6 +87,11 @@ async def build_drawing_for_round(
         division_tier=tier if tier else None,
         season_number=context.division.season_number,
     )
+
+
+def _fault_words(problem) -> FaultWords | None:
+    """The words of a render's *problem*, marked with where its fault lies, or None where it has none."""
+    return FaultWords(problem.detail, problem.source) if problem else None
 
 
 async def render_forecast(
@@ -130,14 +137,14 @@ async def render_forecast(
 
     if decision.rejects:
         return ForecastRender(
-            problem=(decision.problem.detail if decision.problem else None),
+            problem=_fault_words(decision.problem),
             rejects=True,
             notices=decision.notices,
         )
 
     if not decision.posts_image:
         return ForecastRender(
-            problem=(decision.problem.detail if decision.problem else None),
+            problem=_fault_words(decision.problem),
             notices=decision.notices,
         )
 
@@ -173,12 +180,16 @@ def fault(what: str, detail: str) -> str:
 
 
 def lines_of(what: str, render: ForecastRender) -> tuple[str, ...]:
-    """The lines a render's notices and problem make, naming *what* they pertain to."""
+    """The lines a render's notices and problem make, naming *what* they pertain to.
+
+    The problem's line is marked with where its fault lies (`FaultWords`): the posting module that
+    writes the line adds what puts it right, as the picture's fault calls for.
+    """
     from leaguebot.image.services.render.image_render_service import ImageRenderService
 
     lines: list[str] = []
     if render.notices:
         lines.append(ImageRenderService.format_notices(render.notices, subject=what))
     if render.problem:
-        lines.append(fault(what, render.problem))
+        lines.append(FaultWords(fault(what, render.problem), source_of(render.problem)))
     return tuple(lines)

@@ -257,10 +257,6 @@ CONVERTER_ABSENT_REMEDY = (
     ),
     pytest.param(
         "converter absent", CONVERTER_ABSENT_WORDS, None, id="converter absent",
-        marks=pytest.mark.xfail(
-            strict=True,
-            reason="#584: the forecast's line says nothing of what puts the converter's absence right",
-        ),
     ),
     pytest.param("round not found", "the round could not be found", None, id="round not found"),
     pytest.param("images off", None, None, id="images off"),

@@ -55,6 +55,7 @@ from leaguebot.framework.models.change import (
     drawn_lines_kept,
 )
 from leaguebot.core.models.division import DivisionStatus
+from leaguebot.core.models.fault_source import FaultSource, source_of
 from leaguebot.core.models.round import Round, RoundFormat, RoundStatus
 from leaguebot.framework.services.posting import standing_posts
 from leaguebot.framework.services.queue.change_queue import (
@@ -69,6 +70,7 @@ from leaguebot.framework.services.queue.change_types import (
     StepView,
 )
 from leaguebot.framework.services.posting.notice_handler import send_notice
+from leaguebot.core.services.modules.image_drawing import picture_remedy
 from leaguebot.core.services.seasons.season_service import division_on, round_facts_on
 from leaguebot.core.services.rounds.round_moments import clean_up_moment
 from leaguebot.core.services.rounds.round_steps import judge_kept, named_now, round_number_now
@@ -142,6 +144,19 @@ def _value(ctx: StepContext, key: str, default: Any = None) -> Any:
 
 def _occasion(phase: int | None) -> str:
     return "mystery round notice" if phase == 0 else f"Phase {phase} forecast"
+
+
+def _with_host_remedy(line: str) -> str:
+    """*line*, the reason a forecast's picture was not drawn, with what puts it right added where
+    the reason is that Inkscape is not installed: the host must install it, and the next forecast
+    is then posted with its picture. No command posts a forecast again, so that is what posts it.
+    A line for any other reason stands as it is."""
+    if source_of(line) is not FaultSource.HOST:
+        return line
+    remedy = picture_remedy(
+        FaultSource.HOST, template="", then="the next forecast is posted with its picture"
+    )
+    return f"{line} To put it right: {remedy}"
 
 
 def _not_due(
@@ -318,6 +333,7 @@ def forecast_steps(*, now: Callable[[], datetime], drawing: ImageDrawing) -> dic
                 round_id, phase,
                 values=forecast_values(phase, payload, payload if phase == 1 else first),
             )
+            lines = tuple(_with_host_remedy(line) for line in lines)
         try:
             parts = await forecast_cleanup_service.post_phase_message(
                 ctx.bot,
