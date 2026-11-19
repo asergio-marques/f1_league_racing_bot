@@ -17,7 +17,6 @@ BOT = "the fault is in the bot, and its detail is in the host's log"
 HOST = "Inkscape is not installed on the machine running the bot, and the host must install it"
 
 
-@pytest.mark.xfail(strict=True, reason="#584: core has no picture_remedy yet")
 @pytest.mark.parametrize(
     ("source", "then", "otherwise", "expected"),
     [
@@ -40,7 +39,6 @@ def test_a_picture_remedy_reads_by_where_the_fault_lies(source, then, otherwise,
     assert remedy == expected
 
 
-@pytest.mark.xfail(strict=True, reason="#584: core has no CONVERTER_ABSENT yet")
 def test_the_converter_core_names_is_the_one_the_image_module_runs():
     """Core cannot import the image module, so it carries the converter's name as a copy."""
     from leaguebot.core.services.modules.image_drawing import CONVERTER_ABSENT

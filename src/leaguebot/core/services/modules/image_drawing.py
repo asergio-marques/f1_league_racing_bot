@@ -36,6 +36,38 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
+from leaguebot.core.models.fault_source import FaultSource
+from leaguebot.framework.utils.interaction_errors import BOT_FAULT
+
+#: How the converter's absence is worded where a picture's line says what puts it right. A copy
+#: of the image module's `CONVERTER_NAME`, which core cannot import; a test pins that they agree.
+CONVERTER_ABSENT = (
+    "Inkscape is not installed on the machine running the bot, and the host must install it"
+)
+
+
+def picture_remedy(
+    source: FaultSource,
+    *,
+    template: str,
+    then: str | None = None,
+    otherwise: str | None = None,
+) -> str:
+    """What puts a picture right, worded by where its fault lies; the one wording every line reuses.
+
+    A fault the league can put right (`LEAGUE`) gives *template*, the line's own remedy. A fault
+    in the bot (`BOT`) says that it is the bot's and that its detail is in the host's log; the
+    converter's absence (`HOST`) says that the host must install it. Each then continues with
+    what posts the picture next, "once it is cleared" or "once it has", *then* being that step.
+    Where nothing posts it, *otherwise* is the line's own tail and stands in its place. Exactly
+    one of *then* and *otherwise* is given for a source that is not the league's.
+    """
+    if source is FaultSource.LEAGUE:
+        return template
+    if source is FaultSource.BOT:
+        return f"{BOT_FAULT}; " + (f"once it is cleared, {then}" if then else f"{otherwise}")
+    return f"{CONVERTER_ABSENT}; " + (f"once it has, {then}" if then else f"{otherwise}")
+
 
 @dataclass(frozen=True)
 class CapacityProblem:

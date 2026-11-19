@@ -145,6 +145,12 @@ def start_up_failure_line(step: str, error: BaseException) -> str:
     )
 
 
+#: How a fault in the bot is worded where a picture's line says what puts it right: that the
+#: fault is the bot's, and that its detail is in the host's log, which `describe_fault`'s kind
+#: words never carry.
+BOT_FAULT = "the fault is in the bot, and its detail is in the host's log"
+
+
 def describe_fault(error: BaseException) -> str:
     """The kind of fault *error* is, in plain words, never the exception itself."""
     if isinstance(error, app_commands.CommandInvokeError):
