@@ -26,7 +26,10 @@ from leaguebot.framework.models.change import AuditRecord
 from leaguebot.core.models.season import Season
 from leaguebot.framework.services.queue.setting_change import Saved
 from leaguebot.results.models.amendment_state import SeasonAmendmentState
-from leaguebot.results.services.points.points_amendment_faults import approval_faults
+from leaguebot.results.services.points.points_amendment_faults import (
+    ApprovalFaultKind,
+    approval_faults,
+)
 from leaguebot.results.services.round_amendment.amendment_writes import open_amendment_in_season
 from leaguebot.results.utils.points_ordering import ordering_message, ordering_violations
 
@@ -201,21 +204,32 @@ async def review_panel(
     # press: an approval that cannot be published is refused entire rather than
     # half-made (#187), and a manager should meet that while deciding rather than
     # after pressing Approve.
-    channel_faults = await approval_faults(
+    faults = await approval_faults(
         db_path, season.id, bot, module_service=module_service, attendance=attendance,
         drawing=drawing,
     )
-    if channel_faults:
-        bullet_list = "\n• ".join(channel_faults)
+    if faults.kind is ApprovalFaultKind.SEASON:
+        diff += (
+            "\n\n⛔ **These changes cannot be approved — the season could not be read.**\n"
+            "Nothing would be changed."
+        )
+    elif faults.lines:
+        bullet_list = "\n• ".join(faults.lines)
         diff += (
             f"\n\n⛔ **These changes cannot be approved — the result could not "
             f"be published:**\n• {bullet_list}\n"
             f"Approving rescores every round of every division and reposts each one, so "
             f"it is refused entire while any of that cannot be done — nothing would "
-            f"be changed. Repair the channels with `/results channel results`, "
-            f"`/results channel standings`, `/attendance channel attendance` or "
-            f"`/results channel verdicts`, then run `/results amend review` again."
+            f"be changed."
         )
+        # Only a channel is repaired by a channel command: a fault of the bot's reach of the
+        # server carries its own next step (#513).
+        if faults.kind is ApprovalFaultKind.CHANNELS:
+            diff += (
+                " Repair the channels with `/results channel results`, "
+                "`/results channel standings`, `/attendance channel attendance` or "
+                "`/results channel verdicts`, then run `/results amend review` again."
+            )
 
     # **Not while a round is being amended** (#345, decided 2026-09-21). An amendment's
     # first stage writes its corrections and recalculates its division, publishing nothing

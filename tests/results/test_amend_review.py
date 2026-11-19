@@ -181,6 +181,7 @@ async def _review(
     diff: str = "P1: 25 → 26",
     panel_errors=None,
     panel_faults=None,
+    reported=None,
     held=(None, None),
 ):
     """Run the command, answering the panel with *press* ("approve", "reject" or None).
@@ -191,7 +192,8 @@ async def _review(
     returns where it does not wait.
 
     *panel_faults* is what `approval_faults` reports while the panel is drawn — the
-    channels the approval would have to post to (#187).
+    channels the approval would have to post to (#187), reported as channel faults. *reported*,
+    where given, is reported in their place: an `ApprovalFaults` of another kind (#513).
 
     *held* is the open round amendment the panel finds, if any (#345).
 
@@ -229,6 +231,16 @@ async def _review(
             return await original(self)
         return await _answer_panel(self)
 
+    async def _approval_faults(*_args, **_kwargs):
+        from leaguebot.results.services.points.points_amendment_faults import (
+            ApprovalFaultKind,
+            ApprovalFaults,
+        )
+
+        if reported is not None:
+            return reported
+        return ApprovalFaults(tuple(panel_faults or ()), ApprovalFaultKind.CHANNELS)
+
     discord.ui.View.wait = _wait  # type: ignore[assignment]
     try:
         with patch(
@@ -242,7 +254,7 @@ async def _review(
             new=AsyncMock(return_value=panel_errors or []),
         ) as validate, patch(
             "leaguebot.results.services.points.amendment_mode_service.approval_faults",
-            new=AsyncMock(return_value=panel_faults or []),
+            new=AsyncMock(side_effect=_approval_faults),
         ) as faults, patch(
             "leaguebot.results.services.points.amendment_mode_service.open_amendment_in_season",
             new=AsyncMock(side_effect=list(held)),
@@ -633,6 +645,45 @@ async def test_the_panel_names_both_faults_when_both_apply():
     assert "position 1 (10 pts) < position 2 (25 pts)" in panel
     assert "could not" in panel and "published" in panel
     assert CHANNEL_FAULT in panel
+
+
+REACH_FAULT = (
+    "The bot is not in this server, so nothing can be reposted. "
+    "Check that it is still a member and try again."
+)
+
+
+@pytest.mark.parametrize("kind", ["REACH", "SEASON"], ids=["bot-not-in-server", "season-unread"])
+async def test_the_panel_names_no_channel_command_for_a_fault_that_is_not_a_channel(kind):
+    """The panel is drawn while the approval is refused for a fault that is not a channel's: the
+    bot is no longer in the league's server, or the season cannot be read. No channel command
+    would mend either, so the panel names none. The server fault is shown with its own next step,
+    and the panel says nothing would be changed; the season's is shown under a heading of its
+    own, "Nothing would be changed." beneath it, with no publishing heading and no bullet."""
+    from leaguebot.results.services.points.points_amendment_faults import (
+        ApprovalFaultKind,
+        ApprovalFaults,
+    )
+
+    cog = _make_cog()
+    interaction = _interaction()
+    line = REACH_FAULT if kind == "REACH" else "The season could not be read."
+
+    await _review(cog, interaction, reported=ApprovalFaults((line,), ApprovalFaultKind[kind]))
+
+    panel = _panel(interaction)
+    assert "Repair the channels" not in panel
+    if kind == "REACH":
+        assert REACH_FAULT in panel
+        assert "nothing would" in panel.lower()
+        assert "/results channel" not in panel
+    else:
+        assert "the season could not be read" in panel
+        assert "Nothing would be changed." in panel
+        assert panel.lower().count("nothing would be changed") == 1
+        assert "Approving rescores" not in panel
+        assert "could not be published" not in panel
+        assert "•" not in panel
 
 
 async def test_a_sound_season_earns_no_channel_warning():

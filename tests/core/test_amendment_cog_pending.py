@@ -8,8 +8,9 @@ the ask and again as the change starts, in the same words, so that a round or a 
 meanwhile is caught there; a clash with another round of the division is refused, as the core
 specification requires of every command that would create one.
 
-The amendment of a round of a season being raced, with its confirmation and its rules, is tested in
-`test_round_amend_rules_gate.py`.
+The amendment of a round of a season being raced is tested elsewhere: its confirmation and its rules
+in `test_round_amend_rules_gate.py`, and its carrying out on the change queue in
+`test_round_amend_change.py`.
 """
 from __future__ import annotations
 

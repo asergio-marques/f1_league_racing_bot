@@ -7,6 +7,8 @@ amendment's own tables are results': its readers are in `amendment_mode_service`
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
+from enum import Enum
 from typing import TYPE_CHECKING
 
 from leaguebot.framework.services.switches.module_service import ModuleService, SwitchNotSignedUp
@@ -22,14 +24,43 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
+class ApprovalFaultKind(Enum):
+    """What an approval's faults are about, which says what would mend them."""
+
+    SEASON = "season"
+    """The season cannot be read: nothing was changed, and there is nothing to repair."""
+
+    REACH = "reach"
+    """The bot cannot reach the server, or its own member in it: the line carries its own next step."""
+
+    CHANNELS = "channels"
+    """One or more channels the approval must post to are missing or unpostable: the channel
+    commands repair them."""
+
+
+@dataclass(frozen=True)
+class ApprovalFaults:
+    """The faults that would stop an approval, and what kind they are.
+
+    **The kinds never mix.** The season is read first and refuses alone; the bot's reach of the
+    server is asked before any channel, and `repost_channel_faults` returns that line alone
+    where it fails, as attendance's channel faults return nothing then. So *lines* is either
+    every one of them channel faults, or exactly one fault of another kind, and a caller that
+    offers the channel commands as the remedy need only look at *kind*.
+    """
+
+    lines: tuple[str, ...]
+    kind: ApprovalFaultKind
+
+
 async def approval_faults(
     db_path: str, season_id: int, bot: LeagueBot, *, module_service: ModuleService,
     attendance: AttendanceAfterReview, drawing: ImageDrawing,
-) -> list[str]:
+) -> ApprovalFaults:
     """Everything that would stop an approved amendment being published.
 
-    Returns the faults as lines a league can read, and an empty list where the whole
-    cascade could be carried out.
+    Returns the faults as lines a league can read, with their kind (`ApprovalFaultKind`), and no
+    lines where the whole cascade could be carried out.
 
     **Called three times, from one reading.** `/results amend review` calls it to draw its
     panel, so a manager sees what is wrong while deciding rather than after pressing Approve;
@@ -59,9 +90,13 @@ async def approval_faults(
     """
     # Checked before the approval writes anything.
     if not await season_exists(db_path, season_id):
-        return ["The season could not be read, so nothing was changed."]
+        return ApprovalFaults(("The season could not be read.",), ApprovalFaultKind.SEASON)
 
     guild = (await league_guild(bot)) if bot is not None else None
+    _, reach = results_post_service.repost_reach_fault(guild, bot)
+    if reach:
+        return ApprovalFaults(tuple(reach), ApprovalFaultKind.REACH)
+
     faults = await results_post_service.repost_channel_faults(
         db_path, season_id, guild, bot, drawing=drawing
     )
@@ -79,4 +114,4 @@ async def approval_faults(
     if attendance_on:
         faults += await attendance.recalculation_faults(season_id, guild)
 
-    return faults
+    return ApprovalFaults(tuple(faults), ApprovalFaultKind.CHANNELS)

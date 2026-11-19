@@ -81,7 +81,10 @@ from leaguebot.core.services.seasons.season_service import (
 from leaguebot.framework.utils.log_lines import refusal_line, refuse, reply_reason
 from leaguebot.core.utils.season_gate import stage_refusal
 from leaguebot.results.services.review import review_posting, review_verdicts
-from leaguebot.results.services.points.points_amendment_faults import approval_faults
+from leaguebot.results.services.points.points_amendment_faults import (
+    ApprovalFaultKind,
+    approval_faults,
+)
 from leaguebot.results.services.points.amendment_mode_service import (
     get_amendment_state,
     validate_modification_ordering,
@@ -266,7 +269,9 @@ def points_amendment_change(
     module_service: ModuleService,
     driver_names_read: AwaitedHook | None = None,
 ) -> ChangeType:
-    """The change that approves a season's staged points; see the module. *attendance* is the
+    """The change that approves a season's staged points; see the module. A refusal for the faults
+    `approval_faults` returns offers the channel commands only for a channel fault, and names the
+    season alone, with no publishing heading, where it cannot be read. *attendance* is the
     hook the builder hands every change type that reaches attendance, *drawing* the image module's, which draws the verdicts' pictures, *now* the queue's clock,
     and *module_service* the module switches its check of the channels asks of."""
 
@@ -317,16 +322,25 @@ def points_amendment_change(
             db_path, season_id, ctx.bot, module_service=module_service, attendance=attendance,
             drawing=drawing,
         )
-        if faults:
-            bullets = "\n• ".join(faults)
+        if faults.kind is ApprovalFaultKind.SEASON:
+            return Verdict.refuse(
+                "⛔ Amendment not approved — the season could not be read. **Nothing has been "
+                "changed** — not the season's points, not the staged changes, not amendment mode."
+            )
+        if faults.lines:
+            bullets = "\n• ".join(faults.lines)
+            repair = (
+                " Repair the channels above and review again."
+                if faults.kind is ApprovalFaultKind.CHANNELS else ""
+            )
             return Verdict.refuse(
                 f"⛔ Amendment not approved — the result could not be published:\n"
                 f"• {bullets}\n"
                 f"**Nothing has been changed** — not the season's points, not the staged "
                 f"changes, not amendment mode. Approving rescores and reposts every round of "
-                f"every division, so it is refused entire rather than left half-published. "
-                f"Repair the channels above and review again.",
-                "\n".join(faults),
+                f"every division, so it is refused entire rather than left half-published."
+                f"{repair}",
+                "\n".join(faults.lines),
             )
         return Verdict.go()
 
