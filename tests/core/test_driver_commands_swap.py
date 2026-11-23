@@ -88,7 +88,6 @@ def _shown(bot, guild) -> tuple[Any, Any]:
 # ── The swap ──────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=PENDING)
 @pytest.mark.parametrize("on", [True, False], ids=["test-mode-on", "test-mode-off"])
 async def test_the_swap_shows_the_driver_group_the_flag_calls_for(tmp_path, on):
     """Both `/driver` cogs are loaded, the member group on the global tree. With test mode on, the
@@ -113,7 +112,6 @@ async def test_the_swap_shows_the_driver_group_the_flag_calls_for(tmp_path, on):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=PENDING)
 async def test_a_sync_discord_refuses_is_raised(tmp_path):
     """Test mode is on and Discord refuses the sync: the swap raises Discord's refusal, for the
     step that runs it to report."""
