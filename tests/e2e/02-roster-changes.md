@@ -121,3 +121,220 @@ server: delete it by hand at the end if you wish.
    - **Host log:** `Started on a restored database.`, before `Logged in as <bot user> (id=<bot id>)`.
    - `bot.bkup.db`, `scheduler.bkup.db` and `backup.lock` are still in the bot host folder.
    - Nothing posted on Discord.
+
+---
+
+## Part B — Once the season is running
+
+Season #1 is ongoing. The roster is fixed now: test mode replicates the live flow, where drivers
+are seated in placements. The team list is fixed too, but a team's role is not.
+
+### The roster commands refused
+
+5. **Do:** `/test-mode roster add driver_name:Yann Young team_name:BRV division:Division 2 nationality:French`
+
+   **Expect:**
+   - **Reply:** `⛔ The test roster can only be changed while the season is in placements.`
+   - **Log:** ``⛔ `/test-mode roster add` refused for <you> — The test roster can only be changed while the season is in placements.``
+   - No change asked: Division 2's `Bravo Motorsport` stays empty.
+
+6. **Do:** `/test-mode roster add-bulk`
+
+   **Expect:**
+   - **Reply:** `⛔ The test roster can only be changed while the season is in placements.` No form
+     opens: the stage is judged before it would.
+   - **Log:** ``⛔ `/test-mode roster add-bulk` refused for <you> — The test roster can only be changed while the season is in placements.``
+
+7. **Do:** `/test-mode roster remove user_id:9000000000000000001`
+
+   **Expect:**
+   - **Reply:** `⛔ The test roster can only be changed while the season is in placements.`
+   - **Log:** ``⛔ `/test-mode roster remove` refused for <you> — The test roster can only be changed while the season is in placements.``
+
+8. **Do:** `/test-mode roster clear division:Division 1`
+
+   **Expect:**
+   - **Reply:** `⛔ The test roster can only be changed while the season is in placements.`
+   - **Log:** ``⛔ `/test-mode roster clear` refused for <you> — The test roster can only be changed while the season is in placements.``
+
+9. **Listing is left free.** **Do:** `/test-mode roster list division:Division 2`
+
+   **Expect:** as `00-base.md` step 29: headed `**Fake Driver Roster — Division 2**`, the 21
+   Division 2 drivers, Aaron Abbott alone in `Charlie GP`, none in `Bravo Motorsport`. Steps 5
+   to 8 changed nothing. No log line.
+
+### Other refusals of a running season
+
+10. **`/test-mode set-former-driver` takes a server member**, and no fake driver is one, so the
+    only account it can be pointed at is a real member's, and no real member holds a driver
+    profile here. **Do:** `/test-mode set-former-driver user:<yourself> value:True`
+
+    **Expect:**
+    - **Reply:** `⛔ No driver profile found for user <your id> on this server.`
+    - **Log:** ``⛔ `/test-mode set-former-driver` refused for <you> — No driver profile found for user <your id> on this server.``
+
+11. **Do:** `/season setup game_edition:25`
+
+    **Expect:**
+    - **Reply:** `❌ A season is currently active for this server. Complete it before starting a new one.`
+    - **Log:** ``⛔ `/season setup` refused for <you> — A season is currently active for this server. Complete it before starting a new one.``
+
+### The team list, fixed
+
+12. **Do:** `/team add`
+
+    **Expect:**
+    - **Reply:** ``⛔ The team list is fixed for Season 1 now that its configuration has been confirmed. `/team add` is available again once the season has ended, or while a new season is in configuration.``
+      No form opens.
+    - **Log:** ``⛔ `/team add` refused for <you> — The team list is fixed for Season 1 now that its configuration has been confirmed. `/team add` is available again once the season has ended, or while a new season is in configuration.``
+
+13. **Do:** `/team remove name:KLO`
+
+    **Expect:**
+    - **Reply:** ``⛔ The team list is fixed for Season 1 now that its configuration has been confirmed. `/team remove` is available again once the season has ended, or while a new season is in configuration.``
+    - **Log:** ``⛔ `/team remove` refused for <you> — The team list is fixed for Season 1 now that its configuration has been confirmed. `/team remove` is available again once the season has ended, or while a new season is in configuration.``
+
+### A team's role, changed while the season runs
+
+14. **Do:** `/team modify team:ALP`
+
+    **Expect:** the form **Modify a team** opens holding **one field only**, **Role**, filled
+    with `@Alpha Racing`. The **Shorthand** and **Full name** fields are not offered: the team
+    list is fixed.
+
+    **Then do:** choose `@Lima Racing` in **Role**, and submit.
+
+    **Expect:**
+    - **Ack:** `Changing **Alpha Racing**`
+    - **Then:**
+      ```
+      ✅ Team "Alpha Racing" updated.
+        Role: <@&<Lima Racing role id>>
+      ```
+      No line of drivers moved: a fake driver holds no roles and is left out of the move
+      (`TeamRoleService.seated_user_ids_on`).
+    - **Log:**
+      ```
+      <you> | /team modify | Success
+        team: Alpha Racing
+        shorthand: ALP
+        role: Lima Racing (<@&<Lima Racing role id>>)
+        seated drivers moved: 0
+      ```
+    - **Posts:** nothing. `#d1-lineup` and `#d2-lineup` keep their pictures: a lineup draws a
+      team by its full name, never its role, and a change of role reposts no lineup.
+
+15. **A role another team holds.** **Do:** `/team modify team:ALP`, choose `@Bravo Motorsport` in
+    **Role**, and submit.
+
+    **Expect:**
+    - **Reply:** `⛔ <@&<Bravo Motorsport role id>> is already the role of "BRV". A role belongs to one team only. Nothing was written.`
+    - **Log:** `⛔ the “Modify a team” form refused for <you> — <@&<Bravo Motorsport role id>> is already the role of "BRV". A role belongs to one team only. Nothing was written.`
+
+16. **Do:** `/team modify team:ALP`. The form opens with **Role** filled with `@Lima Racing`, as
+    step 14 left it. Choose `@Alpha Racing`, and submit.
+
+    **Expect:**
+    - **Ack:** `Changing **Alpha Racing**`
+    - **Then:**
+      ```
+      ✅ Team "Alpha Racing" updated.
+        Role: <@&<Alpha Racing role id>>
+      ```
+    - **Log:** as step 14, with `role: Alpha Racing (<@&<Alpha Racing role id>>)`.
+    - `@Lima Racing` is free again, for Part D.
+
+17. **A form submitted as it stands.** **Do:** `/team modify team:ALP`, and submit the form
+    without touching it.
+
+    **Expect:**
+    - **Reply:** `Nothing changed: "Alpha Racing" stands as it was.` No acknowledgement: nothing
+      is asked of the change queue.
+    - **Log:**
+      ```
+      <you> | /team modify | Nothing changed
+        team: Alpha Racing
+        the form was submitted as it stood
+      ```
+
+18. **The Reserve team.** The autocomplete does not offer it: type it. **Do:** `/team modify team:Reserve`
+
+    **Expect:**
+    - **Reply:** ``⛔ The Reserve team's role is set with `/team reserve-role`, and its names are not a league's to change.`` No form opens.
+    - **Log:** ``⛔ `/team modify` refused for <you> — The Reserve team's role is set with `/team reserve-role`, and its names are not a league's to change.``
+
+19. **Do:** `/team modify team:XYZ`
+
+    **Expect:**
+    - **Reply:** ``⛔ No team in the server's list has the shorthand `XYZ`.``
+    - **Log:** ``⛔ `/team modify` refused for <you> — No team in the server's list has the shorthand `XYZ`.``
+
+### The lineups
+
+**No command in this spec reposts a lineup.** The bot posts a division's lineup at the season's
+approval, at a mid-season confirmation of placements, on `/driver move`, `release` and `sack`,
+and after a stewarding verdict that moves a driver (`lineup_posting`), every one of which needs a
+real driver or belongs to another spec. A change of a team's role plans role moves only, a test
+roster change posts nothing, and in placements no lineup is posted until approval. `/team lineup`
+draws the lineup on demand, which is what this section checks.
+
+20. **Do:** `/team lineup`
+
+    **Expect:**
+    - **Reply**, seen by you alone: `**Division 1**`, a line break, `**Division 2**`, with two PNG
+      pictures attached, Division 1's lineup then Division 2's, each as `00-base.md` step 30
+      describes it: Division 2's `Bravo Motorsport` with both seats blank and `Charlie GP` with
+      one. Where a picture drew with notices, a second reply, to you alone, headed
+      `⚠️ **Image notices**`, naming `lineup — Division 1` and `lineup — Division 2` with their
+      notices.
+    - **Posts:** nothing in `#d1-lineup` or `#d2-lineup`.
+    - **Log:** nothing; it is a view.
+
+21. **A division by its tier, shown to the channel.** **Do:** `/team lineup division:2 public:True`
+
+    **Expect:**
+    - **Posts** (`#bot-commands`, public): `**Division 2**`, with Division 2's lineup attached.
+      Any image notices come in a reply to you alone, never in the channel.
+    - **Log:** nothing.
+
+22. **Do:** `/team lineup division:Division 9 public:True`
+
+    **Expect:**
+    - **Reply**, seen by you alone: ``⛔ Division `Division 9` not found.`` The public
+      "thinking…" is taken down first, so nothing stays in the channel.
+    - **Log:** nothing.
+
+### Refused for the channel and for the role
+
+23. **The wrong channel.** In `#d1-lineup`, not `#bot-commands`:
+
+    **Do:** `/test-mode roster clear division:Division 1`
+
+    **Expect:**
+    - **Reply:** `⛔ This command can only be used in the configured interaction channel.`
+    - **Log:** ``⛔ `/test-mode roster clear` refused for <you> — This command can only be used in the configured interaction channel.``
+
+    **Then do**, in `#d1-lineup` still: `/test-mode roster list division:Division 1`
+
+    **Expect:**
+    - **Reply:** `⛔ This command can only be used in the configured interaction channel.`
+    - **Log:** nothing: a view records nothing, its refusal included.
+
+24. **Without the league admin role.** In Discord, take `@League Admin` off yourself. Back in
+    `#bot-commands`:
+
+    **Do:** `/test-mode roster clear division:Division 1`
+
+    **Expect:**
+    - **Reply:** `⛔ This command is a league admin's. You need **League Admin**.`
+    - **Log:** ``⛔ `/test-mode roster clear` refused for <you> — This command is a league admin's. You need **League Admin**.``
+
+    **Then do:** `/team lineup`
+
+    **Expect:**
+    - **Reply:** `⛔ You don't have permission to use this command. You need **League Manager**, or **League Admin**.`
+      You hold neither role now. (A league admin passes a league manager's command; the
+      manager's tier is the interaction role or the admin role.)
+    - **Log:** nothing: `/team lineup` is a view.
+
+    **Then:** give yourself `@League Admin` again, in Discord. Every later step needs it.
