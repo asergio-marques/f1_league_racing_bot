@@ -82,8 +82,7 @@ them.
      only on the channels or their category: setting the hub replaces the channel's own
      permissions, the bot's included (`hub_service.apply_hub_permissions`), so a permission held
      only there is gone after the first change;
-   - in `#bot-locked`, allow the bot View Channel and Embed Links, and **deny** it Send Messages
-     and Attach Files;
+   - in `#bot-locked`, allow the bot View Channel, and **deny** it Send Messages and Attach Files;
    - create a role `@Stand-in`, below the bot's own role, held by nobody. It stands in for each of
      the league's roles in turn.
 
@@ -311,11 +310,11 @@ channel; it overtakes a stopped job on the league's lane, as every channel setti
 19. **A channel the bot cannot use.** **Do:** `/bot hub-channel channel:#bot-locked`
 
     **Expect:**
-    - **Reply:** `❌ The bot is missing permissions it needs in <#<bot-locked id>> as the hub channel: Send Messages. Give the bot them there, or pick another channel. Nothing was changed.`
-      Send Messages alone: the hub asks for View Channel, Send Messages, Embed Links, Manage
-      Channel and Manage Permissions (`HUB_NEEDS`), not Attach Files, and the bot holds the last
-      two on the server (step 1).
-    - **Log:** ``⛔ `/bot hub-channel` refused for <you> — The bot is missing permissions it needs in <#<bot-locked id>> as the hub channel: Send Messages. Give the bot them there, or pick another channel. Nothing was changed.``
+    - **Reply:** `❌ The bot is missing permissions it needs in <#<bot-locked id>> as the hub channel: Send Messages, Embed Links. Give the bot them there, or pick another channel. Nothing was changed.`
+      Embed Links is named because Discord withholds it wherever Send Messages is denied
+      (discord.py's implicit permissions); Attach Files is not named because the hub does not ask
+      for it (`HUB_NEEDS`); Manage Channel and Manage Permissions are held on the server (step 1).
+    - **Log:** ``⛔ `/bot hub-channel` refused for <you> — The bot is missing permissions it needs in <#<bot-locked id>> as the hub channel: Send Messages, Embed Links. Give the bot them there, or pick another channel. Nothing was changed.``
 
 20. **Do:** `/bot hub-channel channel:#hub`
 
