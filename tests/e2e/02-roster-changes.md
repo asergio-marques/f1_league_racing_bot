@@ -925,7 +925,7 @@ base was built (it starts on, and nothing in `00-base.md` turns it).
     - **Then:**
       ```
       ✅ Test-mode nationality: **OFF**.
-      Mock drivers already holding one keep it, and graphics draw no flag at all.
+      The signup wizard does not ask it, and graphics draw no flag at all.
       ```
     - **Log:**
       ```
@@ -933,30 +933,26 @@ base was built (it starts on, and nothing in `00-base.md` turns it).
         test_mode_nationality: disabled
       ```
 
-70. **Do:** `/test-mode roster add driver_name:Emil Engel team_name:CHL division:Division 1 nationality:German`
+70. **A name only.** **Do:** `/test-mode roster add driver_name:Emil Engel`
 
     **Expect:**
-    - **Reply:** ``⛔ Nationality is switched off for test mode, so one cannot be recorded. Turn it on with `/test-mode nationality`, or leave the parameter out.``
-    - **Log:** ``⛔ `/test-mode roster add` refused for <you> — Nationality is switched off for test mode, so one cannot be recorded. Turn it on with `/test-mode nationality`, or leave the parameter out.``
-
-71. **Do:** `/test-mode roster add driver_name:Emil Engel team_name:CHL division:Division 1`
-
-    **Expect:**
-    - **Ack:** `Adding fake driver **Emil Engel** to **Charlie GP** in **Division 1**`
+    - **Ack:** `Adding fake driver **Emil Engel**`
     - **Then:**
       ```
-      ✅ Added fake driver **Emil Engel** to **Charlie GP** in **Division 1**.
+      ✅ Added fake driver **Emil Engel**.
       Mention string (copy-paste into results): `<@9000000000000000026>`
       ```
-      No `Nationality:` line.
+      The command takes no nationality, team or division: the driver is at Not Signed Up, with
+      no seat.
     - **Log:**
       ```
       <you> | /test-mode roster add | Success
         driver: Emil Engel
-        team: Charlie GP
-        division: Division 1
-        nationality: (none)
       ```
+
+71. *Retired.* `/test-mode roster add` takes no nationality, so there is nothing for the switch
+    to refuse there; it decides only whether a fake driver's signup wizard asks one (step 72).
+    The step number is kept so that the references below stay true.
 
 72. **Do:** `/test-mode nationality`
 
@@ -965,7 +961,7 @@ base was built (it starts on, and nothing in `00-base.md` turns it).
     - **Then:**
       ```
       ✅ Test-mode nationality: **ON**.
-      Mock drivers may be given one with `/test-mode roster add`.
+      The signup wizard asks a fake driver's nationality.
       ```
     - **Log:**
       ```
