@@ -335,9 +335,13 @@ cogs call the one body of each command (`core/cogs/driver_commands.py`, module-l
 taking a resolved driver, no base class), and differ in how the driver is named: the member's
 through `_current_member`, the test-mode one through `driver_reference`, which resolves a mention
 or an ID through any account the driver has held and offers drivers by name. The test-mode group
-re-reads the flag as it is given and refuses while it is off. *Rejected:* one group whose fields
-switch type, which Discord's command definition cannot do; and a text field always, which would
-take the member's autocomplete picker from a league that has no test mode.
+re-reads the flag as it is given and refuses while it is off. *Rejected:* the variant cog
+subclassing `DriverCog`, which would inherit the member group into its own app commands, to be
+undone; the bodies moving into a core service, which would have services take the interaction and
+refuse through it, a wider refactor than the change needs; and the member group on the server
+always, which would need a swap after `/bot init` and after a factory reset as well, a `/bot init`
+job that stops the lane and a reset clean-up run off the queue, two more moments to cover, where a
+league that never uses test mode now sees `/driver` exactly as before.
 
 **The swap that shows the right one** is `swap_driver_commands`
 (`core/services/test_mode/driver_commands.py`): it reads the flag off the database, takes the one group off the global tree
