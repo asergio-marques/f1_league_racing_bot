@@ -73,8 +73,9 @@ in order, `Starting bot...`, `Logged in as <bot user> (id=<bot id>)` and
 `Synced <n> slash command(s)`, preceded by `Started on a restored database.` where a restore was
 staged. A step lists only what it adds to those.
 
-**Wait for the bot to show online** in the server's member list after each start before the next
-step, unless the step says otherwise.
+**Wait for the host log's `Synced <n> slash command(s)`** after each start before the next step,
+unless the step says otherwise. It is written once the catch-up has asked its own; the bot shows
+online in the member list earlier, while the catch-up is still running.
 
 ---
 
@@ -161,7 +162,8 @@ set here are the values `01-full-season.md` steps 6 and 7 set.
    - Then, either:
      - **(a) the change finished before the stop:** the acknowledgement is updated to
        `✅ Absent penalty set to **3** point(s).`, and the log line below is written before the
-       restart;
+       restart, or just after the start: a line saved and not yet delivered when the bot
+       stopped is delivered as the queue starts;
      - **(b) the stop cut it off:** the acknowledgement stays as it is, `⏳ …`, for good. The change
        is carried on when the bot starts, after the catch-up, and the log line below is written
        then. The reply is not updated: the bot holds it in memory, which the restart lost.
@@ -216,7 +218,9 @@ change on from the first job not done. The weather and check-in posts themselves
    - Once the bot is back and has gone quiet, whichever moment the stop fell at:
      - **Posts** (`#d1-weather`): **one** Phase 1 forecast, as `01-full-season.md` step 12.
        It went out before the stop, or after the start, as the change was carried on.
-     - **Log:** the advance's line, once:
+     - **Log:** the advance's line, once, unless the stop fell in the instant between the reply and
+       the line, which the command writes after replying and nothing keeps for it: then it is
+       missing, and that alone is no failure:
        ```
        <you> | /test-mode advance | Success
          phase: 1
@@ -251,7 +255,8 @@ change on from the first job not done. The weather and check-in posts themselves
     - **Log:** the advance's line, `phase: rsvp_notice`, as `01-full-season.md` step 13.
     - After the restart: nothing more posted, and no line in `#bot-log`. The start-up routes the
       call's buttons again (`recover_rsvp_views_and_deadlines`) and posts no late call: its round
-      is a year ahead and its call is already up.
+      is a year ahead and its call is already up. A second call standing beside the first is the
+      accepted second copy ("What a restart does"): step 12 edits the later one, which the bot recorded.
 
 12. **The call is still the bot's after the restart.** **Do:**
     `/attendance test rsvp division:Division 1`. In the form **Bulk Set RSVP Statuses**, paste
@@ -394,9 +399,11 @@ Every paste below is typed **as a message in the round's submission channel**, n
     paste's turn reached the queue's record before the stop; the ⏳ mark is put on first, so it
     does not tell you. Either:
     - **(a) the turn was recorded:** the start leaves the round to it (`review_recovery`, "A round
-      whose review, or whose submission, a change is carrying out is left alone"). No line in
-      `#bot-log`, the channel stays, and the choice appears in it once the queue starts: carry on
-      from step 21's press of **Standard** for the race;
+      whose review, or whose submission, a change is carrying out is left alone"), and the host log
+      says `Recovery: round <round id>'s review is in hand on the queue, left to it`. No line in
+      `#bot-log`, the channel stays, and the choice appears in it once the queue starts. Skip step
+      20 and step 21's paste: press **Standard** on that choice and carry on from step 21's
+      **Expect**;
     - **(b) it was not:** as above, the channel cleared and opened afresh.
 
 20. **Do:** in the new `#s1-division-1-r1-results`, send the qualifying paste of step 16 again, and
@@ -534,8 +541,9 @@ review has no timer: it does not expire.
 ## Part F — An amendment of a round's results, left open
 
 `/results rounds amend` is a league admin's command and opens only a round at FINAL, which
-Division 1's round 1 now is. An amendment found open at a restart is ended, as the bot's change,
-before anything else runs (`amend_end_changes.recover_orphaned_amend_channels`): its channel
+Division 1's round 1 now is. An amendment found open at a restart is ended, as the bot's change
+asked in the catch-up, before the scheduler resumes and ahead of any request made since the
+start (`amend_end_changes.recover_orphaned_amend_channels`): its channel
 deleted and the round put back where its corrected results had been recorded. What the log
 channel says turns on whether there was anything to put back. The amendment's own five-minute
 timer for a paste is a one-off timer with no lateness limit; step 30 lets it fall due while the
@@ -574,7 +582,6 @@ bot is down.
       ``ending the amendment of round 1 (Division 1): its five minutes ran out is no longer due``,
       followed by `, so it was not asked for: the amendment has ended` or
       `, so it was dropped: the amendment has ended`, as the race between the two fell.
-    - The acknowledgement of step 29 is not updated.
 
 31. **Do:** step 29 again.
 
@@ -782,7 +789,9 @@ spec gives it.
     **Expect:**
     - **Ack:** `Posting the review of /season config-review`, which is never updated, whichever
       happens below.
-    - Either:
+    - Which outcome you see turns on whether the question's job was marked done before the stop.
+      A stop between the question's post and its mark posts it a second time after the start: the
+      first question's button is dead, and the second is the live one, as in (b). Either:
       - **(a) the question was up before the stop:** once the bot is back, as step 44: the review
         deleted, the notice pinging you, and the lapse line. `<you> | /season config-review | Review posted`
         was written before the stop.
@@ -835,8 +844,10 @@ the base, which has nothing to catch up.
     cancellation and everything Parts B to G did are gone from the bot. No log line.
 
 Discord is not restored with the database. Left behind by this spec, for you to delete by hand if
-you wish: the forecast, check-in call, last notice, reserve distribution notice and pictures of
-Division 1's round 1 (Parts C to G) in the Division 1 channels, and any accepted second copy; and the cancellation notices and cancelled
+you wish: the forecast, check-in call, step 14's last notice and reserve distribution notice, and
+the results and standings pictures of Division 1's round 1 (Parts C to G), Rafael Rossi's verdict
+in `#d1-verdicts`, the attendance sheet in `#d1-attendance`, and any accepted second copy; the
+`⏱️ … your review expired while the bot was restarting …` notice of step 44 in `#bot-commands`; and the cancellation notices and cancelled
 calendars of step 41 in every division channel, as `02-roster-changes.md` leaves them. The
 calendars `00-base.md` step 32 posted, which the base still records, were deleted at step 41; a
 later spec that posts a calendar again finds the recorded one gone and carries on
