@@ -576,8 +576,9 @@ channel. This part needs one channel the Fixture does not hold.
 ## Part E — Amending a round whose work has begun
 
 Division 1's round 1 is given its first forecast and its check-in call, three drivers answer, and
-then its circuit is changed: the forecast is withdrawn and the call posted again for the new
-circuit, its answers kept.
+then its circuit is changed: the forecast is withdrawn and the call taken down, its answers
+kept. The call is posted again only when it is advanced: under test mode its new moment is still
+a year off.
 
 **What test mode cannot show here.** A track change is refused while the first forecast, drawn
 for the present circuit, still stands, and a format change while the second does — "stands"
@@ -678,12 +679,12 @@ round has started cannot be reached with a round dated a year ahead.
       ```
     - **Posts**, each a job of the amendment's, the check-in's before the forecasts'
       (`round_amend_change`, `plan_posts`):
-      - `#d1-rsvp`: the call of step 41 deleted, with its picture, and a new call posted: the text
-        `<@&<Division 1 role id>>`, the check-in picture of the `Japanese Grand Prix`, the embed
-        titled `Season 1 Round 1 — Suzuka International Racing Course` with `📍 Location`
-        `Suzuka International Racing Course` and the same `📅 Date`, and the three buttons. The
-        answers of step 42 are kept: `(✅)` Adam Archer, `(❌)` Bruno Bianchi, `(❓)` Carlos
-        Cortes, `()` every other driver.
+      - `#d1-rsvp`: the call of step 41 deleted, with its picture, and **nothing posted in its
+        place**. The amendment plans the call's repost, but the repost is posted only where the
+        call has fallen due by the real clock (`check_in_amendment.call_still_due`,
+        `_call_fell_due`), and for a round a year away it has not, so the queue drops it as not
+        yet due. The call's timers are armed again for the round, and the answers of step 42 are
+        kept with the round.
       - `#d1-weather`: the Phase 1 forecast of step 40 deleted, then the notice, which mentions
         the division role:
         ```
@@ -698,7 +699,6 @@ round has started cannot be reached with a round dated a year ahead.
         round 1 (round_id: <id: Division 1's round 1>)
         track: Silverstone Circuit → Suzuka International Racing Course
       ```
-      and any notice block for the new check-in picture.
       > UNVERIFIED: whether the take-down, the reposted call or the forecast's deletion writes a
       > line of its own to `#bot-log`. None is written in `src/` for a job that goes through;
       > record any that appears.
@@ -708,16 +708,16 @@ round has started cannot be reached with a round dated a year ahead.
     **Expect:**
     - **Reply:** as step 30, but Division 1's round 1 now reads:
       ```
-        Round 1 · Suzuka International Racing Course · <YEAR+1>-03-01  P1: ⏳  P2: ⏳  P3: ⏳  Cleanup: ⏳  |  Results: ⏳  |  RSVP: ✅  Last: ⏳  Deadline: ⏳  Cleared: ⏳
+        Round 1 · Suzuka International Racing Course · <YEAR+1>-03-01  P1: ⏳  P2: ⏳  P3: ⏳  Cleanup: ⏳  |  Results: ⏳  |  RSVP: ⏳  Last: ⏳  Deadline: ⏳  Cleared: ⏳
       ```
-      `P1` back to ⏳: the forecast was withdrawn and its timer armed again. `RSVP` ✅: the call
-      stands, posted again.
+      `P1` back to ⏳: the forecast was withdrawn and its timer armed again. `RSVP` back to ⏳ as
+      well: the call was taken down and no call is recorded for the round, its timer armed again
+      (`attendance/services/hooks/test_mode_steps.review_marks`).
     - **Log:** nothing; it is a view.
 
 46. **Do:** `/test-mode advance`
 
-    **Expect:** Phase 1 again, now for the new circuit; the call is not offered again, since it
-    stands.
+    **Expect:** Phase 1 again, now for the new circuit.
     - **Reply:** ``⏩ **Phase 1** for **Division 1** — **Suzuka International Racing Course** is on the change queue: its forecast goes to the forecast channel and its calculation to the log channel as soon as the queue reaches it.``
     - **Posts** (`#d1-weather`): `<@&<Division 1 role id>>` with the Phase 1 picture, headed
       `Initial chance of rain`, the track `Suzuka International Racing Course`, and the flag of
@@ -728,6 +728,24 @@ round has started cannot be reached with a round dated a year ahead.
       with its JSON, `"track": "Suzuka International Racing Course"`, `"mu": 0.25, "sigma": 0.07`:
       the new circuit's parameters, not Silverstone's.
 
+47. **Do:** `/test-mode advance`
+
+    **Expect:** the call, posted afresh for the new circuit.
+    - **Reply:** `📨 The **RSVP notice** for **Division 1** — **Round 1** (**Suzuka International Racing Course**) is on the change queue: it goes to the RSVP channel as soon as the queue reaches it.`
+    - **Log:** as step 41.
+    - **Posts** (`#d1-rsvp`): `<@&<Division 1 role id>>`, the check-in picture of the
+      `Japanese Grand Prix`, the embed titled `Season 1 Round 1 — Suzuka International Racing Course`
+      with `📍 Location` `Suzuka International Racing Course` and the same `📅 Date`, and the three
+      buttons.
+    - **Every driver shows `()`, Adam Archer, Bruno Bianchi and Carlos Cortes included.** The
+      call's embed is built with every driver unanswered (`check_in_call`, the roster's
+      `"rsvp_status": "NO_RSVP"`), while the answers of step 42 are still held for the round (the
+      call's record inserts its rows with `INSERT OR IGNORE`,
+      `attendance_config_service.bulk_insert_attendance_rows_on`), so the call shows them unanswered
+      while the bot counts them answered. Believed a bot defect: record it, and carry on. Step 53's
+      record of the check-in reads the held answers.
+    - **Log:** any notice block for the check-in picture.
+
 ---
 
 ## Part F — Cancelling rounds
@@ -736,13 +754,13 @@ Division 2's round 3, which nothing has touched, is cancelled first; then Divisi
 whose forecast and call are out. The bot announces nothing of its own: each enabled module posts
 its own word in its own channel, and the calendar is reposted with the round covered.
 
-47. **Do:** `/round cancel division_name:Division 2 round_number:3 confirm:confirm`
+48. **Do:** `/round cancel division_name:Division 2 round_number:3 confirm:confirm`
 
     **Expect:**
     - **Reply:** ``❌ Type exactly `CONFIRM` in the `confirm` field to proceed.``
     - **Log:** ``⛔ `/round cancel` refused for <you> — Type exactly `CONFIRM` in the `confirm` field to proceed.``
 
-48. **Do:** `/round cancel division_name:Division 2 round_number:9 confirm:CONFIRM`
+49. **Do:** `/round cancel division_name:Division 2 round_number:9 confirm:CONFIRM`
 
     **Expect:**
     - **Reply:** ``❌ Round 9 not found in division `Division 2`.``
@@ -750,7 +768,7 @@ its own word in its own channel, and the calendar is reposted with the round cov
 
 ### A round nothing has touched
 
-49. **Do:** `/round cancel division_name:Division 2 round_number:3 confirm:CONFIRM`
+50. **Do:** `/round cancel division_name:Division 2 round_number:3 confirm:CONFIRM`
 
     **Expect:**
     - **Ack:** `Cancelling round 3 in **Division 2**`
@@ -784,14 +802,14 @@ its own word in its own channel, and the calendar is reposted with the round cov
       with nothing beneath: no call was posted, so there is no check-in to record. Any notice
       block for the calendar.
 
-50. **A repeat.** **Do** step 49's command again.
+51. **A repeat.** **Do** step 50's command again.
 
     **Expect:**
     - **Reply:** `❌ Round 3 in **Division 2** is already cancelled.`
     - **Log:** ``⛔ `/round cancel` refused for <you> — Round 3 in **Division 2** is already cancelled.``
     - Nothing posted.
 
-51. **Do:** `/round amend division_name:Division 2 round_number:3 format:SPRINT`
+52. **Do:** `/round amend division_name:Division 2 round_number:3 format:SPRINT`
 
     **Expect:**
     - **Reply:**
@@ -805,7 +823,7 @@ its own word in its own channel, and the calendar is reposted with the round cov
 
 ### A round whose forecast and call are out
 
-52. **Do:** `/round cancel division_name:Division 1 round_number:1 confirm:CONFIRM`
+53. **Do:** `/round cancel division_name:Division 1 round_number:1 confirm:CONFIRM`
 
     **Expect:**
     - **Ack:** `Cancelling round 1 in **Division 1**`
@@ -818,8 +836,8 @@ its own word in its own channel, and the calendar is reposted with the round cov
         📢 **Round 1 Cancelled: Division 1**
         Round 1 (Suzuka International Racing Course) has been cancelled. There is no check-in to answer for it, and nobody is charged for it.
         ```
-        then the call of step 44 deleted, with its picture.
-      - `#d1-results` and `#d1-weather`: the silent notes of step 49, reading
+        then the call of step 47 deleted, with its picture.
+      - `#d1-results` and `#d1-weather`: the silent notes of step 50, reading
         `📢 **Round 1 Cancelled: Division 1**` and
         `Round 1 (Suzuka International Racing Course) has been cancelled. …`.
       - `#d1-weather` keeps the Phase 1 forecast of step 46 and the notice of step 44: a forecast
@@ -843,7 +861,7 @@ its own word in its own channel, and the calendar is reposted with the round cov
       `no answer` names the other twenty-one drivers of Division 1, both reserves included, by ID.
       No `reserves:` line: the deadline never ran. Any notice block for the calendar.
 
-53. **Do:** `/test-mode review`
+54. **Do:** `/test-mode review`
 
     **Expect:**
     - **Reply:** the two cancelled rounds are gone from it:
@@ -859,7 +877,7 @@ its own word in its own channel, and the calendar is reposted with the round cov
       and the legend. The rounds keep their numbers: a cancellation renumbers nothing.
     - **Log:** nothing; it is a view.
 
-54. **Do:** `/test-mode advance`
+55. **Do:** `/test-mode advance`
 
     **Expect:** the next step is Division 2's round 1, not anything of Division 1's round 1,
     whose timed work is gone.
@@ -877,7 +895,7 @@ its own word in its own channel, and the calendar is reposted with the round cov
       then `📋 **Phase 1 Calculation Log** | Round 1 in **Division 2** | Autodromo Nazionale Monza`
       with its JSON, `"mu": 0.15, "sigma": 0.03`, and any notice block.
 
-55. **Do:** `/test-mode advance`
+56. **Do:** `/test-mode advance`
 
     **Expect:**
     - **Reply:** `📨 The **RSVP notice** for **Division 2** — **Round 1** (**Autodromo Nazionale Monza**) is on the change queue: it goes to the RSVP channel as soon as the queue reaches it.`
@@ -894,19 +912,19 @@ its own word in its own channel, and the calendar is reposted with the round cov
 Division 2 is cancelled last, with its round 1's forecast and call out and its round 3 already
 cancelled. Division 1 runs on, so the season stays ongoing.
 
-56. **Do:** `/division cancel name:Division 2 confirm:yes`
+57. **Do:** `/division cancel name:Division 2 confirm:yes`
 
     **Expect:**
     - **Reply:** ``❌ Type exactly `CONFIRM` in the `confirm` field to proceed.``
     - **Log:** ``⛔ `/division cancel` refused for <you> — Type exactly `CONFIRM` in the `confirm` field to proceed.``
 
-57. **Do:** `/division cancel name:Division 9 confirm:CONFIRM`
+58. **Do:** `/division cancel name:Division 9 confirm:CONFIRM`
 
     **Expect:**
     - **Reply:** ``❌ Division `Division 9` not found.``
     - **Log:** ``⛔ `/division cancel` refused for <you> — Division `Division 9` not found.``
 
-58. **Do:** `/division cancel name:Division 2 confirm:CONFIRM`
+59. **Do:** `/division cancel name:Division 2 confirm:CONFIRM`
 
     **Expect:**
     - **Ack:** `Cancelling **Division 2**`
@@ -918,7 +936,7 @@ cancelled. Division 1 runs on, so the season stays ongoing.
         📢 **Division Cancelled: Division 2**
         This division has been cancelled. There are no further check-ins to answer.
         ```
-        then the call of step 55 deleted, with its picture.
+        then the call of step 56 deleted, with its picture.
       - `#d2-results`, silently:
         ```
         📢 **Division Cancelled: Division 2**
@@ -929,9 +947,9 @@ cancelled. Division 1 runs on, so the season stays ongoing.
         📢 **Division Cancelled: Division 2**
         No further weather forecasts will be posted for this division.
         ```
-        The Phase 1 forecast of step 54 stays.
+        The Phase 1 forecast of step 55 stays.
       - `#d2-calendar`: a new calendar with rounds 1 and 2 covered by the cancellation overlay as
-        well as round 3; then step 49's calendar deleted.
+        well as round 3; then step 50's calendar deleted.
       - One notice per channel: the division is told once, and round 3, cancelled already, is not
         told again.
     - **Log:**
@@ -949,13 +967,13 @@ cancelled. Division 1 runs on, so the season stays ongoing.
     - Nothing else: Division 1 is still running, so the season is not wound down and stays
       ongoing.
 
-59. **A repeat.** **Do** step 58's command again.
+60. **A repeat.** **Do** step 59's command again.
 
     **Expect:**
     - **Reply:** `❌ Division **Division 2** is already cancelled.`
     - **Log:** ``⛔ `/division cancel` refused for <you> — Division **Division 2** is already cancelled.``
 
-60. **Do:** `/round amend division_name:Division 2 round_number:1 format:NORMAL`
+61. **Do:** `/round amend division_name:Division 2 round_number:1 format:NORMAL`
 
     **Expect:**
     - **Reply:**
@@ -968,28 +986,28 @@ cancelled. Division 1 runs on, so the season stays ongoing.
       The division's cancellation cancelled each of its rounds.
     - **Log:** ``⛔ `/round amend` of round 1 in Division 2 refused for <you> — This round has been cancelled and can no longer be amended.``
 
-61. **Do:** `/round cancel division_name:Division 2 round_number:2 confirm:CONFIRM`
+62. **Do:** `/round cancel division_name:Division 2 round_number:2 confirm:CONFIRM`
 
     **Expect:**
     - **Reply:** `❌ Round 2 in **Division 2** is already cancelled.`
     - **Log:** ``⛔ `/round cancel` refused for <you> — Round 2 in **Division 2** is already cancelled.``
 
-62. **Do:** `/division calendar-sync name:Division 2`
+63. **Do:** `/division calendar-sync name:Division 2`
 
     **Expect:**
     - **Ack:** `Posting the calendar of **Division 2** again`
     - **Then:** `✅ Calendar for **Division 2** reposted as image.`
-    - **Posts** (`#d2-calendar`): the calendar of step 58 again, every round covered; then step
+    - **Posts** (`#d2-calendar`): the calendar of step 59 again, every round covered; then step
       58's deleted.
     - **Log:** as step 31, with `division: Division 2`.
     > UNVERIFIED: whether the sync of a cancelled division should be refused instead. Neither the
     > command nor its change's check (`calendar_post_service`) looks at the division's status, so
     > `src/` reposts it; the README is silent. Record what the bot does.
 
-63. **Do:** `/test-mode review`
+64. **Do:** `/test-mode review`
 
     **Expect:**
-    - **Reply:** Division 2 is gone from it, and Division 1 is as in step 53:
+    - **Reply:** Division 2 is gone from it, and Division 1 is as in step 54:
       ```
       **Division 1**
         Round 2 · TBA             · <YEAR+1>-03-15  Notice: ⏳  |  Results: ⏳  |  RSVP: ⏳  Last: ⏳  Deadline: ⏳  Cleared: ⏳
@@ -998,7 +1016,7 @@ cancelled. Division 1 runs on, so the season stays ongoing.
       and the legend.
     - **Log:** nothing; it is a view.
 
-64. **Do:** `/test-mode advance`
+65. **Do:** `/test-mode advance`
 
     **Expect:** Division 1's mystery round, round 2 since step 26; nothing of Division 2.
     - **Reply:** ``🔮 The **Mystery Round notice** for **Division 1** — **Round 2** is on the change queue: it goes to the division forecast channel as soon as the queue reaches it.``
