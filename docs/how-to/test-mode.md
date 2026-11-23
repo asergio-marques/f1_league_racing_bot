@@ -135,12 +135,14 @@ The team must already exist in that division and have a free seat. The roster se
 
 **Changing a fake driver's seat once it is placed.** The roster commands seat a fake driver, and `/driver` changes it afterwards, as it does a real one: name the driver by ID (the one `roster list` prints) or pick it by its test name from the list the field offers.
 
+While placements are open, `/driver assign` gives a seated fake driver a seat in a second division, which a real driver may hold as well. Once the season is ongoing, `/driver move` changes a confirmed seat:
+
 ```
-/driver move user:900000000000000001 division:Pro team:Ferrari
-/driver assign user:900000000000000001 division:Academy team:Mercedes
+/driver assign user:9000000000000000001 division:Academy team:MER
+/driver move user:9000000000000000001 from_division:Pro team:FER
 ```
 
-The second seats the same fake driver in a second division, which a real driver may hold as well. `/driver unassign`, `release`, `reject` and `sack` work the same way, mid-season included, and no Discord role is given or taken. `/driver assign` still refuses a real driver, and `/driver reassign` refuses a fake one on either side. Text that names no driver is refused, naming what was typed. A `/driver` command of this form given while test mode is off is refused, saying a restart puts `/driver` right.
+`division` and `from_division` take the tier number or the name, and `team` the team's shorthand. Leave out `to_division` and the driver stays in the division; name it to move them across. `/driver unassign`, `release`, `reject` and `sack` work the same way, mid-season included, and no Discord role is given or taken. `/driver assign` still refuses a real driver, and `/driver reassign` refuses a fake one on either side. Text that names no driver is refused, naming what was typed. A `/driver` command of this form given while test mode is off is refused, saying a restart puts `/driver` right.
 
 No Discord account sits behind a synthetic driver, so `/images use-pfp` never obtains a
 portrait for one: their lineup seat draws whatever is in the driver image folder under their
