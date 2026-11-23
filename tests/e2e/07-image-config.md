@@ -761,3 +761,187 @@ A missing division logo draws nothing and raises no notice.
 47. **Do:** `/images config view`
 
     **Expect:** the `**Asset directories**` section exactly as step 4.
+
+---
+
+## Part D — Dates, times and the fastest-lap colour
+
+Four settings of the image module that need no artwork: the time zone, the clock and the date
+format every picture writes a moment in, and the colour the fastest lap is marked in. A picture
+cannot show each reader their own time as Discord's text does, so it shows one zone, named.
+The calendar is the preview that shows the first three: every round's date and time.
+
+### The time zone, the clock and the date
+
+48. **A refusal: a zone that does not exist.** **Do:** `/images config time-zone zone:Mars/Olympus`
+    (type it; the autocomplete offers nothing for it)
+
+    **Expect:**
+    - **Reply**, no acknowledgement:
+      ``❌ `Mars/Olympus` is not a recognised time zone. Use an IANA name such as `Europe/Lisbon` or `UTC`.``
+    - **Log:** ``⛔ `/images config time-zone` refused for <you> — `Mars/Olympus` is not a recognised time zone. Use an IANA name such as `Europe/Lisbon` or `UTC`.``
+
+49. **Do:** `/images config time-zone zone:Asia/Tokyo`
+
+    **Expect:**
+    - **Ack:** ``Setting the time zone to `Asia/Tokyo` ``
+    - **Then:**
+      ```
+      ✅ Time zone set to `Asia/Tokyo`.
+      Times are shown in the offset that zone carries **on the date displayed**, so a season spanning a daylight-saving change stays correct.
+      ```
+    - **Log:**
+      ```
+      <you> | /images config time-zone | Success
+        Time zone: Asia/Tokyo
+      ```
+
+50. **Do:** `/images test calendar division:Division 1`
+
+    **Expect:** every round nine hours on and into the next day: round 1
+    `<weekday> 02 Mar <YEAR+1>` at `05:00 JST`, round 2 on 09 Mar and round 3 on 16 Mar, both at
+    `05:00 JST`. Nothing else changed from step 14.
+
+51. **Do:** `/images config time-format clock:12-hour (2:30 PM)`
+
+    **Expect:**
+    - **Ack:** `Setting the clock format to **12-hour (2:30 PM)**`
+    - **Then:** `✅ Clock format set to **12-hour (2:30 PM)**.`
+    - **Log:**
+      ```
+      <you> | /images config time-format | Success
+        Clock format: 12-hour (2:30 PM) (12H)
+      ```
+
+52. **Do:** `/images test calendar division:Division 1`
+
+    **Expect:** every time now `05:00 AM JST`.
+
+53. **Do:** `/images config date-format style:2026-06-14`
+
+    **Expect:**
+    - **Ack:** `Setting the date format to **2026-06-14**`
+    - **Then:** `✅ Date format set to **2026-06-14**.`
+    - **Log:**
+      ```
+      <you> | /images config date-format | Success
+        Date format: 2026-06-14 (YYYY_MM_DD)
+      ```
+
+54. **Do:** `/images test calendar division:Division 1`, then
+    `/images test rsvp division:Division 1 round:1`
+
+    **Expect:** the calendar's dates `<YEAR+1>-03-02`, `<YEAR+1>-03-09` and `<YEAR+1>-03-16`,
+    each at `05:00 AM JST`; the check-in call's date and time for round 1 written the same way,
+    `<YEAR+1>-03-02` and `05:00 AM JST`.
+    > UNVERIFIED: where the check-in picture writes its date and time, and whether it carries
+    > both. Record what it shows.
+
+55. **Do:** `/images config view`
+
+    **Expect:** under `**Presentation**`:
+    ```
+      Time zone: `Asia/Tokyo`
+      Clock: `12H`
+      Date format: `YYYY_MM_DD`
+      Fastest-lap colour: `#A020F0`
+    ```
+
+56. **Back to the base's three.** **Do**, in turn: `/images config time-zone zone:UTC`, then
+    `/images config time-format clock:24-hour (14:30)`, then
+    `/images config date-format style:Sun 14 Jun 2026`
+
+    **Expect:**
+    - the time zone: **Ack** ``Setting the time zone to `UTC` ``; **Then** step 49's reply with
+      `UTC`; **Log** `Time zone: UTC` beneath the success line;
+    - the clock: **Ack** `Setting the clock format to **24-hour (14:30)**`; **Then**
+      `✅ Clock format set to **24-hour (14:30)**.`; **Log** `Clock format: 24-hour (14:30) (24H)`;
+    - the date: **Ack** `Setting the date format to **Sun 14 Jun 2026**`; **Then**
+      `✅ Date format set to **Sun 14 Jun 2026**.`; **Log**
+      `Date format: Sun 14 Jun 2026 (DDD_DD_MON_YYYY)`.
+
+57. **The same values again.** **Do:** `/images config time-zone zone:UTC`, then
+    `/images config date-format style:Sun 14 Jun 2026`
+
+    **Expect:**
+    - **Then:** ``ℹ️ Nothing changed: the time zone is already **`UTC`**.``, and
+      `ℹ️ Nothing changed: the date format is already **Sun 14 Jun 2026**.`
+    - **Log:**
+      ```
+      <you> | /images config time-zone | Nothing changed
+        Time zone: UTC
+      ```
+      and
+      ```
+      <you> | /images config date-format | Nothing changed
+        Date format: Sun 14 Jun 2026 (DDD_DD_MON_YYYY)
+      ```
+
+58. **Do:** `/images test calendar division:Division 1`
+
+    **Expect:** the dates and times of step 5 again: round 1 `<weekday> 01 Mar <YEAR+1>` at
+    `20:00 UTC`.
+
+### The fastest-lap colour
+
+The colour is checked against the plate the race results template draws behind the fastest
+lap, located by the id `fastest_lap_background`. The shipped template declares no such id;
+`e2e_results_race_template.svg`, named since step 23, gives it to the fastest-lap block's
+plate (`#14171C`), so the contrast can be measured.
+
+59. **A refusal: a colour name.** **Do:** `/images config fastest-lap-colour colour:purple`
+
+    **Expect:**
+    - **Reply**, no acknowledgement:
+      ```
+      ❌ `purple` is not a valid colour. Give a `#` followed by exactly six hexadecimal digits, for example `#A020F0`.
+      The stored colour is unchanged.
+      ```
+    - **Log:** ``⛔ `/images config fastest-lap-colour` refused for <you> — `purple` is not a valid colour. Give a `#` followed by exactly six hexadecimal digits, for example `#A020F0`.``
+
+60. **A refusal: the three-digit form.** **Do:** `/images config fastest-lap-colour colour:#0f0`
+
+    **Expect:** step 59's reply and line with `#0f0` in place of `purple`.
+
+61. **Do:** `/images config fastest-lap-colour colour:#00ff00`
+
+    **Expect:**
+    - **Ack:** ``Setting the fastest-lap colour to `#00FF00` `` — stored upper-case.
+    - **Then:**
+      ```
+      ✅ Fastest-lap colour set to `#00FF00`.
+      Contrast against the template's plate (`#14171C`): **13.09:1**
+      ```
+    - **Log:**
+      ```
+      <you> | /images config fastest-lap-colour | Success
+        Fastest-lap colour: #00FF00
+      ```
+
+62. **Do:** `/images test results division:Division 1 round:1`
+
+    **Expect:** on the race picture, the fastest lap time in the row of the driver who set it
+    drawn in **bright green**; every other lap time as before. The qualifying picture is
+    unchanged.
+
+63. **A colour too dark to read.** **Do:** `/images config fastest-lap-colour colour:#202020`
+
+    **Expect:**
+    - **Ack:** ``Setting the fastest-lap colour to `#202020` ``
+    - **Then:**
+      ```
+      ✅ Fastest-lap colour set to `#202020`.
+      Contrast against the template's plate (`#14171C`): **1.10:1**
+      ⚠️ That is below 4.5:1, the threshold at which text of this size stays legible. The colour is stored all the same — it is your league's to choose.
+      ```
+    - **Log:** the success line with `Fastest-lap colour: #202020` beneath it.
+
+64. **Do:** `/images test results division:Division 1 round:1`
+
+    **Expect:** the fastest lap time on the race picture drawn near-black, barely to be told
+    from the row behind it.
+
+65. **Do:** `/images config fastest-lap-colour colour:#00FF00`
+
+    **Expect:** step 61's acknowledgement, reply and line. Part E uses this colour; Part G puts
+    the base's back.
