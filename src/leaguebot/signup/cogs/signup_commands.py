@@ -32,6 +32,7 @@ from leaguebot.framework.utils.log_lines import record_abandoned, refuse
 from leaguebot.signup.models.switch import SWITCH_KEY
 from leaguebot.signup.services.channel_setting import KIND as SIGNUP_CHANNEL_KIND
 from leaguebot.signup.services.close_time_settings import kind_of as close_time_kind
+from leaguebot.signup.services.driver_naming import fake_name_of
 from leaguebot.signup.services.signup_settings import format_slots, kind_of
 from leaguebot.signup.services.signup_views import IN_PROGRESS_STATES, reason_pending_for
 from leaguebot.signup.services.window_changes import (
@@ -647,7 +648,11 @@ async def signup_close(bot: LeagueBot, interaction: discord.Interaction) -> None
     # Present confirmation view
     _guild = interaction.guild
 
-    def _name_for_uid(uid: str) -> str:
+    async def _name_for_uid(uid: str) -> str:
+        # A fake driver is no member of the server: named by its test name, never its number.
+        fake = await fake_name_of(bot.db_path, uid)
+        if fake is not None:
+            return fake
         member = _guild.get_member(int(uid)) if _guild else None
         return member.display_name if member else uid
 
@@ -655,7 +660,7 @@ async def signup_close(bot: LeagueBot, interaction: discord.Interaction) -> None
     kept: list[str] = []
     for user_id, state, channel_id in rows:
         group = returned if state in RETURNED_BY_CLOSE else kept
-        line = _name_for_uid(user_id)
+        line = await _name_for_uid(user_id)
         if channel_id is not None:
             line += f" — <#{channel_id}>"
         group.append(line)

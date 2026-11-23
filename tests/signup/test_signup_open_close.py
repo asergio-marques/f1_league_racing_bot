@@ -705,9 +705,6 @@ async def test_every_in_progress_state_forces_a_confirmation(tmp_path, state):
     )
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#600: the close confirmation names a fake driver by its numeric ID"
-)
 async def test_the_confirmation_counts_and_names_the_drivers(tmp_path):
     """Under test mode, Lewis (7000) is filling the wizard in and Max (7001) awaits approval, both
     members of the server, and the fake driver Mock Alpha (7002), no member holding its ID, is
