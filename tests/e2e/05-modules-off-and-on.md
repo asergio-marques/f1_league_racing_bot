@@ -144,3 +144,125 @@ channel, so nothing is posted for it.
      and Division 2 its three rounds, `Autodromo Nazionale Monza`,
      `Circuit de Spa-Francorchamps` and `Circuit Zandvoort`, with the same cells.
    - **Log:** nothing; it is a view.
+
+---
+
+## Part B — The settings, before anything is switched off
+
+Each module's settings are read here, to be read again once the module has been off and on
+(Part J). The base left attendance at its packaged values; two are changed first, so that a
+switch which reset them to the packaged values would show. The penalties and thresholds may be
+changed while the season is ongoing (`01-full-season.md` steps 6 to 9); the weather deadlines and
+the check-in timings may not, so they are read as they stand.
+
+6. **Do:** `/attendance config no-rsvp-penalty points:2`
+
+   **Expect:**
+   - **Ack:** `Setting the no-RSVP penalty to 2 point(s)`
+   - **Then:** `✅ No-RSVP penalty set to **2** point(s).`
+   - **Log:**
+     ```
+     <you> | /attendance config no-rsvp-penalty | Success
+       no-RSVP penalty: 2 point(s) (was 1 point(s))
+     ```
+
+7. **Do:** `/attendance config autoreserve points:6`
+
+   **Expect:**
+   - **Ack:** `Setting the auto-reserve threshold to 6 point(s)`
+   - **Then:** `✅ Auto-reserve threshold set to **6** point(s).`
+   - **Log:**
+     ```
+     <you> | /attendance config autoreserve | Success
+       auto-reserve threshold: 6 point(s) (was disabled)
+     ```
+
+8. **Do:** `/attendance config show`
+
+   **Expect:**
+   - **Reply:**
+     ```
+     **Attendance Configuration**
+
+     **Timing**
+       RSVP notice: **5** day(s) before race
+       Last reminder: **24** hr(s) before race
+       RSVP deadline: **2** hr(s) before race
+
+     **Penalties**
+       No-RSVP: **2** pt(s)
+       Absent penalty: **1** pt(s)
+       No-show (ACCEPTED + absent): **1** pt(s)
+
+     **Auto-actions**
+       Auto-reserve threshold: **6**
+       Auto-sack threshold: **disabled**
+     ```
+   - **Log:** nothing; it is a view.
+
+9. **Do:** `/weather config view`
+
+   **Expect:**
+   - **Reply:**
+     ```
+     **Weather deadlines**
+       • Phase 1 deadline: 5 day(s) before race
+       • Phase 2 deadline: 2 day(s) before race
+       • Phase 3 deadline: 2h before race
+     ```
+     the packaged defaults, which the base never changed.
+   - **Log:** nothing; it is a view.
+
+10. **Do:** `/images config view`
+
+    **Expect:**
+    - **Reply** (several messages where it passes 2000 characters), the parts that identify it:
+      it opens
+      ```
+      **Image module configuration**
+
+      Rasteriser: ✅ Inkscape found
+      ```
+      then the sections `**Templates**`, `**Asset directories**`, `**Presentation**` and
+      `**Per-tier colours**`, and ends with the nine outputs, each on, none with a reason beneath:
+      ```
+      **Output aspects**
+        ✅ Calendar
+        ✅ Lineup
+        ✅ Session results
+        ✅ Standings
+        ✅ Attendance sheet
+        ✅ Check-in call
+        ✅ Weather forecasts
+        ✅ Verdicts
+        ✅ Verdict banner
+      ```
+      A `⚠️` against an output here, before any module is off, is a template or colour fault of the
+      host's, not this spec's subject: note its reason, and expect it again at steps 26, 32 and 56.
+    - **Log:** nothing; it is a view.
+
+11. **Do:** `/signup config view`
+
+    **Expect:**
+    - **Reply:** an embed titled `Signup Module Configuration`, with the fields, in this order:
+      `Channel` <#<signup id>>; `Base Role` <@&<Members role id>>; `Driver Role`
+      <@&<Driver role id>>; `Signups Open` `No`; `Nationality Required` `ON`; `Time Type`
+      `Time Trial`; `Time Image Required` `ON`. The last three are the packaged values: the base
+      never changed them, and a running season may not.
+    - **Log:** nothing; it is a view.
+
+12. **Do:** `/results config list scope:Server`
+
+    **Expect:**
+    - **Reply:** as `04-points-and-syncs.md` step 4:
+      ```
+      **Points configurations — this server**
+
+      **Half Points**
+        Sprint Qualifying, Sprint Race, Feature Qualifying, Feature Race
+      **Standard**
+        Sprint Qualifying, Sprint Race, Feature Qualifying, Feature Race
+
+      2 configurations.
+      ```
+    - **Log:** nothing; it is a view.
