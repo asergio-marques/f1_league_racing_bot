@@ -89,3 +89,541 @@ Feature Qualifying and Feature Race.
    **Expect:**
    - **Host log:** `Started on a restored database.`, before `Logged in as <bot user> (id=<bot id>)`.
    - Nothing posted on Discord.
+
+---
+
+## Part B — The points configurations
+
+### What the server and the season hold
+
+4. **Do:** `/results config list scope:Server`
+
+   **Expect:**
+   - **Reply:**
+     ```
+     **Points configurations — this server**
+
+     **Half Points**
+       Sprint Qualifying, Sprint Race, Feature Qualifying, Feature Race
+     **Standard**
+       Sprint Qualifying, Sprint Race, Feature Qualifying, Feature Race
+
+     2 configurations.
+     ```
+     Configurations by name; under each, the session types it carries points for, in running order.
+   - **Log:** nothing; it is a view.
+
+5. **Do:** `/results config list scope:Season`
+
+   **Expect:**
+   - **Reply:** as step 4, headed `**Points configurations — season 1**`.
+   - **Log:** nothing.
+
+6. **Do:** `/results config view scope:Season name:Standard session:Feature Race`
+
+   **Expect:**
+   - **Reply:**
+     ```
+     **Standard**
+
+     *Feature Race*
+       P1: 30 pts
+       P2: 27 pts
+       P3: 24 pts
+       P4: 21 pts
+       P5: 18 pts
+       P6: 15 pts
+       P7: 13 pts
+       P8: 11 pts
+       P9: 9 pts
+       P10: 7 pts
+       P11: 5 pts
+       P12: 4 pts
+       P13: 3 pts
+       P14: 2 pts
+       P15: 1 pts
+       FL bonus: 2 pts (top 15 eligible)
+     ```
+   - **Log:** nothing.
+
+7. **A view of a name the season does not hold.** **Do:**
+   `/results config view scope:Season name:Test Ladder`
+
+   **Expect:**
+   - **Reply:** `❌ Config **Test Ladder** not found in the current season.`
+   - **Log:** nothing: a view's refusal is not recorded.
+
+### A configuration built by hand
+
+The server's store may be edited while the season runs: what it holds is what the next season
+starts from. `Test Ladder` is built here and removed at the end of the part.
+
+8. **Do:** `/results config add name:Test Ladder`
+
+   **Expect:**
+   - **Ack:** `Adding points configuration **Test Ladder**`
+   - **Then:** `✅ Config **Test Ladder** created. All positions default to 0 points.`
+   - **Log:**
+     ```
+     <you> | /results config add | Success
+       config: Test Ladder
+     ```
+
+9. **A refusal: the name is taken.** **Do:** `/results config add name:Test Ladder`
+
+   **Expect:**
+   - **Reply:** `❌ A config named **Test Ladder** already exists on this server.`
+   - **Log:** ``⛔ `/results config add` refused for <you> — A config named **Test Ladder** already exists on this server.``
+
+10. **Do:** `/results config list scope:Server`
+
+    **Expect:**
+    - **Reply:** as step 4, with a third entry after `Standard`, its line
+      `**Test Ladder** — ⚠️ no entries yet`, and the count `3 configurations.`
+    - **Log:** nothing.
+
+11. **Do:** `/results config view scope:Server name:Test Ladder`
+
+    **Expect:**
+    - **Reply:** `**Test Ladder** — no entries configured.`
+    - **Log:** nothing.
+
+12. **Do:** `/results config session name:Test Ladder session:Feature Race position:1 points:25`
+
+    **Expect:**
+    - **Ack:** `Setting **Feature Race** position 1 to 25 pts in config **Test Ladder**`
+    - **Then:** `✅ Set **Feature Race** position 1 → 25 pts in config **Test Ladder**.`
+    - **Log:**
+      ```
+      <you> | /results config session | Success
+        config: Test Ladder
+        session: Feature Race, position: 1, points: 25
+      ```
+
+13. **A table left out of order is saved, with a warning.** **Do:**
+    `/results config session name:Test Ladder session:Feature Race position:2 points:30`
+
+    **Expect:**
+    - **Ack:** `Setting **Feature Race** position 2 to 30 pts in config **Test Ladder**`
+    - **Then:**
+      ```
+      ✅ Set **Feature Race** position 2 → 30 pts in config **Test Ladder**.
+      ⚠️ **Test Ladder**'s Feature Race table is now out of order:
+        • position 1 (25 pts) < position 2 (30 pts)
+      A lower position cannot be worth as much as the one above it. The change has been saved, but a season cannot be approved on this table.
+      ```
+    - **Log:** as step 12, with `position: 2, points: 30`. The warning is the reply's alone.
+
+14. **Do:** `/results config bulk-session name:Test Ladder session:Feature Race`. In the form
+    **Bulk Set Session Points**, paste into **position, points — one per line**, and submit:
+
+    ```
+    2, 18
+    3, 15
+    4, 12
+    4, 10
+    ```
+
+    Position 4 is given twice on purpose: the last value stands, and the override is reported.
+
+    **Expect:**
+    - **Ack:** `Setting 3 position(s) of **Feature Race** in config **Test Ladder**`
+    - **Then:**
+      ```
+      ✅ Applied to config **Test Ladder** (Feature Race):
+        P2 → 18 pts
+        P3 → 15 pts
+        P4 → 10 pts
+      ⚠️ Notes:
+        • Duplicate position 4: previous value 12 overridden by 10
+      ```
+      No ordering warning: the table now reads 25, 18, 15, 10.
+    - **Log:**
+      ```
+      <you> | /results config bulk-session | 3 change(s)
+        config: Test Ladder, session: Feature Race
+        P2 → 18 pts
+        P3 → 15 pts
+        P4 → 10 pts
+      ```
+
+15. **A refusal: a paste with lines that cannot be read.** **Do:**
+    `/results config bulk-session name:Test Ladder session:Feature Race`, paste, and submit:
+
+    ```
+    1, 26
+    first, 10
+    3, -2
+    ```
+
+    **Expect:**
+    - **Reply:**
+      ```
+      ❌ Nothing was applied: 2 line(s) of the paste could not be read. Correct them and paste the whole table again.
+        • Invalid position 'first' on line: 'first, 10'
+        • Points must be >= 0, got -2 on line: '3, -2'
+      ```
+    - **Log:**
+      ```
+      ⛔ `/results config bulk-session` refused for <you> — 2 line(s) of the paste could not be read:
+        • Invalid position 'first' on line: 'first, 10'
+        • Points must be >= 0, got -2 on line: '3, -2'
+      ```
+    - Nothing applied: the good line, `1, 26`, is not saved either. A paste is all or nothing.
+
+16. **A repeat that changes nothing.** **Do:**
+    `/results config bulk-session name:Test Ladder session:Feature Race`, paste, and submit:
+
+    ```
+    1, 25
+    2, 18
+    ```
+
+    **Expect:**
+    - **Ack:** `Setting 2 position(s) of **Feature Race** in config **Test Ladder**`
+    - **Then:** `ℹ️ Nothing changed: every position pasted already stands in config **Test Ladder**.`
+    - **Log:**
+      ```
+      <you> | /results config bulk-session | Nothing changed
+        config: Test Ladder, session: Feature Race
+        P1 → 25 pts
+        P2 → 18 pts
+      ```
+
+17. **A refusal: a position out of range.** **Do:**
+    `/results config session name:Test Ladder session:Feature Race position:0 points:5`
+
+    **Expect:**
+    - **Reply:** `❌ Position must be >= 1, got 0.`
+    - **Log:** ``⛔ `/results config session` refused for <you> — Position must be >= 1, got 0.``
+
+18. **A refusal: points out of range.** **Do:**
+    `/results config session name:Test Ladder session:Feature Race position:5 points:-5`
+
+    **Expect:**
+    - **Reply:** `❌ Points must be >= 0, got -5.`
+    - **Log:** ``⛔ `/results config session` refused for <you> — Points must be >= 0, got -5.``
+
+19. **A refusal: a configuration that does not exist.** **Do:**
+    `/results config session name:Nope session:Feature Race position:1 points:25`
+
+    **Expect:**
+    - **Reply:** `❌ Config **Nope** not found.`
+    - **Log:** ``⛔ `/results config session` refused for <you> — Config **Nope** not found.``
+
+20. **Do:** `/results config fl name:Test Ladder session:Feature Race points:3`
+
+    **Expect:**
+    - **Ack:** `Setting the fastest-lap bonus for **Feature Race** to 3 pts in config **Test Ladder**`
+    - **Then:** `✅ Set fastest-lap bonus for **Feature Race** → 3 pts in config **Test Ladder**.`
+    - **Log:**
+      ```
+      <you> | /results config fl | Success
+        config: Test Ladder
+        session: Feature Race, fl_bonus: 3
+      ```
+
+21. **A repeat that changes nothing.** **Do:** `/results config fl name:Test Ladder session:Feature Race points:3`
+
+    **Expect:**
+    - **Ack:** as step 20.
+    - **Then:** `ℹ️ Nothing changed: the fastest-lap bonus for **Feature Race** is already 3 pts in config **Test Ladder**.`
+    - **Log:**
+      ```
+      <you> | /results config fl | Nothing changed
+        config: Test Ladder
+        session: Feature Race, fl_bonus: 3
+      ```
+
+22. **Do:** `/results config fl-plimit name:Test Ladder session:Feature Race limit:10`
+
+    **Expect:**
+    - **Ack:** `Setting the fastest-lap position limit for **Feature Race** to top 10 in config **Test Ladder**`
+    - **Then:** `✅ Set fastest-lap position limit for **Feature Race** → top 10 eligible in config **Test Ladder**.`
+    - **Log:**
+      ```
+      <you> | /results config fl-plimit | Success
+        config: Test Ladder
+        session: Feature Race, fl_position_limit: 10
+      ```
+
+23. **A refusal: a limit out of range.** **Do:**
+    `/results config fl-plimit name:Test Ladder session:Feature Race limit:0`
+
+    **Expect:**
+    - **Reply:** `❌ Position limit must be >= 1, got 0.`
+    - **Log:** ``⛔ `/results config fl-plimit` refused for <you> — Position limit must be >= 1, got 0.``
+
+24. **A qualifying session cannot be given a fastest-lap setting.** **Do:** type
+    `/results config fl name:Test Ladder session:` and open the `session` option's list; do the same
+    for `/results config fl-plimit`. Send neither.
+
+    **Expect:** each list offers two choices only, `Sprint Race` and `Feature Race`. Discord will
+    not send a qualifying session to either command, so the bot's own refusal
+    (`❌ Fastest-lap bonus cannot be set for qualifying sessions.`) cannot be reached from a slash
+    command; the XML import's can (step 27). Nothing sent, nothing logged.
+
+### An XML import
+
+25. **Do:** `/results config xml-import name:Test Ladder`, with no file. In the form **XML Points
+    Config Import**, paste into **XML payload**, and submit:
+
+    ```xml
+    <config>
+      <session>
+        <type>Sprint Race</type>
+        <position id="1">8</position>
+        <position id="2">6</position>
+        <position id="3">4</position>
+        <fastest-lap limit="8">1</fastest-lap>
+      </session>
+      <session>
+        <type>Feature Qualifying</type>
+        <position id="1">2</position>
+        <position id="2">1</position>
+      </session>
+    </config>
+    ```
+
+    **Expect:**
+    - **Ack:** `Importing into config **Test Ladder**`
+    - **Then:**
+      ```
+      ✅ Config **Test Ladder** updated:
+        **Sprint Race**: 3 position(s) updated
+        **Feature Qualifying**: 2 position(s) updated
+        **Sprint Race** FL: 1 pts, limit P8
+      ```
+    - **Log:**
+      ```
+      <you> | /results config xml-import | Success
+        config: Test Ladder
+        Sprint Race: P1 8, P2 6, P3 4
+        Feature Qualifying: P1 2, P2 1
+        Sprint Race fastest lap: 1 pts, limit P8
+      ```
+    The Feature Race table of steps 12 to 22 is untouched: an import leaves alone what it does not
+    name.
+
+26. **A repeat that changes nothing.** **Do:** step 25 again, the same payload.
+
+    **Expect:**
+    - **Ack:** as step 25.
+    - **Then:** `ℹ️ Nothing changed: every value imported already stands in config **Test Ladder**.`
+    - **Log:** as step 25, its first line ending `| Nothing changed` in place of `| Success`.
+
+27. **A refusal: a fastest lap given to a qualifying session.** **Do:**
+    `/results config xml-import name:Test Ladder`, paste, and submit:
+
+    ```xml
+    <config>
+      <session>
+        <type>Feature Qualifying</type>
+        <position id="1">3</position>
+        <fastest-lap>1</fastest-lap>
+      </session>
+    </config>
+    ```
+
+    **Expect:**
+    - **Reply:**
+      ```
+      ❌ XML parse/validation failed:
+        • [Feature Qualifying] Fastest-lap bonus is not permitted for qualifying sessions.
+      ```
+    - **Log:** ``⛔ `/results config xml-import` into configuration Test Ladder refused for <you> — XML parse/validation failed: [Feature Qualifying] Fastest-lap bonus is not permitted for qualifying sessions.``
+    - Nothing imported: the qualifying position 1 is not saved either.
+
+28. **A refusal: points out of order.** **Do:** `/results config xml-import name:Test Ladder`,
+    paste, and submit:
+
+    ```xml
+    <config>
+      <session>
+        <type>Sprint Race</type>
+        <position id="1">5</position>
+        <position id="2">6</position>
+      </session>
+    </config>
+    ```
+
+    **Expect:**
+    - **Reply:**
+      ```
+      ❌ Points ordering validation failed:
+        • [Sprint Race] Points are not monotonically non-increasing: position 1 has 5 pts but position 2 has 6 pts.
+      ```
+    - **Log:** ``⛔ `/results config xml-import` into configuration Test Ladder refused for <you> — points ordering validation failed: [Sprint Race] Points are not monotonically non-increasing: position 1 has 5 pts but position 2 has 6 pts.``
+    - Nothing imported. Unlike `/results config session` (step 13), an import out of order is
+      refused outright.
+
+29. **Do:** `/results config view scope:Server name:Test Ladder`
+
+    **Expect:**
+    - **Reply:**
+      ```
+      **Test Ladder**
+
+      *Feature Qualifying*
+        P1: 2 pts
+        P2: 1 pts
+
+      *Feature Race*
+        P1: 25 pts
+        P2: 18 pts
+        P3: 15 pts
+        P4: 10 pts
+        FL bonus: 3 pts (top 10 eligible)
+
+      *Sprint Race*
+        P1: 8 pts
+        P2: 6 pts
+        P3: 4 pts
+        FL bonus: 1 pts (top 8 eligible)
+      ```
+      Sessions by name, so `Feature` before `Sprint`; no `Sprint Qualifying`, which holds nothing.
+    - **Log:** nothing.
+
+### The season keeps its own copy
+
+30. **The server's table changed under a running season.** **Do:**
+    `/results config session name:Standard session:Feature Race position:1 points:40`
+
+    **Expect:**
+    - **Ack:** `Setting **Feature Race** position 1 to 40 pts in config **Standard**`
+    - **Then:** `✅ Set **Feature Race** position 1 → 40 pts in config **Standard**.`
+    - **Log:**
+      ```
+      <you> | /results config session | Success
+        config: Standard
+        session: Feature Race, position: 1, points: 40
+      ```
+
+31. **Do:** `/results config view scope:Season name:Standard session:Feature Race`
+
+    **Expect:**
+    - **Reply:** as step 6, `P1: 30 pts`: the season scores by the copy it took at approval, and
+      step 30 did not touch it. With `scope:Server`, the same command reads `P1: 40 pts`.
+    - **Log:** nothing.
+
+32. **Do:** `/results config session name:Standard session:Feature Race position:1 points:30`
+
+    **Expect:**
+    - **Ack:** `Setting **Feature Race** position 1 to 30 pts in config **Standard**`
+    - **Then:** `✅ Set **Feature Race** position 1 → 30 pts in config **Standard**.`
+    - **Log:** as step 30, with `points: 30`.
+
+33. **A repeat that changes nothing.** **Do:** step 32 again.
+
+    **Expect:**
+    - **Ack:** as step 32.
+    - **Then:** `ℹ️ Nothing changed: **Feature Race** position 1 already awards 30 pts in config **Standard**.`
+    - **Log:**
+      ```
+      <you> | /results config session | Nothing changed
+        config: Standard
+        session: Feature Race, position: 1, points: 30
+      ```
+
+34. **A refusal: attaching once the season is under way.** **Do:**
+    `/results config append name:Test Ladder`
+
+    **Expect:**
+    - **Reply:** `❌ Config attachment is only allowed for seasons in SETUP.`
+    - **Log:** ``⛔ `/results config append` refused for <you> — Config attachment is only allowed for seasons in SETUP.``
+
+35. **A refusal: detaching once the season is under way.** **Do:**
+    `/results config detach name:Half Points`
+
+    **Expect:**
+    - **Reply:** `❌ Config detachment is only allowed for seasons in SETUP.`
+    - **Log:** ``⛔ `/results config detach` refused for <you> — Config detachment is only allowed for seasons in SETUP.``
+
+36. **Do:** `/results config remove name:Test Ladder`
+
+    **Expect:** no question first: no season in setup stands on it.
+    - **Ack:** `Removing points configuration **Test Ladder**`
+    - **Then:** `✅ Config **Test Ladder** removed.`
+    - **Log:**
+      ```
+      <you> | /results config remove | Success
+        config: Test Ladder
+      ```
+
+37. **Removing a configuration the running season scores by.** **Do:**
+    `/results config remove name:Half Points`
+
+    **Expect:** no question first either: the question is asked only for a season in setup, and an
+    approved season keeps its own copy and its attachment.
+    - **Ack:** `Removing points configuration **Half Points**`
+    - **Then:** `✅ Config **Half Points** removed.`
+    - **Log:**
+      ```
+      <you> | /results config remove | Success
+        config: Half Points
+      ```
+
+38. **Do:** `/results config list scope:Server`
+
+    **Expect:**
+    - **Reply:**
+      ```
+      **Points configurations — this server**
+
+      **Standard**
+        Sprint Qualifying, Sprint Race, Feature Qualifying, Feature Race
+
+      1 configuration.
+      ```
+    - **Log:** nothing.
+
+39. **Do:** `/results config list scope:Season`
+
+    **Expect:**
+    - **Reply:** as step 5: `Half Points` and `Standard`, `2 configurations.` The season still
+      scores by `Half Points`, and its result submissions still offer it (step 53).
+    - **Log:** nothing.
+
+40. **A refusal: removing what is not there.** **Do:** `/results config remove name:Nope`
+
+    **Expect:**
+    - **Reply:** `❌ Config **Nope** not found.`
+    - **Log:** ``⛔ `/results config remove` refused for <you> — Config **Nope** not found.``
+
+### Who may, and where
+
+41. **A refusal: the wrong channel.** **Do**, in `#d1-results`: `/results config add name:Wrong Place`
+
+    **Expect:**
+    - **Reply:** `⛔ This command can only be used in the configured interaction channel.`
+    - **Log:** ``⛔ `/results config add` refused for <you> — This command can only be used in the configured interaction channel.``
+
+42. **Do**, in `#d1-results`: `/results config list scope:Server`
+
+    **Expect:**
+    - **Reply:** as step 41.
+    - **Log:** nothing: a view's refusal is not recorded.
+
+43. **A refusal: no tier at all.** In Discord, outside the bot, take `@League Admin` off yourself;
+    hold neither `@League Admin` nor `@League Manager`. **Do:** `/results config list scope:Server`,
+    then `/results config add name:No Role`.
+
+    **Expect**, for each:
+    - **Reply:** `⛔ You don't have permission to use this command. You need **League Manager**, or **League Admin**.`
+    - **Log:** nothing for the list; for the add,
+      ``⛔ `/results config add` refused for <you> — You don't have permission to use this command. You need **League Manager**, or **League Admin**.``
+
+44. **A refusal: a league manager's tier where a league admin's is needed.** Give yourself
+    `@League Manager`, still without `@League Admin`. **Do:** `/results config remove name:Standard`,
+    then `/results amend review`.
+
+    **Expect**, for each:
+    - **Reply:** `⛔ This command is a league admin's. You need **League Admin**.`
+    - **Log:** ``⛔ `/results config remove` refused for <you> — This command is a league admin's. You need **League Admin**.``,
+      and the same for `` `/results amend review` ``.
+    - `Standard` is still there: the next command proves a manager may still read it. **Do:**
+      `/results config view scope:Server name:Standard session:Feature Race` — **Reply:** as step 6.
+
+45. **Put your roles back:** give yourself `@League Admin` again and take `@League Manager` off.
+
+    **Expect:** nothing from the bot. Every later step needs `@League Admin`.
