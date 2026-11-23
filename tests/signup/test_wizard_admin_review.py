@@ -1047,16 +1047,29 @@ async def _mock_switch_off_discarding(tmp_path: Any) -> SeasonLeague:
     return league
 
 
+#: Why a case still fails: the in-progress text of a fake driver's closing, correction choices
+#: or re-collect mentions it by its ID.
+_DOING_BY_ID = (
+    "#600: the in-progress text of a fake driver's closing, correction choices or re-collect "
+    "mentions it by <@id>, not its test name"
+)
+
+
 #: How a fake driver's signup is ended, sent back or refused; the words of each log entry it
 #: writes that must name it, one or several; and the words of the post its channel is sent naming
 #: it (None where the post names nobody).
 _FAKE_DRIVER_NAMED = [
-    pytest.param(_mock_rejected, "| Signup | Rejected", "rejected by", id="reject"),
+    pytest.param(_mock_rejected, "| Signup | Rejected", "rejected by", id="reject",
+                 marks=pytest.mark.xfail(strict=True, reason=_DOING_BY_ID)),
     pytest.param(_mock_changes_requested, "| Signup | Correction requested",
-                 "requested a correction", id="request-changes"),
-    pytest.param(_mock_field_chosen, "Correction requested: ", "re-submit", id="field-choice"),
-    pytest.param(_mock_withdrew, "| Signup | Withdrawn", None, id="withdrawal"),
-    pytest.param(_mock_cancelled, "| Signup | Cancelled", "cancelled by", id="cancel"),
+                 "requested a correction", id="request-changes",
+                 marks=pytest.mark.xfail(strict=True, reason=_DOING_BY_ID)),
+    pytest.param(_mock_field_chosen, "Correction requested: ", "re-submit", id="field-choice",
+                 marks=pytest.mark.xfail(strict=True, reason=_DOING_BY_ID)),
+    pytest.param(_mock_withdrew, "| Signup | Withdrawn", None, id="withdrawal",
+                 marks=pytest.mark.xfail(strict=True, reason=_DOING_BY_ID)),
+    pytest.param(_mock_cancelled, "| Signup | Cancelled", "cancelled by", id="cancel",
+                 marks=pytest.mark.xfail(strict=True, reason=_DOING_BY_ID)),
     pytest.param(_mock_expired, "lapsed unconfirmed", None, id="24-hour lapse"),
     pytest.param(_mock_cancel_refused_on_the_queue, "signup has already been approved", None,
                  id="cancel refused on the queue"),
@@ -1084,6 +1097,12 @@ _FAKE_DRIVER_NAMED = [
                  id="signup switched off, telling the channel discarded"),
 ]
 
+#: The signup changes whose in-progress text names the driver they are for: the closing of a
+#: signup on its channel, the offer of the correction choices, and the prompt to re-submit an
+#: answer. The queue's "under way" reply and its "has already been asked for" refusal each print
+#: a change's in-progress text, `ChangeType.doing` of its payload, word for word.
+_DOING_NAMES_THE_DRIVER = ("signup.closing", "signup.choices", "signup.recollect")
+
 
 @pytest.mark.parametrize(("decide", "logged", "posted"), _FAKE_DRIVER_NAMED)
 async def test_a_fake_driver_s_signup_is_named_by_its_test_name_and_never_by_its_id(
@@ -1106,7 +1125,11 @@ async def test_a_fake_driver_s_signup_is_named_by_its_test_name_and_never_by_its
     each discarded job included) names Mock Alpha, and nothing in the log channel or in his signup
     channel mentions his ID;
     the rejection notice, the correction choices, the re-submit prompt and the cancellation
-    notice posted in his channel name Mock Alpha."""
+    notice posted in his channel name Mock Alpha;
+    and the in-progress text of every change the case asked, which the queue's "under way" reply
+    and its "has already been asked for" refusal print, mentions no account by his ID, the
+    closing of his signup, the offer of his correction choices and the prompt to re-submit an
+    answer naming Mock Alpha."""
     league = await decide(tmp_path)
 
     log = league.log().replace("`", "")
@@ -1119,3 +1142,9 @@ async def test_a_fake_driver_s_signup_is_named_by_its_test_name_and_never_by_its
     if posted is not None:
         [post] = [text for text in texts if posted in text]
         assert MOCK_KIMI in post, post
+    types = {change_type.kind: change_type for change_type in league.bot.change_queue.types}
+    for change in await change_rows(league.db_path):
+        doing = types[change["kind"]].doing(json.loads(change["payload"]))
+        assert f"<@{SIGNING_UP}>" not in doing, (change["kind"], doing)
+        if change["kind"] in _DOING_NAMES_THE_DRIVER:
+            assert MOCK_KIMI in doing, (change["kind"], doing)
