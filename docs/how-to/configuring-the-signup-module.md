@@ -304,7 +304,7 @@ Then settle every one of them:
 
 A driver can hold one seat per division, and a team runs out of seats. The Reserve team is the exception: it has room for everyone.
 
-`/driver assign` is refused while test mode is active — a real driver is never seated under test. Fake drivers are placed by `/test-mode roster add` and are unaffected.
+`/driver assign` is refused while test mode is active — a real driver is never seated under test. Fake drivers are placed by `/test-mode roster add`, and every `/driver` command acts on them, named by mention or ID; see [Testing with test mode](test-mode.md).
 
 **Nothing is granted or posted when you assign.** A placement stands outside the championship until placements are confirmed from `/season placements-review`: that is when every placed driver is granted their division and team roles, and every lineup is posted. Until then `/driver unassign` takes a placement back without trace, returning the driver to the queue. The driver role is not part of this — it is granted when you approve the signup.
 
