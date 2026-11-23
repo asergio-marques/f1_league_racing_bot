@@ -633,10 +633,6 @@ is named, and attendance's cascade is shown in Part J instead.
         results and standings messages removed: 4
         verdicts removed: 0
       ```
-      > UNVERIFIED: that each division's opening classification is two take-downs, one for the
-      > drivers' table and one for the teams', each counted once however many messages it took
-      > (`erase_season_on`, `_tally`). Where it counts otherwise, correct the 4 in the reply and
-      > both lines.
 
 41. **Do:** `/test-mode review`
 
@@ -734,17 +730,18 @@ their channels is told; with images off, the calendars go out as text.
       - `#d2-calendar`: Division 2's calendar as text, its three rounds struck through and marked
         `— Cancelled`, `Autodromo Nazionale Monza`, `Circuit de Spa-Francorchamps` and
         `Circuit Zandvoort`; and the calendar picture the base's approval posted deleted.
-      - **Nothing** in `#dN-rsvp`, `#dN-weather` or `#dN-results`: the `📢 **Season Cancelled**`
+      - **No notice** in `#dN-rsvp`, `#dN-weather` or `#dN-results`: the `📢 **Season Cancelled**`
         notices of `02-roster-changes.md` step 27 are each their module's, and each module is off.
-      > UNVERIFIED: whether the Phase 1 forecast of step 20 is deleted from `#d1-weather` here. The
-      > season's end clears the forecasts posted under test mode (`test_mode_flushed_on`), which
-      > reads no module switch, but the deletion it plans may read weather's.
+      - `#d1-weather`: the Phase 1 forecast of step 20 is deleted. The season's end clears every
+        forecast posted under test mode, with weather off (`test_mode_flushed_on`; the deletion
+        reads no module switch).
     - **Roles:** none taken. Fake drivers hold none.
     - **Log:**
       ```
       <you> | /season cancel | Success
       ```
-      > UNVERIFIED: whether any line follows it, as in `02-roster-changes.md` step 27.
+      Nothing follows it: the one check-in call standing is Round 1's, which is final and not
+      called off, so no round carries a check-in's audit beneath the line.
     - **Test mode is off**, and every fake driver deleted. **The saved backup is kept**:
       `bot.bkup.db`, `scheduler.bkup.db` and `backup.lock` are still in the bot host folder.
 
@@ -1018,10 +1015,9 @@ while a season is in configuration. A Season #2 is set up for that alone, as
 
     **Expect:** as step 11: `Nationality Required` `ON` again.
 
-Discord is not restored with the database. What this spec posted stays: the Phase 1 forecast in
-`#d1-weather` (unless step 46 took it down), the check-in call in `#d1-rsvp`, and the text
-calendars in `#d1-calendar` and `#d2-calendar`. What it deleted stays deleted: the calendar
-pictures and the opening classifications the base's approval posted, which the base still
+Discord is not restored with the database. What this spec posted stays: the check-in call in
+`#d1-rsvp` and the text calendars in `#d1-calendar` and `#d2-calendar`. What it deleted stays
+deleted: the calendar pictures and the opening classifications the base's approval posted, which the base still
 records. A later spec that posts one of them again finds the recorded message gone and carries
 on (`standing_posts` passes over a message already deleted); clear the channels by hand for
 tidiness if you wish. `#signup` holds the overwrites step 68 put back, which are the ones the base
