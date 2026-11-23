@@ -543,6 +543,26 @@ MOCK = 9000000000000000001
 MOCK_NAME = "Mock Alpha"
 
 
+async def _start_mock(league: SeasonLeague) -> None:
+    """Mock Alpha is created a fake driver at Not Signed Up, no member of the server holding its
+    ID; the league admin Admin (77) asks `signup.start` for it, as `/signup start` does, and the
+    queue runs."""
+    from tests.support.season_league import ADMIN_ID
+
+    await league.write(
+        "INSERT INTO driver_profiles (discord_user_id, current_state, is_test_driver, "
+        "test_display_name) VALUES (?, 'NOT_SIGNED_UP', 1, ?)",
+        str(MOCK), MOCK_NAME,
+    )
+    league.absent.add(MOCK)
+    asked = member_interaction(league.bot, user=league._member(ADMIN_ID))
+    asked.guild = league.guild
+    await league.bot.change_queue.ask(
+        START_KIND, {"user_id": str(MOCK)}, interaction=asked, what="Signing up"
+    )
+    await run_queue(league.bot)
+
+
 @pytest.mark.xfail(
     strict=True,
     reason="#600: signup.start does not yet start a fake driver's signup with no member behind it",
@@ -560,23 +580,10 @@ async def test_a_fake_driver_s_signup_starts_with_no_member_behind_it(tmp_path):
     posted in the new channel."""
     league = await _league(tmp_path)
     await league.set_test_mode(True)
-    await league.write(
-        "INSERT INTO driver_profiles (discord_user_id, current_state, is_test_driver, "
-        "test_display_name) VALUES (?, 'NOT_SIGNED_UP', 1, ?)",
-        str(MOCK), MOCK_NAME,
-    )
-    league.absent.add(MOCK)
     [roles] = await league.rows(
         "SELECT interaction_role_id, league_admin_role_id FROM server_configs"
     )
-    from tests.support.season_league import ADMIN_ID
-
-    asked = member_interaction(league.bot, user=league._member(ADMIN_ID))
-    asked.guild = league.guild
-    await league.bot.change_queue.ask(
-        START_KIND, {"user_id": str(MOCK)}, interaction=asked, what="Signing up"
-    )
-    await run_queue(league.bot)
+    await _start_mock(league)
 
     [change] = await _changes_of(league, START_KIND)
     assert change["state"] == "DONE"
@@ -602,6 +609,53 @@ async def test_a_fake_driver_s_signup_starts_with_no_member_behind_it(tmp_path):
     )
     assert await _driver_state(league, MOCK) == "PENDING_SIGNUP_COMPLETION"
     assert league.channel(NEW_CHANNEL).texts != []
+
+
+_FOLLOWS_THE_SWITCH = (
+    "#600: a fake driver's wizard does not yet start under test mode, nor ask nationality by "
+    "the test-mode nationality switch"
+)
+
+
+@pytest.mark.xfail(strict=True, reason=_FOLLOWS_THE_SWITCH)
+@pytest.mark.parametrize(
+    ("league_asks", "switch", "first"),
+    [
+        pytest.param(True, False, "COLLECTING_PLATFORM", id="league asks, switch off"),
+        pytest.param(False, True, "COLLECTING_NATIONALITY", id="league does not ask, switch on"),
+    ],
+)
+async def test_under_test_mode_the_wizard_asks_nationality_by_the_test_mode_switch(
+    tmp_path, league_asks, switch, first
+):
+    """The server is in test mode, at Signups with the window open. The league's own signup
+    setting asks each driver's nationality, or does not, and `/test-mode nationality` stands the
+    other way. A league admin starts the fake driver Mock Alpha's signup, as `/signup start`
+    does, and the queue runs. Its wizard follows the test-mode switch, not the league's setting:
+    with the switch on it opens at Collecting Nationality, with it off at Collecting Platform; and
+    the configuration frozen with the wizard records the switch's value, so a later step (a
+    correction among them) asks or skips nationality the same way."""
+    import json
+
+    league = await _league(tmp_path)
+    await league.write(
+        "INSERT INTO signup_module_settings (id, nationality_required, time_type,"
+        " time_image_required) VALUES (1, ?, 'TIME_TRIAL', 1)",
+        int(league_asks),
+    )
+    await league.write(
+        "UPDATE season_signup_config SET nationality_required = ?", int(league_asks)
+    )
+    await league.set_test_mode(True)
+    await league.write(
+        "UPDATE server_configs SET test_mode_nationality_required = ?", int(switch)
+    )
+
+    await _start_mock(league)
+
+    wizard = await _wizard(league, MOCK)
+    assert wizard is not None and wizard["wizard_state"] == first
+    assert json.loads(wizard["config_snapshot_json"])["nationality_required"] is switch
 
 
 async def test_the_wizard_is_saved_with_the_configuration_as_it_stood_and_no_reserve_team(
