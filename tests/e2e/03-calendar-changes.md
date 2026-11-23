@@ -886,3 +886,131 @@ its own word in its own channel, and the calendar is reposted with the round cov
       `Italian Grand Prix`, the embed titled `Season 1 Round 1 — Autodromo Nazionale Monza` with
       `🏁 Event Type` `Sprint`, as step 29 made it, every Division 2 driver `()`, and the three
       buttons.
+
+---
+
+## Part G — Cancelling a division
+
+Division 2 is cancelled last, with its round 1's forecast and call out and its round 3 already
+cancelled. Division 1 runs on, so the season stays ongoing.
+
+56. **Do:** `/division cancel name:Division 2 confirm:yes`
+
+    **Expect:**
+    - **Reply:** ``❌ Type exactly `CONFIRM` in the `confirm` field to proceed.``
+    - **Log:** ``⛔ `/division cancel` refused for <you> — Type exactly `CONFIRM` in the `confirm` field to proceed.``
+
+57. **Do:** `/division cancel name:Division 9 confirm:CONFIRM`
+
+    **Expect:**
+    - **Reply:** ``❌ Division `Division 9` not found.``
+    - **Log:** ``⛔ `/division cancel` refused for <you> — Division `Division 9` not found.``
+
+58. **Do:** `/division cancel name:Division 2 confirm:CONFIRM`
+
+    **Expect:**
+    - **Ack:** `Cancelling **Division 2**`
+    - **Then:** `✅ Division **Division 2** cancelled.`, and any notices section for the calendar.
+    - **Posts:**
+      - `#d2-rsvp`: the notice, mentioning the division role:
+        ```
+        <@&<Division 2 role id>>
+        📢 **Division Cancelled: Division 2**
+        This division has been cancelled. There are no further check-ins to answer.
+        ```
+        then the call of step 55 deleted, with its picture.
+      - `#d2-results`, silently:
+        ```
+        📢 **Division Cancelled: Division 2**
+        No further results will be posted for this division.
+        ```
+      - `#d2-weather`, silently:
+        ```
+        📢 **Division Cancelled: Division 2**
+        No further weather forecasts will be posted for this division.
+        ```
+        The Phase 1 forecast of step 54 stays.
+      - `#d2-calendar`: a new calendar with rounds 1 and 2 covered by the cancellation overlay as
+        well as round 3; then step 49's calendar deleted.
+      - One notice per channel: the division is told once, and round 3, cancelled already, is not
+        told again.
+    - **Log:**
+      ```
+      <you> | /division cancel | Success
+        division: Division 2
+        check-in, Division 2, Round 1 (Autodromo Nazionale Monza):
+          accepted: none
+          tentative: none
+          declined: none
+          no answer: <@9000000000000000025> (Yuki Yamada), <@9000000000000000026> (Zane Zeller), … , <@9000000000000000045> (Stefan Sommer)
+      ```
+      `no answer` names all twenty-one Division 2 drivers, by ID. Round 2 had no call, so it
+      records nothing. Any notice block for the calendar.
+    - Nothing else: Division 1 is still running, so the season is not wound down and stays
+      ongoing.
+
+59. **A repeat.** **Do** step 58's command again.
+
+    **Expect:**
+    - **Reply:** `❌ Division **Division 2** is already cancelled.`
+    - **Log:** ``⛔ `/division cancel` refused for <you> — Division **Division 2** is already cancelled.``
+
+60. **Do:** `/round amend division_name:Division 2 round_number:1 format:NORMAL`
+
+    **Expect:**
+    - **Reply:**
+      ```
+      ⛔ **Round 1** in **Division 2** cannot be amended:
+      • This round has been cancelled and can no longer be amended.
+
+      **Nothing has been changed.**
+      ```
+      The division's cancellation cancelled each of its rounds.
+    - **Log:** ``⛔ `/round amend` of round 1 in Division 2 refused for <you> — This round has been cancelled and can no longer be amended.``
+
+61. **Do:** `/round cancel division_name:Division 2 round_number:2 confirm:CONFIRM`
+
+    **Expect:**
+    - **Reply:** `❌ Round 2 in **Division 2** is already cancelled.`
+    - **Log:** ``⛔ `/round cancel` refused for <you> — Round 2 in **Division 2** is already cancelled.``
+
+62. **Do:** `/division calendar-sync name:Division 2`
+
+    **Expect:**
+    - **Ack:** `Posting the calendar of **Division 2** again`
+    - **Then:** `✅ Calendar for **Division 2** reposted as image.`
+    - **Posts** (`#d2-calendar`): the calendar of step 58 again, every round covered; then step
+      58's deleted.
+    - **Log:** as step 31, with `division: Division 2`.
+    > UNVERIFIED: whether the sync of a cancelled division should be refused instead. Neither the
+    > command nor its change's check (`calendar_post_service`) looks at the division's status, so
+    > `src/` reposts it; the README is silent. Record what the bot does.
+
+63. **Do:** `/test-mode review`
+
+    **Expect:**
+    - **Reply:** Division 2 is gone from it, and Division 1 is as in step 53:
+      ```
+      **Division 1**
+        Round 2 · TBA             · <YEAR+1>-03-15  Notice: ⏳  |  Results: ⏳  |  RSVP: ⏳  Last: ⏳  Deadline: ⏳  Cleared: ⏳
+        Round 3 · Hungaroring     · <YEAR+1>-03-22  P1: ⏳  P2: ⏳  P3: ⏳  Cleanup: ⏳  |  Results: ⏳  |  RSVP: ⏳  Last: ⏳  Deadline: ⏳  Cleared: ⏳
+      ```
+      and the legend.
+    - **Log:** nothing; it is a view.
+
+64. **Do:** `/test-mode advance`
+
+    **Expect:** Division 1's mystery round, round 2 since step 26; nothing of Division 2.
+    - **Reply:** ``🔮 The **Mystery Round notice** for **Division 1** — **Round 2** is on the change queue: it goes to the division forecast channel as soon as the queue reaches it.``
+    - **Posts** (`#d1-weather`): the mystery notice, a picture with no text, as
+      `01-full-season.md` step 99.
+    - **Log:**
+      ```
+      <you> | /test-mode advance | Success
+        phase: Mystery Round notice
+        division: Division 1
+        round: Round 2
+      ```
+
+Season #1 is still ongoing in test mode: Division 1 holds rounds 2 and 3, Division 2 is
+cancelled. Restore the base before the next spec.
