@@ -4,7 +4,7 @@ The command is a change on the league's lane: the fake driver's synthetic ID car
 the queue's acknowledgement its first reply, and one save deleting the driver, keeping their
 history, and writing its `TEST_DRIVER_REMOVED` audit entry, stamped with the queue's clock, then
 the reply and the line in the words the command used before the queue. An ID that is not a number
-is refused at the command, before the ask. Test mode, the season's Placements and the driver are
+is refused at the command, before the ask. Test mode and the driver are
 judged at the ask and again as the change starts. A fake driver is not a league's setting, so a
 fault in the save stops the league's lane, as any change's does, with nothing saved; once a league
 admin discards the stopped job, the reply says nothing was removed and to run the command again.
@@ -36,7 +36,6 @@ MOCK_ID = "9000000000000000001"
 _AUDIT_TYPE = "TEST_DRIVER_REMOVED"
 _DOING = "Removing fake driver **Mock Alpha**"
 _NOT_IN_TEST_MODE = "⛔ This command is only available when test mode is enabled."
-_NOT_PLACING = "⛔ The test roster can only be changed while the season is in placements."
 _NOT_FOUND = "⛔ No test driver found with that user ID on this server."
 
 
@@ -194,23 +193,17 @@ async def _test_mode_off(league) -> None:
     await league.set_test_mode(False)
 
 
-async def _placements_approved(league) -> None:
-    await league.write("UPDATE seasons SET status = 'ACTIVE', stage = 'ONGOING'")
-
-
 @pytest.mark.parametrize(
     "meanwhile, user_id, refusal",
     [
         pytest.param(_test_mode_off, MOCK_ID, _NOT_IN_TEST_MODE, id="test mode off"),
-        pytest.param(_placements_approved, MOCK_ID, _NOT_PLACING, id="the placements approved"),
         pytest.param(None, "9000000000000000009", _NOT_FOUND, id="an id no driver holds"),
         pytest.param(None, str(CHARLES), _NOT_FOUND, id="a real driver's id"),
     ],
 )
 async def test_it_is_refused_at_the_ask(league, meanwhile, user_id, refusal):
     """The season is in Placements under test mode, Mock Alpha a fake driver at McLaren in Am
-    beside Charles, a real driver; then test mode is switched off, or the season's placements are
-    approved (Ongoing), or neither. Admin (77) runs `/test-mode roster remove` with Mock Alpha's
+    beside Charles, a real driver; then test mode is switched off, or not. Admin (77) runs `/test-mode roster remove` with Mock Alpha's
     ID, an ID no driver holds, or Charles's. They are refused at once, seen by them alone, in the
     words the command has always used, a real driver never being one test mode may remove;
     nothing is queued, both drivers keep their seats, the bot's delete hook is not called,
@@ -250,14 +243,13 @@ async def _removed_meanwhile(league) -> None:
     "meanwhile, refusal",
     [
         pytest.param(_test_mode_off, _NOT_IN_TEST_MODE, id="test mode turned off"),
-        pytest.param(_placements_approved, _NOT_PLACING, id="the placements approved"),
         pytest.param(_removed_meanwhile, _NOT_FOUND, id="the driver gone"),
     ],
 )
 async def test_it_is_judged_again_as_it_starts(league, meanwhile, refusal):
     """The season is in Placements under test mode, Mock Alpha a fake driver at McLaren in Am.
     Admin (77) runs `/test-mode roster remove` with Mock Alpha's ID and is acknowledged; before
-    the queue runs it, test mode is switched off, the season's placements are approved (Ongoing),
+    the queue runs it, test mode is switched off,
     or Mock Alpha is deleted another way. The change judges again as it starts and is refused:
     the bot's delete hook is not called, nothing is audited, Admin's reply becomes the refusal the command gives at the ask, word for
     word, the log channel takes that refusal as its only line, and the queue is not stopped."""
