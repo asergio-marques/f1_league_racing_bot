@@ -121,17 +121,18 @@ async def test_the_migration_is_idempotent(tmp_path):
 async def test_every_reader_of_the_season_resolves_the_same_row(db_path):
     """The bug this exists to stop: two commands disagreeing about "the season".
 
-    `_get_active_season_id` backs the `/test-mode roster` commands and
-    `get_setup_or_active_season` backs several others. With one live season they cannot
-    disagree, and both are ordered so they would still agree on a database that predates
-    the constraint.
+    `_get_active_season_id_on` backs the `/test-mode roster` commands,
+    `get_setup_or_active_season` several others and `get_previewable_season` the previews. With
+    one live season they cannot disagree, and the first two are ordered so they would still agree
+    on a database that predates the constraint.
     """
     from leaguebot.core.services.seasons.season_service import SeasonService
-    from leaguebot.core.services.test_mode.test_roster_service import _get_active_season_id
+    from leaguebot.core.services.test_mode.test_roster_service import _get_active_season_id_on
 
     season_id = await _add_season(db_path, "SETUP", 1)
 
-    roster_view = await _get_active_season_id(db_path)
+    async with get_connection(db_path) as db:
+        roster_view = await _get_active_season_id_on(db)
     service = SeasonService(db_path)
     season_view = await service.get_setup_or_active_season()
     preview_view = await service.get_previewable_season()
