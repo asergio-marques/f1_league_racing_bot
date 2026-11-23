@@ -222,12 +222,14 @@ class TestSignupRecordsJoin:
         assert names.get(USER_ID) == "Ada Lovelace"
 
     async def test_the_lineup_seat_query_runs_and_finds_its_driver(self, db_path):
-        """The lineup's seat query, run as the lineup picture runs it: through core's
-        `division_seating`, against the migrated schema. Season 1 is active, with division D1
-        holding Redline, a one-seat team; Ada (USER_ID) is Active and holds its seat, her
-        placement confirmed. The seating of D1 is Redline alone, its one seat held by Ada."""
-        from leaguebot.core.services.drivers.division_seating import division_seating
+        """The lineup picture's seat query, `seated_teams`, run against the migrated schema as
+        `build_drawing` runs it. Season 1 is active, with division D1 holding Redline, a one-seat
+        team; Ada (USER_ID) signed up as 'Ada Lovelace', British, is Active and holds its seat,
+        her placement confirmed. D1's lineup is Redline alone, its one seat drawn as Ada, under
+        her signup's name and flag."""
+        from leaguebot.image.services.aspects.image_lineup_post import seated_teams
 
+        await _seed_driver(db_path, name="Ada Lovelace", nationality="British")
         async with get_connection(db_path) as db:
             cursor = await db.execute(
                 "INSERT INTO seasons (start_date, status, season_number) "
@@ -245,18 +247,15 @@ class TestSignupRecordsJoin:
                 "VALUES (?, 'Redline', 'Redline', 1, 0)",
                 (division_id,),
             )
-            team_id = cursor.lastrowid
             cursor = await db.execute(
                 "INSERT INTO team_seats (team_instance_id, seat_number) VALUES (?, 1)",
-                (team_id,),
+                (cursor.lastrowid,),
             )
             seat_id = cursor.lastrowid
             cursor = await db.execute(
-                "INSERT INTO driver_profiles (discord_user_id, current_state) "
-                "VALUES (?, 'ACTIVE')",
-                (USER_ID,),
+                "SELECT id FROM driver_profiles WHERE discord_user_id = ?", (USER_ID,)
             )
-            profile_id = cursor.lastrowid
+            [profile_id] = await cursor.fetchone()
             await db.execute(
                 "INSERT INTO driver_season_assignments (driver_profile_id, season_id, "
                 "division_id, team_seat_id, committed) VALUES (?, ?, ?, ?, 1)",
@@ -265,15 +264,15 @@ class TestSignupRecordsJoin:
             await db.commit()
 
         assert division_id is not None
-        [team] = await division_seating(db_path, division_id)
+        [team] = await seated_teams(db_path, _hook(db_path), division_id, season_id)
 
-        assert team.team_instance_id == team_id
+        assert team.name == "Redline"
         [seat] = team.seats
         assert seat.seat_number == 1
-        assert seat.occupant is not None
-        assert seat.occupant.profile_id == profile_id
-        assert seat.occupant.discord_user_id == str(USER_ID)
-        assert seat.occupant.is_test_driver is False
+        assert seat.profile_id == profile_id
+        assert seat.discord_user_id == str(USER_ID)
+        assert seat.server_display_name == "Ada Lovelace"
+        assert seat.nationality == "British"
 
 
 # ── The suppression switch ────────────────────────────────────────────────
