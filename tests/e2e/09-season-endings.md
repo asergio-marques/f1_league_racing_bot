@@ -168,9 +168,6 @@ every division before it records the season's end (`cancellation_changes`, `seas
      for the division they were placed in, **marked cancelled** (`write_driver_history_entries_on`,
      `force_cancelled`), though the driver is deleted. A fake driver created later under the same
      identifier is given that history back (`test_roster_service._reattach_history`).
-     > UNVERIFIED: that the reserves hold an entry too, which the counts 24 and 21 assume. An entry
-     > is written for every placement committed in the season (`driver_division_memberships`);
-     > where the reserves are left out, the counts are 22 and 19.
 
 ### Once it is cancelled
 
