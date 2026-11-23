@@ -15,7 +15,12 @@ from leaguebot.framework.db.database import get_connection, inserted_id
 from leaguebot.framework.models.change import PlannedStep
 from leaguebot.core.models.driver_names import SignupName, SignupNames
 from leaguebot.core.models.driver_profile import DriverState
-from leaguebot.core.services.drivers.driver_service import accounts_of_profile, drivers_in_states
+from leaguebot.core.services.drivers.driver_names import resolve_driver_name
+from leaguebot.core.services.drivers.driver_service import (
+    accounts_of_profile,
+    driver_names_for_profiles,
+    drivers_in_states,
+)
 from leaguebot.core.services.upkeep.pack_service import CLEARED_SIGNUP_CHANNEL_ID, CLEARED_WIZARDS
 from leaguebot.core.services.seasons.review_sections import Review, ReviewSection
 from leaguebot.core.services.seasons.season_lifecycle_service import (
@@ -222,17 +227,27 @@ class SignupModuleService:
         signup was submitted — not approved, and not last corrected. A driver still awaiting
         approval or correction follows them, holding no seed (``seed`` is None) — they are
         listed because confirming placements waits on them too.
+
+        A driver whose signup holds no name is named as core names one without it
+        (`resolve_driver_name`): a fake driver left Unassigned, which holds no signup, by its test
+        name, and any other by their account.
         """
+        unsettled = await self._unsettled_drivers()
+        identities = await driver_names_for_profiles(
+            self._db_path, [driver["id"] for driver, _row in unsettled]
+        )
         results = []
-        for i, (driver, row) in enumerate(await self._unsettled_drivers(), start=1):
+        for i, (driver, row) in enumerate(unsettled, start=1):
+            account, test_name = identities.get(
+                driver["id"], (driver["discord_user_id"], None)
+            )
             total_ms = None if row is None else row["total_lap_ms"]
             results.append({
                 "seed": i if driver["current_state"] == "UNASSIGNED" else None,
                 "state": driver["current_state"],
                 "discord_user_id": driver["discord_user_id"],
-                "server_display_name": (
-                    (row and row["server_display_name"]) or driver["discord_user_id"]
-                ),
+                "server_display_name": (row and row["server_display_name"])
+                or resolve_driver_name(discord_user_id=account, test_display_name=test_name),
                 "platform": (row and row["platform"]) or "—",
                 "availability_slot_ids": json.loads((row and row["availability_slot_ids"]) or "[]"),
                 "driver_type": (row and row["driver_type"]) or "—",
