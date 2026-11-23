@@ -467,3 +467,143 @@ refused for the tier, for the word and for the channel; they are not shown again
     **Expect:** as step 11: **Season #2 (F1 25)**. Season #1, cancelled, travelled with the league,
     so the numbering carries on from it. The season is left in configuration: the factory reset
     erases it with the rest.
+
+---
+
+## Part E — The factory reset
+
+Season #2 is in configuration, the server claimed again. A factory reset takes a backup of both
+databases first, then replaces the league database with a freshly migrated one and empties the job
+store, then deletes the bot's own messages from this server (`factory_reset_service`). It is the
+server owner's alone, from any channel, and nothing inside the bot can undo it.
+
+### Refused
+
+35. **Needs a second Discord account; skip it where you have none.** In Discord, give a second
+    account, the helper, `@League Admin`, and, where you can, a role carrying Discord's
+    Administrator permission. The helper must not own the server. **Do**, as the helper, in
+    `#bot-commands`: `/bot factory-reset confirm:CONFIRM`
+
+    **Expect:**
+    - **Reply:** `⛔ Only this server's owner may factory-reset the bot, whatever roles or permissions anyone else holds.`
+    - **Log:** ``⛔ `/bot factory-reset` refused for <helper> — Only this server's owner may factory-reset the bot, whatever roles or permissions anyone else holds.``,
+      `<helper>` being the helper's display name and mention.
+    - Nothing erased, no backup taken: no `*.factory-*.db` file in the bot host folder.
+
+    **Then:** take the roles back off the helper.
+
+36. **From any channel, and the word is case-sensitive.** **Do**, as the owner, in `#signup`:
+    `/bot factory-reset confirm:confirm`
+
+    **Expect:**
+    - **Reply:** ``❌ Nothing was changed. Pass `confirm:CONFIRM` (case-sensitive) to erase the league.``
+    - **Log** (`#bot-log`): ``⛔ `/bot factory-reset` refused for <you> — Nothing was changed. Pass `confirm:CONFIRM` (case-sensitive) to erase the league.``
+    - It is not refused for the channel: the command runs from any channel
+      (`channel_guard.server_owner_only`). Nothing erased, no backup taken.
+
+### The reset
+
+37. **Do**, as the owner, in `#bot-commands`: `/bot factory-reset confirm:CONFIRM`
+
+    **Expect:**
+    - **Reply**, to you alone, with no acknowledgement:
+      ```
+      ✅ The bot is back to a fresh install, and serves no server.
+      A backup was taken first, as `bot.factory-<moment>.db` and `scheduler.factory-<moment>.db`, beside the live database on the host; restoring it is the host's job.
+      The bot's channels and messages on this server are being deleted now. That can take a long while, and progress is reported in a direct message to you.
+      ```
+      `<moment>` is the moment of the reset in UTC, written `YYYYMMDDTHHMMSSZ`
+      (`factory_reset_service.take_backup`), the same in both names. Where the bot could not send
+      you a direct message, the last words read `in the host's log` instead, and the progress
+      below goes to the host's log, each as `factory reset: <its first line>`.
+    - **Direct message** from the bot, one message edited as the clean-up goes:
+      - first `🧹 Factory reset: starting the Discord clean-up.`;
+      - then, before each channel it works,
+        ```
+        🧹 Factory reset: cleaning up Discord — <n> of <total> channel(s) done, now clearing #<channel name>.
+        If this message stops changing, the clean-up stopped there; every channel before it was finished.
+        ```
+      - last:
+        `✅ Factory reset: Discord cleaned up — 0 channel(s) deleted and <m: the messages deleted> of the bot's message(s) deleted, across <total> channel(s).`
+        No channel deleted: the bot deletes only the channels it created, a signup wizard's or a
+        round's results submission or amendment channel, and no round was run and no signup
+        window opened. Where a channel could not be cleaned, `These could not be cleaned:` and a
+        line `• <fault>` for each follow.
+    - **Discord:** every message **of the bot's** is deleted from the channels it posts to, in
+      every season: the lineups, calendars, standings and attendance sheets of `00-base.md`
+      step 32, the cancellation notices of step 5, and every line in `#bot-log`. A message of
+      anybody else's is left where it is. No channel is deleted.
+    - **Log**, once the clean-up ends, in `#bot-log`, the one message of the bot's left there:
+      ```
+      <you> | /bot factory-reset | Clean-up finished
+        Erased: the league's database and its scheduled jobs, after a backup was taken.
+        Discord: 0 channel(s) and <m: as in the direct message> message(s) deleted.
+      ```
+      Where a channel could not be cleaned, the first line ends `Clean-up finished with faults`
+      and each fault follows on a line of its own.
+    - **Host log**, at WARNING:
+      `/bot factory-reset by <your user> (id=<your id>): the league was erased; backup at <path of bot.factory-<moment>.db>`.
+
+38. **Optional, and only while the direct message of step 37 still reads `cleaning up`.** A clean-up
+    of a few hundred recent messages may finish before you can run this; if it has, skip the step.
+    **Do:** `/bot init interaction_role:@League Manager league_admin_role:@League Admin interaction_channel:#bot-commands log_channel:#bot-log`,
+    then `/bot factory-reset confirm:CONFIRM`.
+
+    **Expect:**
+    - **Reply**, to the first: ``⛔ A factory reset is still cleaning up Discord. Run `/bot init` again once it has finished.``
+    - **Reply**, to the second: `⛔ A factory reset is still cleaning up Discord. Wait for it to finish.`
+    - **Log:** nothing in `#bot-log`; the host's log records each refusal. No server is claimed,
+      and no second backup is taken.
+
+### What the reset left
+
+39. **On the host.** List the bot host folder.
+
+    **Expect:**
+    - `bot.factory-<moment>.db` and `scheduler.factory-<moment>.db`, with the moment of step 37,
+      each a single file with no `-wal` or `-shm` beside it: the copy is taken out of WAL so that a
+      host can hand it on whole (`factory_reset_service._self_contained`).
+    - `bot.db` and `scheduler.db`, the live files, still there: the database is replaced in place
+      by a freshly migrated one, not deleted.
+    - `bot.bkup.db`, `scheduler.bkup.db` and `backup.lock` still there, and `bot.prerestore.db` and
+      `scheduler.prerestore.db` from step 1: the factory reset's backup is kept apart from the
+      test-mode backup, and neither overwrites it nor heeds its lock.
+    - **Host check (optional):**
+      ```
+      sqlite3 bot.db "SELECT COUNT(*) FROM seasons; SELECT COUNT(*) FROM default_teams; SELECT COUNT(*) FROM server_configs WHERE server_id IS NOT NULL;"
+      sqlite3 scheduler.db "SELECT COUNT(*) FROM apscheduler_jobs;"
+      sqlite3 bot.factory-<moment>.db "SELECT season_number, status FROM seasons ORDER BY id;"
+      ```
+      answer `0` three times: no season, no team, no claim; then `0`: the job store is empty; then
+      `1|CANCELLED` and `2|SETUP`: the backup holds the league as step 34 left it.
+      > UNVERIFIED: that a fresh database holds no row in `default_teams`. The README says the
+      > team list always holds the Reserve team, which may be a row the migrations seed; where
+      > the count is `1`, check that row is `Reserve`.
+      The job store stays empty until the bot is next started, when the image module arms its
+      daily portrait refresh again.
+
+40. **Do:** `/season status`
+
+    **Expect:**
+    - **Reply:** ``⛔ This server has not been set up yet. A server administrator must run `/bot init`.``
+    - **Log:** nothing in `#bot-log`; the host's log records it. The bot serves no server.
+
+41. **A repeat.** Once the direct message of step 37 reads `✅ Factory reset: Discord cleaned up`,
+    **Do:** `/bot factory-reset confirm:CONFIRM`
+
+    **Expect:**
+    - **Reply:** as step 37, a new `<moment>` in both names. A second reset is not refused: it
+      runs on the fresh install, and takes a backup of it.
+    - **Direct message:** a new one, `🧹 Factory reset: starting the Discord clean-up.`, edited to
+      `✅ Factory reset: Discord cleaned up — 0 channel(s) deleted and 0 of the bot's message(s) deleted, across 0 channel(s).`
+      The fresh database names no channel, so the clean-up visits none.
+    - **Log:** nothing in `#bot-log`: there is no log channel to post the closing line to. The
+      closing line of step 37 still stands there. The host's log has, at WARNING,
+      ```
+      factory reset: the closing line could not be posted:
+      <you> | /bot factory-reset | Clean-up finished
+        Erased: the league's database and its scheduled jobs, after a backup was taken.
+        Discord: 0 channel(s) and 0 message(s) deleted.
+      ```
+    - **Host:** a second pair, `bot.factory-<new moment>.db` and `scheduler.factory-<new moment>.db`,
+      beside the first, which is untouched: each reset keeps its own backup.
