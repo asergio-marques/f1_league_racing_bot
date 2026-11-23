@@ -354,10 +354,10 @@ both trees. It is handed the (member, test-mode) pairs by the entry point, the c
 the change types that carry it, so that a service imports no cog and finds none on the bot, and it
 names no group of its own: each is removed by its own group's name, so a further group is a further
 pair and no change to the swap. The notice a factory reset and `/bot init` add, where no swap runs,
-is built where it is needed from one fixed piece of text naming both commands (`COMMANDS_NAMED`),
-which is the one place core's text names `/signup`. It runs as the step after
-the save of the toggle and of a test season's completion, abort and cancellation, and off the queue
-as start-up's command sync and `!sync`'s, both trees. How a refusal is met in each, the swap being a
+is built where it is needed from one fixed piece of text naming both commands (`COMMANDS_NAMED`);
+the swap's own refusal and describe line name them in words. It runs as the step after the save of
+the toggle and of a test season's completion, abort and cancellation, and off the queue as
+start-up's command sync and `!sync`'s, both trees. How a refusal is met in each, the swap being a
 fifth exception to the lane stop, is `architecture.md`'s. The moments of the swap, and the restart a
 factory reset's and `/bot init`'s replies name, are the core specification's ("Test mode"). A swap
 that failed may leave the wrong form in place until the next one, which is accepted, the remedy
@@ -935,21 +935,18 @@ set-former-driver` (`core.test_mode_former_driver`) and the four roster commands
 judged without a write at the ask and again as it starts, and is one save of its rows and their
 audit entries, the roster's writers taking the connection of the save and committing nothing. What
 the reply of a discarded save needs is read into the payload at the ask (`fill`), and a fault in a
-save stops the lane. What each kind judges and writes is its docstring's. A roster is measured
-against the template capacities with the bot's own template capacity service, the one carrying the
-image module's drawing, as a real placement is: the drawing is asked in the check, before the
-save opens, and the save judges the rest again on its own connection, measures no capacity again
-and asks nothing of the drawing. The lane runs one change at a time, so what the check was told
-still holds. One the file shows wrong on its own is refused by the form before the ask. A roster command is judged
-in no stage of the season, only on test mode being on and a season standing: a fake driver is created
-unsigned, and the signup and `/driver assign` after it carry every rule of the stage. Removal asks
+save stops the lane. What each kind judges and writes is its docstring's. One the file shows wrong on its own is
+refused by the form before the ask. A roster command is judged in no stage of the season, only on
+test mode being on and a season standing: a fake driver is created unsigned, and the signup and
+`/driver assign` after it carry every rule of the stage. Removal asks
 whether the driver has raced through core's reader of the divisions a driver raced in
 (`divisions_raced_read`) and the former-driver flag, and whether it holds a committed seat, never
 the results tables, so core reads no table another module owns.
 
 **Fake drivers are seeded, not moved through the state machine.** `test_roster_service` inserts a
-fake driver at Assigned, flagged as a test driver, with a synthetic id above any real Discord id;
-its docstring says why it bypasses `write_transition`. They are removed through
+fake driver at Not Signed Up with no seat, flagged as a test driver, with a synthetic id above any
+real Discord id; the signup and `/driver assign` then move it through the state machine, and its
+docstring says why the insert bypasses `write_transition`. They are removed through
 `delete_driver_profiles`, keeping their history.
 
 **Advancing reads one moment and asks the modules.** `advance_next_step` reads the next step and
