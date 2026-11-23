@@ -201,7 +201,7 @@ No season is live now, and test mode is off.
 
     **Expect:**
     - **Reply:** ``⛔ The backup commands run only while the server is in **test mode**. They copy and replace the whole database, which is not something to do to a league that is running. Turn test mode on with `/test-mode toggle` first.``
-    - **Log:** nothing: the status is a view. The backup is still on disk (step 6); step 15 reads it
+    - **Log:** nothing: the status is a view. The backup is still on disk (step 6); step 17 reads it
       again once test mode is back on.
 
 ---
@@ -231,8 +231,8 @@ seated.
 
     **Expect:**
     - **Reply:** `⛔ Season 2 is current (stage: configuration). The bot does not leave a server while a season is under way — complete it, or cancel or abort it, first.`
-    - **Log:** `⛔ `/bot pack` refused for <you> — Season 2 is current (stage: configuration). The bot does not leave a server while a season is under way — complete it, or cancel or abort it, first.`,
-      with `` `/bot pack` `` in code. No `Pack under way` line: the refusal is asked before the
+    - **Log:** ``⛔ `/bot pack` refused for <you> — Season 2 is current (stage: configuration). The bot does not leave a server while a season is under way — complete it, or cancel or abort it, first.``
+      No `Pack under way` line: the refusal is asked before the
       pack writes its line (`BotCog.handle_pack`).
     - Nothing cleared.
 
@@ -348,3 +348,122 @@ seated.
     - **Host check (optional):**
       `sqlite3 bot.db "SELECT season_number, status FROM seasons;"` answers `1|CANCELLED` alone:
       nothing of Season #2 remains.
+
+---
+
+## Part D — Packing the bot, and claiming the server again
+
+No season is live and test mode is off. A pack readies the bot to serve the league from another
+server: what is the league's it keeps, what is the server's it clears, and it touches nothing in
+Discord (`pack_service`). Here the "other" server is this one again: `/bot init` claims whichever
+server it is given on once the claim is free. `06-settings.md` steps 33, 34 and 46 show the pack
+refused for the tier, for the word and for the channel; they are not shown again.
+
+### The pack
+
+26. **Do:** `/bot pack confirm:CONFIRM`
+
+    **Expect:**
+    - **Log**, written as the pack begins, before it clears the log channel:
+      ```
+      <you> | /bot pack | Pack under way
+        Clearing the four bot settings, the base and driver roles, the team roles, the hub and signup channels, the signup wizards, undelivered messages and scheduled jobs. The bot will no longer serve this server; `/bot init` on another claims it.
+      ```
+      It is the last line the log channel takes until step 29: once the pack is done there is no
+      log channel.
+    - **Reply:**
+      ```
+      ✅ The bot no longer serves this server.
+      Cleared: the four bot settings, the base role and the driver role, **12** team role(s), the hub channel, the signup channel, **0** signup wizard(s), **<n: undelivered log lines, 0 unless one was waiting for a retry>** undelivered message(s) and **<n: scheduled jobs>** scheduled job(s).
+      Kept: every driver, past seasons, the team list, points configurations and module settings.
+      Run `/bot init` on the league's new server to claim it. The bot's messages stay on this server, and their buttons now refuse.
+      ```
+      Twelve team roles: the eleven teams' and the Reserve team's, which `/team reserve-role` keeps
+      in the same table (`team_changes`, `TeamRoleService.set_team_role_config_on`). No signup
+      wizard: test mode opened no signup window.
+      > UNVERIFIED: the number of scheduled jobs cleared. The cancellation (step 5) took every
+      > round's timed work, and the pack keeps the daily portrait refresh and does not count it,
+      > so 0 is expected; any other number names jobs that outlived the season.
+
+27. **Nothing in Discord changed.** Look at the Fixture's channels.
+
+    **Expect:**
+    - Every post stands: the lineups, standings and attendance sheets `00-base.md` step 32 posted,
+      and the cancellation notices and calendars of step 5. The pack changes the database alone.
+    - Nothing in the bot host folder changed: no new file, and the saved backup still there.
+    - **Host check (optional):**
+      `sqlite3 bot.db "SELECT server_id, log_channel_id, base_role_id, test_mode_active FROM server_configs;"`
+      answers `|||0`: the claim, the log channel and the base role are cleared, and test mode,
+      which the pack keeps, is off since step 24.
+
+28. **The bot serves no server.** **Do:** `/season status`
+
+    **Expect:**
+    - **Reply:** ``⛔ This server has not been set up yet. A server administrator must run `/bot init`.``
+    - **Log:** nothing in `#bot-log`, there being no log channel. The host's log records the
+      refusal.
+
+### Claiming the server again
+
+29. **Do:** `/bot init interaction_role:@League Manager league_admin_role:@League Admin interaction_channel:#bot-commands log_channel:#bot-log`
+
+    **Expect:** as `00-base.md` step 4:
+    - **Ack:** `Saving the bot configuration`
+    - **Then:** `✅ Bot configuration saved!`, with the four settings beneath.
+    - **Log** (`#bot-log`): `<you> | /bot init | Success`, with the four settings beneath.
+
+    The same server, channels and roles as before are allowed: the pack freed the claim, so no
+    server is foreign, and the two channels are judged afresh and pass.
+
+30. **A repeat.** **Do:** the command of step 29 again, exactly.
+
+    **Expect:**
+    - **Reply:**
+      ```
+      ⚠️ This server is already configured, and `/bot init` runs once.
+      To change a setting use `/bot log-channel`, `/bot interaction-channel`, `/bot interaction-role` and `/bot admin-role`.
+      To move the league to another server, use `/bot pack` first.
+      ```
+      No acknowledgement: the queue refuses it at the ask (`bot_init_change`, `ALREADY_CONFIGURED`).
+    - **Log:** ``⛔ `/bot init` refused for <you> — This server is already configured, and `/bot init` runs once.``
+
+### What the pack kept, and what it cleared
+
+31. **The team list is kept; its roles are not.** **Do:** `/team list`
+
+    **Expect:**
+    - **Reply:** headed `**Server team list:**`, then the eleven teams of the Fixture in shorthand
+      order and `Reserve` last, each ending `→ no role`:
+      ```
+      **Server team list:**
+        Alpha Racing — `ALP` → no role
+        …one line per team, as 00-base.md step 17, each → no role…
+        Kilo Racing — `KLO` → no role
+        Reserve — `Reserve` → no role
+      ```
+    - **Log:** nothing.
+
+32. **The points configurations are kept.** **Do:** `/results config list scope:Server`
+
+    **Expect:** as `04-points-and-syncs.md` step 4: headed `**Points configurations — this server**`,
+    `Half Points` and `Standard`, and `2 configurations.` The command answers at all because the
+    Results & Standings module is still enabled: the pack keeps every module setting. No log line.
+
+33. **The base role was cleared.** **Do:** `/bot base-role role:@Members`
+
+    **Expect:** as `00-base.md` step 5:
+    - **Ack:** `Setting **Base role** to <@&<Members role id>>`
+    - **Then:** `✅ **Base role** set to <@&<Members role id>>.`
+    - **Log:**
+      ```
+      <you> | /bot base-role | Success
+        role: Members (<@&<Members role id>>)
+      ```
+    Set afresh, not answered that nothing changed: the pack cleared the role, which belonged to the
+    server it left.
+
+34. **The cancelled season is kept.** **Do:** `/season setup game_edition:25`
+
+    **Expect:** as step 11: **Season #2 (F1 25)**. Season #1, cancelled, travelled with the league,
+    so the numbering carries on from it. The season is left in configuration: the factory reset
+    erases it with the rest.
