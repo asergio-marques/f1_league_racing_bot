@@ -591,6 +591,9 @@ async def test_a_backup_that_cannot_be_deleted_stops_the_queue_after_test_mode_i
 # ── The forecasts posted under test mode are cleared after the save ───────────
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#600: the swap's step is not yet named swap_test_mode_commands"
+)
 async def test_switching_test_mode_off_clears_the_forecasts_once_the_flag_reads_off(cog, db_path):
     """The season is in Configuration, and a part is signed up to the bot's hook for clearing what
     test mode posted, beside weather's. Switching test mode on asks it not at all; switching it off
@@ -618,7 +621,7 @@ async def test_switching_test_mode_off_clears_the_forecasts_once_the_flag_reads_
     assert "weather.forecast.flush" not in [row["kind"] for row in changes]
     names = [row["name"] for row in await step_rows(db_path, changes[-1]["id"])]
     assert (names[0], names[-1]) == ("save", "discard_backup")
-    assert sorted(names[1:-1]) == ["flush_forecasts", "swap_driver_commands"]
+    assert sorted(names[1:-1]) == ["flush_forecasts", "swap_test_mode_commands"]
     assert await stopped_job(db_path) is None
 
 

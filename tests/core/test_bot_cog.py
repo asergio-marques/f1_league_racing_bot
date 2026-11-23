@@ -82,8 +82,13 @@ _INIT_SAVED = (
 )
 
 #: What `/bot init` and `/bot factory-reset` add to their reply when they leave the test-mode flag
-#: on: the `/driver` commands are swapped at a restart alone after either (#600, D9).
-_DRIVER_RESTART = "The `/driver` commands will show correctly once the bot is restarted."
+#: on: the `/driver` and `/signup` commands are swapped at a restart alone after either (#600, D9).
+_DRIVER_RESTART = (
+    "The `/driver` and `/signup` commands will show correctly once the bot is restarted."
+)
+
+#: Why a reply naming the restart fails until it names `/signup` beside `/driver`.
+_BOTH_NAMED = "#600: the restart notice does not yet name /signup beside /driver"
 
 #: `/bot init` refused on a server already configured, word for word.
 _ALREADY_CONFIGURED = (
@@ -628,6 +633,7 @@ async def test_bot_init_on_a_second_server_is_refused_and_writes_nothing(tmp_pat
     assert await _audit_rows(db_path) == []
 
 
+@pytest.mark.xfail(strict=True, reason=_BOTH_NAMED)
 async def test_a_pack_frees_the_server_for_another(tmp_path):
     """The claim is the configuration row's `server_id`, and `/bot pack` clears it (#247).
 
@@ -638,7 +644,7 @@ async def test_a_pack_frees_the_server_for_another(tmp_path):
     `BOT_INITIALISED` entry records the claim as replacing nothing, the pack having cleared all
     five. The line is delivered to the new log channel, nothing is left waiting with no channel to
     go to, and the queue is not stopped. Test mode being on, the reply ends saying the `/driver`
-    commands will show correctly once the bot is restarted (#600, D9)."""
+    and `/signup` commands will show correctly once the bot is restarted (#600, D9)."""
     from tests.support.change_queue import queued_log_lines, run_queue, stopped_job
 
     db_path = await _make_db(tmp_path)
@@ -764,7 +770,7 @@ async def test_a_second_bot_init_queued_behind_the_first_is_refused_as_it_starts
 @pytest.mark.parametrize("where", ["save", "check"])
 @pytest.mark.parametrize(
     "before",
-    ["fresh", "packed"],
+    ["fresh", pytest.param("packed", marks=pytest.mark.xfail(strict=True, reason=_BOTH_NAMED))],
 )
 async def test_bot_init_ends_on_a_fault_without_stopping_the_queue(
     tmp_path, monkeypatch, caplog, before, where
@@ -778,7 +784,8 @@ async def test_bot_init_ends_on_a_fault_without_stopping_the_queue(
     no line is written for any channel, there being no log channel, and the host's log records the
     fault. The change ends there and the queue is not stopped, there being no league admin role to
     clear a stop: run again once the fault is gone, `/bot init` claims the server, its reply naming
-    the restart the `/driver` commands need where the packed league's test mode is on (#600, D9)."""
+    the restart the `/driver` and `/signup` commands need where the packed league's test mode is on
+    (#600, D9)."""
     import sqlite3
 
     from leaguebot.framework.services.queue import change_queue
@@ -2127,14 +2134,18 @@ async def test_bot_factory_reset_backs_up_then_wipes_then_reports_by_dm(tmp_path
 
 @pytest.mark.parametrize(
     "test_mode",
-    [pytest.param(1, id="on"), pytest.param(0, id="off")],
+    [
+        pytest.param(1, id="on", marks=pytest.mark.xfail(strict=True, reason=_BOTH_NAMED)),
+        pytest.param(0, id="off"),
+    ],
 )
 async def test_the_factory_reset_reply_names_the_restart_for_driver_under_test_mode(
     tmp_path, test_mode
 ):
-    """The league's test mode is *test_mode* as the owner factory-resets it. The `/driver` commands
-    are not swapped after a reset (#600, D9): with test mode on, the reply ends saying they will
-    show correctly once the bot is restarted; with it off, the reply says nothing of them."""
+    """The league's test mode is *test_mode* as the owner factory-resets it. The `/driver` and
+    `/signup` commands are not swapped after a reset (#600, D9): with test mode on, the reply ends
+    saying they will show correctly once the bot is restarted; with it off, the reply says nothing
+    of them."""
     db_path = await _make_db(tmp_path)
     await _seed_config(db_path, test_mode=test_mode)
     cog = BotCog(_resetting_bot(db_path, tmp_path))
@@ -2144,7 +2155,7 @@ async def test_the_factory_reset_reply_names_the_restart_for_driver_under_test_m
 
     reply = interaction.followup.send.call_args.args[0]
     assert reply.endswith("\n" + _DRIVER_RESTART) is bool(test_mode)
-    assert ("/driver" in reply) is bool(test_mode)
+    assert ("/driver" in reply) is ("/signup" in reply) is bool(test_mode)
 
 
 async def test_bot_factory_reset_reports_to_the_log_where_dms_are_closed(tmp_path):

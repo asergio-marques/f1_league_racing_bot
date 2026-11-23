@@ -211,7 +211,18 @@ async def test_the_sync_command_leaves_the_driver_the_flag_calls_for(tmp_path, t
     ]
 
 
-@pytest.mark.parametrize("test_mode", [True, False], ids=["test-mode-on", "test-mode-off"])
+@pytest.mark.parametrize(
+    "test_mode",
+    [
+        pytest.param(
+            True, id="test-mode-on",
+            marks=pytest.mark.xfail(
+                strict=True, reason="#600: the swap does not yet take /signup off the global tree"
+            ),
+        ),
+        pytest.param(False, id="test-mode-off"),
+    ],
+)
 async def test_the_sync_command_in_a_direct_message_keeps_the_global_commands(
     tmp_path, test_mode
 ):
@@ -219,16 +230,16 @@ async def test_the_sync_command_in_a_direct_message_keeps_the_global_commands(
     carrying a left-over copy of one of the global commands. The owner sends `!sync` in a direct
     message, where there is no server. No server's overrides are cleared, and the global commands
     are not wiped: the global tree is synced carrying every command it carried before, `/driver`
-    as the flag calls for (none in test mode, the member group otherwise), and the server is
-    synced carrying the test-mode `/driver` in test mode and none otherwise, its left-over copy
-    still there."""
+    and `/signup` as the flag calls for (neither in test mode, the member groups otherwise), and
+    the server is synced carrying the test-mode `/driver` in test mode and none otherwise, its
+    left-over copy still there."""
     bot, guild = await _ready_bot(tmp_path, test_mode=test_mode)
     test_group = bot.get_cog("DriverTestCog").driver
     member_group = bot.get_cog("DriverCog").driver
     before = {command.name for command in bot.tree.get_commands()}
     left_over = next(
         command for command in sorted(bot.tree.get_commands(), key=lambda each: each.name)
-        if command.name != "driver"
+        if command.name not in ("driver", "signup")
     )
     bot.tree.add_command(left_over, guild=guild)
     seen: list[tuple[object, set[str], object]] = []
@@ -248,7 +259,7 @@ async def test_the_sync_command_in_a_direct_message_keeps_the_global_commands(
     await bot.get_command("sync").callback(ctx)
 
     [(_, global_names, global_driver)] = [each for each in seen if each[0] is None]
-    assert global_names == (before - {"driver"} if test_mode else before)
+    assert global_names == (before - {"driver", "signup"} if test_mode else before)
     assert global_driver is (None if test_mode else member_group)
     [(_, server_names, server_driver)] = [each for each in seen if each[0] is guild]
     assert server_driver is (test_group if test_mode else None)

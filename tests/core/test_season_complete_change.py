@@ -1052,6 +1052,9 @@ async def test_a_refusal_found_when_the_completion_runs_updates_the_reply_and_th
 # ── What it does ────────────────────────────────────────────────────────────────────
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#600: the swap's step is not yet named swap_test_mode_commands"
+)
 async def test_the_jobs_run_in_order(tmp_path):
     """Results, attendance and test mode on; Pro's last round with results is its round 2, Am's
     its round 1. The jobs run in the core specification's order: the save, then for Pro and then
@@ -1085,9 +1088,12 @@ async def test_the_jobs_run_in_order(tmp_path):
     assert jobs[8:10] == [("flush_forecasts", None), ("end", None)]
     assert names[-3:] == ["discard_portraits", "discard_backup", "close"]
     between = names[names.index("end") + 1:names.index("discard_portraits")]
-    assert between.count("swap_driver_commands") == names.count("swap_driver_commands") == 1
+    assert (
+        between.count("swap_test_mode_commands")
+        == names.count("swap_test_mode_commands") == 1
+    )
     assert set(between) <= {"signup_notice", "close_signup", "take_driver_role",
-                            "swap_driver_commands"}
+                            "swap_test_mode_commands"}
     assert ("revoke_roles", TEST_DRIVER) not in jobs
     assert handed == [
         (True, "PENDING_COMPLETION", PRO, "Pro", round_id(PRO, 2)),
