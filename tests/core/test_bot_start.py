@@ -12,6 +12,46 @@ others no test drives whole.
 from __future__ import annotations
 
 import inspect
+from unittest.mock import AsyncMock, MagicMock, call
+
+import discord
+import pytest
+
+PENDING = "#600: start-up and `!sync` show no `/driver` by the test-mode flag"
+
+
+async def _ready_bot(tmp_path, *, test_mode: bool):
+    """The bot the entry point builds, on the league's server, found by id, with test mode as
+    *test_mode*: its syncs recorded, none reaching Discord, and its log-channel posts recorded."""
+    from leaguebot.framework.db.database import get_connection, run_migrations
+    from tests.support.change_queue import league_bot, seed_server
+
+    path = str(tmp_path / "ready.db")
+    await run_migrations(path)
+    await seed_server(path)
+    async with get_connection(path) as db:
+        await db.execute("UPDATE server_configs SET test_mode_active = ?", (int(test_mode),))
+        cursor = await db.execute("SELECT server_id FROM server_configs")
+        server_id = (await cursor.fetchone())["server_id"]
+        await db.commit()
+    bot = await league_bot(path, real_config=True)
+    guild = discord.Object(id=server_id)
+    bot.get_guild = MagicMock(return_value=guild)
+    bot.output_router.post_log = AsyncMock()
+    return bot, guild
+
+
+def _syncs_seeing_driver(bot) -> list[tuple[object, object]]:
+    """Make each sync record which tree it synced (None for the global one) and the `/driver` that
+    tree carried as it was synced; gives the record."""
+    seen: list[tuple[object, object]] = []
+
+    async def sync(*, guild=None):
+        seen.append((guild, bot.tree.get_command("driver", guild=guild)))
+        return []
+
+    bot.tree.sync = AsyncMock(side_effect=sync)
+    return seen
 
 
 def test_the_start_up_runs_no_step_for_an_off_queue_close():
@@ -28,18 +68,18 @@ def test_the_start_up_runs_no_step_for_an_off_queue_close():
         assert not hasattr(bot_module, gone), gone
 
 
-async def test_a_second_ready_runs_no_start_up_step_and_syncs_nothing():
+@pytest.mark.xfail(strict=True, reason=PENDING)
+async def test_a_second_ready_runs_no_start_up_step_and_syncs_nothing(tmp_path):
     """discord.py reports the bot ready a second time in one run, as after a network drop it could
-    not resume (#446). The first ready runs the start-up's one step and syncs the commands once;
-    the second runs no step and syncs nothing, so no recovery undoes work still in progress. Driven
+    not resume (#446). The bot the entry point builds is in test mode. The first ready runs the
+    start-up's one step and syncs the commands once globally and once on the league's server; the
+    second runs no step and syncs nothing, so no recovery undoes work still in progress. Driven
     through the bot's own ready handler, so that a recovery called from it directly, past the
     start-up's run-once guard, fails here where `test_start_up_runs_once_on_a_second_ready` cannot
     see it."""
     import importlib
     from contextlib import asynccontextmanager
-    from types import SimpleNamespace
     from typing import Any
-    from unittest.mock import AsyncMock
 
     from leaguebot import __main__ as bot_module
     from leaguebot.framework.utils.hooks import StartingHook
@@ -73,19 +113,97 @@ async def test_a_second_ready_runs_no_start_up_step_and_syncs_nothing():
         def resume(self) -> None:
             pass
 
-    bot = SimpleNamespace(
-        user=SimpleNamespace(id=1),
-        starting=starting,
-        module_service=SimpleNamespace(),
-        change_queue=_Queue(),
-        scheduler_service=_Scheduler(),
-        output_router=SimpleNamespace(post_log=AsyncMock()),
-        tree=SimpleNamespace(sync=AsyncMock(return_value=[])),
-    )
+    bot, guild = await _ready_bot(tmp_path, test_mode=True)
+    bot.starting = starting
+    bot.change_queue = _Queue()
+    bot.scheduler_service = _Scheduler()
 
     await bot_module._when_ready(bot)
     await bot_module._when_ready(bot)
 
     assert ran == ["recovery"]
-    assert bot.tree.sync.await_count == 1
+    assert sorted(map(str, bot.tree.sync.await_args_list)) == sorted(
+        map(str, [call(), call(guild=guild)])
+    )
     bot.output_router.post_log.assert_not_awaited()
+
+
+@pytest.mark.xfail(strict=True, reason=PENDING)
+async def test_start_up_under_test_mode_shows_the_test_mode_driver_on_the_server(
+    tmp_path, monkeypatch
+):
+    """The bot the entry point builds is in test mode, and is reported ready. The global tree no
+    longer carries `/driver` when it is synced, and the league's server is synced carrying the
+    test-mode `/driver`, the bot's own cog's group. Nothing is posted to the log channel."""
+    from leaguebot import __main__ as bot_module
+
+    monkeypatch.setattr(bot_module, "start_up", AsyncMock(return_value=True))
+    bot, guild = await _ready_bot(tmp_path, test_mode=True)
+    seen = _syncs_seeing_driver(bot)
+
+    await bot_module._when_ready(bot)
+
+    assert sorted(seen, key=lambda each: each[0] is not None) == [
+        (None, None), (guild, bot.get_cog("DriverTestCog").driver)
+    ]
+    bot.output_router.post_log.assert_not_awaited()
+
+
+@pytest.mark.xfail(strict=True, reason=PENDING)
+async def test_a_server_sync_refused_at_start_up_is_one_failure_line(tmp_path, monkeypatch):
+    """The bot the entry point builds is in test mode, and Discord refuses the sync of the
+    league's server as the bot is reported ready. The global sync is made all the same, and the
+    refusal is posted to the log channel once, as the start-up's failure line for it."""
+    from leaguebot import __main__ as bot_module
+    from tests.support.change_queue import http_error
+
+    monkeypatch.setattr(bot_module, "start_up", AsyncMock(return_value=True))
+    lines: list[tuple[str, BaseException]] = []
+    made = bot_module.start_up_failure_line
+
+    def failure_line(step: str, error: BaseException) -> str:
+        lines.append((step, error))
+        return made(step, error)
+
+    monkeypatch.setattr(bot_module, "start_up_failure_line", failure_line)
+    bot, guild = await _ready_bot(tmp_path, test_mode=True)
+    refused = http_error()
+
+    async def sync(*, guild=None):
+        if guild is not None:
+            raise refused
+        return []
+
+    bot.tree.sync = AsyncMock(side_effect=sync)
+
+    await bot_module._when_ready(bot)
+
+    assert call() in bot.tree.sync.await_args_list
+    [(step, error)] = lines
+    assert error is refused
+    bot.output_router.post_log.assert_awaited_once_with(made(step, refused))
+
+
+@pytest.mark.xfail(strict=True, reason=PENDING)
+@pytest.mark.parametrize("test_mode", [True, False], ids=["test-mode-on", "test-mode-off"])
+async def test_the_sync_command_leaves_the_driver_the_flag_calls_for(tmp_path, test_mode):
+    """The bot the entry point builds, with test mode as the case gives, its league's server
+    carrying a left-over copy of the member `/driver`. The owner sends `!sync`: the server's
+    overrides are cleared, and once both trees are synced the server shows the `/driver` the flag
+    calls for: in test mode the test-mode group on the server and none on the global tree;
+    otherwise the member group on the global tree and none on the server."""
+    bot, guild = await _ready_bot(tmp_path, test_mode=test_mode)
+    member_group = bot.get_cog("DriverCog").driver
+    test_group = bot.get_cog("DriverTestCog").driver
+    bot.tree.add_command(member_group, guild=guild)
+    seen = _syncs_seeing_driver(bot)
+    ctx = MagicMock(guild=guild, send=AsyncMock())
+    ctx.message.delete = AsyncMock()
+
+    await bot.get_command("sync").callback(ctx)
+
+    expected = (None, test_group) if test_mode else (member_group, None)
+    assert (bot.tree.get_command("driver"), bot.tree.get_command("driver", guild=guild)) == expected
+    assert sorted(seen, key=lambda each: each[0] is not None) == [
+        (None, expected[0]), (guild, expected[1])
+    ]
