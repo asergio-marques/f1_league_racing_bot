@@ -707,3 +707,43 @@ back on is refused for as long as the season runs.
 
     **Expect**, for each row: the refusal of step 18, word for word. For attendance, the stage
     is still judged before the dependency: results being off is not what the reply names.
+
+---
+
+## Part I — Ending Season #1
+
+The season is cancelled, as `02-roster-changes.md` step 27 cancels it, so that the modules may be
+switched on again and the backup survives. With weather, attendance and results off, none of
+their channels is told; with images off, the calendars go out as text.
+
+46. **Do:** `/season cancel confirm:CONFIRM`
+
+    **Expect:**
+    - **Ack:** `Cancelling season 1`
+    - **Then:** `✅ Season cancelled.` No `⚠️ **Image notices**` section: nothing was drawn.
+    - **Posts**, for each division:
+      - `#d1-calendar`: the calendar again, as text, as step 36 gave it but with Rounds 2 and 3
+        struck through and marked, and step 36's text calendar deleted:
+        ```
+        📅 **Division 1 — Race Calendar**
+        Round 1: Silverstone Circuit — <t:<unix time: <YEAR+1>-03-01 20:00 UTC>:F>
+        ~~Round 2: Hungaroring — <t:<unix time: <YEAR+1>-03-08 20:00 UTC>:F>~~ — Cancelled
+        ~~Round 3: Mystery — <t:<unix time: <YEAR+1>-03-15 20:00 UTC>:F>~~ — Cancelled
+        ```
+        Round 1 is not struck: step 40 made it final, and a final round is not called off.
+      - `#d2-calendar`: Division 2's calendar as text, its three rounds struck through and marked
+        `— Cancelled`, `Autodromo Nazionale Monza`, `Circuit de Spa-Francorchamps` and
+        `Circuit Zandvoort`; and the calendar picture the base's approval posted deleted.
+      - **Nothing** in `#dN-rsvp`, `#dN-weather` or `#dN-results`: the `📢 **Season Cancelled**`
+        notices of `02-roster-changes.md` step 27 are each their module's, and each module is off.
+      > UNVERIFIED: whether the Phase 1 forecast of step 20 is deleted from `#d1-weather` here. The
+      > season's end clears the forecasts posted under test mode (`test_mode_flushed_on`), which
+      > reads no module switch, but the deletion it plans may read weather's.
+    - **Roles:** none taken. Fake drivers hold none.
+    - **Log:**
+      ```
+      <you> | /season cancel | Success
+      ```
+      > UNVERIFIED: whether any line follows it, as in `02-roster-changes.md` step 27.
+    - **Test mode is off**, and every fake driver deleted. **The saved backup is kept**:
+      `bot.bkup.db`, `scheduler.bkup.db` and `backup.lock` are still in the bot host folder.
