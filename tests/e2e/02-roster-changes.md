@@ -396,6 +396,10 @@ draws the lineup on demand, which is what this section checks.
       backup is kept**: `bot.bkup.db`, `scheduler.bkup.db` and `backup.lock` are still in the bot
       host folder.
 
+    **To abandon the spec from here until step 45**, a restore is refused: test mode is off and
+    no season is live, and the backup commands run in test mode alone. Run steps 43 and 45 (a
+    season set up, test mode on), then Part G. The backup is kept throughout.
+
 ---
 
 ## Part D — No season live
