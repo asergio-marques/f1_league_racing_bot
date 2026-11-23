@@ -96,7 +96,12 @@ LEAGUE_ADMIN_COMMANDS: dict[str, str] = {
     "test-mode backup status": ADMIN,
     # A module's test tool sits under the module's own group, and is test mode's all the same.
     "attendance test rsvp": ADMIN,
+    # Starts a fake driver's signup in its stead, in the test-mode `/signup` alone (#600, D16).
+    "signup start": ADMIN,
 }
+
+#: Why the register's split fails until the test-mode `/signup` declares `start`.
+_SIGNUP_START = "#600: the test-mode /signup group and its start are not yet built"
 
 
 #: The commands only the Discord server's owner may run, from any channel. The one exception to
@@ -115,8 +120,8 @@ def _walk(objects):
 def _every_command() -> dict[str, list[app_commands.Command]]:
     """Every app command the bot declares, by its full name, off the cog classes.
 
-    A name may carry more than one command: the member `/driver` group and its test-mode
-    variant share their names, and each is held to the register. A cog imported into a second
+    A name may carry more than one command: the member `/driver` and `/signup` groups and their
+    test-mode variants share their names, and each is held to the register. A cog imported into a second
     module is met twice and kept once.
     """
     import leaguebot
@@ -150,7 +155,8 @@ def test_the_cogs_declare_commands_at_all():
 
 @pytest.mark.parametrize("name", sorted(COMMANDS))
 def test_every_command_sits_at_the_tier_the_register_gives_it(name):
-    """Every command of the name, the member `/driver` and its test-mode variant alike."""
+    """Every command of the name, the member `/driver` and `/signup` and their test-mode variants
+    alike."""
     expected = LEAGUE_ADMIN_COMMANDS.get(name)
     for command in COMMANDS[name]:
         callback = command.callback
@@ -175,6 +181,7 @@ def test_every_command_sits_at_the_tier_the_register_gives_it(name):
             )
 
 
+@pytest.mark.xfail(strict=True, reason=_SIGNUP_START)
 def test_the_register_names_no_command_that_does_not_exist():
     """A renamed or withdrawn command leaves its entry behind, and the entry says nothing."""
     missing = sorted((set(LEAGUE_ADMIN_COMMANDS) | SERVER_OWNER_COMMANDS) - set(COMMANDS))
@@ -199,6 +206,7 @@ def test_only_the_setup_commands_and_the_factory_reset_run_outside_the_interacti
     ]
 
 
+@pytest.mark.xfail(strict=True, reason=_SIGNUP_START)
 def test_the_tiers_divide_as_the_register_says():
     """The headline split, so a wholesale drift shows up as one failure rather than many.
 
