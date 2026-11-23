@@ -899,3 +899,271 @@ never judged; and it is judged again as the change starts.
 72. **Do:** `/signup config view`, `/signup time-slot list`
 
     **Expect:** as steps 12 and 13: nothing changed. No log line.
+
+---
+
+## Part I — Season #2 in configuration: the signup settings and the league's roles
+
+The settings Part H showed fixed are open again while no season is live, and while a season stands
+in configuration. The spec ends Season #1 the one way that keeps the backup, `/season cancel`, and
+sets up Season #2 with test mode on, leaving it in configuration.
+
+### Ending Season #1 and starting Season #2
+
+73. **Do:** `/season cancel confirm:CONFIRM`
+
+    **Expect:** as `02-roster-changes.md` step 27: `Cancelling season 1`, then
+    `✅ Season cancelled.`, the cancellation notices in each division's check-in, weather and
+    results channels, each calendar posted again with its rounds cancelled, and the line
+    `<you> | /season cancel | Success`. Test mode is off and the fake drivers deleted. **The saved
+    backup is kept**: `bot.bkup.db`, `scheduler.bkup.db` and `backup.lock` are still in the bot
+    host folder.
+
+74. **Do:** `/season status`
+
+    **Expect:**
+    - **Reply:** `ℹ️ No season is being raced on this server.`
+    - **Log:** nothing.
+
+75. **Do:** `/season setup game_edition:25`
+
+    **Expect:** as `02-roster-changes.md` step 43: **Season #2 (F1 25)** is being configured.
+
+76. **Do:** `/test-mode toggle`
+
+    **Expect:** as `02-roster-changes.md` step 45: test mode **enabled**, with no `📌 Added default
+    point configs` line, and the line `<you> | /test-mode toggle | Success` with
+    `test_mode: enabled` beneath. This switches test mode **on**; never run it again in this spec.
+
+### The three toggles
+
+A toggle flips its setting, so a repeat flips it back rather than changing nothing: putting each
+back is running it again (steps 96 to 98).
+
+77. **Do:** `/signup nationality`
+
+    **Expect:**
+    - **Ack:** `Toggling the nationality requirement`
+    - **Then:** `✅ Nationality requirement: **OFF**.`
+    - **Log:**
+      ```
+      <you> | /signup nationality | Success
+        nationality_required: False
+      ```
+
+78. **Do:** `/signup time-type`
+
+    **Expect:**
+    - **Ack:** `Switching the time type`
+    - **Then:** `✅ Time type: **Short Qualification**.`
+    - **Log:**
+      ```
+      <you> | /signup time-type | Success
+        time_type: SHORT_QUALIFICATION
+      ```
+
+79. **Do:** `/signup time-image`
+
+    **Expect:**
+    - **Ack:** `Toggling the time image requirement`
+    - **Then:** `✅ Time image requirement: **OFF**.`
+    - **Log:**
+      ```
+      <you> | /signup time-image | Success
+        time_image_required: False
+      ```
+
+80. **Their effect.** **Do:** `/signup config view`
+
+    **Expect:** as step 12, but for **Nationality Required** `OFF`, **Time Type**
+    `Short Qualification` and **Time Image Required** `OFF`. No log line.
+
+### The time slots
+
+81. **Do:** `/signup time-slot add day:Wednesday time:8pm`
+
+    **Expect:**
+    - **Ack:** `Adding the time slot Wednesday 20:00`
+    - **Then:**
+      ```
+      **Availability Time Slots**
+      #1 — Wednesday 20:00 UTC
+      ```
+      `8pm` is read as `20:00` (`time_parsing.parse_time_of_day`).
+    - **Log:**
+      ```
+      <you> | /signup time-slot add | Success
+        day: Wednesday
+        time: 20:00
+      ```
+
+82. **Do:** `/signup time-slot add day:Monday time:19:30`
+
+    **Expect:**
+    - **Ack:** `Adding the time slot Monday 19:30`
+    - **Then:**
+      ```
+      **Availability Time Slots**
+      #1 — Monday 19:30 UTC
+      #2 — Wednesday 20:00 UTC
+      ```
+      The list is chronological, Monday first, so the Wednesday slot is now `#2`: a slot's number
+      is its place, recomputed on every read.
+    - **Log:** as step 81, with `day: Monday` and `time: 19:30`.
+
+83. **A slot already held.** **Do:** `/signup time-slot add day:Wednesday time:20:00`
+
+    **Expect:**
+    - **Reply:** `❌ That time slot already exists.`
+    - **Log:** ``⛔ `/signup time-slot add` refused for <you> — That time slot already exists.``
+
+84. **A time that is not one.** **Do:** `/signup time-slot add day:Friday time:25:00`
+
+    **Expect:**
+    - **Reply:** `❌ Could not parse time '25:00'. Use HH:MM 24h or 12h with am/pm.`
+    - **Log:** ``⛔ `/signup time-slot add` refused for <you> — Could not parse time '25:00'. Use HH:MM 24h or 12h with am/pm.``
+
+85. **A slot that is not there.** **Do:** `/signup time-slot remove slot_id:3`
+
+    **Expect:**
+    - **Reply:** `❌ Slot #3 does not exist.`
+    - **Log:** ``⛔ `/signup time-slot remove` refused for <you> — Slot #3 does not exist.``
+
+86. **Do:** `/signup time-slot list`
+
+    **Expect:**
+    - **Reply:** as the **Then** of step 82.
+    - **Log:** nothing; it is a view.
+
+87. **Do:** `/signup time-slot remove slot_id:2`
+
+    **Expect:**
+    - **Ack:** `Removing time slot #2`
+    - **Then:**
+      ```
+      **Availability Time Slots**
+      #1 — Monday 19:30 UTC
+      ```
+    - **Log:**
+      ```
+      <you> | /signup time-slot remove | Success
+        slot_id: 2
+        slot: Wednesday 20:00 UTC
+      ```
+
+88. **Do:** `/signup time-slot remove slot_id:1`
+
+    **Expect:**
+    - **Ack:** `Removing time slot #1`
+    - **Then:** `No availability slots configured.`
+    - **Log:** as step 87, with `slot_id: 1` and `slot: Monday 19:30 UTC`. The slots are as the
+      base had them: none.
+
+89. **Nothing left to remove.** **Do:** `/signup time-slot remove slot_id:1`
+
+    **Expect:**
+    - **Reply:** `❌ No slots configured.`
+    - **Log:** ``⛔ `/signup time-slot remove` refused for <you> — No slots configured.``
+
+### What test mode still refuses
+
+90. **Do:** `/signup open`, `/signup close`, `/signup close-time add close_time:<YEAR+1>-01-01T20:00:00`
+
+    **Expect:** as steps 68, 69 and 70: the window cannot open under test mode, so it cannot be
+    closed, nor a close time armed. `/signup unassigned list` and `export` answer as steps 14
+    and 15: Season #1's fake drivers were deleted with its cancellation, and nobody else has
+    signed up.
+
+### The driver role
+
+91. **A role the bot cannot grant.** **Do:** `/bot driver-role role:@everyone`
+
+    **Expect:**
+    - **Reply:** ``❌ `@everyone` is everybody on the server, so it cannot stand for the league's drivers. Choose a role of the drivers' own.``
+    - **Log:** ``⛔ `/bot driver-role` refused for <you> — `@everyone` is everybody on the server, so it cannot stand for the league's drivers. Choose a role of the drivers' own.``
+
+92. **Do:** `/bot driver-role role:@<the bot's own role>`, the role Discord made for the bot as it
+    joined the server.
+
+    **Expect:**
+    - **Reply:** `❌ <@&<the bot's role id>> is managed by an integration — a bot, a subscription or a linked role — so Discord will not let me grant it. Choose a role of the drivers' own.`
+    - **Log:** ``⛔ `/bot driver-role` refused for <you> — <@&<the bot's role id>> is managed by an integration — a bot, a subscription or a linked role — so Discord will not let me grant it. Choose a role of the drivers' own.``
+
+93. **Do:** `/bot driver-role role:@Stand-in`
+
+    **Expect:**
+    - **Ack:** `Setting **Driver role** to <@&<Stand-in role id>>`
+    - **Then:** `✅ **Driver role** set to <@&<Stand-in role id>>.`
+    - **Log:**
+      ```
+      <you> | /bot driver-role | Success
+        role: Stand-in (<@&<Stand-in role id>>)
+      ```
+    - No channel's permissions change: the driver role is given to people, not applied to places.
+      `/signup config view` now shows **Driver Role** `<@&<Stand-in role id>>`.
+
+94. **The same again.** **Do:** `/bot driver-role role:@Stand-in`
+
+    **Expect:**
+    - **Ack:** as step 93.
+    - **Then:** `ℹ️ Nothing changed: **Driver role** is already <@&<Stand-in role id>>.`
+    - **Log:**
+      ```
+      <you> | /bot driver-role | Nothing changed
+        role: Stand-in (<@&<Stand-in role id>>)
+      ```
+
+95. **Putting it back.** **Do:** `/bot driver-role role:@Driver`
+
+    **Expect:** as `00-base.md` step 6: `✅ **Driver role** set to <@&<Driver role id>>.`, and the
+    line `<you> | /bot driver-role | Success` with `role: Driver (<@&<Driver role id>>)` beneath.
+
+### The base role
+
+96. **Do:** `/bot base-role role:@Stand-in`
+
+    **Expect:**
+    - **Ack:** `Setting **Base role** to <@&<Stand-in role id>>`
+    - **Then:** `✅ **Base role** set to <@&<Stand-in role id>>.`
+    - **Log:**
+      ```
+      <you> | /bot base-role | Success
+        role: Stand-in (<@&<Stand-in role id>>)
+      ```
+    - **Permissions:** on `#signup`, `@Stand-in` may now view and not send, and `@Members` has lost
+      its overwrite, the signup module being on (`bot_settings.BASE_ROLE_CHANGED`); on `#hub-2`,
+      likewise, `@Stand-in` in `@Members`'s place (`REAPPLY_HUB`).
+
+97. **The same again.** **Do:** `/bot base-role role:@Stand-in`
+
+    **Expect:**
+    - **Ack:** as step 96.
+    - **Then:** `ℹ️ Nothing changed: **Base role** is already <@&<Stand-in role id>>.`
+    - **Log:**
+      ```
+      <you> | /bot base-role | Nothing changed
+        role: Stand-in (<@&<Stand-in role id>>)
+      ```
+    - Neither channel's permissions are set again.
+
+98. **Putting it back.** **Do:** `/bot base-role role:@Members`
+
+    **Expect:**
+    - **Ack:** `Setting **Base role** to <@&<Members role id>>`
+    - **Then:** `✅ **Base role** set to <@&<Members role id>>.`
+    - **Log:** as `00-base.md` step 5.
+    - **Permissions:** `#signup` and `#hub-2` as before step 96, `@Members` back and `@Stand-in`
+      gone.
+
+### Putting the toggles back
+
+99. **Do**, one after another: `/signup nationality`, `/signup time-type`, `/signup time-image`.
+
+    **Expect**, as steps 77 to 79 but each flipped back:
+    - `✅ Nationality requirement: **ON**.`, logged with `nationality_required: True`;
+    - `✅ Time type: **Time Trial**.`, logged with `time_type: TIME_TRIAL`;
+    - `✅ Time image requirement: **ON**.`, logged with `time_image_required: True`.
+
+100. **Do:** `/signup config view`
+
+     **Expect:** as step 12, every field as the base had it. No log line.
