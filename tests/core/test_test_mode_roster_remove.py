@@ -299,6 +299,65 @@ async def test_it_is_refused_at_the_ask(league, meanwhile, user_id, refusal):
     assert _lines(league) == [_refused(refusal)]
 
 
+async def _sacked_without_racing(league) -> None:
+    """Mock Alpha's McLaren placement in Am is confirmed, which records them as a member of Am,
+    and then `/driver sack` sacks them: their seat is freed, their placement gone, and they are
+    back at Not Signed Up, the former-driver flag still clear and results holding no record of
+    them, so that they never raced."""
+    from leaguebot.core.services.drivers.placement_service import PlacementService
+    from leaguebot.framework.db.database import get_connection
+
+    await _seat_confirmed(league)
+    async with get_connection(league.db_path) as db:
+        [row] = await (await db.execute(
+            "SELECT id FROM driver_profiles WHERE discord_user_id = ?", (MOCK_ID,)
+        )).fetchall()
+        await PlacementService(league.db_path).sack_seats_on(
+            db, driver_profile_id=row["id"], season_id=SEASON_ID
+        )
+        await db.commit()
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#600: a membership row left by a confirmed placement still counts as having raced",
+)
+async def test_a_fake_driver_sacked_without_racing_is_removed(league):
+    """D15 refuses only a fake driver who has raced or holds a confirmed seat now. The season is
+    in Placements under test mode, Mock Alpha a fake driver at McLaren in Am beside Charles, a
+    real driver. Mock Alpha's placement is confirmed and then `/driver sack` sacks them, without
+    their ever racing: the former-driver flag is clear and results holds no record of them. Admin
+    (77) runs `/test-mode roster remove` with Mock Alpha's ID and the queue runs it. Mock Alpha
+    is removed, not refused: their profile is gone and Charles stays, the bot's delete hook is
+    handed Mock Alpha's profile, one `TEST_DRIVER_REMOVED` audit entry by Admin records it, the
+    reply says Mock Alpha was removed, and the log channel holds the one success line, naming
+    Mock Alpha and the ID."""
+    await _sacked_without_racing(league)
+
+    async def raced_nowhere(db, accounts):
+        return set()
+
+    league.bot.divisions_raced_read.subscribe(raced_nowhere)
+    handed = _watch_deletions(league)
+    profile_id = await _profile_id(league)
+    interaction = _asks(league)
+
+    await _ask(league, interaction)
+    await run_queue(league.bot)
+
+    assert await _drivers(league) == _BOTH[:1]
+    assert handed == [[profile_id]]
+    assert [
+        (row["change_type"], row["actor_id"]) for row in await audit_rows(league.db_path)
+    ] == [(_AUDIT_TYPE, ACTOR_ID)]
+    assert last_said(interaction).startswith("✅ Removed fake driver **Mock Alpha**")
+    [line] = _lines(league)
+    assert line.startswith(
+        f"{_NAMED} | /test-mode roster remove | Success\n  driver: Mock Alpha\n"
+    )
+    assert line.endswith(f"  user_id: {MOCK_ID}")
+
+
 async def _removed_meanwhile(league) -> None:
     await league.write(
         "DELETE FROM driver_season_assignments WHERE driver_profile_id = "
