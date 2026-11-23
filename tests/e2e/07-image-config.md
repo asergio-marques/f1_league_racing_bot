@@ -237,3 +237,280 @@ step 1). This spec never touches it: what it adds goes into folders of its own, 
    | `e2e/division-logos` | `division_1.svg` | 88 × 88, the box `e2e_calendar_template.svg` gives it | a logo is keyed on the division's **name**; Division 2 is left without one on purpose |
 
    **Expect:** `find <checkout>/resources/league/e2e -name '*.svg' | wc -l` prints `21`.
+
+---
+
+## Part B — The templates
+
+The template folder is the one image folder with nothing behind it: the bot ships its templates
+in `resources/defaults/templates`, but once a league names a folder of its own, that folder is
+the only place a template is looked for. So `/images config template-directory` checks every
+template the switched-on outputs need before it stores anything, and every `/images template`
+command checks the file it names. A filename is always a file **inside** the configured folder.
+
+### The folder
+
+8. **A refusal: a folder that is not there.** **Do:**
+   `/images config template-directory directory:resources/league/no-such-folder`
+
+   **Expect:**
+   - **Reply**, after a moment, and no acknowledgement:
+     ```
+     ❌ **Template directory** was **not** changed — `resources/league/no-such-folder` does not hold every template the bot needs for the outputs you have switched on.
+     The previously configured folder is still in force.
+
+       ↳ **Calendar**: the folder your drawings live in can't be found. Point the bot at the right folder with `/images config template-directory`.
+       ↳ **Lineup**: the folder your drawings live in can't be found. Point the bot at the right folder with `/images config template-directory`.
+       …
+
+     Searched: `<checkout>/resources/league/no-such-folder`
+     ```
+     sixteen `↳` lines in all, one per template, in the order step 4 lists them, every one alike
+     but for its label: all nine outputs are on, so all sixteen templates are needed.
+   - **Log:** ``⛔ `/images config template-directory` refused for <you> — **Template directory** was **not** changed — `resources/league/no-such-folder` does not hold every template the bot needs for the outputs you have switched on.``
+
+9. **A refusal: a folder outside the checkout.** **Do:**
+   `/images config template-directory directory:..`
+
+   **Expect:**
+   - **Reply:**
+     ```
+     ❌ `..` resolves to `<the folder holding <checkout>>`, which is outside the project root.
+     Directories must sit inside the project root. The stored value is unchanged.
+     ```
+   - **Log:** ``⛔ `/images config template-directory` refused for <you> — `..` resolves to `<the folder holding <checkout>>`, which is outside the project root.``
+
+10. **Do:** `/images config template-directory directory:resources/league/templates`
+
+    **Expect:**
+    - **Ack:** ``Setting **Template directory** to `resources/league/templates` ``
+    - **Then:**
+      ```
+      ✅ **Template directory** set to `resources/league/templates`.
+      ✅ Every drawing the outputs you have switched on need is present and valid.
+      Searched: `<checkout>/resources/league/templates`
+      ```
+    - **Log:**
+      ```
+      <you> | /images config template-directory | Success
+        Template directory: resources/league/templates
+      ```
+
+11. **The same folder again.** **Do:** `/images config template-directory directory:resources/league/templates`
+
+    **Expect:**
+    - **Ack:** as step 10.
+    - **Then:** ``ℹ️ Nothing changed: Template directory is already **`resources/league/templates`**.``
+    - **Log:**
+      ```
+      <you> | /images config template-directory | Nothing changed
+        Template directory: resources/league/templates
+      ```
+
+12. **Do:** `/images test calendar division:Division 1`
+
+    **Expect:** the same picture as step 5, the heading rule still **red**: the folder's
+    `calendar_template.svg` is a plain copy of what ships, and the stored filename is still
+    `calendar_template.svg`.
+
+### One template, named and refused
+
+13. **Do:** `/images template calendar filename:e2e_calendar_template.svg`
+
+    **Expect:**
+    - **Ack:** ``Setting the **Calendar** template to `e2e_calendar_template.svg` ``
+    - **Then:**
+      ```
+      ✅ **Calendar** template set to `e2e_calendar_template.svg`.
+      ✅ Valid.
+      ```
+    - **Log:**
+      ```
+      <you> | /images template calendar | Success
+        Calendar template: e2e_calendar_template.svg
+      ```
+
+14. **Do:** `/images test calendar division:Division 1`
+
+    **Expect:** step 5's picture with the heading rule drawn **green**. The page background is
+    unchanged, `#0B0D10`: per-tier colours are off, so the `accent` slot marked on it takes no
+    colour. The 88 × 88 logo box at the top right, beside `Race Calendar`, draws nothing and no
+    notice names it: `resources/league/division-logos` holds no `division_1.svg` (unless the
+    league's own artwork put one there, in which case it is drawn).
+
+15. **A refusal: a file that is not there.** **Do:** `/images template calendar filename:e2e_missing.svg`
+
+    **Expect:**
+    - **Reply**, no acknowledgement:
+      ```
+      ❌ **Calendar** template was **not** changed — file not found: <checkout>/resources/league/templates/e2e_missing.svg
+      The previously configured filename is still in force.
+      ```
+    - **Log:** ``⛔ `/images template calendar` refused for <you> — **Calendar** template was **not** changed — file not found: <checkout>/resources/league/templates/e2e_missing.svg``
+
+16. **A refusal: a malformed template.** **Do:** `/images template calendar filename:e2e_broken.svg`
+
+    **Expect:**
+    - **Reply:**
+      ```
+      ❌ **Calendar** template was **not** changed — not a valid SVG file — an opening tag and its closing tag do not match at line 1
+      The previously configured filename is still in force.
+      ```
+    - **Log:** ``⛔ `/images template calendar` refused for <you> — **Calendar** template was **not** changed — not a valid SVG file — an opening tag and its closing tag do not match at line 1``
+
+17. **A refusal: not an SVG by name.** **Do:** `/images template calendar filename:e2e_calendar_template.png`
+
+    **Expect:**
+    - **Reply:**
+      ```
+      ❌ **Calendar** template was **not** changed — `e2e_calendar_template.png` does not end in `.svg`. Templates are SVG files.
+      The previously configured filename is still in force.
+      ```
+    - **Log:** ``⛔ `/images template calendar` refused for <you> — **Calendar** template was **not** changed — `e2e_calendar_template.png` does not end in `.svg`. Templates are SVG files.``
+
+18. **A refusal: a path, not a filename.** **Do:**
+    `/images template calendar filename:templates/e2e_calendar_template.svg`
+
+    **Expect:**
+    - **Reply:**
+      ```
+      ❌ **Calendar** template was **not** changed — this sets a filename inside the configured template directory, not a path. Use `/images config template-directory` to move the folder.
+      The previously configured filename is still in force.
+      ```
+    - **Log:** ``⛔ `/images template calendar` refused for <you> — **Calendar** template was **not** changed — this sets a filename inside the configured template directory, not a path. Use `/images config template-directory` to move the folder.``
+
+19. **A refusal: a drawing with nothing to fill.** **Do:** `/images template calendar filename:e2e_blank.svg`
+
+    **Expect:**
+    - **Reply:**
+      ```
+      ❌ **Calendar** template was **not** changed — the template declares no `round` at all — it must declare at least one, numbered from 1
+      The previously configured filename is still in force.
+      ```
+    - **Log:** ``⛔ `/images template calendar` refused for <you> — **Calendar** template was **not** changed — the template declares no `round` at all — it must declare at least one, numbered from 1``
+
+20. **The same drawing for a kind with fixed fields.** **Do:** `/images template verdict-banner filename:e2e_blank.svg`
+
+    **Expect:**
+    - **Reply:**
+      ```
+      ❌ **Verdict banner** template was **not** changed — missing 2 mandatory fields: `division_name`, `round_number`
+      The previously configured filename is still in force.
+      ```
+    - **Log:** ``⛔ `/images template verdict-banner` refused for <you> — **Verdict banner** template was **not** changed — missing 2 mandatory fields: `division_name`, `round_number` ``
+
+21. **A refusal: another kind's template.** **Do:**
+    `/images template results-race filename:results_qualifying_template.svg`
+
+    **Expect:**
+    - **Reply:**
+      ```
+      ❌ **Results — race** template was **not** changed — it declares `row_10_best_lap`, `row_10_gap`, `row_10_tyre`, `row_11_best_lap`, `row_11_gap`, `row_11_tyre`, `row_12_best_lap`, `row_12_gap`, and 58 more, which belong to the **Results — qualifying** template. This looks like the wrong file for this slot.
+      The previously configured filename is still in force.
+      ```
+    - **Log:** the refusal line, its reason the reply's first line after `❌ `.
+
+22. **Do:** `/images test calendar division:Division 1`
+
+    **Expect:** step 14's picture, the rule still green: none of steps 15 to 21 changed anything.
+
+### Every other kind
+
+23. **Do**, for each row in turn: the `/images template` command with the row's
+    `e2e_` filename, then the row's preview.
+
+    | Command | `<Label>` | Filename | Preview, and what turns green |
+    |---|---|---|---|
+    | `lineup` | Lineup | `e2e_lineup_template.svg` | `/images test lineup division:Division 1` — the one picture |
+    | `results-qualifying` | Results — qualifying | `e2e_results_qualifying_template.svg` | `/images test results division:Division 1 round:1` — the qualifying picture; the race picture is still red |
+    | `results-race` | Results — race | `e2e_results_race_template.svg` | the same preview — both pictures |
+    | `standings-drivers` | Standings — drivers | `e2e_standings_drivers_template.svg` | `/images test standings division:Division 1 round:1` — the drivers picture; constructors still red |
+    | `standings-constructors` | Standings — constructors | `e2e_standings_constructors_template.svg` | the same preview — both pictures |
+    | `attendance` | Attendance sheet | `e2e_attendance_template.svg` | `/images test attendance division:Division 1 round:1` |
+    | `rsvp` | Check-in call | `e2e_rsvp_template.svg` | `/images test rsvp division:Division 1 round:1` |
+    | `weather-p1` | Weather — phase 1 | `e2e_weather_p1_template.svg` | `/images test weather-p1 division:Division 1 round:1` |
+    | `weather-p2` | Weather — phase 2 (non-sprint) | `e2e_weather_p2_template.svg` | `/images test weather-p2 division:Division 1 round:1` (a Normal round) |
+    | `weather-p3` | Weather — phase 3 (non-sprint) | `e2e_weather_p3_template.svg` | `/images test weather-p3 division:Division 1 round:1` |
+    | `weather-p2-sprint` | Weather — phase 2 (sprint) | `e2e_weather_p2_sprint_template.svg` | `/images test weather-p2 division:Division 1 round:2` (the Sprint round) |
+    | `weather-p3-sprint` | Weather — phase 3 (sprint) | `e2e_weather_p3_sprint_template.svg` | `/images test weather-p3 division:Division 1 round:2` |
+    | `weather-mystery` | Weather — mystery notice | `e2e_weather_mystery_template.svg` | `/images test weather-mystery division:Division 1 round:3` |
+    | `verdicts` | Verdicts | `e2e_verdicts_template.svg` | `/images test verdict division:Division 1 round:1` — all five pictures |
+    | `verdict-banner` | Verdict banner | `e2e_verdict_banner_template.svg` | `/images test verdict-banner division:Division 1 round:1` |
+
+    **Expect**, for each command:
+    - **Ack:** ``Setting the **<Label>** template to `<filename>` ``
+    - **Then:**
+      ```
+      ✅ **<Label>** template set to `<filename>`.
+      ✅ Valid.
+      ```
+    - **Log:**
+      ```
+      <you> | /images template <command> | Success
+        <Label> template: <filename>
+      ```
+
+    and for each preview, every `✅` line and no `❌`, the rule under the heading of the
+    pictures named **green** and every other part of them as before the change. A weather
+    preview of the wrong format draws the other variant: phase 2 of round 1 on the non-sprint
+    template, of round 2 on the sprint one.
+
+24. **Refusals, for every kind.** **Do**, for each row of step 23's table and for
+    `calendar` too, the command twice: once with `filename:e2e_missing.svg`, once with
+    `filename:e2e_broken.svg`.
+
+    **Expect**, for each, nothing stored and no acknowledgement:
+    - **Reply**, the first:
+      ```
+      ❌ **<Label>** template was **not** changed — file not found: <checkout>/resources/league/templates/e2e_missing.svg
+      The previously configured filename is still in force.
+      ```
+      and the second:
+      ```
+      ❌ **<Label>** template was **not** changed — not a valid SVG file — an opening tag and its closing tag do not match at line 1
+      The previously configured filename is still in force.
+      ```
+    - **Log**, for each: ``⛔ `/images template <command>` refused for <you> — `` followed by
+      the reply's first line after `❌ `.
+
+25. **Do:** `/images config view`
+
+    **Expect:** under `**Templates**`, ``  Directory: `resources/league/templates` `` and the
+    sixteen lines of step 4, each `✅` with its `e2e_` filename
+    (``  ✅ Calendar: `e2e_calendar_template.svg` `` and so on). Every other section as step 4.
+
+### Back to the default filenames
+
+26. **Do**, for each row of step 23's table **but `results-race`**, the command with the
+    filename the bot ships — the row's filename without `e2e_` (`lineup_template.svg`, and so
+    on) — then the row's preview. Leave `results-race` and `calendar` on their `e2e_` files:
+    Parts C to E use them.
+
+    **Expect**, for each: the acknowledgement, reply and log line of step 23 with the shipped
+    filename; each preview's heading rule **red** again, but the race results picture's, which
+    stays green.
+
+27. **A refusal: the shipped folder, with league filenames still named.** **Do:**
+    `/images config template-directory directory:resources/defaults/templates`
+
+    **Expect:**
+    - **Reply:**
+      ```
+      ❌ **Template directory** was **not** changed — `resources/defaults/templates` does not hold every template the bot needs for the outputs you have switched on.
+      The previously configured folder is still in force.
+
+        ↳ **Calendar**: the drawing file can't be found where the bot was told to look. Put the file in that folder, or name a different one with `/images template calendar`.
+        ↳ **Results — race**: the drawing file can't be found where the bot was told to look. Put the file in that folder, or name a different one with `/images template results-race`.
+
+      Searched: `<checkout>/resources/defaults/templates`
+      ```
+      The folder is judged with the filenames as they stand, and the two `e2e_` files are not
+      in the shipped folder.
+    - **Log:** ``⛔ `/images config template-directory` refused for <you> — **Template directory** was **not** changed — `resources/defaults/templates` does not hold every template the bot needs for the outputs you have switched on.``
+
+28. **Do:** `/images config view`
+
+    **Expect:** under `**Templates**`, ``  Directory: `resources/league/templates` ``,
+    ``  ✅ Calendar: `e2e_calendar_template.svg` ``,
+    ``  ✅ Results — race: `e2e_results_race_template.svg` `` and the other fourteen as in
+    step 4.
