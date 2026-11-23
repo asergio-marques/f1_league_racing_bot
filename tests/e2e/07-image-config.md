@@ -514,3 +514,250 @@ command checks the file it names. A filename is always a file **inside** the con
     ``  ✅ Calendar: `e2e_calendar_template.svg` ``,
     ``  ✅ Results — race: `e2e_results_race_template.svg` `` and the other fourteen as in
     step 4.
+
+---
+
+## Part C — The asset folders
+
+Each of the eight asset classes is looked for first in the folder configured for it, which is
+`resources/league/<class>` out of the box, and then, for a fallback or for one of the bot's own
+closed-set files, in `resources/defaults/<class>`. Unlike the template folder, an asset folder
+is **not** checked before it is stored: a folder that is empty or not there yet is accepted, with
+a warning, because whatever it lacks falls back to what the bot ships.
+
+| Command | `<Label>` | Shipped default | Class, as a preview names it |
+|---|---|---|---|
+| `track-image-directory` | Circuit images | `resources/league/tracks` | `track` |
+| `team-image-directory` | Team badges | `resources/league/teams` | `team` |
+| `flag-directory` | Nationality flags | `resources/league/flags` | `flag` |
+| `driver-image-directory` | Driver portraits | `resources/league/drivers` | `driver` |
+| `marker-directory` | Markers and result marks | `resources/league/markers` | `marker` |
+| `weather-icon-directory` | Weather icons | `resources/league/weather` | `weather` |
+| `tyre-directory` | Tyre compounds | `resources/league/tyres` | `tyre` |
+| `division-logo-directory` | Division logos | `resources/league/division-logos` | `division_logo` |
+
+**Setting one** — `/images config <command> directory:<value>` — answers, unless a step says
+otherwise:
+- **Ack:** ``Setting **<Label>** to `<value>` ``
+- **Then:**
+  ```
+  ✅ **<Label>** set to `<value>`.
+  <what the folder is>
+  Searched: `<checkout>/<value>`
+  ```
+  where `<what the folder is>` is `✅ Resolves.` for a folder that is there,
+  `⚠️ Nothing is there yet — files placed there later will be picked up.` for one that is not,
+  and `⚠️ That path exists but is not a directory.` for a file.
+- **Log:**
+  ```
+  <you> | /images config <command> | Success
+    <Label>: <value>
+  ```
+
+**A notice of a fallback** in a preview reads, for a class the league supplies,
+``• <image type> — no `<class>` image is supplied for “<datum>”; the directory's fallback was drawn instead.``
+and, for one of the bot's own files (a marker, a weather icon, a tyre, `mystery`, `other`),
+``• <image type> — the configured `<class>` directory has no image for “<datum>”; the bot's own `<name>.svg` was drawn instead.``
+A missing division logo draws nothing and raises no notice.
+
+### A folder of the league's own
+
+29. **Do:** `/images config team-image-directory directory:resources/league/e2e/teams`
+
+    **Expect:** the answer above with `✅ Resolves.`, `<Label>` `Team badges`.
+
+    **Then do:** `/images test lineup division:Division 1`
+
+    **Expect:** `✅ Lineup`. On the PNG, Alpha Racing's badge is a **green square**; the badge of
+    every other team and of the reserve block is the packaged grey shield. Among the notices, one
+    `no `team` image is supplied for “<shorthand>”` for each of `BRV`, `CHL`, `DLT`, `ECH`, `FOX`,
+    `GLF`, `HTL`, `IND`, `JLT`, `KLO` and the reserve team, and **none** for `ALP`.
+
+30. **A fallback of the league's own.** Make one by hand, in the shell of step 7:
+
+    ```
+    cd <checkout>/resources/league
+    box e2e/teams/fallback.svg 120 120 '#FF00FF'
+    ```
+
+    (`box` as step 7 defined it; in a new shell, define it again.) Run no command.
+
+    **Do:** `/images test lineup division:Division 1`
+
+    **Expect:** every badge but Alpha Racing's is now a **magenta square**, the league's own
+    fallback being looked for before the bot's. The notices read as in step 29: the fallback was
+    the directory's.
+
+31. **Do:** `/images config flag-directory directory:resources/league/e2e/flags`
+
+    **Expect:** the answer above with `✅ Resolves.`, `<Label>` `Nationality flags`.
+
+    **Then do:** `/images test lineup division:Division 1`, then
+    `/images test calendar division:Division 1`
+
+    **Expect:**
+    - the lineup: the flags of the two British drivers, Adam Archer (`ALP`) and Samuel Shaw
+      (`JLT`), are **green**; every other driver's is the packaged grey flag, each with a
+      `flag` notice;
+    - the calendar: round 1's flag (Silverstone, United Kingdom) **green**; round 2's (Hungary)
+      the grey fallback, with a notice; round 3, the mystery round, the bot's own `mystery`
+      flag, with the second kind of notice.
+
+32. **Do:** `/images config driver-image-directory directory:resources/league/e2e/drivers`
+
+    **Expect:** the answer above with `✅ Resolves.`, `<Label>` `Driver portraits`.
+
+    **Then do:** `/images test lineup division:Division 1`
+
+    **Expect:** Adam Archer's portrait a **green square**; every other driver's the packaged
+    grey portrait, each with a `driver` notice naming the driver's Discord user id (for
+    example `“9000000000000000002”`), none naming `9000000000000000001`.
+
+33. **Do:** `/images config track-image-directory directory:resources/league/e2e/tracks`
+
+    **Expect:** the answer above with `✅ Resolves.`, `<Label>` `Circuit images`.
+
+    **Then do:** `/images test calendar division:Division 1`, then
+    `/images test rsvp division:Division 1 round:1`
+
+    **Expect:**
+    - the calendar: round 1's circuit map **green**; round 2's (Hungaroring) the grey fallback,
+      with a `track` notice; round 3's the bot's own `mystery` map;
+    - the check-in call: Silverstone Circuit's map **green**, no `track` notice.
+
+34. **Do:** `/images config marker-directory directory:resources/league/e2e/markers`
+
+    **Expect:** the answer above with `✅ Resolves.`, `<Label>` `Markers and result marks`.
+
+    **Then do:** `/images test standings division:Division 1 round:2`
+
+    **Expect:** `✅ Standings — drivers` and `✅ Standings — constructors`. On both, every
+    position-change marker beside a row is a **green square**. The podium plates, points
+    tints and corner marks of the result cells are the bot's own, each kind with a notice
+    of the second kind (``the configured `marker` directory has no image for “<mark>”; the bot's own `<mark>.svg` was drawn instead.``)
+    — the folder holds the three movement markers and nothing else.
+
+35. **Do:** `/images config weather-icon-directory directory:resources/league/e2e/weather`
+
+    **Expect:** the answer above with `✅ Resolves.`, `<Label>` `Weather icons`.
+
+    **Then do:** `/images test weather-p2 division:Division 1 round:1`, then
+    `/images test weather-p3 division:Division 1 round:1`
+
+    **Expect:** on both, every weather icon a **green square**, and no `weather` notice.
+
+36. **Do:** `/images config tyre-directory directory:resources/league/e2e/tyres`
+
+    **Expect:** the answer above with `✅ Resolves.`, `<Label>` `Tyre compounds`.
+
+    **Then do:** `/images test results division:Division 1 round:1`
+
+    **Expect:** on the qualifying picture, every tyre drawn a **green square**, and no `tyre`
+    notice. A row with no compound recorded, if the invented results hold one, draws the
+    bot's empty dashed ring and raises no notice. The race picture draws no tyres.
+
+37. **Do:** `/images config division-logo-directory directory:resources/league/e2e/division-logos`
+
+    **Expect:** the answer above with `✅ Resolves.`, `<Label>` `Division logos`.
+
+    **Then do:** `/images test calendar division:Division 1`, then
+    `/images test calendar division:Division 2`
+
+    **Expect:**
+    - Division 1: a **green square** in the box at the top right, beside `Race Calendar`;
+    - Division 2: nothing in that box, and no notice of any kind about a division logo —
+      `division_2.svg` is missing, and a missing logo is silent by design.
+
+38. **Do:** `/images config view`
+
+    **Expect:** under `**Asset directories**`, eight `✅` lines, each `<Label>` with its
+    `resources/league/e2e/<folder>` (``  ✅ Team badges: `resources/league/e2e/teams` `` and so
+    on). Every other section as step 28.
+
+### A folder that is not there
+
+39. **Do**, once for each of the eight commands in the table above:
+    `/images config <command> directory:resources/league/e2e/nowhere`
+
+    **Expect**, for each: the answer above, the value `resources/league/e2e/nowhere`, with
+    `⚠️ Nothing is there yet — files placed there later will be picked up.` and
+    ``Searched: `<checkout>/resources/league/e2e/nowhere` ``. Nothing is refused, and the log line
+    says `Success`.
+
+40. **Do:** `/images test lineup division:Division 1`
+
+    **Expect:**
+    - **Reply:** `✅ Lineup`, and, before the notices, the section:
+      ```
+      ⚠️ **Asset directories** — these did not resolve as configured:
+        ↳ `division_logo`: `resources/league/e2e/nowhere` — the configured directory does not exist
+        ↳ `driver`: `resources/league/e2e/nowhere` — the configured directory does not exist
+        ↳ `flag`: `resources/league/e2e/nowhere` — the configured directory does not exist
+        ↳ `marker`: `resources/league/e2e/nowhere` — the configured directory does not exist
+        ↳ `team`: `resources/league/e2e/nowhere` — the configured directory does not exist
+        ↳ `track`: `resources/league/e2e/nowhere` — the configured directory does not exist
+        ↳ `tyre`: `resources/league/e2e/nowhere` — the configured directory does not exist
+        ↳ `weather`: `resources/league/e2e/nowhere` — the configured directory does not exist
+      ```
+      Every class is listed, not only those the lineup draws.
+      > UNVERIFIED: the order of the eight lines (the classes sorted by name, from
+      > `ASSET_CLASS_COLUMNS` in `image/services/preview/image_preview_service.py`). Record it.
+    - **The picture**: every badge, flag and portrait the packaged grey one, Alpha Racing's and
+      Adam Archer's included, each with its notice.
+
+41. **Do:** `/images config view`
+
+    **Expect:** under `**Asset directories**`, eight lines of the form
+    ``  ⚠️ <Label>: `resources/league/e2e/nowhere` — this folder can't be found. Point the bot at the right folder with `/images config <command>`.``
+    Under `**Output aspects**`, all nine still `✅`: a missing asset folder blocks nothing.
+
+42. **A file, not a folder.** **Do:**
+    `/images config team-image-directory directory:resources/league/e2e/teams/alp.svg`
+
+    **Expect:** the answer above with `⚠️ That path exists but is not a directory.`; then
+    `/images config view` shows
+    ``  ⚠️ Team badges: `resources/league/e2e/teams/alp.svg` — this is a file, not a folder. Point the bot at the right folder with `/images config team-image-directory`.``
+
+43. **A refusal: a folder outside the checkout.** **Do:**
+    `/images config team-image-directory directory:../elsewhere`
+
+    **Expect:**
+    - **Reply**, at once, no acknowledgement:
+      ```
+      ❌ `../elsewhere` resolves to `<the folder holding <checkout>>/elsewhere`, which is outside the project root.
+      Directories must sit inside the project root. The stored value is unchanged.
+      ```
+    - **Log:** ``⛔ `/images config team-image-directory` refused for <you> — `../elsewhere` resolves to `<the folder holding <checkout>>/elsewhere`, which is outside the project root.``
+
+### Back to the default folders
+
+44. **Do**, once for each of the eight commands in the table above, with the row's shipped
+    default: `/images config <command> directory:<shipped default>`
+
+    **Expect**, for each: the answer above with `✅ Resolves.` — every `resources/league/<class>`
+    folder is there, kept by its `.gitkeep`.
+
+45. **Do:** `/images test lineup division:Division 1`, then
+    `/images test calendar division:Division 1`
+
+    **Expect:** no `⚠️ **Asset directories**` section. The lineup as it drew before step 29 —
+    Alpha Racing's badge the packaged grey one, not magenta: the league's fallback sits in the
+    `e2e` folder, which is no longer read. The calendar as step 14 (green rule, empty logo box).
+
+46. **What a league ordinarily does: drop a file in.** By hand, with no command:
+
+    ```
+    cp <checkout>/resources/league/e2e/teams/alp.svg <checkout>/resources/league/teams/alp.svg
+    ```
+
+    If `resources/league/teams/alp.svg` is there already, move it aside first and put it back
+    in Part G.
+
+    **Do:** `/images test lineup division:Division 1`
+
+    **Expect:** Alpha Racing's badge a **green square**, no `team` notice for `ALP`; every
+    other badge the packaged grey shield. Nothing had to be configured.
+
+47. **Do:** `/images config view`
+
+    **Expect:** the `**Asset directories**` section exactly as step 4.
