@@ -371,12 +371,7 @@ async def test_opening_signups_posts_the_button_and_records_the_window(tmp_path)
 #: (#600), so that its fake drivers sign up through them.
 _TEST_MODE_OR_NOT = [
     pytest.param(False, id="test mode off"),
-    pytest.param(
-        True, id="test mode on",
-        marks=pytest.mark.xfail(
-            strict=True, reason="#600: /signup open is still refused under test mode"
-        ),
-    ),
+    pytest.param(True, id="test mode on"),
 ]
 
 

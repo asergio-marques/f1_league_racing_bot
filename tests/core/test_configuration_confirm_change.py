@@ -122,10 +122,6 @@ def _as_naive(stamp: str) -> datetime:
         pytest.param(False, False, "PLACEMENTS", PLACEMENTS, id="signup_off"),
         pytest.param(
             True, True, "WAITING", WAITING, id="signup_on_in_test_mode",
-            marks=pytest.mark.xfail(
-                strict=True,
-                reason="#600: a test season confirmed with signup on still skips Waiting",
-            ),
         ),
     ],
 )

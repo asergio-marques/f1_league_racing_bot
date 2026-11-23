@@ -1,7 +1,7 @@
 """The signup window's opening and closing on the change queue (#439, slice 6b).
 
 `/signup open` asks `signup.open`, whose check holds every refusal the command has always made
-(the module, test mode, the configuration, the season's stage, the league's roles, the slots) and
+(the module, the configuration, the season's stage, the league's roles, the slots) and
 the bot's permissions on the signup channel, so that a refusal names what is wrong before anything
 is posted. Its jobs are three:
 
@@ -178,11 +178,6 @@ def window_open_change(
         if not await modules.is_enabled(SWITCH_KEY):
             return Verdict.refuse(MODULE_OFF)
         server_cfg = await config.get_server_config()
-        if server_cfg is not None and server_cfg.test_mode_active:
-            return Verdict.refuse(
-                "⛔ Signups cannot be opened while test mode is active. "
-                "Turn it off with `/test-mode toggle` first."
-            )
         cfg = await signup.get_config()
         if cfg is None:
             return Verdict.refuse("❌ Signup module is not configured.")

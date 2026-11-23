@@ -163,12 +163,7 @@ class TestSignupOpen:
         "test_mode",
         [
             pytest.param(False, id="test mode off"),
-            pytest.param(
-                True, id="test mode on",
-                marks=pytest.mark.xfail(
-                    strict=True, reason="#600: /signup open is still refused under test mode"
-                ),
-            ),
+            pytest.param(True, id="test mode on"),
         ],
     )
     async def test_it_proceeds_test_mode_or_not(self, test_mode):

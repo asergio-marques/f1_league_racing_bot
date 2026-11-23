@@ -690,19 +690,6 @@ class SignupCog(commands.Cog):
         if not await self._module_gate(interaction):
             return
 
-        # Refused under test mode, for the same reason the Sign Up button is: no real
-        # driver may sign up while the server is under test, so a window opened now
-        # would be one nobody could use.
-        server_cfg = await self.bot.config_service.get_server_config()
-        if server_cfg is not None and server_cfg.test_mode_active:
-            await refuse(
-                interaction,
-                "⛔ Signups cannot be opened while test mode is active. "
-                "Turn it off with `/test-mode toggle` first.",
-                what=describe(interaction),
-            )
-            return
-
         cfg = await self.bot.signup_module_service.get_config()
         if cfg is None:
             await refuse(
