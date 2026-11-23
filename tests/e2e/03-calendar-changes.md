@@ -570,3 +570,160 @@ channel. This part needs one channel the Fixture does not hold.
 
     **Expect:** nothing from the bot. `#d1-calendar` holds one calendar, the one the bot
     records, which the cancellation of Part F replaces.
+
+---
+
+## Part E — Amending a round whose work has begun
+
+Division 1's round 1 is given its first forecast and its check-in call, three drivers answer, and
+then its circuit is changed: the forecast is withdrawn and the call posted again for the new
+circuit, its answers kept.
+
+**What test mode cannot show here.** A track change is refused while the first forecast, drawn
+for the present circuit, still stands, and a format change while the second does — "stands"
+meaning that the phase would have run already were the round always at its new moment
+(`forecast_amendment.judge_forecasts`). That is judged by the real clock, and every round is a
+year ahead, so under test mode an advanced forecast never stands: the amendment withdraws it
+instead. The same holds for a round's start: the refusal of a track or format change once the
+round has started cannot be reached with a round dated a year ahead.
+
+40. **Do:** `/test-mode advance`
+
+    **Expect:** as `01-full-season.md` step 12:
+    - **Reply:** ``⏩ **Phase 1** for **Division 1** — **Silverstone Circuit** is on the change queue: its forecast goes to the forecast channel and its calculation to the log channel as soon as the queue reaches it.``
+    - **Posts** (`#d1-weather`): `<@&<Division 1 role id>>` with the Phase 1 picture, headed
+      `Initial chance of rain`, the track `Silverstone Circuit`.
+    - **Log:**
+      ```
+      <you> | /test-mode advance | Success
+        phase: 1
+        division: Division 1
+        track: Silverstone Circuit
+        round: 1
+      ```
+      then `📋 **Phase 1 Calculation Log** | Round 1 in **Division 1** | Silverstone Circuit`
+      with its JSON, `"mu": 0.3, "sigma": 0.05`, and any notice block.
+
+41. **Do:** `/test-mode advance`
+
+    **Expect:** as `01-full-season.md` step 13:
+    - **Reply:** `📨 The **RSVP notice** for **Division 1** — **Round 1** (**Silverstone Circuit**) is on the change queue: it goes to the RSVP channel as soon as the queue reaches it.`
+    - **Log:**
+      ```
+      <you> | /test-mode advance | Success
+        phase: rsvp_notice
+        division: Division 1
+        round: 1
+      ```
+    - **Posts** (`#d1-rsvp`): `<@&<Division 1 role id>>`, the check-in picture of the
+      `British Grand Prix`, the embed titled `Season 1 Round 1 — Silverstone Circuit` with
+      `📍 Location` `Silverstone Circuit`, every driver `()`, and the three buttons.
+
+42. **Do:** `/attendance test rsvp division:Division 1`. In the form **Bulk Set RSVP Statuses**,
+    paste into **ID, status — one entry per line**, and submit:
+
+    ```
+    9000000000000000001, accept
+    9000000000000000002, decline
+    9000000000000000003, tentative
+    ```
+
+    **Expect:**
+    - **Ack:** `setting 3 test RSVP answer(s) on the check-in call of **Division 1**`
+    - **Then:**
+      ```
+      ✅ Applied 3 update(s) in **Division 1**:
+        `9000000000000000001` → accepted
+        `9000000000000000002` → declined
+        `9000000000000000003` → tentative
+      🔄 The check-in call is redrawn on the change queue.
+      ```
+    - **Posts** (`#d1-rsvp`): the call edited: `(✅)` beside Adam Archer, `(❌)` beside Bruno
+      Bianchi, `(❓)` beside Carlos Cortes, `()` beside every other driver.
+    - **Log:**
+      ```
+      <you> | /attendance test rsvp | Success
+        division: Division 1
+        round_id: <id: Division 1's round 1>
+        updates: 3
+        changes: `9000000000000000001` → accepted, `9000000000000000002` → declined, `9000000000000000003` → tentative
+      ```
+
+43. **Do:** `/round amend division_name:Division 1 round_number:1 track:3`
+
+    **Expect:**
+    - **Reply**, with **✅ Confirm** and **❌ Cancel**:
+      ```
+      **Amend Round 1** in division **Division 1**:
+        • `track_name` → `Suzuka International Racing Course`
+
+      ⚠️ This will withdraw and redraw Phase 1 for this round.
+      ```
+      Weather names the one forecast drawn; Phases 2 and 3, not drawn, are not named. Nothing
+      from attendance: every check-in window is still ahead.
+    - **Log:** nothing yet.
+
+44. **Do:** within two minutes, press **✅ Confirm**.
+
+    **Expect:**
+    - **Ack:** `Amending round 1 in **Division 1**`
+    - **Then:**
+      ```
+      ✅ Round amended successfully.
+
+      **Rounds:**
+        Round 1: NORMAL @ Suzuka International Racing Course — <t:<…>:F>
+        Round 2: MYSTERY @ TBD — <t:<…>:F>
+        Round 3: SPRINT @ Hungaroring — <t:<…>:F>
+      ```
+    - **Posts**, each a job of the amendment's, the check-in's before the forecasts'
+      (`round_amend_change`, `plan_posts`):
+      - `#d1-rsvp`: the call of step 41 deleted, with its picture, and a new call posted: the text
+        `<@&<Division 1 role id>>`, the check-in picture of the `Japanese Grand Prix`, the embed
+        titled `Season 1 Round 1 — Suzuka International Racing Course` with `📍 Location`
+        `Suzuka International Racing Course` and the same `📅 Date`, and the three buttons. The
+        answers of step 42 are kept: `(✅)` Adam Archer, `(❌)` Bruno Bianchi, `(❓)` Carlos
+        Cortes, `()` every other driver.
+      - `#d1-weather`: the Phase 1 forecast of step 40 deleted, then the notice, which mentions
+        the division role:
+        ```
+        <@&<Division 1 role id>> ⚠️ **Weather Forecast Invalidated**
+        The configuration for **Suzuka International Racing Course** has been amended by an admin. All previously published forecasts for this round have been invalidated. An updated forecast will be posted automatically.
+        ```
+        No forecast is drawn at once: Phase 1's horizon is still five days before a race a year
+        away.
+    - **Log:**
+      ```
+      <you> | /round amend | Success
+        round 1 (round_id: <id: Division 1's round 1>)
+        track: Silverstone Circuit → Suzuka International Racing Course
+      ```
+      and any notice block for the new check-in picture.
+      > UNVERIFIED: whether the take-down, the reposted call or the forecast's deletion writes a
+      > line of its own to `#bot-log`. None is written in `src/` for a job that goes through;
+      > record any that appears.
+
+45. **Do:** `/test-mode review`
+
+    **Expect:**
+    - **Reply:** as step 30, but Division 1's round 1 now reads:
+      ```
+        Round 1 · Suzuka International Racing Course · <YEAR+1>-03-01  P1: ⏳  P2: ⏳  P3: ⏳  Cleanup: ⏳  |  Results: ⏳  |  RSVP: ✅  Last: ⏳  Deadline: ⏳  Cleared: ⏳
+      ```
+      `P1` back to ⏳: the forecast was withdrawn and its timer armed again. `RSVP` ✅: the call
+      stands, posted again.
+    - **Log:** nothing; it is a view.
+
+46. **Do:** `/test-mode advance`
+
+    **Expect:** Phase 1 again, now for the new circuit; the call is not offered again, since it
+    stands.
+    - **Reply:** ``⏩ **Phase 1** for **Division 1** — **Suzuka International Racing Course** is on the change queue: its forecast goes to the forecast channel and its calculation to the log channel as soon as the queue reaches it.``
+    - **Posts** (`#d1-weather`): `<@&<Division 1 role id>>` with the Phase 1 picture, headed
+      `Initial chance of rain`, the track `Suzuka International Racing Course`, and the flag of
+      Japan where `resources/league/flags/` holds it, else the packaged fallback flag. The
+      notice of step 44 stays.
+    - **Log:** as step 40, with `track: Suzuka International Racing Course`; then
+      `📋 **Phase 1 Calculation Log** | Round 1 in **Division 1** | Suzuka International Racing Course`
+      with its JSON, `"track": "Suzuka International Racing Course"`, `"mu": 0.25, "sigma": 0.07`:
+      the new circuit's parameters, not Silverstone's.
