@@ -110,7 +110,7 @@ class TemplateCapacityService:
         self._db_path = db_path
         #: The image module's answers to core's drawing protocol (`image_drawing.ImageDrawing`),
         #: handed in by the builder. None in every unit test that exercises a placement alone:
-        #: no guard asks anything, and a test roster of any size is accepted.
+        #: no guard asks anything, and a placement of any size is accepted.
         self._drawing = drawing
 
     async def _ask_drawing(
