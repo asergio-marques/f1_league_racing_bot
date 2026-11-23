@@ -229,15 +229,19 @@ async def test_a_test_mode_command_given_while_test_mode_is_off_is_refused(tmp_p
 async def test_reassign_refuses_a_fake_driver_on_either_side(tmp_path, old_user, new_user):
     """Test mode is on and the season in Placements. Admin runs the test-mode `/driver reassign`
     with the fake driver Tester as the driver's account, or as the account to make current. It is
-    refused as a test-mode driver, and nothing is asked of the queue."""
+    refused as a test-mode driver, the log channel takes the refusal as its one line, and nothing
+    is asked of the queue."""
+    from tests.core.test_driver_reassign import _reassign_lines, _reassign_refusal
     from tests.support.change_queue import change_rows
-    from tests.support.settings_league import last_said
+    from tests.support.settings_league import last_said, log_lines
 
     league = await _league(tmp_path)
 
     asked = await _run_variant(league, "reassign", old_user=old_user, new_user=new_user)
 
-    assert "test-mode driver" in last_said(asked)
+    reply = last_said(asked)
+    assert "test-mode driver" in reply
+    assert _reassign_lines(await log_lines(league)) == [_reassign_refusal(reply)]
     assert await change_rows(league.db_path) == []
 
 
@@ -264,9 +268,10 @@ async def test_reassign_makes_a_server_member_with_no_profile_current(tmp_path):
 async def test_reassign_refuses_an_id_that_is_not_a_member(tmp_path):
     """Test mode is on and the season in Placements. Admin runs the test-mode `/driver reassign`
     of Charles by ID to 555, who is not a member of the server. The reply refuses it, naming 555,
-    and nothing is asked of the queue."""
+    the log channel takes the refusal as its one line, and nothing is asked of the queue."""
+    from tests.core.test_driver_reassign import _reassign_lines, _reassign_refusal
     from tests.support.change_queue import change_rows
-    from tests.support.settings_league import last_said
+    from tests.support.settings_league import last_said, log_lines
 
     league = await _league(tmp_path)
     league.absent.add(555)
@@ -275,6 +280,7 @@ async def test_reassign_refuses_an_id_that_is_not_a_member(tmp_path):
 
     reply = last_said(asked)
     assert reply.startswith("⛔") and "555" in reply
+    assert _reassign_lines(await log_lines(league)) == [_reassign_refusal(reply)]
     assert await change_rows(league.db_path) == []
 
 
