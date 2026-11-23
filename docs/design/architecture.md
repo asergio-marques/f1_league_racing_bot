@@ -966,12 +966,12 @@ update or delete on any table but those. The queue's own tables are always allow
 the job's mark, its audit records, its log lines and the changes it asks for), so the mark, the
 lines and a follow-on pass, and an empty `writes` allows those alone. A write the authoriser refuses
 raises in the step, rolls its save back whole and stops the lane at that job, so it never lands; in
-a league's setting, `/bot init`'s save or a role move, whose steps end on a fault (see "A job that
-fails stops its lane"), it ends the job instead and the lane goes on. A change type whose `writes`
-is `None`, the default, is not restricted; most league change types leave it so, and a league change
-type may declare the tables it writes and be confined to them likewise, as replacing a round's
-results with its resubmission drafts does. What a conversation hands the league, it asks of the
-league lane (see "How a change is carried out").
+a league's setting, `/bot init`'s save, a role move or the `/driver` swap, whose steps end on a
+fault (see "A job that fails stops its lane"), it ends the job instead and the lane goes on. A change
+type whose `writes` is `None`, the default, is not restricted; most league change types leave it so,
+and a league change type may declare the tables it writes and be confined to them likewise, as
+replacing a round's results with its resubmission drafts does. What a conversation hands the league,
+it asks of the league lane (see "How a change is carried out").
 
 *Rejected:* trusting each step to keep to its tables, which a lane's own tests would never catch
 once the flows are many; and a separate connection for each lane, which SQLite would not make a
@@ -1541,8 +1541,8 @@ stated exceptions below them:
    check that raises as the change starts (`ChangeQueue._start`), and of a hook that raises in
    either (`ChangeQueue._step_failed`, `_end_on_check_fault` and `_refuse`, each leading to the
    lane's stop) are failure paths as well: the catches of a step and of a check each stop the lane,
-   or, for a step of a league's setting, `/bot init`'s save or a role move that gives
-   `Step.on_fault`, end the job instead, or, for a member's change of a type that gives
+   or, for a step of a league's setting, `/bot init`'s save, a role move or the `/driver` swap that
+   gives `Step.on_fault`, end the job instead, or, for a member's change of a type that gives
    `ChangeType.on_check_fault`, end the change, and the lane goes on (see "A job that fails stops
    its lane"), and a hook's catch always leads to the stop. Either way the fault is logged on the
    host and recorded in the log channel as a failure, once — save a fault in `/bot init`'s save,
