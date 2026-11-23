@@ -1,4 +1,5 @@
-"""How a signup names its driver in the log channel and in the posts of its channel.
+"""How a signup names its driver wherever it names one: its log lines, the posts of its channel,
+the queue's job descriptions and its refusals.
 
 A real driver is a member of the server and is named as any member is. A fake driver is no
 member, so a mention of its account reaches nobody: it is named by its test name, with no
