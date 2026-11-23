@@ -42,7 +42,7 @@ is carried out"; `framework/services/queue/change_queue.py`, `framework/services
 
 ## What this spec cannot reach
 
-- **A job stopped on a failure across a restart** (`❌ The queue is still stopped at job #… After
+- **A job stopped on a failure across a restart** (`❌ The queue is still stopped at job #<n> (<job>). After
   the restart the bot no longer tries it on its own: press Retry or Discard on its notice.`). Only
   a fault stops a job, and the faults a tester can cause by hand are Discord's — a missing
   permission, a deleted channel — which are out of scope (README, "What is in scope").
