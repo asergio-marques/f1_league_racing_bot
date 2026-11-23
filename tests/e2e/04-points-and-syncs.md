@@ -1019,9 +1019,8 @@ Keller 43, Liam Lavoie 3) and Delta Racing from 32 to **34** (Hiro Hayashi 32, G
     - **Posts**, each new message posted before the one it replaces is deleted:
       - `#d1-results`: the two pictures of round 1 again, `**Season 1 Division 1 Round 1 — Qualifying**`
         and `… — Race**`, `Final Results`, the old pair deleted. The qualifying gives Hiro
-        Hayashi 5 and Kevin Keller 3; the race gives Kevin Keller 35 and the fastest lap's 5.
-        > UNVERIFIED: whether the race picture shows Kevin Keller's points as 40, the bonus
-        > counted in, or as 35 with the fastest lap marked apart.
+        Hayashi 5 and Kevin Keller 3; the race gives Kevin Keller 40 (35, and the fastest lap's
+        5 counted in), the fastest lap marked beside him and in the fastest-lap block.
       - `#d1-standings`: drivers and teams again, `Final Results`, the old pair deleted. Drivers:
         Kevin Keller **43**, Hiro Hayashi **32**, Rafael Rossi 25, Emil Engel 21, Bruno Bianchi 18,
         Samuel Shaw 15, Olivier Orsini 13, Ian Irwin 11, Mateo Morales 9, Carlos Cortes 7, Ugo
