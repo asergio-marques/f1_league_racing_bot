@@ -791,3 +791,33 @@ spec gives it.
 
     In (a), skip this step: Season #2 stays in configuration, which the restore below does not
     mind.
+
+---
+
+## Part I — Restoring the base
+
+Season #2 is left in configuration or placements, test mode on. A restore is itself a restart:
+the staged files are swapped in as the bot starts, before the catch-up, so the catch-up runs on
+the base, which has nothing to catch up.
+
+47. **Do:** steps 1 to 3 again: `/test-mode backup status`, `/test-mode backup restore` and
+    **♻️ Restore**, and restart the bot.
+
+    **Expect:** as steps 1 to 3: still `Readable: yes` and locked, the cancellation of step 41
+    having kept the backup; `Started on a restored database.` in the host log; and nothing in
+    `#bot-log` on the start.
+
+48. **Do:** `/test-mode review`
+
+    **Expect:** as step 4: Season #1 ongoing again, every mark of every round `⏳`. Season #2, the
+    cancellation and everything Parts B to G did are gone from the bot. No log line.
+
+Discord is not restored with the database. Left behind by this spec, for you to delete by hand if
+you wish: the forecast, check-in call and pictures of Division 1's round 1 (Parts C to G) in the
+Division 1 channels, and any accepted second copy; and the cancellation notices and cancelled
+calendars of step 41 in every division channel, as `02-roster-changes.md` leaves them. The
+calendars `00-base.md` step 32 posted, which the base still records, were deleted at step 41; a
+later spec that posts a calendar again finds the recorded one gone and carries on
+(`standing_posts` passes over a message already deleted).
+
+The base is as `00-base.md` left it, its backup still saved and locked.
