@@ -108,7 +108,9 @@ would otherwise collide with.
 **The wizard asks against a frozen copy of the configuration.** `config_snapshot_json` is taken as
 the wizard starts and holds the settings, the slots by their durable identity, the window's tracks
 and the teams' names and shorthands; the wizard judges every answer against it, so a setting
-changed mid-signup changes nothing for a driver part-way through. A slot's display ordinal is never
+changed mid-signup changes nothing for a driver part-way through. Under test mode the frozen copy
+carries the test-mode nationality switch in place of the league's own setting, so the question is
+asked, or left out, as the switch says, a correction reading the same copy. A slot's display ordinal is never
 stored (`_snapshot_to_dict`'s docstring; `AvailabilitySlot`'s docstring, pinned by
 `test_no_display_ordinal_is_ever_stored`).
 
@@ -276,7 +278,7 @@ view, so its buttons answer after a restart.
 
 ### The cogs
 
-`/signup` is one group in one cog, `SignupCog` (`signup/cogs/signup_cog.py`): `channel`,
+`/signup` is one group in one cog, `SignupCog` (`signup/cogs/signup_cog.py`), and again as the test-mode group in `SignupTestCog` (`signup/cogs/signup_test_cog.py`), a cog holding one group. `SignupCog` is the member's: `channel`,
 `nationality`, `time-type`, `time-image`, `open`, `close` and `cancel` on the group, and the subgroups
 `config` (`view` alone, `test_the_signup_config_group_holds_only_view`), `time-slot`, `close-time`
 and `unassigned`. A command that changes something parses its own input (the close time, through
@@ -293,8 +295,29 @@ list`, `open`, `close`, `cancel`, `unassigned list` and `unassigned export`. The
 queue and leave the module-on refusal to their change's check: `open_to_change` for the five settings and
 `/signup channel`, the close-time group's own check for its three.
 
+**Each command's body is a function of the bot** (`signup/cogs/signup_commands.py`), the cogs declaring
+a command, with its tier and guard, and calling the function, so that the member group and the
+test-mode group do one thing in each command and differ only in how the driver is named. The
+test-mode group is the member group's commands at the same tiers, with `cancel` taking its driver as
+text through core's `driver_reference`, as the test-mode `/driver` does, and `start`, which the member
+group has not: a fake driver, having no account to press the Sign Up button, is started by a league
+admin, `start` asking `signup.start` for it as the press does for a member. The signup module owns
+the group, so core's swap names neither: it is handed the member and test-mode groups as a pair.
+*Rejected:* the test-mode group subclassing `SignupCog`, which would inherit the member group into
+its own app commands, as the same rejection for `/driver` puts it (`core.md`); and `start` as a
+`/test-mode` command, which would have core ask the signup module, a layer the wrong way round: a
+module's test-mode tools sit in its own group.
+
+**One function judges who may answer a wizard**, `may_answer` (`signup_views.py`): the driver may, and
+under test mode a league admin may for a fake driver, no one else for a real one. Every button of
+the wizard and every typed answer calls it, so that the rule is written once and the two cannot
+differ. It is handed what it reads rather than looking a service up: the listener passes the bot's config and
+driver services, and `WizardStepView` is handed them with the signup service and the change queue and
+passes them on, the views registered at start-up being handed the same. A typed answer is keyed to the
+wizard's owner, the fake driver, so the signup holds it as the driver's own.
+
 The cog holds three listeners. `on_message` hands a message typed in a driver's channel to
-`take_typed_answer`, which asks the driver's own `signup.answer` turn as the driver, after turning
+`take_typed_answer`, once `may_answer` has admitted the author, which asks the driver's own `signup.answer` turn as the driver, after turning
 away a message typed while an earlier answer waits and passing over one where the wizard asks
 nothing. The other two ask as the bot and leave the judgement to the change's check:
 `on_guild_channel_delete` asks a signup's ending where a wizard names the
@@ -332,7 +355,7 @@ is told.
 | `module.on:signup`, `module.off:signup` | league | `/module enable` and `/module disable` |
 | `signup.open`, `signup.close` | league | `/signup open`; `/signup close` and its Confirm Close, the close timer, the restart |
 | `signup.close_timer.arm` | league | the restart, for a close time still ahead |
-| `signup.start`, `signup.end`, `signup.submit` | league | Sign Up; Cancel Signup, a Reject reason, a manager's `/signup cancel`, the 24 hours, a channel found gone; the last answer |
+| `signup.start`, `signup.end`, `signup.submit` | league | Sign Up, and `/signup start` for a fake driver; Cancel Signup, a Reject reason, a manager's `/signup cancel`, the 24 hours, a channel found gone; the last answer |
 | `signup.approve`, `signup.request_changes`, `signup.correction.choose`, `signup.correction.lapse` | league | the review's buttons; the five minutes' timer and the restart |
 | `signup.member_left` | league | the member-remove listener |
 | `signup.answer`, `signup.panel`, `signup.choices`, `signup.recollect`, `signup.closing`, `signup.reason.delete`, `signup.channel.delete` | the driver's, `channel:<id>` | a typed answer or a wizard button; asked back by the league's changes; the held channel's 24 hours |
