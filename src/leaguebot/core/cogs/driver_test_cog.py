@@ -22,10 +22,11 @@ from discord.ext import commands
 
 from leaguebot.core.cogs import driver_commands
 from leaguebot.core.cogs.driver_commands import ResolvedDriver
-from leaguebot.core.services.drivers.driver_names import read_driver_names
 from leaguebot.core.services.drivers.driver_reference import (
+    NO_DRIVER,
     DriverReference,
     driver_choices,
+    reference_name,
     resolve_driver,
 )
 from leaguebot.core.utils.channel_guard import league_admin_only, league_manager_only
@@ -76,16 +77,9 @@ class DriverTestCog(commands.Cog):
     ) -> str:
         """The name a driver is called by: a fake driver's test name, otherwise as `driver_names`
         names them."""
-        if reference.test_name is not None:
-            return reference.test_name
-        account = reference.discord_user_id
-        names = await read_driver_names(
-            self.bot.db_path,
-            self.bot.driver_names_read,
-            None if reference.is_test_driver else interaction.guild,
-            [int(account)],
+        return await reference_name(
+            self.bot.db_path, self.bot.driver_names_read, interaction.guild, reference
         )
-        return names[int(account)]
 
     async def _driver(self, interaction: discord.Interaction, text: str) -> ResolvedDriver | None:
         """The driver *text* names; None, having refused, where it names none."""
@@ -354,6 +348,6 @@ async def _refuse_unknown(interaction: discord.Interaction, text: str) -> None:
     shown = text.strip()[:_TEXT_SHOWN]
     await refuse(
         interaction,
-        f"⛔ No driver found for `{shown}`. Give a mention or an ID of any account the driver has held.",
+        NO_DRIVER.format(text=shown),
         what=describe(interaction),
     )

@@ -32,6 +32,12 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from leaguebot.core.services.drivers.driver_reference import (
+    NO_DRIVER,
+    driver_choices,
+    reference_name,
+    resolve_driver,
+)
 from leaguebot.core.services.test_mode.test_mode_settings import NOT_IN_TEST_MODE
 from leaguebot.core.services.test_mode.test_roster_changes import (
     TEST_ROSTER_ADD,
@@ -49,6 +55,7 @@ from leaguebot.core.services.test_mode.test_mode_service import (
     advance_next_step,
 )
 from leaguebot.core.services.upkeep import backup_service
+from leaguebot.framework.utils.autocomplete import bounded_autocomplete
 from leaguebot.framework.utils.catch_up_gate import after_the_catch_up
 from leaguebot.core.utils.channel_guard import league_admin_only, changes_nothing
 from leaguebot.core.utils.input_validator import parse_user_id
@@ -59,6 +66,9 @@ from leaguebot.framework.utils.league_server import LeagueModal, LeagueView
 from leaguebot.framework.utils.log_lines import record_abandoned, refuse
 from leaguebot.core.utils.roster_import import format_roster_errors as _format_roster_errors
 from leaguebot.core.utils.roster_import import parse_roster_csv
+
+#: What the typed text is clipped to where a refusal names it.
+_TEXT_SHOWN = 100
 
 #: Waits for the catch-up after a restart before a command answered off the change queue acts.
 _after_the_catch_up = after_the_catch_up(lambda cog: cog.bot.change_queue)
@@ -298,27 +308,49 @@ class TestModeCog(commands.Cog):
         description="Manually set the former_driver flag on a driver profile (test mode only).",
     )
     @app_commands.describe(
-        user="The driver whose flag is being updated.",
+        user="The driver whose flag is being updated: a mention or an ID, a fake driver's too.",
         value="The new value for the former_driver flag.",
     )
     @league_admin_only
     async def set_former_driver(
         self,
         interaction: discord.Interaction,
-        user: discord.Member,
+        user: str,
         value: bool,
     ) -> None:
-        """Ask the change that sets the flag of the driver holding the account picked.
+        """Ask the change that sets the flag of the driver *user* names.
 
-        Test mode and the profile are judged by the change, as it is asked and as it starts
-        (`test_mode_former_driver_change`).
+        The driver is a text field, a mention or an ID of any account they have held, because
+        Discord's member field cannot carry a fake driver; text naming no driver is refused here,
+        naming what was typed. Test mode and the profile are judged by the change, as it is asked
+        and as it starts (`test_mode_former_driver_change`).
         """
+        reference = await resolve_driver(self.bot.db_path, user)
+        if reference is None:
+            await refuse(
+                interaction,
+                NO_DRIVER.format(text=user.strip()[:_TEXT_SHOWN]),
+                what=describe(interaction),
+            )
+            return
+        name = await reference_name(
+            self.bot.db_path, self.bot.driver_names_read, interaction.guild, reference
+        )
         await self.bot.change_queue.ask(
             TEST_MODE_FORMER_DRIVER,
-            {"user_id": str(user.id), "name": user.display_name, "value": value},
+            {"user_id": reference.discord_user_id, "name": name, "value": value},
             interaction=interaction,
             what=describe(interaction),
         )
+
+    @bounded_autocomplete()
+    async def _driver_autocomplete(
+        self, interaction: discord.Interaction, current: str
+    ) -> list[app_commands.Choice[str]]:
+        """A driver is offered by name, a fake driver by its test name, each sending its ID."""
+        return await driver_choices(self.bot.db_path, self.bot.driver_names_read, current)
+
+    set_former_driver.autocomplete("user")(_driver_autocomplete)
 
     # ------------------------------------------------------------------
     # /test-mode backup (subgroup)

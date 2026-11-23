@@ -14,13 +14,23 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import discord
 from discord import app_commands
 
-from leaguebot.core.services.drivers.driver_names import read_driver_records, resolve_driver_name
+from leaguebot.core.services.drivers.driver_names import (
+    read_driver_names,
+    read_driver_records,
+    resolve_driver_name,
+)
 from leaguebot.core.services.drivers.driver_service import current_account_of
 from leaguebot.core.utils.input_validator import parse_user
 from leaguebot.framework.db.database import get_connection
 from leaguebot.framework.utils.hooks import AwaitedHook
+
+#: What a command refuses text naming no driver with, naming what was typed.
+NO_DRIVER = (
+    "⛔ No driver found for `{text}`. Give a mention or an ID of any account the driver has held."
+)
 
 #: The most choices Discord shows for one autocomplete.
 _MAX_CHOICES = 25
@@ -61,6 +71,23 @@ async def resolve_driver(db_path: str, text: str | None) -> DriverReference | No
         is_test_driver=is_test,
         test_name=row["test_display_name"] if is_test else None,
     )
+
+
+async def reference_name(
+    db_path: str,
+    driver_names_read: AwaitedHook,
+    guild: discord.Guild | None,
+    reference: DriverReference,
+) -> str:
+    """The name a driver is called by: a fake driver's test name, otherwise as `driver_names` names
+    them, from *guild*'s member where it holds one."""
+    if reference.test_name is not None:
+        return reference.test_name
+    account = int(reference.discord_user_id)
+    names = await read_driver_names(
+        db_path, driver_names_read, None if reference.is_test_driver else guild, [account]
+    )
+    return names[account]
 
 
 async def driver_choices(

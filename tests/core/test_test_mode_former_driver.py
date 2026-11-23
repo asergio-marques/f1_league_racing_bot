@@ -54,8 +54,6 @@ RACER_NOW = "5353"
 #: A fake driver, which no member field can name.
 GHOST = "9000000000000000001"
 
-_BY_TEXT = "#600: /test-mode set-former-driver does not yet take a driver as a mention or an ID"
-
 _AUDIT_TYPE = "TEST_FORMER_DRIVER_FLAG_SET"
 _NOT_IN_TEST_MODE = "⛔ This command is only available when test mode is enabled."
 
@@ -157,7 +155,6 @@ def _doing(value: bool, name: str = "Racer") -> str:
     return f"Setting **{name}**'s former-driver flag to **{value}**"
 
 
-@pytest.mark.xfail(strict=True, reason=_BY_TEXT)
 @pytest.mark.parametrize(
     "former, value, named_by",
     [
@@ -243,7 +240,6 @@ async def _test_mode_off(league) -> None:
         await db.commit()
 
 
-@pytest.mark.xfail(strict=True, reason=_BY_TEXT)
 @pytest.mark.parametrize(
     "racer_held, meanwhile, typed, refusal",
     [
@@ -280,7 +276,6 @@ async def test_it_is_refused_at_the_ask(league, racer_held, meanwhile, typed, re
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=_BY_TEXT)
 @pytest.mark.parametrize("meanwhile", ["test mode turned off", "profile deleted"])
 async def test_it_is_judged_again_as_it_starts(league, meanwhile):
     """The server is in test mode; Racer holds a profile whose flag is false. Admin (77) runs the
@@ -313,7 +308,6 @@ async def test_it_is_judged_again_as_it_starts(league, meanwhile):
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=_BY_TEXT)
 async def test_a_fault_in_the_save_saves_neither_the_flag_nor_its_audit(league):
     """The server is in test mode; Racer holds a profile whose flag is false. Admin (77) runs the
     command for Racer with true, and the audit entry's write fails on the database as the queue
@@ -347,7 +341,6 @@ async def test_a_fault_in_the_save_saves_neither_the_flag_nor_its_audit(league):
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=_BY_TEXT)
 async def test_the_same_ask_while_the_first_waits_is_refused_as_a_repeat(league):
     """The core specification's "How a change is carried out": a request repeating a change that
     has not started, with nothing else asked for since on its lane, is refused, saying so. The
