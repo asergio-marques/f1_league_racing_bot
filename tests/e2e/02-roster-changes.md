@@ -382,17 +382,16 @@ draws the lineup on demand, which is what this section checks.
       - `#dN-calendar`: the division's calendar, posted again as a picture with its three rounds
         cancelled, and the calendar `00-base.md` step 32 posted deleted.
       - Nothing in `#dN-lineup`, `#dN-standings` or `#dN-attendance`: their pictures stay.
-      > UNVERIFIED: the order of the weather and results notes within a division (both are planned
-      > after the check-in notice, in the order the modules signed up), and how the calendar
-      > draws a cancelled round.
+      The order is per division, in tier order: the check-in notice, the weather note, the
+      results note, then the calendar, as the modules sign up to the cancellation notices.
+      > UNVERIFIED: how the calendar draws a cancelled round.
     - **Roles:** none taken. Fake drivers hold none.
     - **Log:**
       ```
       <you> | /season cancel | Success
       ```
-      > UNVERIFIED: whether any line follows it. A round called off carries its check-in's audit
-      > beneath the line where it had one (`_audit_lines`); the base posted no check-in, so none
-      > is expected.
+      Nothing follows it: a round called off carries its check-in's audit beneath the line only
+      where a check-in call stood, and the base posted none.
     - **Test mode is off**, and every fake driver deleted, as the season's end does it. **The saved
       backup is kept**: `bot.bkup.db`, `scheduler.bkup.db` and `backup.lock` are still in the bot
       host folder.
@@ -649,8 +648,8 @@ cancelled, so this is Season #2.
     and with the same remark on the acknowledgement left standing. In particular no message
     opening `⛔ **The configuration cannot be confirmed yet.**`: without step 49 it would carry
     ``No points configuration is attached to this season — `/results config append`.``
-    > UNVERIFIED: how the results section of the report lists `Standard` alone, where `00-base.md`
-    > had both configurations attached.
+    The results section reads `**Points Configs:** Standard`, where `00-base.md` had both
+    configurations attached.
 
 51. **Do:** within five minutes, press **✅ Confirm configuration** on the question.
 
