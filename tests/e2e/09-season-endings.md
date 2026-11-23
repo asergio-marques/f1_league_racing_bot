@@ -381,9 +381,11 @@ refused for the tier, for the word and for the channel; they are not shown again
       Twelve team roles: the eleven teams' and the Reserve team's, which `/team reserve-role` keeps
       in the same table (`team_changes`, `TeamRoleService.set_team_role_config_on`). No signup
       wizard: test mode opened no signup window.
-      > UNVERIFIED: the number of scheduled jobs cleared. The cancellation (step 5) took every
-      > round's timed work, and the pack keeps the daily portrait refresh and does not count it,
-      > so 0 is expected; any other number names jobs that outlived the season.
+      The scheduled jobs cleared are **0**, or **1** where step 26 comes within five minutes of
+      step 18's question: that review's `review_expiry` timer is still armed, and the pack clears
+      it with the rest. Any other number names jobs that outlived the season. The cancellation
+      (step 5) took every round's timed work, and the daily portrait refresh, which the base does
+      not arm, would be kept and not counted.
 
 27. **Nothing in Discord changed.** Look at the Fixture's channels.
 
