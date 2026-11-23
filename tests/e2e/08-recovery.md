@@ -736,8 +736,11 @@ spec gives it.
     **✅ Confirm configuration**, and `<you> | /season config-review | Review posted`. The
     acknowledgement stands unchanged, as `00-base.md` step 20 records.
 
-44. **Do:** with the question standing, **stop the bot**, wait **six minutes** from the question,
-    and **start the bot**.
+44. **Do:** with the question standing, stop the bot **within five minutes of the question** (at
+    once is best), then wait until six minutes have passed since the question, and **start the
+    bot**. A stop after the five minutes lets the timer take the review down with the bot running
+    (`review_expiry_timer`): `⏱️ <@<your id>> your review has expired …` and a lapse line without
+    the restart's wording. That is a re-run of steps 43 and 44, not a failure.
 
     **Expect**, once the bot is back:
     - **Posts** (`#bot-commands`): every message of the review of step 43 **deleted**, the question
