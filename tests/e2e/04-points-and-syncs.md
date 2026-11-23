@@ -760,3 +760,351 @@ announcement, and a reserve may still race for any team.
       `corrections: none`.
 
     Division 1's round 1 is final. Division 2 has no results, and keeps none in this spec.
+
+---
+
+## Part D — Amending the season's points
+
+The amendment changes the **season's** copy of `Standard`, which round 1 was scored by. It is
+staged in a working copy (the modification store), reviewed, and approved by a league admin; the
+approval rescores every raced session, recomputes every division's standings and reposts them,
+and turns amendment mode off. The change made here:
+
+| Standard | Before | After |
+|---|---|---|
+| Feature Qualifying P1, P2 | 3, 2 | 5, 3 |
+| Feature Race P1 | 30 | 35 |
+| Feature Race fastest lap | 2 points, top 15 | 5 points, top 10 |
+
+So in round 1: Kevin Keller, second in qualifying, winner with the fastest lap, goes from 2 + 30 + 2
+= 34 to 3 + 35 + 5 = **43**; Hiro Hayashi, on pole and second, from 3 + 27 = 30 to 5 + 27 =
+**32**; Rafael Rossi, third in both, keeps 1 + 24 = 25; nobody else scored in the first two places
+of either session, so every other total stands. Foxtrot Motorsport goes from 37 to **46** (Kevin
+Keller 43, Liam Lavoie 3) and Delta Racing from 32 to **34** (Hiro Hayashi 32, Gabriel Gomes 2).
+
+### Before the mode is on
+
+55. **A refusal: amendment mode is off.** **Do:**
+    `/results amend session name:Standard session:Feature Race position:1 points:35`
+
+    **Expect:**
+    - **Reply:** `❌ Amendment mode is not active.`
+    - **Log:** ``⛔ `/results amend session` refused for <you> — Amendment mode is not active.``
+
+56. **Do:** `/results amend review`
+
+    **Expect:**
+    - **Reply:** `❌ Amendment mode is not active.`
+    - **Log:** ``⛔ `/results amend review` refused for <you> — Amendment mode is not active.``
+
+57. **Do:** `/results amend bulk-session name:Standard session:Feature Qualifying`. In the form
+    **Bulk Amend Session Points**, paste `1, 5` into **position, points — one per line**, and submit.
+
+    **Expect:**
+    - The form opens: the command checks the season and any approval in hand before showing it,
+      but not the mode.
+    - **Reply**, at the submit: `❌ Amendment mode is not active.`
+    - **Log:** ``⛔ `/results amend bulk-session` refused for <you> — Amendment mode is not active.``
+
+### Staging the change
+
+58. **Do:** `/results amend toggle`
+
+    **Expect:**
+    - **Ack:** `Turning amendment mode on`
+    - **Then:** `✅ Amendment mode enabled. Modification store initialised.`
+    - **Log:**
+      ```
+      <you> | /results amend toggle | Success
+        amendment_mode: enabled
+      ```
+
+59. **Do:** `/results amend session name:Standard session:Feature Race position:1 points:35`
+
+    **Expect:**
+    - **Ack:** `Staging **Standard** Feature Race P1 → 35 pts`
+    - **Then:** `✅ Updated in modification store: **Standard** Feature Race P1 → 35 pts.`
+    - **Log:**
+      ```
+      <you> | /results amend session | Success
+        config: Standard
+        session: Feature Race, position: 1, points: 35
+      ```
+
+60. **A repeat that changes nothing.** **Do:** step 59 again.
+
+    **Expect:**
+    - **Ack:** as step 59.
+    - **Then:** `ℹ️ Nothing changed: **Standard** Feature Race P1 already stands at 35 pts in the modification store.`
+    - **Log:** as step 59, its first line ending `| Nothing changed`.
+
+61. **A refusal: a configuration the season does not hold.** **Do:**
+    `/results amend session name:Test Ladder session:Feature Race position:1 points:25`
+
+    **Expect:**
+    - **Reply:** `❌ Config **Test Ladder** is not one of this season's points configurations: Half Points, Standard.`
+    - **Log:** ``⛔ `/results amend session` refused for <you> — Config **Test Ladder** is not one of this season's points configurations: Half Points, Standard.``
+
+62. **A refusal: a position out of range.** **Do:**
+    `/results amend session name:Standard session:Feature Race position:0 points:35`
+
+    **Expect:**
+    - **Reply:** `❌ Position must be >= 1, got 0.`
+    - **Log:** ``⛔ `/results amend session` refused for <you> — Position must be >= 1, got 0.``
+
+63. **Do:** `/results amend fl name:Standard session:Feature Race points:5`
+
+    **Expect:**
+    - **Ack:** `Staging **Standard** Feature Race FL bonus → 5 pts`
+    - **Then:** `✅ Updated in modification store: **Standard** Feature Race FL bonus → 5 pts.`
+    - **Log:**
+      ```
+      <you> | /results amend fl | Success
+        config: Standard
+        session: Feature Race, fl_bonus: 5
+      ```
+    As with `/results config fl` (step 24), the `session` option offers `Sprint Race` and
+    `Feature Race` alone.
+
+64. **Do:** `/results amend fl-plimit name:Standard session:Feature Race limit:10`
+
+    **Expect:**
+    - **Ack:** `Staging **Standard** Feature Race FL position limit → top 10`
+    - **Then:** `✅ Updated in modification store: **Standard** Feature Race FL position limit → top 10.`
+    - **Log:**
+      ```
+      <you> | /results amend fl-plimit | Success
+        config: Standard
+        session: Feature Race, fl_position_limit: 10
+      ```
+
+65. **A refusal: a limit out of range.** **Do:**
+    `/results amend fl-plimit name:Standard session:Feature Race limit:0`
+
+    **Expect:**
+    - **Reply:** `❌ Position limit must be >= 1, got 0.`
+    - **Log:** ``⛔ `/results amend fl-plimit` refused for <you> — Position limit must be >= 1, got 0.``
+
+66. **Do:** `/results amend bulk-session name:Standard session:Feature Qualifying`. In the form
+    **Bulk Amend Session Points**, paste, and submit:
+
+    ```
+    1, 5
+    2, 3
+    3, 1
+    ```
+
+    **Expect:**
+    - **Ack:** `Staging 3 position(s) of **Standard** Feature Qualifying`
+    - **Then:**
+      ```
+      ✅ Amended in modification store for config **Standard** (Feature Qualifying):
+        P1 → 5 pts
+        P2 → 3 pts
+        P3 → 1 pts
+      ```
+      Every position pasted is listed, P3 included, though it already stood at 1.
+    - **Log:**
+      ```
+      <you> | /results amend bulk-session | 3 change(s)
+        config: Standard, session: Feature Qualifying
+        P1 → 5 pts
+        P2 → 3 pts
+        P3 → 1 pts
+      ```
+      The count is of the positions pasted, not of those that moved.
+
+67. **A staged table left out of order is staged, with a warning.** **Do:**
+    `/results amend session name:Standard session:Feature Race position:2 points:40`
+
+    **Expect:**
+    - **Ack:** `Staging **Standard** Feature Race P2 → 40 pts`
+    - **Then:**
+      ```
+      ✅ Updated in modification store: **Standard** Feature Race P2 → 40 pts.
+      ⚠️ **Standard**'s Feature Race table is now out of order:
+        • position 1 (35 pts) < position 2 (40 pts)
+      A lower position cannot be worth as much as the one above it. The change has been staged, but this amendment cannot be approved on this table.
+      ```
+    - **Log:** as step 59, with `position: 2, points: 40`.
+
+68. **A refusal: switching off with changes staged.** **Do:** `/results amend toggle`
+
+    **Expect:**
+    - **Reply:** ``❌ Cannot disable amendment mode — uncommitted changes exist. Use `/results amend revert` to discard or `/results amend review` to apply.``
+    - **Log:** ``⛔ `/results amend toggle` refused for <you> — Cannot disable amendment mode — uncommitted changes exist. Use `/results amend revert` to discard or `/results amend review` to apply.``
+
+### Reviewing it
+
+69. **Do:** `/results amend review`
+
+    **Expect:**
+    - **Reply**, seen by you alone, with two buttons, **✅ Approve** and **❌ Reject**:
+      ```
+      **4 changes staged:**
+      Standard/FEATURE_QUALIFYING/P1: 3 → 5
+      Standard/FEATURE_QUALIFYING/P2: 2 → 3
+      Standard/FEATURE_RACE/P1: 30 → 35
+      Standard/FEATURE_RACE/P2: 27 → 40
+
+      ⚠️ **These changes cannot be approved — the points would be out of order:**
+      • Config 'Standard', FEATURE_RACE: position 1 (35 pts) < position 2 (40 pts)
+      A lower position cannot be worth as much as the one above it. Repair the staged table, or `/results amend revert` to start again from the season's own.
+
+      Approve or reject these changes?
+      ```
+      **The fastest-lap changes of steps 63 and 64 are not listed.** The diff compares the
+      positions alone (`get_modification_store_diff`), though they are staged and the approval
+      installs them (step 74). This is believed a bot defect: record it, and carry on.
+    - **Log:** `<you> | /results amend review | Review posted`
+
+70. **A refusal: approving a table out of order.** **Do:** press **✅ Approve** on the panel.
+
+    **Expect:**
+    - **Reply:**
+      ```
+      ❌ Amendment not approved — the points would be out of order:
+      • Config 'Standard', FEATURE_RACE: position 1 (35 pts) < position 2 (40 pts)
+      Nothing has been changed. The staged changes are still there to repair.
+      ```
+    - **Log:**
+      ```
+      ⛔ `/results amend review` refused for <you> — Amendment not approved — the points would be out of order:
+      Config 'Standard', FEATURE_RACE: position 1 (35 pts) < position 2 (40 pts)
+      ```
+    - Nothing posted; the standings stand as step 54 left them. The panel's buttons no longer
+      answer: run the review again.
+
+71. **Do:** `/results amend review`, and press **❌ Reject** on the panel.
+
+    **Expect:**
+    - **Reply** at the command: the panel of step 69. **Log:** `<you> | /results amend review | Review posted`
+    - **Reply** at the press: `ℹ️ Amendment rejected. Modification store and amendment mode remain active.`
+    - **Log** at the press:
+      ```
+      ↩️ `/results amend review` cancelled by <you>
+        Nothing has been approved. The staged changes and amendment mode remain. Run /results amend review again.
+      ```
+
+72. **The table repaired.** **Do:**
+    `/results amend session name:Standard session:Feature Race position:2 points:27`
+
+    **Expect:**
+    - **Ack:** `Staging **Standard** Feature Race P2 → 27 pts`
+    - **Then:** `✅ Updated in modification store: **Standard** Feature Race P2 → 27 pts.` No warning.
+    - **Log:** as step 59, with `position: 2, points: 27`.
+
+73. **Do:** `/results amend review`
+
+    **Expect:**
+    - **Reply**, with **✅ Approve** and **❌ Reject**:
+      ```
+      **3 changes staged:**
+      Standard/FEATURE_QUALIFYING/P1: 3 → 5
+      Standard/FEATURE_QUALIFYING/P2: 2 → 3
+      Standard/FEATURE_RACE/P1: 30 → 35
+
+      Approve or reject these changes?
+      ```
+      P2 is gone from the diff, staged back at the season's own 27. The fastest-lap changes are
+      still not listed (step 69).
+    - **Log:** `<you> | /results amend review | Review posted`
+
+74. **Do:** within five minutes, press **✅ Approve** on the panel.
+
+    **Expect:**
+    - **Ack:** `Approving season 1's points amendment`
+    - **Then:** `✅ Amendment approved. All standings recomputed and reposted.`
+    - **Posts**, each new message posted before the one it replaces is deleted:
+      - `#d1-results`: the two pictures of round 1 again, `**Season 1 Division 1 Round 1 — Qualifying**`
+        and `… — Race**`, `Final Results`, the old pair deleted. The qualifying gives Hiro
+        Hayashi 5 and Kevin Keller 3; the race gives Kevin Keller 35 and the fastest lap's 5.
+        > UNVERIFIED: whether the race picture shows Kevin Keller's points as 40, the bonus
+        > counted in, or as 35 with the fastest lap marked apart.
+      - `#d1-standings`: drivers and teams again, `Final Results`, the old pair deleted. Drivers:
+        Kevin Keller **43**, Hiro Hayashi **32**, Rafael Rossi 25, Emil Engel 21, Bruno Bianchi 18,
+        Samuel Shaw 15, Olivier Orsini 13, Ian Irwin 11, Mateo Morales 9, Carlos Cortes 7, Ugo
+        Ulivi 5, Willem Wouters 4, Liam Lavoie 3, Gabriel Gomes 2, Quinn Quayle 1, then the eight
+        on 0 as before. Teams: Foxtrot Motorsport **46**, Delta Racing **34**, India Motorsport
+        26, Alpha Racing 22, Charlie GP 21, Juliett GP 15, Hotel Racing 13, Echo Racing 11, Golf
+        GP 9, Bravo Motorsport 7, Kilo Racing 5;
+      - `#d1-attendance`: the attendance sheet after round 1 again, unchanged: points move no
+        attendance;
+      - nothing in any Division 2 channel: it has no raced round to repost.
+    - **Log:**
+      ```
+      <you> | /results amend review | Success
+        season: 1
+        points changed: Standard, Feature Qualifying, P1: 3 → 5; Standard, Feature Qualifying, P2: 2 → 3; Standard, Feature Race, P1: 30 → 35; Standard, Feature Race, fastest lap: 2 → 5; Standard, Feature Race, fastest lap position limit: 15 → 10
+        rounds rescored and reposted: 1 across 1 division(s)
+      ```
+      and any notice blocks for the pictures.
+
+75. **Do:** `/results config view scope:Season name:Standard session:Feature Race`
+
+    **Expect:**
+    - **Reply:** as step 6, but `P1: 35 pts` and, last, `FL bonus: 5 pts (top 10 eligible)`.
+    - **Log:** nothing.
+
+76. **Do:** `/results config view scope:Server name:Standard session:Feature Race`
+
+    **Expect:**
+    - **Reply:** as step 6, `P1: 30 pts` and `FL bonus: 2 pts (top 15 eligible)`: the amendment
+      changed the season's copy, never the server's.
+    - **Log:** nothing.
+
+### Reverting a staged change
+
+77. **Do:** `/results amend toggle`
+
+    **Expect:** the approval switched amendment mode off, so the toggle switches it on again.
+    - **Ack:** `Turning amendment mode on`
+    - **Then:** `✅ Amendment mode enabled. Modification store initialised.`
+    - **Log:** as step 58.
+
+78. **Do:** `/results amend session name:Half Points session:Feature Race position:1 points:16`
+
+    **Expect:** `Half Points` is still the season's, though the server no longer holds it (step 37).
+    - **Ack:** `Staging **Half Points** Feature Race P1 → 16 pts`
+    - **Then:** `✅ Updated in modification store: **Half Points** Feature Race P1 → 16 pts.`
+    - **Log:**
+      ```
+      <you> | /results amend session | Success
+        config: Half Points
+        session: Feature Race, position: 1, points: 16
+      ```
+
+79. **Do:** `/results amend revert`
+
+    **Expect:**
+    - **Ack:** `Reverting the modification store`
+    - **Then:** `✅ Modification store reverted to current season points.`
+    - **Log:** `<you> | /results amend revert | Success`, with nothing beneath it.
+
+80. **A repeat that changes nothing.** **Do:** `/results amend revert`
+
+    **Expect:**
+    - **Ack:** as step 79.
+    - **Then:** `ℹ️ Nothing changed: nothing is staged, so the modification store already matches the season's points.`
+    - **Log:**
+      ```
+      <you> | /results amend revert | Nothing changed
+        reason: nothing is staged
+      ```
+
+81. **Do:** `/results amend toggle`
+
+    **Expect:** nothing is staged, so it may be switched off.
+    - **Ack:** `Turning amendment mode off`
+    - **Then:** `✅ Amendment mode disabled.`
+    - **Log:**
+      ```
+      <you> | /results amend toggle | Success
+        amendment_mode: disabled
+      ```
+
+82. **A refusal: reverting with the mode off.** **Do:** `/results amend revert`
+
+    **Expect:**
+    - **Reply:** `❌ Amendment mode is not active.`
+    - **Log:** ``⛔ `/results amend revert` refused for <you> — Amendment mode is not active.``
