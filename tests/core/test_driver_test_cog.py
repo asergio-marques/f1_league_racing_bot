@@ -285,6 +285,44 @@ async def test_reassign_refuses_an_id_that_is_not_a_member(tmp_path):
 
 
 @pytest.mark.xfail(strict=True, reason=PENDING)
+@pytest.mark.parametrize(
+    ("name", "field"),
+    [*((name, "user") for name in sorted(_COMMANDS)), ("reassign", "old_user")],
+)
+async def test_each_driver_field_offers_drivers_by_name(tmp_path, name, field):
+    """Test mode is on and the season in Placements. Admin starts typing in the driver field of
+    the test-mode `/driver <name>`, `old_user` on reassign and `user` on the rest: the field is a
+    text field, and it offers the drivers the server's name list gives, by name, for what is typed,
+    nothing typed and "gH" alike, "gH" offering Ghost alone. Reassign has no `old_user_id`."""
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+
+    import discord
+
+    from leaguebot.core.cogs.driver_test_cog import DriverTestCog
+    from leaguebot.core.services.drivers.driver_reference import driver_choices
+
+    league = await _league(tmp_path)
+    command = DriverTestCog(league.bot).driver.get_command(name)
+    parameter = command.get_parameter(field)
+
+    assert parameter.type is discord.AppCommandOptionType.string
+    assert parameter.autocomplete
+    if name == "reassign":
+        assert command.get_parameter("old_user_id") is None
+    for typed in ("", "gH"):
+        asked = _asked_by_admin(league, f"driver {name}")
+        asked.response.is_done = MagicMock(return_value=False)
+        asked.response.autocomplete = AsyncMock()
+        await command._invoke_autocomplete(asked, field, SimpleNamespace(**{field: typed}))
+        [offered] = asked.response.autocomplete.await_args.args
+        listed = await driver_choices(league.db_path, league.bot.driver_names_read, typed)
+        assert [(c.name, c.value) for c in offered] == [(c.name, c.value) for c in listed]
+        if typed:
+            assert [(c.name, c.value) for c in offered] == [("Ghost", str(GHOST))]
+
+
+@pytest.mark.xfail(strict=True, reason=PENDING)
 @pytest.mark.parametrize("name", ["assign", "move", "reassign", "reject", "release", "sack", "unassign"])
 def test_each_test_mode_command_keeps_its_tier(name):
     """Each command of the test-mode group asks for the tier its member counterpart asks for:
