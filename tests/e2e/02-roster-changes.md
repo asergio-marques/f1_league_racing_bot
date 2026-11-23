@@ -481,7 +481,7 @@ the toggle is refused; the team list is open.
     | `A,B` | `Alpha Bravo` | `@Driver` | `⛔ "A,B" holds a comma. A shorthand is typed into the comma-separated rows of a results submission and a test roster, so it cannot hold one.` |
     | `???` | `Question Racing` | `@Driver` | `⛔ "???" holds no letter or digit, so it cannot name an image file. Choose a name with at least one.` |
     | `MKE` | `alpha racing` | `@Driver` | `⛔ "Alpha Racing" is already the full name of a team. A full name names one team only.` |
-    | `NOV` | `**November**` | `@Driver` | ``⛔ The formatting `` **November** `` in the full name reads differently as text and on a graphic. Remove it, then try again.`` |
+    | `NOV` | `**November**` | `@Driver` | ```⛔ The formatting `` **November** `` in the full name reads differently as text and on a graphic. Remove it, then try again.``` |
     | `NOV` | `November Racing` | `@Alpha Racing` | `⛔ <@&<Alpha Racing role id>> is already the role of "ALP". A role belongs to one team only.` |
     | `NOV` | `November Racing` | `@Lima Racing` | `⛔ <@&<Lima Racing role id>> is already the role of "LMA". A role belongs to one team only.` |
     | `NOV` | `November Racing` | the bot's own role | `⛔ <@&<bot's role id>> is managed by an integration — a bot, a subscription or a linked role — so Discord will not let me grant it. Choose a role of the team's own.` |
