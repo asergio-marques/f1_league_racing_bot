@@ -53,7 +53,7 @@ TEST_MODE_OFF_REFUSAL = (
 #: What `/signup start` is refused with for a driver who is not a fake one.
 NOT_A_FAKE_DRIVER = (
     "⛔ **{name}** is a real driver: only a fake driver is signed up this way. A real driver "
-    "presses Sign Up."
+    "signs up once test mode is off."
 )
 
 #: What the typed text is clipped to where a refusal names it.
