@@ -126,7 +126,7 @@ class DriverTestCog(commands.Cog):
                 what=describe(interaction),
             )
             return None
-        return ResolvedDriver(str(member.id), member.display_name, member)
+        return ResolvedDriver(str(member.id), member.display_name)
 
     # ------------------------------------------------------------------
     # /driver reassign

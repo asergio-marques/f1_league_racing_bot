@@ -41,12 +41,12 @@ _PLACING_STAGES = frozenset({SeasonStage.PLACEMENTS, SeasonStage.ONGOING_PLACEME
 
 @dataclass(frozen=True)
 class ResolvedDriver:
-    """The driver a command acts on: the account they use now, the name the command calls them by,
-    and the server member behind that account where there is one (a fake driver has none)."""
+    """The driver a command acts on: the account they use now, and the name the command calls them
+    by. No member is carried: nothing a command does once the driver is resolved needs one, and a
+    fake driver has none."""
 
     account: str
     name: str
-    member: discord.Member | None = None
 
 
 async def reassign_stage_ok(bot: LeagueBot, interaction: discord.Interaction) -> bool:

@@ -77,7 +77,7 @@ class DriverCog(commands.Cog):
         current = await self._current_member(interaction, user)
         if current is None:
             return None
-        return ResolvedDriver(str(current.id), current.display_name, current)
+        return ResolvedDriver(str(current.id), current.display_name)
 
     # ------------------------------------------------------------------
     # /driver reassign
@@ -132,7 +132,7 @@ class DriverCog(commands.Cog):
             self.bot,
             interaction,
             resolved_old_id,
-            ResolvedDriver(str(new_user.id), new_user.display_name, new_user),
+            ResolvedDriver(str(new_user.id), new_user.display_name),
         )
 
     # ------------------------------------------------------------------
