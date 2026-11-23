@@ -367,24 +367,45 @@ async def test_opening_signups_posts_the_button_and_records_the_window(tmp_path)
     assert await _is_open(db_path)
 
 
-async def test_opening_signups_moves_a_waiting_season_to_signups(tmp_path):
-    """Issue #220: the window belongs to the season, and opening it moves the season on."""
+#: Test mode off, and on: a season configured in test mode opens signup windows as any other
+#: (#600), so that its fake drivers sign up through them.
+_TEST_MODE_OR_NOT = [
+    pytest.param(False, id="test mode off"),
+    pytest.param(
+        True, id="test mode on",
+        marks=pytest.mark.xfail(
+            strict=True, reason="#600: /signup open is still refused under test mode"
+        ),
+    ),
+]
+
+
+@pytest.mark.parametrize("test_mode", _TEST_MODE_OR_NOT)
+async def test_opening_signups_moves_a_waiting_season_to_signups(tmp_path, test_mode):
+    """Issue #220: the window belongs to the season, and opening it moves the season on. The
+    season is in Waiting, the server in test mode or not; `/signup open` opens the window, and
+    the season is in Signups."""
     from leaguebot.core.services.seasons.season_lifecycle_service import live_season_stage
 
-    db_path = await _seed(tmp_path)
+    db_path = await _seed(tmp_path, test_mode=test_mode)
 
     await _open(await _cog(db_path), _interaction())
 
+    assert await _is_open(db_path)
     assert (await live_season_stage(db_path))[1].value == "SIGNUPS"
 
 
-async def test_opening_mid_season_moves_the_season_to_ongoing_signups(tmp_path):
+@pytest.mark.parametrize("test_mode", _TEST_MODE_OR_NOT)
+async def test_opening_mid_season_moves_the_season_to_ongoing_signups(tmp_path, test_mode):
+    """The season is Ongoing, the server in test mode or not; `/signup open` opens the window,
+    and the season is in Ongoing Signups."""
     from leaguebot.core.services.seasons.season_lifecycle_service import live_season_stage
 
-    db_path = await _seed(tmp_path, stage="ONGOING")
+    db_path = await _seed(tmp_path, stage="ONGOING", test_mode=test_mode)
 
     await _open(await _cog(db_path), _interaction())
 
+    assert await _is_open(db_path)
     assert (await live_season_stage(db_path))[1].value == "ONGOING_SIGNUPS"
 
 
@@ -560,7 +581,6 @@ def _lines(cog) -> list[str]:
 #: Every refusal `/signup open` makes: how the server is seeded, how the interaction is built,
 #: the arguments, and a fragment of the reply.
 SIGNUP_OPEN_REFUSALS = [
-    pytest.param({"test_mode": True}, {}, {}, "test mode", id="test-mode"),
     pytest.param({"config": False}, {}, {}, "not configured", id="not-configured"),
     pytest.param({"signups_open": True}, {}, {}, "already open", id="already-open"),
     pytest.param({"stage": "PLACEMENTS"}, {}, {}, "can only be opened", id="wrong-stage"),
@@ -582,8 +602,6 @@ async def test_every_signup_open_refusal_reaches_the_log_channel(
     """Each refusal answers the manager as before, opens nothing, leaves the window as it stood
     (closed, or open for the already-open case), and writes one line in the standard form.
 
-    - Under test mode no real driver may sign up, so a window opened then is one nobody could
-      use.
     - Opening twice would post a second button and leave the first standing.
     - The wizard asks which slots a driver is available for; with none configured that question
       has no answers and the driver could not finish.

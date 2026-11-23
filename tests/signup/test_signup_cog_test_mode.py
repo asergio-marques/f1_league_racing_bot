@@ -1,7 +1,8 @@
-"""No real driver signs up while the server is in test mode.
+"""No real driver signs up while the server is in test mode, yet its signup windows open.
 
-Both ends are refused: the driver-facing Sign Up button, and `/signup open`, so an admin
-cannot post a signup window that nobody could use. The callbacks run with Discord stubbed —
+The driver-facing Sign Up button is refused to a real member; `/signup open` is not, since a
+season configured in test mode opens signup windows as any other, for its fake drivers to sign up
+through (#600). The callbacks run with Discord stubbed —
 no gateway, no server, no running bot — and the command guards are unwrapped the way the
 other cog suites unwrap them.
 """
@@ -158,17 +159,22 @@ class TestTheSignUpButton:
 
 
 class TestSignupOpen:
-    async def test_it_is_refused_under_test_mode(self):
-        bot = _bot(test_mode=True)
-
-        interaction = await _open(bot)
-
-        assert "test mode" in interaction.reply
-        bot.signup_module_service.get_config.assert_not_awaited()
-
-    async def test_it_proceeds_when_test_mode_is_off(self):
-        """Test mode off, it reaches the module config — unconfigured here, and says so."""
-        bot = _bot(test_mode=False)
+    @pytest.mark.parametrize(
+        "test_mode",
+        [
+            pytest.param(False, id="test mode off"),
+            pytest.param(
+                True, id="test mode on",
+                marks=pytest.mark.xfail(
+                    strict=True, reason="#600: /signup open is still refused under test mode"
+                ),
+            ),
+        ],
+    )
+    async def test_it_proceeds_test_mode_or_not(self, test_mode):
+        """Test mode is on or off and an admin runs `/signup open`: either way it is not refused
+        for test mode, and reaches the module config — unconfigured here, and says so."""
+        bot = _bot(test_mode=test_mode)
 
         interaction = await _open(bot)
 

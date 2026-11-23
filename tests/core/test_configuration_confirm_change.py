@@ -4,7 +4,7 @@
 review taken down ahead of it, as ✅ Confirm placements does mid-season. It is checked when pressed
 and again when it starts: the season no longer in configuration, and each fault the review withholds
 its button on, refuse it, and nothing is confirmed. Its one save, stamped with the queue's clock,
-moves the season on (to Waiting with the signup module on and test mode off, to Placements
+moves the season on (to Waiting with the signup module on, test mode or not, to Placements
 otherwise), keeps the signup settings the season is confirmed with through the "configuration
 confirmed" hook, signup's subscriber writing on the save's own connection, and writes its audit
 entry and its line. A fault in the save leaves the season in configuration with nothing kept, and
@@ -120,13 +120,21 @@ def _as_naive(stamp: str) -> datetime:
     [
         pytest.param(True, False, "WAITING", WAITING, id="signup_on"),
         pytest.param(False, False, "PLACEMENTS", PLACEMENTS, id="signup_off"),
-        pytest.param(True, True, "PLACEMENTS", PLACEMENTS, id="signup_on_in_test_mode"),
+        pytest.param(
+            True, True, "WAITING", WAITING, id="signup_on_in_test_mode",
+            marks=pytest.mark.xfail(
+                strict=True,
+                reason="#600: a test season confirmed with signup on still skips Waiting",
+            ),
+        ),
     ],
 )
 async def test_the_stage_the_signup_settings_the_audit_entry_and_the_line_are_one_change(
     tmp_path, monkeypatch, signup, test_mode, stage, told,
 ):
-    """Admin presses ✅ Confirm configuration on season 3's review; the queue's clock is five
+    """Admin presses ✅ Confirm configuration on season 3's review, the signup module on or off
+    and, in the third case, the server in test mode, whose season opens signup windows as any
+    other's and so goes to Waiting where signup is on; the queue's clock is five
     minutes on from the host's when it runs, within the reply's reach. One confirmation is asked of the queue, and once it has
     run the season is at *stage*, still SETUP; the signup settings are kept for season 3 where
     the signup module is on, stamped with the queue's clock, and none where it is off; one
