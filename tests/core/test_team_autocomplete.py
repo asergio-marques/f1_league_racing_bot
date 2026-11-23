@@ -74,11 +74,19 @@ async def test_the_offer_is_read_from_the_server_s_list():
         ("leaguebot.core.cogs.test_mode_cog:TestModeCog.roster_add", "team_name"),
     ],
 )
-def test_every_command_taking_a_team_offers_the_shorthands(command, parameter):
+async def test_every_command_taking_a_team_offers_the_shorthands(command, parameter):
+    """The field's autocomplete, called as discord.py calls it, offers the server's team list by
+    shorthand: "rb" typed offers Red Bull's alone."""
     import importlib
 
     module_name, attribute = command.split(":")
     owner, name = attribute.split(".")
     command_object = getattr(getattr(importlib.import_module(module_name), owner), name)
+    autocomplete = command_object._params[parameter].autocomplete
+    assert autocomplete is not None
 
-    assert command_object._params[parameter].autocomplete is not None
+    bot = SimpleNamespace(team_service=SimpleNamespace(get_teams_with_roles=AsyncMock(return_value=TEAMS)))
+    binding = (SimpleNamespace(bot=bot),) if getattr(autocomplete, "pass_command_binding", False) else ()
+    choices = await autocomplete(*binding, SimpleNamespace(client=bot), "rb")
+
+    assert [(c.name, c.value) for c in choices] == [("RBR — Oracle Red Bull Racing", "RBR")]
