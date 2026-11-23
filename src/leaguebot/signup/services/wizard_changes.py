@@ -415,6 +415,11 @@ def start_change(
         default_teams = await teams().get_default_teams()
         snapshot.team_names = [t.full_name for t in default_teams if not t.is_reserve]
         snapshot.team_shorthands = {t.name: t.full_name for t in default_teams if not t.is_reserve}
+        # Under test mode the test-mode nationality switch stands in for the league's own setting
+        # (core specification, "Test mode"), so the frozen copy, which every later step reads
+        # (a correction among them), carries the switch's value.
+        if server_cfg is not None and server_cfg.test_mode_active:
+            snapshot.nationality_required = server_cfg.test_mode_nationality_required
         first_state = (
             WizardState.COLLECTING_NATIONALITY
             if snapshot.nationality_required

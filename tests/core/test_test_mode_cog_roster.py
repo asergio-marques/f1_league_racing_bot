@@ -271,12 +271,6 @@ def _lines(league) -> list[str]:
     return [unruled(str(line)) for line in league.bot.log_channel.sent]
 
 
-#: Why the switch's replies do not yet say what it now decides: whether the wizard asks.
-_SAYS_THE_WIZARD_ASKS = (
-    "#600: /test-mode nationality's replies still speak of giving mock drivers a nationality"
-)
-
-
 class TestTheNationalityCommand:
     """`/test-mode nationality` is a core `Setting` on the change queue (#283): the command
     answers with the queue's acknowledgement, and the queue flips the switch and writes its audit
@@ -294,7 +288,6 @@ class TestTheNationalityCommand:
 
         assert config.test_mode_nationality_required is True
 
-    @pytest.mark.xfail(strict=True, reason=_SAYS_THE_WIZARD_ASKS)
     async def test_it_toggles_off_and_back_on(self, league):
         """The server is in test mode with nationality on. Admin (77) runs the command, and runs
         it again before the queue has run the first: the first is acknowledged as turning it off,
@@ -394,7 +387,6 @@ class TestTheNationalityCommand:
             for row in rows
         ] == [(_AUDIT_TYPE, {_FLAG: True}, {_FLAG: False}, ACTOR_ID, None, NOW.isoformat())]
 
-    @pytest.mark.xfail(strict=True, reason=_SAYS_THE_WIZARD_ASKS)
     async def test_it_is_logged(self, league):
         """The server is in test mode with nationality on. Admin (77) runs the command: they are
         answered at once with the queue's acknowledgement, naming the change's first job, and

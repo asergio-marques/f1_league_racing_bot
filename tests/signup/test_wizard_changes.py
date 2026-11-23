@@ -609,13 +609,6 @@ async def test_a_fake_driver_s_signup_starts_with_no_member_behind_it(tmp_path):
     assert f"<@{MOCK}>" not in welcome
 
 
-_FOLLOWS_THE_SWITCH = (
-    "#600: a fake driver's wizard does not yet start under test mode, nor ask nationality by "
-    "the test-mode nationality switch"
-)
-
-
-@pytest.mark.xfail(strict=True, reason=_FOLLOWS_THE_SWITCH)
 @pytest.mark.parametrize(
     ("league_asks", "switch", "first"),
     [

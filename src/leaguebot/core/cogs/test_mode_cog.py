@@ -119,16 +119,15 @@ class TestModeCog(commands.Cog):
 
     @test_mode.command(
         name="nationality",
-        description="Toggle whether mock drivers carry a nationality.",
+        description="Toggle whether the signup wizard asks a fake driver's nationality.",
     )
     @league_admin_only
     async def nationality(self, interaction: discord.Interaction) -> None:
         """The test-mode counterpart of /signup nationality.
 
-        While test mode is active this switch stands in for the signup one everywhere the
-        image module asks whether the league collects nationality, so the graphics of a
-        server under test may be seen with flags and without them without the setting real
-        signups run on being touched.
+        While test mode is active this switch stands in for the signup one: it decides whether
+        a fake driver's signup wizard asks nationality, and so whether the graphics of a server
+        under test show flags, without the setting real signups run on being touched.
         """
         config = await self.bot.config_service.get_server_config()
         if config is None or not config.test_mode_active:
