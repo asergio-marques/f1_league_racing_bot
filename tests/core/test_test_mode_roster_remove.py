@@ -37,6 +37,19 @@ _AUDIT_TYPE = "TEST_DRIVER_REMOVED"
 _DOING = "Removing fake driver **Mock Alpha**"
 _NOT_IN_TEST_MODE = "⛔ This command is only available when test mode is enabled."
 _NOT_FOUND = "⛔ No test driver found with that user ID on this server."
+_MID_SIGNUP = (
+    "⛔ **Mock Alpha** has a signup in progress. Finish it — approve or reject it — or cancel it "
+    "first."
+)
+_KEPT = (
+    "⛔ **Mock Alpha** has raced or holds a confirmed seat. Run `/driver sack` first; a fake "
+    "driver who has raced stays until test mode ends."
+)
+
+#: The reason each refusal #600 adds is not yet given.
+_NOT_YET_REFUSED = (
+    "#600: roster remove does not yet refuse a fake driver mid-signup, raced or confirmed"
+)
 
 
 @pytest.fixture
@@ -193,23 +206,93 @@ async def _test_mode_off(league) -> None:
     await league.set_test_mode(False)
 
 
+def _signing_up(state: str):
+    """Mock Alpha gives up McLaren's seat and their place in Am, and is part way through a
+    signup, at *state*."""
+
+    async def meanwhile(league) -> None:
+        await _unseated(league)
+        await league.write(
+            "UPDATE driver_profiles SET current_state = ? WHERE discord_user_id = ?",
+            state, MOCK_ID,
+        )
+
+    return meanwhile
+
+
+async def _former_driver(league) -> None:
+    """Mock Alpha carries the former-driver flag, as a driver sacked after racing does."""
+    await league.write(
+        "UPDATE driver_profiles SET former_driver = 1 WHERE discord_user_id = ?", MOCK_ID
+    )
+
+
+async def _raced(league) -> None:
+    """Results holds a record of Mock Alpha in Am: the modules, asked which divisions an
+    account raced in, name Am for Mock Alpha's ID and none for any other."""
+
+    async def raced_in(db, accounts):
+        return {AM} if MOCK_ID in accounts else set()
+
+    league.bot.divisions_raced_read.subscribe(raced_in)
+
+
+async def _seat_confirmed(league) -> None:
+    """Mock Alpha's McLaren seat in Am is confirmed: the placement committed."""
+    await league.write(
+        "UPDATE driver_season_assignments SET committed = 1 WHERE driver_profile_id = "
+        "(SELECT id FROM driver_profiles WHERE discord_user_id = ?)",
+        MOCK_ID,
+    )
+
+
 @pytest.mark.parametrize(
     "meanwhile, user_id, refusal",
     [
         pytest.param(_test_mode_off, MOCK_ID, _NOT_IN_TEST_MODE, id="test mode off"),
         pytest.param(None, "9000000000000000009", _NOT_FOUND, id="an id no driver holds"),
         pytest.param(None, str(CHARLES), _NOT_FOUND, id="a real driver's id"),
+        *(
+            pytest.param(
+                _signing_up(state), MOCK_ID, _MID_SIGNUP, id=f"a driver at {state}",
+                marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_REFUSED),
+            )
+            for state in (
+                "PENDING_SIGNUP_COMPLETION", "PENDING_ADMIN_APPROVAL",
+                "AWAITING_CORRECTION_PARAMETER", "PENDING_DRIVER_CORRECTION",
+            )
+        ),
+        pytest.param(
+            _former_driver, MOCK_ID, _KEPT, id="a former driver",
+            marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_REFUSED),
+        ),
+        pytest.param(
+            _raced, MOCK_ID, _KEPT, id="a driver who raced",
+            marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_REFUSED),
+        ),
+        pytest.param(
+            _seat_confirmed, MOCK_ID, _KEPT, id="a confirmed seat",
+            marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_REFUSED),
+        ),
     ],
 )
 async def test_it_is_refused_at_the_ask(league, meanwhile, user_id, refusal):
     """The season is in Placements under test mode, Mock Alpha a fake driver at McLaren in Am
-    beside Charles, a real driver; then test mode is switched off, or not. Admin (77) runs `/test-mode roster remove` with Mock Alpha's
-    ID, an ID no driver holds, or Charles's. They are refused at once, seen by them alone, in the
-    words the command has always used, a real driver never being one test mode may remove;
-    nothing is queued, both drivers keep their seats, the bot's delete hook is not called,
-    nothing is audited, and the log channel takes the refusal line."""
+    beside Charles, a real driver; then test mode is switched off; or Mock Alpha, unseated, is
+    part way through a signup, at each state of one in progress; or Mock Alpha carries the
+    former-driver flag, or results holds a record of them racing in Am, or their seat is
+    confirmed; or none of these. Admin (77) runs `/test-mode roster remove` with Mock Alpha's ID,
+    an ID no driver holds, or Charles's. They are refused at once, seen by them alone: in the
+    words the command has always used, a real driver never being one test mode may remove; for a
+    signup in progress, "**Mock Alpha** has a signup in progress. Finish it — approve or reject
+    it — or cancel it first."; and for a driver who has raced or holds a confirmed seat,
+    "**Mock Alpha** has raced or holds a confirmed seat. Run `/driver sack` first; a fake driver
+    who has raced stays until test mode ends." Nothing is queued, every driver stands as they
+    were, any seat kept, the bot's delete hook is not called, nothing is audited, and the log
+    channel takes the refusal line."""
     if meanwhile is not None:
         await meanwhile(league)
+    before = await _drivers(league)
     handed = _watch_deletions(league)
     interaction = _asks(league)
 
@@ -219,7 +302,7 @@ async def test_it_is_refused_at_the_ask(league, meanwhile, user_id, refusal):
     [reply] = interaction.response.send_message.await_args_list
     assert reply.kwargs.get("ephemeral") is True
     assert await change_rows(league.db_path) == []
-    assert await _drivers(league) == _BOTH
+    assert await _drivers(league) == before
     assert handed == []
     assert await audit_rows(league.db_path) == []
     assert _lines(league) == [_refused(refusal)]
@@ -244,13 +327,17 @@ async def _removed_meanwhile(league) -> None:
     [
         pytest.param(_test_mode_off, _NOT_IN_TEST_MODE, id="test mode turned off"),
         pytest.param(_removed_meanwhile, _NOT_FOUND, id="the driver gone"),
+        pytest.param(
+            _seat_confirmed, _KEPT, id="the seat confirmed",
+            marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_REFUSED),
+        ),
     ],
 )
 async def test_it_is_judged_again_as_it_starts(league, meanwhile, refusal):
     """The season is in Placements under test mode, Mock Alpha a fake driver at McLaren in Am.
     Admin (77) runs `/test-mode roster remove` with Mock Alpha's ID and is acknowledged; before
-    the queue runs it, test mode is switched off,
-    or Mock Alpha is deleted another way. The change judges again as it starts and is refused:
+    the queue runs it, test mode is switched off, Mock Alpha is deleted another way, or Mock
+    Alpha's seat is confirmed. The change judges again as it starts and is refused:
     the bot's delete hook is not called, nothing is audited, Admin's reply becomes the refusal the command gives at the ask, word for
     word, the log channel takes that refusal as its only line, and the queue is not stopped."""
     handed = _watch_deletions(league)
