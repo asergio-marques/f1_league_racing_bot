@@ -344,20 +344,20 @@ job that stops the lane and a reset clean-up run off the queue, two more moments
 league that never uses test mode sees only the member's `/driver`.
 
 **The swap that shows the right one** is `swap_driver_commands`
-(`core/services/test_mode/driver_commands.py`): it reads the flag off the database, takes the one group off the global tree
-and puts the other where the flag calls for, and syncs both trees. It is handed the two cogs' bound
-groups by the entry point, the cogs being made before the change types that carry it, so that a
-service imports no cog and finds none on the bot. It runs as the step after the save of the toggle
-and of a test season's completion, abort and cancellation (`Step.on_fault`, a fifth exception to
-the lane stop, `architecture.md`), and off the queue it is start-up's command sync and `!sync`'s,
-both trees, where a refusal, or the league's server missing from the cache, is caught as
-`discord.HTTPException` or `GuildUnavailable` and posted through `start_up_failure_line`. The
-moments of the swap, and the restart a factory reset's and `/bot init`'s replies name, are the core
-specification's ("Test mode"). A swap that failed may leave the wrong form in place until the next
-one, which is accepted, the remedy being a restart. With no server claimed it syncs the global tree
-with the member group and takes `/driver` off every server the bot is on, there being no claim to
-find the server by: that is what makes a restart put right the server a factory reset left
-showing the test-mode form.
+(`core/services/test_mode/driver_commands.py`): it reads the flag off the database, takes the one
+group off the global tree and puts the other where the flag calls for, and syncs both trees. It is
+handed the two cogs' bound groups by the entry point, the cogs being made before the change types
+that carry it, so that a service imports no cog and finds none on the bot. It runs as the step after
+the save of the toggle and of a test season's completion, abort and cancellation, and off the queue
+as start-up's command sync and `!sync`'s, both trees. How a refusal is met in each, the swap being a
+fifth exception to the lane stop, is `architecture.md`'s. The moments of the swap, and the restart a
+factory reset's and `/bot init`'s replies name, are the core specification's ("Test mode"). A swap
+that failed may leave the wrong form in place until the next one, which is accepted, the remedy
+being a restart. With no server claimed (the core specification's "Test mode" says when that is and
+what it puts right), the member group goes on the global tree, which is synced, and `/driver` is
+taken off every server in `bot.guilds`: the global commands, `/bot init` among them, must reach
+Discord before a league can claim a server, and with no claim there is no way to find the server a
+factory reset left showing the test-mode form.
 
 No module's command sits under one of these groups. The retry loop for log lines runs in the
 framework's cog (`framework/cogs/retry_cog.py`), which holds no command.
