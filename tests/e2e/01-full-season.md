@@ -610,7 +610,7 @@ sessions `Sprint Qualifying`, `Sprint Race`, `Feature Qualifying` and `Feature R
 
     **Expect:**
     - **Posts** (submission channel): your message marked ⏳, then the choice, with two buttons,
-      **Standard** and **Half Points**: `🔧 Select the points configuration for this session:`.
+      **Half Points** and **Standard**: `🔧 Select the points configuration for this session:`.
       Two configurations are attached to the season, so the bot asks.
     - **Log:** nothing yet.
 
