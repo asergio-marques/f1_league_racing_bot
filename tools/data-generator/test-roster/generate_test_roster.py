@@ -207,7 +207,7 @@ def load_nationalities(src_dir=SRC_DIR):
     if str(src_dir) not in sys.path:
         sys.path.insert(0, str(src_dir))
     try:
-        from leaguebot.image.utils.nationality_data import NATIONALITY_LOOKUP
+        from leaguebot.core.utils.nationality_data import NATIONALITY_LOOKUP
     except ImportError as error:
         raise ValueError(
             f"Could not import the bot's nationality list from {src_dir} ({error}). "

@@ -154,7 +154,7 @@ part-way through a set of answers when it fails.
 
 **Every driver is drawn a nationality for `seating.csv`, and there is no file to keep for it.** The
 bot's commands take none: the nationality is the one you answer in the driver's signup wizard. The pool is
-imported from the bot's own `src/leaguebot/image/utils/nationality_data.py` — all 195 nationalities it
+imported from the bot's own `src/leaguebot/core/utils/nationality_data.py` — all 195 nationalities it
 accepts — because a nationality the bot rejects would be refused by the wizard, and a
 list kept beside `names.txt` would drift from the bot's the first time one was added there.
 This is the one script in the family that imports from `src/` rather than porting the rule;
