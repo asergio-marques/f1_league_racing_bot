@@ -39,6 +39,7 @@ from leaguebot.framework.utils.catch_up_gate import after_the_catch_up
 from leaguebot.core.utils.channel_guard import league_manager_only, league_role_faults, changes_nothing
 from leaguebot.framework.utils.league_server import is_foreign_guild
 from leaguebot.framework.utils.log_lines import name_of_member
+from leaguebot.signup.services.driver_naming import fake_name_of
 
 #: Waits for the catch-up after a restart before a command answered off the change queue acts.
 _after_the_catch_up = after_the_catch_up(lambda cog: cog.bot.change_queue)
@@ -94,7 +95,8 @@ class SignupCog(commands.Cog):
             self.bot.change_queue,
             user_id=wizard.discord_user_id,
             channel_id=channel.id,
-            named=await name_of_member(self.bot, int(wizard.discord_user_id)),
+            named=await fake_name_of(self.bot.db_path, wizard.discord_user_id)
+            or await name_of_member(self.bot, int(wizard.discord_user_id)),
             found=DELETED,
         )
 

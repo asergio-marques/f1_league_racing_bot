@@ -73,9 +73,10 @@ from leaguebot.framework.services.queue.change_types import (
 from leaguebot.framework.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.input_validator import SIGNUP_ANSWER, parse_nationality
 from leaguebot.framework.utils.league_server import league_guild
-from leaguebot.framework.utils.log_lines import abandoned_line, name_of_member, refusal_line
+from leaguebot.framework.utils.log_lines import abandoned_line, refusal_line
 from leaguebot.utils.messages import chunk_message
 from leaguebot.framework.utils.member_names import member_named
+from leaguebot.signup.services.driver_naming import name_of_driver
 from leaguebot.signup.models.signup_module import SignupRecord, SignupWizardRecord, WizardState
 from leaguebot.signup.services.closing_steps import CHANNEL_GONE, END, INACTIVITY_TIMER
 from leaguebot.signup.services.signup_posting import post
@@ -530,12 +531,12 @@ async def _signup_channel_or_gone(
 
 
 async def channel_gone_ending(
-    ctx: StepContext, user_id: str, channel_id: int | None,
+    ctx: StepContext, user_id: str, channel_id: int | None, drivers: "DriverService",
 ) -> StepResult:
     """The result of a job that found the driver's signup channel gone, or found that the wizard
     names none (*channel_id* None): nothing is posted, and `signup.end` is asked of the league's
     queue in the job's own save (#439, slice 8)."""
-    named = await name_of_member(ctx.bot, int(user_id))
+    named, _ = await name_of_driver(ctx.bot, drivers, user_id)
     return StepResult(
         result={"no_channel": True, "ended": True},
         follow_ons=(FollowOn(
@@ -617,6 +618,10 @@ def answer_change(
             judged.ends_step and wizard.draft_answers.get("_is_correction")
         ):
             line = f"{ctx.named} | Signup | {judged.line}"
+            # A league admin answers for a fake driver: the line names it too, by its test name.
+            fake_name = await drivers().fake_driver_name(user_id)
+            if fake_name is not None:
+                line += f"\n  driver: {fake_name}"
         saving = {
             "user_id": user_id, "channel_id": channel_id,
             "state": wizard.wizard_state.value, "answers": judged.answers,
@@ -815,19 +820,20 @@ def submit_change(
         profile = await drivers().get_profile(user_id)
         return StepResult(result={
             "named": member_named(getattr(member, "display_name", None), int(user_id)),
+            "fake": await drivers().fake_driver_name(user_id),
             "prior_state": None if profile is None else profile.current_state.value,
         })
 
-    def _named(ctx: StepContext) -> tuple[str, str | None]:
+    def _named(ctx: StepContext) -> tuple[str, str | None, str | None]:
         for view in ctx.steps:
             if view.name == NAME_DRIVER and view.done:
                 found = view.result or {}
-                return str(found["named"]), found.get("prior_state")
-        return f"<@{ctx.payload['user_id']}>", None
+                return str(found["named"]), found.get("prior_state"), found.get("fake")
+        return f"<@{ctx.payload['user_id']}>", None, None
 
     async def commit(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         user_id = str(ctx.payload["user_id"])
-        named, prior = _named(ctx)
+        named, prior, fake = _named(ctx)
         wizard = await signup().get_wizard_on(db, user_id)
         if wizard is None or wizard.wizard_state is WizardState.UNENGAGED:
             return StepResult(result={"committed": False})
@@ -877,7 +883,10 @@ def submit_change(
             text = f"Correction submitted: {_CORRECTION_LABELS[corrected]}"
         return StepResult(
             result={"committed": True},
-            lines=(f"{named} | Signup | {text}",),
+            lines=(
+                f"{ctx.named} | Signup | {text}\n  driver: {fake}" if fake is not None
+                else f"{named} | Signup | {text}",
+            ),
             follow_ons=(FollowOn(
                 PANEL,
                 {"user_id": user_id, "channel_id": _channel_of(ctx.payload),
@@ -1086,7 +1095,9 @@ def panel_change(
             return StepResult(result={"dropped": True}, lines=tuple(noted))
         channel = await _signup_channel_or_gone(ctx, int(ctx.step_payload["channel_id"]))
         if channel is None:
-            ended = await channel_gone_ending(ctx, user_id, int(ctx.step_payload["channel_id"]))
+            ended = await channel_gone_ending(
+                ctx, user_id, int(ctx.step_payload["channel_id"]), drivers()
+            )
             if lapse is None:
                 return ended
             return StepResult(

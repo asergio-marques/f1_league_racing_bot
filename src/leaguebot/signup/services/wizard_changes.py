@@ -158,7 +158,7 @@ WITHDRAWN_NOTICE = (
 )
 #: What the driver's channel is told when a manager cancels their signup, before the reason (where
 #: one was given) and the hold on the channel.
-CANCELLED_BY_MANAGER = "<@{user_id}> ❌ Your signup has been cancelled by **{manager}**."
+CANCELLED_BY_MANAGER = "{who} ❌ Your signup has been cancelled by **{manager}**."
 #: What a manager is told who cancels the signup of a driver with none under way.
 NO_SIGNUP_IN_PROGRESS = "{name} has no signup in progress. Nothing was changed."
 #: What a manager is told who cancels the signup of a driver approved and not yet placed.
@@ -536,25 +536,38 @@ def start_change(
     def outcome(ctx: OutcomeContext) -> str:
         views = {view.name: view for view in ctx.steps}
         created = views.get(CREATE_CHANNEL)
+        # A fake driver's signup is started by a league admin, who is told of the fake driver
+        # and not of "your" signup.
+        fake_name = ctx.payload.get("fake_name")
         if created is None or "discarded" in (created.result or {}):
+            if fake_name is not None:
+                return (
+                    f"⚠️ **{fake_name}**'s signup channel could not be created and was "
+                    "discarded. Run `/signup start` again."
+                )
             return (
                 "⚠️ Your signup channel could not be created and was discarded. "
                 "Press Sign Up again."
             )
-        text = f"✅ Your signup channel has been created: <#{(created.result or {})['channel_id']}>"
+        channel = f"<#{(created.result or {})['channel_id']}>"
+        text = (
+            f"✅ **{fake_name}**'s signup channel has been created: {channel}"
+            if fake_name is not None else f"✅ Your signup channel has been created: {channel}"
+        )
         # Each job an admin discarded is named, so that the reply says what was not done.
         notes = {
             DELETE_OLD_CHANNEL: (
-                "The channel of your earlier signup could not be deleted and was left standing: "
-                "ask a league manager to delete it."
+                f"The channel of {'its' if fake_name else 'your'} earlier signup could not be "
+                "deleted and was left standing: ask a league manager to delete it."
             ),
             START_JOB: (
-                "Your signup was not started and was discarded: press Sign Up again to start "
-                "over."
+                f"{'Its' if fake_name else 'Your'} signup was not started and was discarded: "
+                + ("run `/signup start` again to start over."
+                   if fake_name else "press Sign Up again to start over.")
             ),
             ARM_INACTIVITY: (
-                "Your signup's 24 hours were not armed and were discarded, so it will not lapse "
-                "by itself until the bot starts again."
+                f"{'Its' if fake_name else 'Your'} signup's 24 hours were not armed and were "
+                "discarded, so it will not lapse by itself until the bot starts again."
             ),
             POST_WELCOME: "The welcome could not be posted and was discarded.",
         }
@@ -806,9 +819,13 @@ def end_change(
         await drivers().transition_on(db, user_id, DriverState.NOT_SIGNED_UP)
         await signup().end_wizard_on(db, user_id)
         named = member_named(None, int(user_id))
+        fake = False
         for view in ctx.steps:
             if view.name == NAME_JOB and view.done:
                 named = str((view.result or {}).get("named") or named)
+                fake = bool((view.result or {}).get("fake"))
+        # A fake driver is no member to mention: the notice names it by its test name.
+        who = f"**{named}**" if fake else f"<@{user_id}>"
         if ctx.step_payload["reason"] == CHANNEL_GONE:
             payload = ctx.step_payload
             where = (
@@ -839,7 +856,7 @@ def end_change(
                     {
                         "user_id": user_id, "channel_id": int(wizard_row["signup_channel_id"]),
                         "notice": (
-                            f"<@{user_id}> ❌ Your signup has been rejected by "
+                            f"{who} ❌ Your signup has been rejected by "
                             f"**{payload['actor_name']}**.\n**Reason:** {payload['text']}\n"
                             "This channel will be automatically deleted in 24 hours."
                         ),
@@ -864,9 +881,7 @@ def end_change(
             manager = member_named(payload["actor_name"], int(payload["actor_id"]))
             text = payload.get("text")
             if wizard_row is not None and wizard_row["signup_channel_id"] is not None:
-                notice = CANCELLED_BY_MANAGER.format(
-                    user_id=user_id, manager=payload["actor_name"]
-                )
+                notice = CANCELLED_BY_MANAGER.format(who=who, manager=payload["actor_name"])
                 if text:
                     notice += f"\n**Reason:** {text}"
                 follow_ons = (FollowOn(
@@ -904,14 +919,18 @@ def end_change(
                 {"state": prior, "discord_user_id": user_id},
                 {"new_state": DriverState.NOT_SIGNED_UP.value},
             ),),
-            lines=(f"{named} | Signup | Withdrawn",),
+            lines=(
+                f"{ctx.named} | Signup | Withdrawn\n  driver: {named}" if fake
+                else f"{named} | Signup | Withdrawn",
+            ),
             follow_ons=follow_ons,
         )
 
     async def name_driver(ctx: StepContext) -> StepResult:
-        return StepResult(result={
-            "named": await name_of_member(ctx.bot, int(ctx.step_payload["user_id"]))
-        })
+        user_id = ctx.step_payload["user_id"]
+        fake_name = await drivers().fake_driver_name(str(user_id))
+        named = fake_name or await name_of_member(ctx.bot, int(user_id))
+        return StepResult(result={"named": named, "fake": fake_name is not None})
 
     async def describe_name(ctx: StepContext) -> str:
         return f"finding the name of <@{ctx.step_payload['user_id']}> for the record"

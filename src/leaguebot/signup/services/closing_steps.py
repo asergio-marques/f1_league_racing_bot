@@ -526,6 +526,7 @@ async def recover_gone_channels(bot: "LeagueBot", *, queue: "ChangeQueue") -> se
     Gives the accounts it asked an ending of, which the rest of the recovery skips.
     """
     from leaguebot.framework.utils.log_lines import name_of_member
+    from leaguebot.signup.services.driver_naming import fake_name_of
     from leaguebot.signup.services.signup_views import IN_PROGRESS_STATES
     from leaguebot.signup.services.wizard_changes import RESTART, ask_channel_gone
 
@@ -569,7 +570,7 @@ async def recover_gone_channels(bot: "LeagueBot", *, queue: "ChangeQueue") -> se
                 queue,
                 user_id=user_id,
                 channel_id=channel_id,
-                named=await name_of_member(bot, int(user_id)),
+                named=await fake_name_of(bot.db_path, user_id) or await name_of_member(bot, int(user_id)),
                 found=RESTART,
             )
             asked.add(user_id)

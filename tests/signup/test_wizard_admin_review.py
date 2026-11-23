@@ -809,9 +809,6 @@ async def test_each_signup_decision_writes_an_audit_entry(tmp_path, decide, afte
 #: Kimi's test name, where a case makes him a fake driver.
 MOCK_KIMI = "Mock Alpha"
 
-#: What is not yet true of a fake driver's signup.
-_NAMED_BY_ITS_ID = "#600: a fake driver's signup is still named by a mention of its ID"
-
 
 async def _as_mock(league: SeasonLeague) -> None:
     """Kimi made a fake driver called Mock Alpha, no member of the server holding his ID, and the
@@ -910,23 +907,13 @@ async def _mock_expired(tmp_path: Any) -> SeasonLeague:
 #: How a fake driver's signup is ended or sent back, the words of the log line it writes, and the
 #: words of the post its channel is sent naming it (None where the post names nobody).
 _FAKE_DRIVER_NAMED = [
-    pytest.param(_mock_rejected, "| Signup | Rejected", "rejected by",
-                 marks=pytest.mark.xfail(strict=True, reason=_NAMED_BY_ITS_ID), id="reject"),
+    pytest.param(_mock_rejected, "| Signup | Rejected", "rejected by", id="reject"),
     pytest.param(_mock_changes_requested, "| Signup | Correction requested",
-                 "requested a correction",
-                 marks=pytest.mark.xfail(strict=True, reason=_NAMED_BY_ITS_ID),
-                 id="request-changes"),
-    pytest.param(_mock_field_chosen, "Correction requested: ", "re-submit",
-                 marks=pytest.mark.xfail(strict=True, reason=_NAMED_BY_ITS_ID),
-                 id="field-choice"),
-    pytest.param(_mock_withdrew, "| Signup | Withdrawn", None,
-                 marks=pytest.mark.xfail(strict=True, reason=_NAMED_BY_ITS_ID),
-                 id="withdrawal"),
-    pytest.param(_mock_cancelled, "| Signup | Cancelled", "cancelled by",
-                 marks=pytest.mark.xfail(strict=True, reason=_NAMED_BY_ITS_ID), id="cancel"),
-    pytest.param(_mock_expired, "lapsed unconfirmed", None,
-                 marks=pytest.mark.xfail(strict=True, reason=_NAMED_BY_ITS_ID),
-                 id="24-hour lapse"),
+                 "requested a correction", id="request-changes"),
+    pytest.param(_mock_field_chosen, "Correction requested: ", "re-submit", id="field-choice"),
+    pytest.param(_mock_withdrew, "| Signup | Withdrawn", None, id="withdrawal"),
+    pytest.param(_mock_cancelled, "| Signup | Cancelled", "cancelled by", id="cancel"),
+    pytest.param(_mock_expired, "lapsed unconfirmed", None, id="24-hour lapse"),
 ]
 
 

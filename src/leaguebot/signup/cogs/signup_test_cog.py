@@ -310,7 +310,7 @@ class SignupTestCog(commands.Cog):
             return
         await self.bot.change_queue.ask(
             START,
-            {"user_id": reference.discord_user_id},
+            {"user_id": reference.discord_user_id, "fake_name": reference.test_name},
             interaction=interaction, what=describe(interaction),
         )
 

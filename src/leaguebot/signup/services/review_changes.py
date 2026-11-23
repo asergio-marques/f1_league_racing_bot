@@ -119,6 +119,7 @@ from leaguebot.framework.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.input_validator import parse_time
 from leaguebot.framework.utils.league_server import league_guild
 from leaguebot.framework.utils.log_lines import name_of_member
+from leaguebot.signup.services.driver_naming import fake_name_of, name_of_driver
 from leaguebot.signup.models.signup_module import WizardState
 from leaguebot.signup.services.closing_steps import (
     DELETE_REASON,
@@ -419,9 +420,8 @@ def request_changes_change(
                 PlannedStep(REQUEST_JOB, shared))
 
     async def name_driver(ctx: StepContext) -> StepResult:
-        return StepResult(result={
-            "named": await name_of_member(ctx.bot, int(ctx.step_payload["user_id"]))
-        })
+        named, _ = await name_of_driver(ctx.bot, drivers(), ctx.step_payload["user_id"])
+        return StepResult(result={"named": named})
 
     async def request(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         payload = ctx.step_payload
@@ -557,7 +557,12 @@ def choices_change(
         from leaguebot.signup.services.signup_views import CorrectionParameterView
 
         member = found.guild.get_member(int(user_id))
-        mention = member.mention if member is not None else f"<@{user_id}>"
+        # A fake driver has no account to mention: its test name stands in, and nobody is mentioned.
+        fake_name = await fake_name_of(ctx.db_path, user_id)
+        mention = (
+            f"**{fake_name}**" if fake_name is not None
+            else member.mention if member is not None else f"<@{user_id}>"
+        )
         message_id = await post(
             found,
             f"{mention} **{ctx.step_payload['actor_name']}** has requested a correction.\n"
@@ -566,7 +571,8 @@ def choices_change(
                 user_id, change_queue=queue_of(), signup=signup(), config=config
             ),
             mentions=discord.AllowedMentions(
-                everyone=False, roles=False, users=[discord.Object(id=int(user_id))]
+                everyone=False, roles=False,
+                users=[] if fake_name is not None else [discord.Object(id=int(user_id))],
             ),
             refused=f"the correction choices could not be posted in channel {found.id}",
         )
@@ -682,8 +688,12 @@ def choose_change(
         )
 
     async def name_driver(ctx: StepContext) -> StepResult:
+        user_id = str(ctx.step_payload["user_id"])
+        fake_name = await drivers().fake_driver_name(user_id)
+        if fake_name is not None:
+            return StepResult(result={"owner": f"{fake_name}'s"})
         guild = await league_guild(ctx.bot)
-        return StepResult(result={"owner": _owner_of(guild, str(ctx.step_payload["user_id"]))})
+        return StepResult(result={"owner": _owner_of(guild, user_id)})
 
     async def choose(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         pl = ctx.step_payload
@@ -857,7 +867,11 @@ def recollect_change(
                     else "Signup wizard button step answered"
                 ),
             )
-        mention = member.mention if member is not None else f"<@{user_id}>"
+        fake_name = await drivers().fake_driver_name(user_id)
+        mention = (
+            f"**{fake_name}**" if fake_name is not None
+            else member.mention if member is not None else f"<@{user_id}>"
+        )
         reason_line = f"\n**Reason:** {pl['reason']}" if pl["reason"] else ""
         async with get_connection(ctx.db_path) as db:
             track_map = await track_service.get_track_name_map(db)
@@ -873,7 +887,8 @@ def recollect_change(
                 signup=signup(), config=config, drivers=drivers(),
             ),
             mentions=discord.AllowedMentions(
-                everyone=False, roles=False, users=[discord.Object(id=int(user_id))]
+                everyone=False, roles=False,
+                users=[] if fake_name is not None else [discord.Object(id=int(user_id))],
             ),
             refused=f"the prompt to re-submit could not be posted in channel {channel.id}",
         )
@@ -967,7 +982,7 @@ def lapse_change(
         asked = None if wizard is None else wizard.draft_answers.get("_correction_requested_by")
         guild = await league_guild(ctx.bot)
         member = None if guild is None else guild.get_member(int(user_id))
-        driver = getattr(member, "display_name", None)
+        driver = await drivers().fake_driver_name(user_id) or getattr(member, "display_name", None)
         return StepResult(result={
             "manager": await name_of_member(ctx.bot, int(asked) if asked else None),
             "driver": driver if isinstance(driver, str) else f"<@{user_id}>",
@@ -1057,7 +1072,7 @@ def lapse_change(
             # The wizard names no channel: the signup ends as it does for a driver who leaves,
             # since nothing else would ever settle a driver awaiting a review that cannot be
             # posted.
-            ended = await channel_gone_ending(ctx, user_id, None)
+            ended = await channel_gone_ending(ctx, user_id, None, drivers())
             return StepResult(
                 result={"panel": False, "channel_gone": True},
                 lines=(correction_lapse_line(lapse_record(ctx), panel=False, gone=True),),

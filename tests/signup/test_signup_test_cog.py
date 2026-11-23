@@ -140,13 +140,6 @@ async def test_signup_start_asks_a_fake_driver_s_signup_with_the_admin_as_its_ac
     assert entry["new_value"] == {"new_state": "PENDING_SIGNUP_COMPLETION"}
 
 
-#: What is not yet true of `/signup start`'s reply.
-_REPLY_NOT_YET_NAMED = (
-    "#600: /signup start replies 'Your signup channel', and to press Sign Up where it was discarded"
-)
-
-
-@pytest.mark.xfail(strict=True, reason=_REPLY_NOT_YET_NAMED)
 @pytest.mark.parametrize("discarded", [False, True], ids=["channel created", "channel discarded"])
 async def test_signup_start_s_reply_names_the_fake_driver(tmp_path, discarded):
     """Test mode is on, at Signups with the window open, and Mock Alpha a fake driver at Not
