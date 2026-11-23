@@ -348,7 +348,8 @@ def test_roster_remove_change(
     (finish it, or cancel it, first), and a driver who has raced or holds a confirmed seat, which
     `/driver sack` undoes first. **One SAVE** judges once more on its own connection, deletes the driver, keeping
     their history, and writes the `TEST_DRIVER_REMOVED` audit entry, on the division they were
-    seated in, and the line. A fault in the save stops the lane.
+    seated in, and the line; a driver who holds no seat has no team, which the reply, the line and
+    the entry then leave out. A fault in the save stops the lane.
     """
 
     async def judge(db: aiosqlite.Connection, payload: dict[str, Any]) -> FakeDriver | str:
@@ -386,10 +387,11 @@ def test_roster_remove_change(
             )
         await delete_test_drivers_on(db, [found.profile_id], profiles_deleted=profiles_deleted)
         old = _removed_entry(found)
+        team_line = f"  team: {found.team_name}\n" if found.team_name else ""
         line = (
             f"{ctx.named} | {REMOVE_COMMAND} | Success\n"
             f"  driver: {found.display_name}\n"
-            f"  team: {found.team_name}\n"
+            f"{team_line}"
             f"  user_id: {found.discord_user_id}"
         )
         return StepResult(
@@ -415,6 +417,8 @@ def test_roster_remove_change(
             if not division:
                 return NOBODY_REMOVED_UNSEATED.format(driver_name=driver_name)
             return NOBODY_REMOVED.format(driver_name=driver_name, division=division)
+        if not saved["team"]:
+            return f"✅ Removed fake driver **{saved['driver']}**."
         return f"✅ Removed fake driver **{saved['driver']}** from **{saved['team']}**."
 
     return ChangeType(

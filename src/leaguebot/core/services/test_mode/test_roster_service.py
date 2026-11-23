@@ -338,14 +338,14 @@ async def list_test_drivers(
 class FakeDriver:
     """A fake driver as the roster's removals and the audit entries of them name them: the profile,
     the synthetic id as stored, the name, its state, whether the former-driver flag is set, the
-    team's full name, and the division they are seated in (None where they hold no seat)."""
+    team's full name and the division they are seated in (both None where they hold no seat)."""
 
     profile_id: int
     discord_user_id: str
     display_name: str
     state: str
     former_driver: bool
-    team_name: str
+    team_name: str | None
     division_id: int | None
     division_name: str | None
 
@@ -373,7 +373,7 @@ def _fake_driver(row: aiosqlite.Row) -> FakeDriver:
         display_name=row["test_display_name"] or f"Driver {row['profile_id']}",
         state=row["current_state"],
         former_driver=bool(row["former_driver"]),
-        team_name=row["team_name"] or "(unknown team)",
+        team_name=row["team_name"],
         division_id=row["division_id"],
         division_name=row["division_name"],
     )
