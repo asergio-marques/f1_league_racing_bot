@@ -33,12 +33,12 @@ The order keeps something to act on at each step:
 **You must be the server owner for Part E.** `/bot factory-reset` is the server owner's alone,
 whatever roles or permissions anybody else holds (`channel_guard.server_owner_only`). If you hold
 Discord's Administrator permission but do not own the server, run Parts A to D yourself, and have
-the owner run Part E from step 39, with `<you>` standing for the owner. Step 37 needs a second
+the owner run Part E from step 36, with `<you>` standing for the owner. Step 35 needs a second
 Discord account, which is not the owner; skip it where you have none.
 
 **Allow the owner direct messages from server members** (Discord: the server's *Privacy Settings*,
 *Direct Messages*). The factory reset reports its clean-up in a direct message; where it cannot send
-one, the progress goes to the host's log alone, and step 39 says what changes.
+one, the progress goes to the host's log alone, and step 37 says what changes.
 
 **The saved backup is kept by every end here**, cancel, abort, pack and factory reset alike: none of
 them deletes `bot.bkup.db`, `scheduler.bkup.db` or `backup.lock`. They are left in the bot host
@@ -64,8 +64,8 @@ acknowledgement: the reply is the refusal, and nothing is queued.
 **A view records nothing**: `/season status`, `/team list`, `/results config list` and
 `/test-mode backup status` write no line, a refusal of them included (`changes_nothing`).
 
-**A refusal while no server is claimed goes to the host's log alone.** Between the pack (step 28)
-and `/bot init` (step 30), and after the factory reset (step 39), the bot serves no server and has
+**A refusal while no server is claimed goes to the host's log alone.** Between the pack (step 26)
+and `/bot init` (step 29), and after the factory reset (step 37), the bot serves no server and has
 no log channel, so a refusal is answered to you and written only to the host's log
 (`channel_guard._refuse`, `bot_cog._refuse_on_host`).
 
@@ -574,11 +574,10 @@ server owner's alone, from any channel, and nothing inside the bot can undo it.
       sqlite3 scheduler.db "SELECT COUNT(*) FROM apscheduler_jobs;"
       sqlite3 bot.factory-<moment>.db "SELECT season_number, status FROM seasons ORDER BY id;"
       ```
-      answer `0` three times: no season, no team, no claim; then `0`: the job store is empty; then
-      `1|CANCELLED` and `2|SETUP`: the backup holds the league as step 34 left it.
-      > UNVERIFIED: that a fresh database holds no row in `default_teams`. The README says the
-      > team list always holds the Reserve team, which may be a row the migrations seed; where
-      > the count is `1`, check that row is `Reserve`.
+      answer `0`, `1` and `0`: no season; the team list holding the Reserve team alone, which the
+      migrations seed and no change may remove (`001_baseline.sql`); no claim. Then `0`: the job
+      store is empty. Then `1|CANCELLED` and `2|SETUP`: the backup holds the league as step 34
+      left it.
       The job store stays empty until the bot is next started, when the image module arms its
       daily portrait refresh again.
 
@@ -607,3 +606,19 @@ server owner's alone, from any channel, and nothing inside the bot can undo it.
       ```
     - **Host:** a second pair, `bot.factory-<new moment>.db` and `scheduler.factory-<new moment>.db`,
       beside the first, which is untouched: each reset keeps its own backup.
+
+---
+
+## Where this leaves the server
+
+The base is gone. The bot is a fresh install serving no server: no season, no team but Reserve, no
+setting, test mode off and no scheduled work. Nothing remains to restore through the bot.
+
+**Before any other spec, run `00-base.md` again, from step 1.** Its step 1 clears the Fixture's
+posting channels, which now hold only the factory reset's closing line in `#bot-log` and anything a
+member posted; its step 2 stops the bot and deletes `bot.db`, `scheduler.db`, the saved backup, the
+lock and the pre-restore copies. It does not name the factory reset's backups: delete
+`bot.factory-*.db` and `scheduler.factory-*.db` from the bot host folder by hand, or keep them
+elsewhere, since nothing in the bot reads them.
+
+The direct messages of steps 37 and 41 stay in your inbox; the clean-up never deletes them.
