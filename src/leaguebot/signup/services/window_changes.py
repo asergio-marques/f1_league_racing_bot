@@ -57,7 +57,9 @@ from leaguebot.framework.models.change import (
     Verdict,
 )
 from leaguebot.framework.services.posting import standing_posts
-from leaguebot.core.services.drivers.driver_service import drivers_in_states, write_transition
+from leaguebot.core.services.drivers.driver_service import (
+    driver_test_names_on, drivers_in_states, write_transition,
+)
 from leaguebot.framework.services.queue.change_types import (
     ChangeType,
     CheckContext,
@@ -95,7 +97,6 @@ from leaguebot.signup.services.closing_steps import (
     window_close_jobs,
     window_close_steps,
 )
-from leaguebot.signup.services.driver_naming import fake_name_of
 from leaguebot.signup.services.information_post import post_information
 from leaguebot.signup.services.information_post import stamp as _stamp
 from leaguebot.signup.services.window_close import CLOSE_TIMER, CLOSE_TIMER_KEY, close_time_of
@@ -498,7 +499,8 @@ def return_drivers_step(
             )
             wizard = await cursor.fetchone()
             returned.append((account, None if wizard is None else wizard["signup_channel_id"]))
-            fake = await fake_name_of(ctx.db_path, account)
+            # Read on the save's own connection: no second connection opens while it is open.
+            fake = (await driver_test_names_on(db, [int(account)])).get(int(account))
             if fake is not None:
                 fake_names[account] = fake
         planned = (
