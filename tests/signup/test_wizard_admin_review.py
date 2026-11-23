@@ -285,11 +285,6 @@ async def test_a_driver_role_granted_adds_nothing_to_the_approval(tmp_path):
 
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#600: approving a fake driver names it by its account rather than its test name, "
-    "and notes that the driver role could not be granted",
-)
 async def test_a_fake_driver_is_approved_with_no_role_and_then_seated_by_driver_assign(tmp_path):
     """The server is in test mode, at Signups with the window open, the driver role (820) set.
     Mock Alpha, a fake driver with no member of the server behind it, has submitted its signup

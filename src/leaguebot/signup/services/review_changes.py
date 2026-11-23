@@ -20,7 +20,8 @@ run. Its jobs are:
   a stop**: the approval stands, and the manager's reply and the line say so (signup specification,
   the approval's role rule). The "Approved" line is `grant_role`'s; where an admin discards that
   job the change's `finished_lines` write it as the change closes, since the approval it records
-  stands.
+  stands. A fake driver has no member behind it: it is granted no role, no note is made of that,
+  and the line names it by its test name.
 
 **Request Changes** asks `signup.request_changes` once the manager has typed the reason, through
 the press they made. Its check refuses a signup that has moved on since the press, as a rejection
@@ -296,6 +297,13 @@ def approve_change(
 
     async def grant_role(ctx: StepContext) -> StepResult:
         user_id = str(ctx.step_payload["user_id"])
+        # A fake driver has no member to give a role: core never grants or revokes one for it, so
+        # it is named by its test name and no note is made of the role.
+        fake_name = await drivers().fake_driver_name(user_id)
+        if fake_name is not None:
+            return StepResult(
+                result={}, lines=(f"{ctx.named} | Signup | Approved\n  driver: {fake_name}",)
+            )
         note = await _grant(ctx, user_id)
         line = f"{ctx.named} | Signup | Approved\n  driver: {await name_of_member(ctx.bot, int(user_id))}"
         if note is not None:
