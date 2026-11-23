@@ -324,10 +324,12 @@ async def test_a_fake_driver_sacked_without_racing_is_removed(league):
     real driver. Mock Alpha's placement is confirmed and then `/driver sack` sacks them, without
     their ever racing: the former-driver flag is clear and results holds no record of them. Admin
     (77) runs `/test-mode roster remove` with Mock Alpha's ID and the queue runs it. Mock Alpha
-    is removed, not refused: their profile is gone and Charles stays, the bot's delete hook is
-    handed Mock Alpha's profile, one `TEST_DRIVER_REMOVED` audit entry by Admin records it, the
-    reply says Mock Alpha was removed, and the log channel holds the one success line, naming
-    Mock Alpha and the ID."""
+    is removed, not refused: their profile is gone and Charles stays, and the bot's delete hook is
+    handed Mock Alpha's profile. Holding no seat, Mock Alpha has no team, and nothing names one:
+    one `TEST_DRIVER_REMOVED` audit entry by Admin, on no division, records the driver and the ID
+    with team and division unset, each unset after; the reply reads "✅ Removed fake driver
+    **Mock Alpha**."; and the log channel holds the one success line, naming Mock Alpha and the
+    ID, with no team line."""
     await _sacked_without_racing(league)
 
     async def raced_nowhere(db, accounts):
@@ -343,15 +345,18 @@ async def test_a_fake_driver_sacked_without_racing_is_removed(league):
 
     assert await _drivers(league) == _BOTH[:1]
     assert handed == [[profile_id]]
+    old = {"driver": "Mock Alpha", "user_id": MOCK_ID, "team": None, "division": None}
     assert [
-        (row["change_type"], row["actor_id"]) for row in await audit_rows(league.db_path)
-    ] == [(_AUDIT_TYPE, ACTOR_ID)]
-    assert last_said(interaction).startswith("✅ Removed fake driver **Mock Alpha**")
-    [line] = _lines(league)
-    assert line.startswith(
-        f"{_NAMED} | /test-mode roster remove | Success\n  driver: Mock Alpha\n"
-    )
-    assert line.endswith(f"  user_id: {MOCK_ID}")
+        (row["change_type"], row["old_value"], row["new_value"], row["actor_id"],
+         row["division_id"])
+        for row in await audit_rows(league.db_path)
+    ] == [(_AUDIT_TYPE, old, dict.fromkeys(old), ACTOR_ID, None)]
+    assert last_said(interaction) == "✅ Removed fake driver **Mock Alpha**."
+    assert _lines(league) == [
+        f"{_NAMED} | /test-mode roster remove | Success\n"
+        "  driver: Mock Alpha\n"
+        f"  user_id: {MOCK_ID}"
+    ]
 
 
 async def _removed_meanwhile(league) -> None:
