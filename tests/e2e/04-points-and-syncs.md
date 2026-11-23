@@ -581,7 +581,7 @@ starts from. `Test Ladder` is built here and removed at the end of the part.
 
     **Expect:**
     - **Reply:** as step 5: `Half Points` and `Standard`, `2 configurations.` The season still
-      scores by `Half Points`, and its result submissions still offer it (step 53).
+      scores by `Half Points`, and its result submissions still offer it (step 48).
     - **Log:** nothing.
 
 40. **A refusal: removing what is not there.** **Do:** `/results config remove name:Nope`
@@ -677,12 +677,10 @@ announcement, and a reserve may still race for any team.
 
     **Expect:**
     - **Posts** (submission channel): your message marked ⏳, then the choice, with two buttons,
-      **Half Points** and **Standard**, in the order the season holds them:
-      `🔧 Select the points configuration for this session:`. **Half Points** is offered though step
-      37 removed it from the server: the season keeps its attachment and its own copy.
-      > UNVERIFIED: the order of the two buttons. The season's attachments are read in name
-      > order (`get_attached_config_names`); `01-full-season.md` step 23 names them the other way
-      > round.
+      **Half Points** and **Standard**, the season's attachments in name order
+      (`get_attached_config_names`): `🔧 Select the points configuration for this session:`.
+      **Half Points** is offered though step 37 removed it from the server: the season keeps its
+      attachment and its own copy.
     - **Log:** nothing yet.
 
 49. **Do:** press **Standard**.
