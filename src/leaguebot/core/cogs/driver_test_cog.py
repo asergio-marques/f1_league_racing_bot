@@ -60,7 +60,7 @@ class DriverTestCog(commands.Cog):
     async def cog_load(self) -> None:
         """Keep the group off the global tree: discord.py adds a cog's commands to it once this
         has run, so the cog offers it none. The swap puts the group on the league's server."""
-        self.__cog_app_commands__ = []
+        self.__cog_app_commands__.clear()
 
     async def _test_mode_on(self, interaction: discord.Interaction) -> bool:
         """Whether test mode is on, read as the command is given; where it is not, the command is
