@@ -1,4 +1,4 @@
-"""Seating a whole roster at once, or seating none of it.
+"""Creating a whole roster at once, or creating none of it.
 
 The parser has its own file; what is checked here is everything that needs the database.
 Two rules carry the weight:
@@ -7,7 +7,7 @@ Two rules carry the weight:
   check-ins — keys on them absolutely, and `add_test_driver`'s `MAX + 1` allocation lines
   up with the file only on a clean season. If this ever drifts back to allocating its own,
   a results file would name drivers that do not exist and nothing would say so.
-* **A fault seats nobody.** A half-applied roster is a state no sibling script can work
+* **A fault creates nobody.** A half-applied roster is a state no sibling script can work
   against, and re-pasting the fixed file would duplicate whatever landed the first time.
 """
 from __future__ import annotations
@@ -20,7 +20,9 @@ from leaguebot.core.utils.roster_import import SYNTHETIC_ID_BASE, parse_roster_c
 
 SERVER_ID = 7700
 
-HEADER = "ID,Driver name,Team,Division,Nationality"
+HEADER = "ID,Driver name"
+
+_CREATED = "#600: the roster import still seats its drivers from five columns"
 
 
 @pytest.fixture
@@ -67,12 +69,12 @@ def _csv(*rows: str) -> str:
     return "\n".join([HEADER, *rows])
 
 
-def _row(offset, name, team="Alpine", div="Elite", nat="British"):
-    return f"{SYNTHETIC_ID_BASE + offset},{name},{team},{div},{nat}"
+def _row(offset, name):
+    return f"{SYNTHETIC_ID_BASE + offset},{name}"
 
 
 async def _bulk(path, drivers):
-    """Seat *drivers* through the roster's writer, on a connection of the test's own, committed
+    """Create *drivers* through the roster's writer, on a connection of the test's own, committed
     as a change's save commits it."""
     from leaguebot.core.services.test_mode.test_roster_service import add_test_drivers_in_bulk_on
 
@@ -88,13 +90,12 @@ async def _apply(path, text):
     return await _bulk(path, drivers)
 
 
-async def _seated(path) -> list[tuple[str, str]]:
+async def _created(path) -> list[tuple[str, str]]:
+    """Every fake driver's ID and name, by ID."""
     async with get_connection(path) as db:
         cursor = await db.execute(
-            "SELECT dp.discord_user_id AS uid, dp.test_display_name AS name "
-            "FROM driver_season_assignments dsa "
-            "JOIN driver_profiles dp ON dp.id = dsa.driver_profile_id "
-            "ORDER BY dp.discord_user_id"
+            "SELECT discord_user_id AS uid, test_display_name AS name FROM driver_profiles "
+            "WHERE is_test_driver = 1 ORDER BY discord_user_id"
         )
         return [(r["uid"], r["name"]) for r in await cursor.fetchall()]
 
@@ -102,207 +103,78 @@ async def _seated(path) -> list[tuple[str, str]]:
 # ── The happy path ────────────────────────────────────────────────────────
 
 
-async def test_a_roster_is_seated(season):
-    seated, errors = await _apply(season, _csv(_row(1, "Quicksilver"), _row(2, "Badger")))
+@pytest.mark.xfail(strict=True, reason=_CREATED)
+async def test_a_roster_is_created_at_not_signed_up_and_unseated(season):
+    """The core specification's fake drivers, created at Not Signed Up: a roster of Quicksilver
+    and Badger is imported into a season holding free seats in both divisions. Both are fake
+    drivers at Not Signed Up, in the file's order; no seat is taken and nobody is assigned to a
+    division of the season."""
+    created, errors = await _apply(season, _csv(_row(1, "Quicksilver"), _row(2, "Badger")))
 
     assert errors == []
-    assert seated == 2
-    assert [name for _uid, name in await _seated(season)] == ["Quicksilver", "Badger"]
+    assert created == 2
+    assert [name for _uid, name in await _created(season)] == ["Quicksilver", "Badger"]
+    async with get_connection(season) as db:
+        cursor = await db.execute("SELECT DISTINCT current_state FROM driver_profiles")
+        assert [r[0] for r in await cursor.fetchall()] == ["NOT_SIGNED_UP"]
+        cursor = await db.execute(
+            "SELECT COUNT(*) FROM team_seats WHERE driver_profile_id IS NOT NULL"
+        )
+        assert (await cursor.fetchone())[0] == 0
+        cursor = await db.execute("SELECT COUNT(*) FROM driver_season_assignments")
+        assert (await cursor.fetchone())[0] == 0
 
 
 @pytest.mark.parametrize("first, second", [(7, 9), (40, 41)],
                          ids=["7 and 9", "40 and 41, not consecutive with 1"])
+@pytest.mark.xfail(strict=True, reason=_CREATED)
 async def test_the_ids_written_are_the_ids_the_file_named(season, first, second):
     """The rule every sibling generator script depends on. The ids are kept even when they are
     not consecutive from 1: `MAX + 1` allocation would have renumbered 40 and 41 to 1 and 2."""
     await _apply(season, _csv(_row(first, "Quicksilver"), _row(second, "Badger")))
 
-    assert [uid for uid, _name in await _seated(season)] == [
+    assert [uid for uid, _name in await _created(season)] == [
         str(SYNTHETIC_ID_BASE + first),
         str(SYNTHETIC_ID_BASE + second),
     ]
 
 
-async def test_a_driver_is_seated_and_the_seat_is_taken(season):
-    await _apply(season, _csv(_row(1, "Quicksilver")))
-
-    async with get_connection(season) as db:
-        cursor = await db.execute(
-            "SELECT COUNT(*) AS taken FROM team_seats WHERE driver_profile_id IS NOT NULL"
-        )
-        assert (await cursor.fetchone())["taken"] == 1
-
-
-async def test_the_nationality_is_stored_canonically(season):
-    """Accepted as the signup wizard accepts it — adjective, country or 'other'."""
-    await _apply(season, _csv(_row(1, "Quicksilver", nat="united kingdom")))
-
-    async with get_connection(season) as db:
-        cursor = await db.execute("SELECT test_nationality FROM driver_profiles")
-        assert (await cursor.fetchone())[0] == "British"
-
-
-async def test_a_driver_with_no_nationality_is_seated_without_one(season):
-    seated, errors = await _apply(season, _csv(_row(1, "Quicksilver", nat="")))
-
-    assert errors == []
-    assert seated == 1
-
-
-async def test_several_divisions_are_seated_in_one_import(season):
-    seated, errors = await _apply(
-        season,
-        _csv(_row(1, "Quicksilver"), _row(2, "Badger", div="Challenger")),
-    )
-
-    assert errors == []
-    assert seated == 2
-
-
-async def test_a_reserve_team_takes_as_many_as_it_is_given(season):
-    """It has no seat limit, so seats are created as the drivers arrive."""
-    seated, errors = await _apply(
-        season,
-        _csv(
-            _row(1, "Quicksilver", team="Reserve"),
-            _row(2, "Badger", team="Reserve"),
-            _row(3, "Kestrel", team="Reserve"),
-        ),
-    )
-
-    assert errors == []
-    assert seated == 3
-
-
-# ── Nothing is applied on a fault ─────────────────────────────────────────
-
-
-async def test_an_unknown_division_seats_nobody(season):
-    seated, errors = await _apply(
-        season, _csv(_row(1, "Quicksilver"), _row(2, "Badger", div="Rookie"))
-    )
-
-    assert seated == 0
-    assert await _seated(season) == [], "a partial roster was applied"
-    assert any("Rookie" in problem for problem in errors)
-
-
-async def test_an_unknown_team_seats_nobody(season):
-    seated, errors = await _apply(season, _csv(_row(1, "Quicksilver", team="Ferrari")))
-
-    assert seated == 0
-    assert await _seated(season) == []
-    assert any("ferrari" in problem.lower() for problem in errors)
-
-
-async def test_a_team_is_named_by_its_shorthand_in_any_case(season):
-    """A roster names a team by its shorthand (#381), as a submission does."""
-    seated, errors = await _apply(season, _csv(_row(1, "Quicksilver", team="ALPINE")))
-
-    assert errors == []
-    assert seated == 1
-
-
-@pytest.mark.parametrize("team", ["<@&123456789012345678>", "@everyone", "<@123456789012345678>"])
-async def test_a_team_named_any_other_way_seats_nobody_and_says_why(season, team):
-    """A role is only for mentioning a team, and a member or `@everyone` is none at all."""
-    seated, errors = await _apply(season, _csv(_row(1, "Quicksilver", team=team)))
-
-    assert seated == 0
-    assert any(problem.startswith("Line ") and "shorthand" in problem for problem in errors)
-
-
-async def test_a_bad_nationality_seats_nobody(season):
-    seated, errors = await _apply(season, _csv(_row(1, "Quicksilver", nat="Martian")))
-
-    assert seated == 0
-    assert await _seated(season) == []
-    assert any("Martian" in problem for problem in errors)
-
-
-async def test_a_team_given_more_drivers_than_it_has_seats_is_refused(season):
-    """Counted across the whole import: each row passes on its own, and three into a
-    two-seat team does not."""
-    seated, errors = await _apply(
-        season,
-        _csv(_row(1, "Quicksilver"), _row(2, "Badger"), _row(3, "Kestrel")),
-    )
-
-    assert seated == 0
-    assert await _seated(season) == []
-    assert any("free seat" in problem for problem in errors)
-
-
+@pytest.mark.xfail(strict=True, reason=_CREATED)
 async def test_every_fault_is_reported_at_once(season):
-    seated, errors = await _apply(
-        season,
-        _csv(_row(1, "Quicksilver", div="Rookie"), _row(2, "Badger", nat="Martian")),
-    )
+    """Which is what importing the same file twice looks like. Quicksilver and Badger are imported, then the same two IDs again under other names: the
+    second import creates nobody and names both IDs as already on this server."""
+    await _apply(season, _csv(_row(1, "Quicksilver"), _row(2, "Badger")))
 
-    assert seated == 0
-    assert len(errors) >= 2
+    created, errors = await _apply(season, _csv(_row(1, "Kestrel"), _row(2, "Wolf")))
+
+    assert created == 0
+    assert errors == [
+        f"Line 2: a driver with ID {SYNTHETIC_ID_BASE + 1} is already on this server.",
+        f"Line 3: a driver with ID {SYNTHETIC_ID_BASE + 2} is already on this server.",
+    ]
+    assert [name for _uid, name in await _created(season)] == ["Quicksilver", "Badger"]
 
 
+@pytest.mark.xfail(strict=True, reason=_CREATED)
 async def test_no_season_is_reported(tmp_path):
     path = str(tmp_path / "empty.db")
     await run_migrations(path)
     drivers, _ = parse_roster_csv(_csv(_row(1, "Quicksilver")))
 
-    seated, errors = await _bulk(path, drivers)
+    created, errors = await _bulk(path, drivers)
 
-    assert seated == 0
+    assert created == 0
     assert "No active or setup season" in errors[0]
-
-
-# ── A division that already holds drivers ─────────────────────────────────
-
-
-@pytest.mark.parametrize(
-    "beside", [False, True], ids=["the seated division alone", "beside an empty division"]
-)
-async def test_a_roster_naming_a_seated_division_seats_nobody(season, beside):
-    """The CSV describes a whole grid. Importing over a seated division would put seats
-    somewhere the file does not describe, with the file still looking like the record. A
-    seated division is a fault like any other, so it refuses the whole import: the empty
-    division beside it in the same file lands no more than the seated one (#265)."""
-    await _apply(season, _csv(_row(1, "Quicksilver")))
-
-    rows = [_row(2, "Badger")] + ([_row(3, "Wolf", div="Challenger")] if beside else [])
-    seated, errors = await _apply(season, _csv(*rows))
-
-    assert seated == 0
-    assert any("already holds" in problem for problem in errors)
-    assert [name for _uid, name in await _seated(season)] == ["Quicksilver"]
-
-
-async def test_an_empty_division_is_still_importable_beside_a_full_one(season):
-    """A second paste naming only the empty division lands, which is how a split roster
-    goes in."""
-    await _apply(season, _csv(_row(1, "Quicksilver")))
-
-    seated, errors = await _apply(season, _csv(_row(2, "Badger", div="Challenger")))
-
-    assert errors == []
-    assert seated == 1
-
-
-async def test_an_id_already_on_the_server_is_refused(season):
-    """Which is what importing the same file twice looks like."""
-    await _apply(season, _csv(_row(1, "Quicksilver")))
-    drivers, _ = parse_roster_csv(_csv(_row(1, "Quicksilver", div="Challenger")))
-
-    seated, errors = await _bulk(season, drivers)
-
-    assert seated == 0
-    assert any("already on this server" in problem for problem in errors)
 
 
 # ── The real file ─────────────────────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=_CREATED)
 async def test_the_import_is_what_roster_add_would_have_produced(season):
-    """Seated drivers must be indistinguishable from ones added one at a time, or the
-    rest of test mode — listing, results, attendance — would treat them differently."""
+    """Created drivers must be indistinguishable from ones added one at a time, or the
+    rest of test mode — listing, signup, placement — would treat them differently: a fake driver
+    at Not Signed Up, never a former driver."""
     await _apply(season, _csv(_row(1, "Quicksilver")))
 
     async with get_connection(season) as db:
@@ -311,6 +183,6 @@ async def test_the_import_is_what_roster_add_would_have_produced(season):
         )
         row = await cursor.fetchone()
 
-    assert row["current_state"] == "ASSIGNED"
+    assert row["current_state"] == "NOT_SIGNED_UP"
     assert row["former_driver"] == 0
     assert row["is_test_driver"] == 1
