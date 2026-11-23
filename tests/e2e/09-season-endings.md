@@ -93,3 +93,113 @@ no `sqlite3`; they are marked **Host check (optional)**.
 
    **Expect:** as `06-settings.md` step 6: headed `**Active Season** (ID: 1)`, the start date the
    day `00-base.md` step 18 ran, `Divisions: 2`, and round 1 next in each division. No log line.
+
+---
+
+## Part B — Cancelling Season #1
+
+Season #1 is ongoing, nothing advanced. A cancellation is a league admin's, and announces itself in
+every division before it records the season's end (`cancellation_changes`, `season_cancel_change`).
+
+### Refused
+
+3. **A league manager may not cancel.** In Discord, outside the bot, give yourself
+   `@League Manager` and take `@League Admin` off yourself. Back in `#bot-commands`:
+
+   **Do:** `/season cancel confirm:CONFIRM`
+
+   **Expect:**
+   - **Reply:** `⛔ This command is a league admin's. You need **League Admin**.`
+   - **Log:** ``⛔ `/season cancel` refused for <you> — This command is a league admin's. You need **League Admin**.``
+   - Nothing cancelled: the tier is judged before the word or the season.
+
+   **Then do:** `/season status`
+
+   **Expect:** as step 2. A league manager may read it. No log line.
+
+   **Then:** in Discord, give yourself `@League Admin` again and take `@League Manager` off. Every
+   later step needs the league admin role.
+
+4. **The word is case-sensitive.** **Do:** `/season cancel confirm:confirm`
+
+   **Expect:**
+   - **Reply:** ``❌ Type exactly `CONFIRM` in the `confirm` field to proceed.``
+   - **Log:** ``⛔ `/season cancel` refused for <you> — Type exactly `CONFIRM` in the `confirm` field to proceed.``
+
+### The cancellation
+
+5. **Do:** `/season cancel confirm:CONFIRM`
+
+   **Expect:** as `02-roster-changes.md` step 27, in full:
+   - **Ack:** `Cancelling season 1`
+   - **Then:** `✅ Season cancelled.`, followed, where a calendar drew with notices, by a blank line
+     and a `⚠️ **Image notices**` section naming each calendar with its notices.
+   - **Posts**, Division 1 then Division 2, `N` being the division's number: in `#dN-rsvp`
+     `<@&<Division N role id>>` and `📢 **Season Cancelled**` with
+     `The season has been cancelled. There are no further check-ins to answer.`; in `#dN-weather`
+     `📢 **Season Cancelled**` with `No further weather forecasts will be posted this season.`; in
+     `#dN-results` `📢 **Season Cancelled**` with `No further results will be posted this season.`;
+     in `#dN-calendar` the calendar posted again, every round cancelled, and the old one deleted.
+     Nothing in `#dN-lineup`, `#dN-standings` or `#dN-attendance`.
+   - **Roles:** none taken. Fake drivers hold none.
+   - **Log:** `<you> | /season cancel | Success`, and nothing beneath it: no check-in call stood.
+
+6. **What the cancellation did besides.** Nothing in Discord shows it, so read it on the host.
+
+   **Expect:**
+   - `bot.bkup.db`, `scheduler.bkup.db` and `backup.lock` are still in the bot host folder. **The
+     saved backup is kept**: a season cancelled is one abandoned, not run to its end
+     (`cancellation_changes`, `end`). Completing a season deletes it; cancelling does not.
+   - **Host check (optional):**
+     ```
+     sqlite3 bot.db "SELECT season_number, status, stage FROM seasons;"
+     ```
+     answers `1|CANCELLED|CANCELLED`. The season is **archived, not deleted**: its divisions,
+     rounds and standings stay.
+     ```
+     sqlite3 bot.db "SELECT COUNT(*) FROM driver_profiles WHERE is_test_driver = 1;"
+     ```
+     answers `0`: test mode was switched off in the save that ended the season, and every fake
+     driver with it (`switch_test_mode_off_on`).
+     ```
+     sqlite3 bot.db "SELECT season_number, division_name, cancelled, COUNT(*) FROM driver_history_entries GROUP BY 1, 2, 3;"
+     ```
+     answers `1|Division 1|1|24` and `1|Division 2|1|21`: each fake driver keeps a history entry
+     for the division they were placed in, **marked cancelled** (`write_driver_history_entries_on`,
+     `force_cancelled`), though the driver is deleted. A fake driver created later under the same
+     identifier is given that history back (`test_roster_service._reattach_history`).
+     > UNVERIFIED: that the reserves hold an entry too, which the counts 24 and 21 assume. An entry
+     > is written for every placement committed in the season (`driver_division_memberships`);
+     > where the reserves are left out, the counts are 22 and 19.
+
+### Once it is cancelled
+
+No season is live now, and test mode is off.
+
+7. **Do:** `/season status`
+
+   **Expect:**
+   - **Reply:** `ℹ️ No season is being raced on this server.`
+   - **Log:** nothing.
+
+8. **A repeat.** **Do:** `/season cancel confirm:CONFIRM`
+
+   **Expect:**
+   - **Reply:** ``❌ No season is being raced, so there is none to cancel. A season whose placements are yet to be confirmed is abandoned with `/season abort`.``
+   - **Log:** ``⛔ `/season cancel` refused for <you> — No season is being raced, so there is none to cancel. A season whose placements are yet to be confirmed is abandoned with `/season abort`.``
+   - No acknowledgement: the cog refuses it before the queue is asked (`SeasonCog.season_cancel`).
+
+9. **Do:** `/season abort confirm:CONFIRM`
+
+   **Expect:**
+   - **Reply:** ``❌ `/season abort` is available only before a season's placements are first confirmed. An ongoing season is cancelled with `/season cancel`.``
+   - **Log:** ``⛔ `/season abort` refused for <you> — `/season abort` is available only before a season's placements are first confirmed. An ongoing season is cancelled with `/season cancel`.``
+   - With no season live there is nothing to abort, and the refusal is the same one an ongoing
+     season meets (`SeasonCog.season_abort`, `ABORT_ONLY_BEFORE`).
+
+10. **Test mode is off.** **Do:** `/test-mode backup status`
+
+    **Expect:**
+    - **Reply:** ``⛔ The backup commands run only while the server is in **test mode**. They copy and replace the whole database, which is not something to do to a league that is running. Turn test mode on with `/test-mode toggle` first.``
+    - **Log:** nothing: the status is a view. The backup is still on disk (step 6); step 15 reads it
+      again once test mode is back on.
