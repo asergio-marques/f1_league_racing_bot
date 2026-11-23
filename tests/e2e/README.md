@@ -24,7 +24,7 @@ league admin role.
 | `02-roster-changes.md` | Restores the base and makes roster and team changes in test mode. |
 | `03-calendar-changes.md` | Restores the base and changes the calendar and the divisions mid-season. |
 | `04-points-and-syncs.md` | Restores the base and works the points configurations, a mid-season amendment of the season's points, and the results and standings syncs. |
-| `05-modules-off-and-on.md` | Restores the base and switches modules off and on mid-season, checking each keeps its settings. |
+| `05-modules-off-and-on.md` | Restores the base, switches the modules off mid-season and on again once the season is cancelled, checking each keeps its settings, and restores the base. |
 | `06-settings.md` | Restores the base and works the bot's settings, its views and the signup configuration in test mode. |
 | `07-image-config.md` | Restores the base and works the image configuration — templates, asset folders, colours and driver portraits — checking each change by preview, then puts the base's settings back. |
 | `08-recovery.md` | Restores the base and restarts the bot at awkward moments, checking what resumes. |

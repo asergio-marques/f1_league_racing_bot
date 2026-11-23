@@ -56,7 +56,7 @@ updated to; `<you>` in a log line is your display name and mention.
 `<what>` is the command in backticks (`` `/module disable` ``, without its option) and `<reason>`
 the reply's first line without the mark it opens with (`❌`, `⛔`, `⚠️` or `ℹ️`). A step writes
 **Log:** with the whole line. A refusal the change queue makes at the ask — every "already
-enabled" and "already disabled" but results' — carries no acknowledgement: the reply is the
+enabled", and every "already disabled" but results', which the command itself refuses — carries no acknowledgement: the reply is the
 refusal, and nothing is queued.
 
 **A view records nothing:** `/weather config view`, `/attendance config show`,
@@ -751,7 +751,9 @@ their channels is told; with images off, the calendars go out as text.
 
 No season is live, so every module may be switched on and off. Each switch-on first checks the
 channels its module kept for the live season's divisions, naming one gone or taken by another
-setting; with no season live there are none to check, so none is named. What each module kept
+setting; with no season live there are none to check, so none is named. Signup's switch-on
+checks its one channel, `#signup`, whatever the season (`signup/services/channel_uses.py`); it
+is still on the server and no other setting took it, so it is not named either. What each module kept
 while it was off is then read back against Part B.
 
 ### The dependency, and switching back on
