@@ -599,3 +599,66 @@ async def test_a_cancel_signup_press_after_the_signup_ended_is_refused_and_recor
     assert await league.rows(seats, profile_id(SIGNING_UP)) == seated
     assert league.revoked.get(SIGNING_UP, []) == []
     assert league.roles_held.get(SIGNING_UP, set()) == held
+
+
+# ---------------------------------------------------------------------------
+# Who may answer a wizard (#600, D2, D13)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "who,owner,test_mode,may",
+    [
+        ("driver", "real", False, True),
+        ("member", "real", False, False),
+        ("admin", "real", True, False),
+        ("admin", "fake", True, True),
+        ("admin", "fake", False, False),
+        ("manager", "fake", True, False),
+        ("member", "fake", True, False),
+    ],
+    ids=[
+        "the-driver-on-their-own",
+        "another-member-on-a-real-driver-s",
+        "a-league-admin-on-a-real-driver-s-under-test-mode",
+        "a-league-admin-on-a-fake-driver-s-under-test-mode",
+        "a-league-admin-on-a-fake-driver-s-with-test-mode-off",
+        "a-league-manager-on-a-fake-driver-s-under-test-mode",
+        "another-member-on-a-fake-driver-s-under-test-mode",
+    ],
+)
+@pytest.mark.xfail(
+    strict=True, reason="#600: the wizard has no single check of who may answer it, may_answer"
+)
+async def test_who_may_answer_a_signup_wizard(tmp_path, who, owner, test_mode, may):
+    """The league at Signups, the window open: Kimi (105), a real driver, part-way through
+    signing up, and Mock Alpha, a fake driver, at Pending Signup Completion; test mode on or off
+    as the case says. `may_answer` is asked whether *who* may answer the wizard of *owner*,
+    handed the configuration service and the driver service the wizard's views are handed: Kimi
+    himself, the league admin Admin (77), a league manager holding the interaction role alone, or
+    a member holding neither. The driver may answer their own wizard; a league admin may answer a
+    fake driver's while test mode is on, and nobody else may answer anyone's."""
+    from leaguebot.signup.services.signup_views import may_answer
+    from tests.signup.test_wizard_changes import MOCK, MOCK_NAME
+    from tests.support.change_queue import tier_member
+    from tests.support.season_league import ADMIN_ID
+
+    league = await _kimi_at(tmp_path, "COLLECTING_PLATFORM")
+    await league.write(
+        "INSERT INTO driver_profiles (discord_user_id, current_state, is_test_driver, "
+        "test_display_name) VALUES (?, 'PENDING_SIGNUP_COMPLETION', 1, ?)",
+        str(MOCK), MOCK_NAME,
+    )
+    await league.set_test_mode(test_mode)
+    actor = {
+        "driver": lambda: league._member(SIGNING_UP),
+        "admin": lambda: tier_member("admin", member_id=ADMIN_ID),
+        "manager": lambda: tier_member("manager", member_id=OTHER_USER_ID),
+        "member": lambda: tier_member(None, member_id=OTHER_USER_ID),
+    }[who]()
+    owner_id = str(SIGNING_UP if owner == "real" else MOCK)
+
+    assert await may_answer(
+        actor, owner_id,
+        config=league.bot.config_service, drivers=league.bot.driver_service,
+    ) is may
