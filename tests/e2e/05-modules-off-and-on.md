@@ -238,7 +238,7 @@ the check-in timings may not, so they are read as they stand.
         ✅ Verdict banner
       ```
       A `⚠️` against an output here, before any module is off, is a template or colour fault of the
-      host's, not this spec's subject: note its reason, and expect it again at steps 26, 32 and 56.
+      host's, not this spec's subject: note its reason, and expect it again at steps 26, 33 and 56.
     - **Log:** nothing; it is a view.
 
 11. **Do:** `/signup config view`
