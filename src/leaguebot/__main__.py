@@ -1243,7 +1243,10 @@ async def build(settings: Settings) -> LeagueBot:
 
     driver_cog, driver_test_cog = DriverCog(bot), DriverTestCog(bot)
     bot.driver_swap = partial(
-        swap_driver_commands, member=driver_cog.driver, variant=driver_test_cog.driver
+        swap_driver_commands,
+        member=driver_cog.driver,
+        variant=driver_test_cog.driver,
+        league_settings=bot.league_settings,
     )
     register_change_types(bot)
     from leaguebot.core.services.test_mode.test_mode_service import AdvanceSteps

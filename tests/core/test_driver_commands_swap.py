@@ -98,11 +98,15 @@ async def test_the_swap_shows_the_driver_group_the_flag_calls_for(tmp_path, on):
     db_path = await _flag_db(tmp_path, on=True)
     bot, guild, member_group, test_group = await _bare_bot(db_path)
     if not on:
-        await swap_driver_commands(bot, member=member_group, variant=test_group)
+        await swap_driver_commands(
+            bot, member=member_group, variant=test_group, league_settings=bot.league_settings
+        )
         await _set_flag(db_path, False)
         bot.tree.sync.reset_mock()
 
-    await swap_driver_commands(bot, member=member_group, variant=test_group)
+    await swap_driver_commands(
+        bot, member=member_group, variant=test_group, league_settings=bot.league_settings
+    )
 
     assert _shown(bot, guild) == ((None, test_group) if on else (member_group, None))
     assert sorted(map(str, bot.tree.sync.await_args_list)) == sorted(
@@ -120,7 +124,9 @@ async def test_a_sync_discord_refuses_is_raised(tmp_path):
     bot.tree.sync = AsyncMock(side_effect=http_error())
 
     with pytest.raises(discord.HTTPException):
-        await swap_driver_commands(bot, member=member_group, variant=test_group)
+        await swap_driver_commands(
+            bot, member=member_group, variant=test_group, league_settings=bot.league_settings
+        )
 
 
 @pytest.mark.parametrize(
@@ -141,16 +147,22 @@ async def test_an_unclaimed_bot_syncs_the_global_tree_with_the_member_driver(
 
     db_path = await _flag_db(tmp_path, on=True)
     bot, guild, member_group, test_group = await _bare_bot(db_path)
-    await swap_driver_commands(bot, member=member_group, variant=test_group)
+    await swap_driver_commands(
+        bot, member=member_group, variant=test_group, league_settings=bot.league_settings
+    )
     await _set_flag(db_path, on)
     bot.tree.sync.reset_mock()
     if claimed:
         bot.get_guild = MagicMock(return_value=None)
         with pytest.raises(GuildUnavailable):
-            await swap_driver_commands(bot, member=member_group, variant=test_group)
+            await swap_driver_commands(
+                bot, member=member_group, variant=test_group, league_settings=bot.league_settings
+            )
     else:
         bot.league_settings.get_league_server_id = AsyncMock(return_value=None)
-        await swap_driver_commands(bot, member=member_group, variant=test_group)
+        await swap_driver_commands(
+            bot, member=member_group, variant=test_group, league_settings=bot.league_settings
+        )
 
     assert bot.tree.get_command("driver") is member_group
     assert call() in bot.tree.sync.await_args_list
@@ -171,7 +183,9 @@ async def test_an_unclaimed_bot_takes_driver_off_every_server_it_is_on(tmp_path)
         bot.tree.add_command(test_group, guild=server)
     bot.league_settings.get_league_server_id = AsyncMock(return_value=None)
 
-    await swap_driver_commands(bot, member=member_group, variant=test_group)
+    await swap_driver_commands(
+        bot, member=member_group, variant=test_group, league_settings=bot.league_settings
+    )
 
     assert [bot.tree.get_command("driver", guild=server) for server in servers] == [None, None]
     assert bot.tree.get_command("driver") is member_group

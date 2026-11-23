@@ -7,7 +7,8 @@ each where the flag calls for and syncs both trees: with test mode on, the membe
 the global tree and the test-mode group goes onto the server's; off, the reverse.
 
 **It is handed the two groups** by the entry point, which gets them from the cogs it makes: a
-service never imports a cog, and never finds one on the bot. **It reads the flag itself**, off the
+service never imports a cog, and never finds one on the bot. **It is handed the league's settings**
+for the same reason, to find the league's server by. **It reads the flag itself**, off the
 database, as the step that runs it follows the save that set the flag.
 
 **It reports nothing and refuses nothing.** Discord's refusal of a sync is raised as it came, and
@@ -24,9 +25,9 @@ from discord import app_commands
 
 from leaguebot.framework.db.database import get_connection
 from leaguebot.framework.models.change import GuildUnavailable, StepKind, StepResult
+from leaguebot.framework.services.posting.league_settings import LeagueSettings
 from leaguebot.framework.services.queue.change_types import Step, StepContext, StepView
 from leaguebot.framework.utils.league_bot import LeagueBot
-from leaguebot.framework.utils.league_server import league_guild
 
 #: The name both groups go by.
 DRIVER_GROUP = "driver"
@@ -42,7 +43,11 @@ SWAP_PROBLEM = (
 
 
 async def swap_driver_commands(
-    bot: LeagueBot, *, member: app_commands.Group, variant: app_commands.Group
+    bot: LeagueBot,
+    *,
+    member: app_commands.Group,
+    variant: app_commands.Group,
+    league_settings: LeagueSettings,
 ) -> list[app_commands.AppCommand]:
     """Show the `/driver` the flag calls for and sync both trees: with test mode on, no `/driver`
     on the global tree and the *variant* on the league's server; off, the *member* group on the
@@ -57,14 +62,15 @@ async def swap_driver_commands(
         cursor = await db.execute("SELECT test_mode_active FROM server_configs")
         row = await cursor.fetchone()
     test_mode = row is not None and bool(row["test_mode_active"])
-    if await bot.league_settings.get_league_server_id() is None:
+    server_id = await league_settings.get_league_server_id()
+    if server_id is None:
         bot.tree.add_command(member, override=True)
         synced = await bot.tree.sync()
         for server in bot.guilds:
             bot.tree.remove_command(DRIVER_GROUP, guild=server)
             await bot.tree.sync(guild=server)
         return synced
-    guild = await league_guild(bot)
+    guild = bot.get_guild(server_id)
     if guild is None:
         if not test_mode:
             bot.tree.add_command(member, override=True)
