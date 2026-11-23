@@ -647,6 +647,7 @@ async def test_a_season_confirmed_while_the_abort_waited_is_refused_when_it_runs
 WINDOW_JOBS = ("delete_button", "post_closed", "disarm_timers")
 
 
+@pytest.mark.xfail(strict=True, reason="#600: no `/driver` swap follows the save")
 async def test_the_jobs_run_in_order(tmp_path):
     league = await setup_league(tmp_path, signups_open=True, test_mode=True)
     await signing_up(league)
@@ -660,7 +661,9 @@ async def test_the_jobs_run_in_order(tmp_path):
     assert names[:3] == ["close_window", "flush_forecasts", "end"]
     assert names[-2:] == ["discard_portraits", "close"]
     assert "signup_notice" in names[3:-2]
-    assert set(names[3:-2]) <= {"signup_notice", "close_signup", "take_driver_role"}
+    assert names[3:-2].count("swap_driver_commands") == names.count("swap_driver_commands") == 1
+    assert set(names[3:-2]) <= {"signup_notice", "close_signup", "take_driver_role",
+                                "swap_driver_commands"}
     assert "discard_backup" not in names
     assert not await _season_stands(league)
 
