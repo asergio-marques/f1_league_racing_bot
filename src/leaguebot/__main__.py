@@ -1354,7 +1354,10 @@ async def build(settings: Settings) -> LeagueBot:
         # Remove any guild-specific copies (e.g. left over from a previous copy_global_to); the
         # swap then puts the test-mode `/driver` back on the server if test mode is on, and syncs
         # the server's tree and the global one, so that Discord has the latest command schema.
-        bot.tree.clear_commands(guild=ctx.guild)
+        # Sent in a direct message there is no server, and clearing for none would wipe the global
+        # commands: nothing is cleared, and the swap syncs by the flag as anywhere else.
+        if ctx.guild is not None:
+            bot.tree.clear_commands(guild=ctx.guild)
         try:
             synced = await bot.driver_swap(bot)
         except (discord.HTTPException, GuildUnavailable) as exc:

@@ -209,10 +209,6 @@ async def test_the_sync_command_leaves_the_driver_the_flag_calls_for(tmp_path, t
     ]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#600: !sync in a direct message clears the global commands, not just no server's",
-)
 @pytest.mark.parametrize("test_mode", [True, False], ids=["test-mode-on", "test-mode-off"])
 async def test_the_sync_command_in_a_direct_message_keeps_the_global_commands(
     tmp_path, test_mode
