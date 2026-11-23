@@ -1239,6 +1239,8 @@ async def test_a_driver_whose_signup_ended_for_a_gone_channel_may_sign_up_again(
     assert (await _wizard(league))["signup_channel_id"] == NEW_CHANNEL
 
 
+@pytest.mark.xfail(strict=True, reason="#600: ask_channel_gone still takes the database path "
+                   "as a second argument the approved call does not pass")
 @pytest.mark.parametrize("state", ["NOT_SIGNED_UP", "UNASSIGNED"],
                          ids=["not signed up", "unassigned"])
 async def test_a_channel_gone_ending_is_not_due_once_the_driver_is_no_longer_signing_up(
@@ -1265,8 +1267,8 @@ async def test_a_channel_gone_ending_is_not_due_once_the_driver_is_no_longer_sig
     wizard = await _wizard(league)
 
     asked = await ask_channel_gone(
-        league.bot.change_queue, league.bot.db_path, user_id=str(SIGNING_UP),
-        channel_id=KIMI_CHANNEL, named=KIMI_NAMED_IN_PAYLOAD, found=DELETED,
+        league.bot.change_queue, user_id=str(SIGNING_UP), channel_id=KIMI_CHANNEL,
+        named=KIMI_NAMED_IN_PAYLOAD, found=DELETED,
     )
     await run_queue(league.bot)
 
