@@ -138,13 +138,17 @@ league-facing guide changed.
    obvious one often mentions it in passing, and a module's guide can be stale about a
    prerequisite it only links to. Read the surrounding steps, not only the matching line: a
    guide can be wrong about the order while every sentence in it is individually true.
-5. **Did a decision get made in this session that is written down nowhere?** Re-read the
+5. **Does a live end-to-end spec quote what changed?** Grep `tests/e2e/*.md` for every command,
+   option, reply and post the change altered or removed. A spec step quotes them word for word,
+   so a step that no longer matches `src/` is corrected in the same change; a new command or flow
+   a live run should cover is added as steps where the spec already walks that part of the season.
+6. **Did a decision get made in this session that is written down nowhere?** Re-read the
    session for the user's answers, not just your own edits.
-6. **Is the test suite green?** Run `pytest tests/ -q` from the repo root and report the
+7. **Is the test suite green?** Run `pytest tests/ -q` from the repo root and report the
    result. Every production change carries its unit tests with it; a change reported complete
    without a test run is not complete. Any failure is a real one until confirmed on a clean
    tree.
-7. **What did the change do to coverage?** Where production code changed, measure coverage
+8. **What did the change do to coverage?** Where production code changed, measure coverage
    **before and after** — on the base branch (usually `main`) and on the finished branch — and
    compare them per module and for `src/` as a whole. Take the base-branch figures from a
    separate worktree, never by checking out over your work. Any run in a worktree, the branch's

@@ -364,6 +364,7 @@
 - Every posting of results or standings shall name a team by its name, never by a mention of its role.
 - The points conferred to each driver will be determined by the points configuration applied to each session: points are attributed by finishing position and, depending on the settings of the configuration (points for fastest lap and placement limit for fastest lap points), for the lowest lap time as well.
 - A driver who did not start, or was disqualified, receives neither position points nor the fastest-lap bonus. A driver who did not finish receives no position points but remains eligible for the bonus.
+- The fastest-lap bonus shall go to the holder of the session's fastest lap or to nobody. Where that driver is not eligible for it — they did not start, were disqualified, or finished below the configuration's fastest-lap position limit — no driver shall receive the bonus for that session, and it shall not pass to the next fastest lap. Decided 2026-11-23.
 
 #### The three states of a round's results
 - Every results and standings posting shall carry a label naming the state the round has reached, and each new state shall replace the posting of the one before it rather than adding to it.
