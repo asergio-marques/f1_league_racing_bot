@@ -635,7 +635,7 @@ would make the file's write wait on a record of it.
 - **A job that fails stops its lane.** A lane is a list of jobs carried out in order, one at a
   time, and a job that fails, whether from Discord or from the bot (a post refused, a fault in the
   bot's own code, a check that raises as a change starts), stops that lane there until the job is
-  cleared, save for the four exceptions to this rule below. Nothing behind it on the lane runs: a
+  cleared, save for the five exceptions to this rule below. Nothing behind it on the lane runs: a
   change that makes the stopped job's work no longer due cannot overtake it either. The other lanes
   carry on, a stop in one holding only that one. The change keeps its state and the stop is the
   job's own record (when it first failed, how often it has been tried, when it is next due), so it
@@ -646,8 +646,8 @@ would make the file's write wait on a record of it.
   for meanwhile is acknowledged as usual, joins the back of its lane and says that the lane is
   stopped; one that overtakes a stop says it runs past it, the stop standing (`held_behind_text`).
 
-**Four exceptions: a league's settings, `/bot init`, roles moved after a driver's or team's change,
-and the settings a league repairs itself with.** A change to one of a league's settings is one
+**Five exceptions: a league's settings, `/bot init`, roles moved after a driver's or team's change,
+the settings a league repairs itself with, and the `/driver` swap after a test-mode change.** A change to one of a league's settings is one
 atomic save of its value and its audit record (its line with them, or in the save of the step after
 it that carries the line — the arming of the daily portrait job, a role's grant to every driver
 where it replaces one gone from the server while the season's configuration is fixed, the old hub
@@ -813,7 +813,7 @@ stop nobody yet holds the role to clear.
   second rule beside "every failure stops its lane", which is the rule the core specification's
   "How a change is carried out" records. A conversation runs apart from a stop on the league lane,
   or on another conversation's, only because its work is its own, and what a conversation hands
-  the league goes to the league lane's back. The first three exceptions (above) are not a job
+  the league goes to the league lane's back. The first three exceptions and the fifth (above) are not a job
   stepping aside either: the job is ended, not stopped, and nothing it leaves undone is waited on.
   The fourth exception is the one true overtake: the settings a league repairs itself with run
   ahead of their own lane's stopped head, by design, because a league locked out of the bot has no
@@ -827,6 +827,23 @@ stop nobody yet holds the role to clear.
   stopped conversation's job when it ends the conversation, which would let a change overtake a
   stop. Also rejected: an automatic try after a restart, which "When the bot stops" in the core
   specification rules out.
+
+  **A fifth exception: the swap of the `/driver` commands after a change of test mode.** Switching
+  test mode on or off, a test season's completion, abort and cancellation each end with the server
+  showing the `/driver` the flag calls for, the member group or the test-mode group
+  (`swap_driver_commands`, `core/services/test_mode/driver_commands.py`). The swap is an ACT step
+  after the commit, and carries `Step.on_fault` as role moves do: where Discord refuses it, or the
+  league's server is missing from the cache, the queue does not stop the lane but marks the job
+  done with the reply and log line saying the `/driver` commands could not be changed and will be
+  put right when the bot next restarts. The change it follows stands, and nothing behind it on the
+  lane waits on it, so a stopped lane would hold every change for a lost command definition.
+  Discord's refusal of the swap's sync is its own failure, never a rule broken by the league, so
+  its remedy is a restart rather than the change run again. Off the queue, start-up and `!sync` sync
+  the same trees and catch the refusal as `discord.HTTPException` by name, posting it through
+  `start_up_failure_line`. A factory reset and `/bot init` run no swap; their replies name the
+  restart. *Rejected:* stopping the lane on a refused swap, as other jobs do, which would hold the
+  lane for a fault that only a restart cures and that no Retry could cure; and a swap in a step
+  before the save, which would show the wrong `/driver` where the save then failed.
 - **A failure that cannot be recorded is logged, and the job tried again.** Where the stop's own
   save raises, nothing is marked stopped: the lane's catch-all (`ChangeQueue._work_lane`, one for each lane) puts the
   error in the host's log, that lane's worker pauses and looks again, and the job runs again, so that its
