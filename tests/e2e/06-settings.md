@@ -276,9 +276,11 @@ Each view answers you alone and writes nothing to the log channel.
         Date format: `DDD_DD_MON_YYYY`
         Fastest-lap colour: `#A020F0`
       ```
-      and the output aspects list the nine outputs of `00-base.md` step 14, each switched on.
-      > UNVERIFIED: the icon each aspect is shown with, and whether any carries a `↳` reason beneath
-      > it; that depends on the templates and artwork on the host.
+      and the output aspects list the nine outputs of `00-base.md` step 14, each as
+      `  ✅ <Label>`, and no line beneath the list: all nine post, so the footer naming outputs
+      recorded but not yet in effect is left out (`PENDING_POSTING_ASPECTS` is empty).
+      An output shown `  ⚠️ <Label>` with a `      ↳ <reason>` beneath it is one whose template
+      or artwork on this host is not valid; put the host right and run the step again.
     - **Log:** nothing.
 
 17. **A view refused.** **Do**, in `#d1-results`: `/season status`. Then, in `#bot-commands`,
