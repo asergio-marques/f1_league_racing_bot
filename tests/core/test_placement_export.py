@@ -336,10 +336,6 @@ async def test_an_unassigned_fake_driver_with_no_signup_is_listed_by_its_test_na
     assert (row["platform"], row["driver_type"], row["total_lap_fmt"]) == ("—", "—", "—")
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#600: the unassigned signups export names a fake driver with no signup by its raw ID",
-)
 async def test_an_unassigned_fake_driver_with_no_signup_is_exported_by_its_test_name(tmp_path):
     """A fake driver left Unassigned has filed no signup: the unassigned signups export names it
     by its test name, not its raw ID, seeded first, and every answer it never gave is blank."""

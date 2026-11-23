@@ -275,10 +275,21 @@ class SignupModuleService:
         on the ordinal is wrong: it is a chronological position
         recomputed on every read, so a slot added or removed since the driver signed up
         would put their X under somebody else's time.
+
+        A driver whose signup holds no name is named as core names one without it
+        (`resolve_driver_name`): a fake driver left Unassigned, which holds no signup, by its test
+        name, and any other by their account.
         """
         slots_ordered = sorted(slots, key=lambda s: s.slot_sequence_id)
+        unsettled = await self._unsettled_drivers()
+        identities = await driver_names_for_profiles(
+            self._db_path, [driver["id"] for driver, _row in unsettled]
+        )
         results = []
-        for i, (driver, row) in enumerate(await self._unsettled_drivers(), start=1):
+        for i, (driver, row) in enumerate(unsettled, start=1):
+            account, test_name = identities.get(
+                driver["id"], (driver["discord_user_id"], None)
+            )
             total_ms = None if row is None else row["total_lap_ms"]
             slot_ids_raw: list[str] = json.loads((row and row["availability_slot_ids"]) or "[]")
             slot_presence = {s.slot_sequence_id: (s.slot_id in slot_ids_raw) for s in slots_ordered}
@@ -289,9 +300,8 @@ class SignupModuleService:
             preferred_team_3 = preferred_teams_raw[2] if len(preferred_teams_raw) > 2 else ""
 
             display_name = (
-                (row and (row["server_display_name"] or row["discord_username"]))
-                or driver["discord_user_id"]
-            )
+                row and (row["server_display_name"] or row["discord_username"])
+            ) or resolve_driver_name(discord_user_id=account, test_display_name=test_name)
             results.append({
                 "seed": i if driver["current_state"] == "UNASSIGNED" else None,
                 "state": driver["current_state"],
