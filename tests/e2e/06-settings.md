@@ -141,3 +141,153 @@ them.
    - `bot.staged.db` and `scheduler.staged.db` are gone; `bot.bkup.db`, `scheduler.bkup.db` and
      `backup.lock` are still there.
    - Nothing posted on Discord.
+
+---
+
+## Part B — The views
+
+Each view answers you alone and writes nothing to the log channel.
+
+6. **Do:** `/season status`
+
+   **Expect:**
+   - **Reply:**
+     ```
+     **Active Season** (ID: 1)
+     Start date: <the date 00-base.md step 18 ran, YYYY-MM-DD>
+     Divisions: 2
+
+     📂 **Division 1** — Next round: R1 @ Silverstone Circuit <t:<unix time of <YEAR+1>-03-01 20:00 UTC>:F>
+     📂 **Division 2** — Next round: R1 @ Autodromo Nazionale Monza <t:<unix time of <YEAR+1>-03-01 21:00 UTC>:F>
+     ```
+     Discord shows each timestamp in your own time zone. The start date is the day the season was
+     set up, not its first round (`season_setup_change`). The next round is the first not
+     cancelled, not a Mystery round, and not yet holding all three weather phases
+     (`SeasonCog.season_status`); nothing has been advanced, so it is round 1 in both.
+   - **Log:** nothing.
+
+7. **Do:** `/track list`
+
+   **Expect:**
+   - **Reply:** headed `**Tracks (28)**`, then a code block of 28 lines in id order, each
+     `<id, two digits> | <circuit> | <grand prix>`, from `01 | Albert Park Circuit | Australian Grand Prix`
+     to `28 | Circuit Paul Ricard | French Grand Prix`. Among them the base's tracks:
+     `12 | Silverstone Circuit | British Grand Prix`, `13 | Circuit de Spa-Francorchamps | Belgian Grand Prix`,
+     `14 | Hungaroring | Hungarian Grand Prix`, `15 | Circuit Zandvoort | Dutch Grand Prix` and
+     `16 | Autodromo Nazionale Monza | Italian Grand Prix`.
+   - **Log:** nothing.
+
+8. **Do:** `/team list`
+
+   **Expect:** as `00-base.md` step 17: headed `**Server team list:**`, the eleven teams `ALP` to
+   `KLO`, then `Reserve`. No log line.
+
+9. **Do:** `/weather config view`
+
+   **Expect:**
+   - **Reply:**
+     ```
+     **Weather deadlines**
+       • Phase 1 deadline: 5 day(s) before race
+       • Phase 2 deadline: 2 day(s) before race
+       • Phase 3 deadline: 2h before race
+     ```
+     the packaged defaults, which the base never changed.
+   - **Log:** nothing.
+
+10. **Do:** `/attendance config show`
+
+    **Expect:**
+    - **Reply:**
+      ```
+      **Attendance Configuration**
+
+      **Timing**
+        RSVP notice: **5** day(s) before race
+        Last reminder: **24** hr(s) before race
+        RSVP deadline: **2** hr(s) before race
+
+      **Penalties**
+        No-RSVP: **1** pt(s)
+        Absent penalty: **1** pt(s)
+        No-show (ACCEPTED + absent): **1** pt(s)
+
+      **Auto-actions**
+        Auto-reserve threshold: **disabled**
+        Auto-sack threshold: **disabled**
+      ```
+      the packaged defaults (`001_baseline.sql`, `attendance_config`), which the base never changed.
+    - **Log:** nothing.
+
+11. **Do:** `/results config list scope:Server`, then `/results config list scope:Season`
+
+    **Expect:** as `04-points-and-syncs.md` steps 4 and 5: `Half Points` and `Standard`, each with
+    its four session types, under `**Points configurations — this server**` and then
+    `**Points configurations — season 1**`. No log line.
+
+12. **Do:** `/signup config view`
+
+    **Expect:**
+    - **Reply:** an embed titled **Signup Module Configuration**, its fields in this order:
+
+      | Field | Value |
+      |---|---|
+      | Channel | `<#<signup id>>` |
+      | Base Role | `<@&<Members role id>>` |
+      | Driver Role | `<@&<Driver role id>>` |
+      | Signups Open | `No` |
+      | Nationality Required | `ON` |
+      | Time Type | `Time Trial` |
+      | Time Image Required | `ON` |
+
+      The three settings are the module's defaults (`signup_module_service.settings_on`), which the
+      base never changed.
+    - **Log:** nothing.
+
+13. **Do:** `/signup time-slot list`
+
+    **Expect:**
+    - **Reply:** `No availability slots configured.`
+    - **Log:** nothing.
+
+14. **Do:** `/signup unassigned list`
+
+    **Expect:**
+    - **Reply:** `No unsettled signups found.` The fake drivers are seated, so Assigned
+      (`test_roster_service`), and an Assigned driver is not unsettled.
+    - **Log:** nothing.
+
+15. **Do:** `/signup unassigned export`
+
+    **Expect:**
+    - **Reply:** `No unsettled signups found.`, and no file.
+    - **Log:** nothing.
+
+16. **Do:** `/images config view`
+
+    **Expect:**
+    - **Reply:** opening `**Image module configuration**`, then `**Templates**`,
+      `**Asset directories**`, `**Presentation**`, `**Per-tier colours**` and `**Output aspects**`.
+      The presentation section reads, the packaged defaults:
+      ```
+      **Presentation**
+        Time zone: `UTC`
+        Clock: `24H`
+        Date format: `DDD_DD_MON_YYYY`
+        Fastest-lap colour: `#A020F0`
+      ```
+      and the output aspects list the nine outputs of `00-base.md` step 14, each switched on.
+      > UNVERIFIED: the icon each aspect is shown with, and whether any carries a `↳` reason beneath
+      > it; that depends on the templates and artwork on the host.
+    - **Log:** nothing.
+
+17. **A view refused.** **Do**, in `#d1-results`: `/season status`. Then, in `#bot-commands`,
+    take `@League Admin` off yourself in Discord, holding neither `@League Admin` nor
+    `@League Manager`, and **do:** `/track list`.
+
+    **Expect:**
+    - **Reply**, for the first: `⛔ This command can only be used in the configured interaction channel.`
+    - **Reply**, for the second: `⛔ You don't have permission to use this command. You need **League Manager**, or **League Admin**.`
+    - **Log:** nothing for either: a view's refusal is not recorded.
+    - **Then:** give yourself `@League Admin` again. Every later step needs it, unless it says
+      otherwise.
