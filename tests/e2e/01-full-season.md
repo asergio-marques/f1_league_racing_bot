@@ -1541,7 +1541,8 @@ two drivers). The sprint sessions and the feature sessions take the same two pas
         Bruno Bianchi drops from fifth to sixth (`+16.000` against Samuel Shaw's `+14.250`);
         the other three sessions as they were;
       - `#d1-standings`: drivers and teams again, `Post-Race Penalty Results`: Bruno Bianchi 41,
-        Samuel Shaw 36, the rest as step 66;
+        Samuel Shaw 36, the rest as step 66; teams: Alpha Racing 50, Juliett GP 36, the rest
+        unchanged;
       - `#d1-verdicts`: the verdict banner and one verdict, Bruno Bianchi `5 seconds added` in
         the Sprint Race;
       - `#d1-attendance`: the attendance sheet after Round 2. Pim Prasert 5, Dirk Dekker 4, Adam
@@ -1907,7 +1908,8 @@ same two pastes.
 
 97. **Do:** `/test-mode advance`
 
-    **Expect:** as step 51, with `**Round 2**` and `round: 2`.
+    **Expect:** as step 51, with `**Round 2**` and `round: 2`: the Phase 3 message of step 81
+    deleted.
 
 98. **Do:** `/test-mode advance`
 
@@ -2185,7 +2187,8 @@ the auto-sack. The two thresholds cannot both be active, so the auto-reserve goe
        No sanction was owed.
        ```
      - **Posts** (`#d1-attendance`): the attendance sheet posted again, the previous one deleted,
-       its totals as step 108 left them, its plate now `SACKED AT 6`.
+       its totals as step 108 left them, its plate now `SACKED AT 6`, Pim Prasert (7) drawing the
+       limit-reached mark.
      - **Log:**
        ```
        <you> | /attendance sync | Success
@@ -2485,7 +2488,8 @@ season ends.
 
 132. **Do:** `/test-mode advance`
 
-     **Expect:** as step 51, with `**Round 3**` and `round: 3`.
+     **Expect:** as step 51, with `**Round 3**` and `round: 3`: the Phase 3 message of step 120
+     deleted.
 
 133. **Do:** `/test-mode advance`
 
