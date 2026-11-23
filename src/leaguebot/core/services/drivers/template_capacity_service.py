@@ -1,32 +1,23 @@
 """TemplateCapacityService — whether the image templates could draw a placement's driver (036 /
 Constitution XIV.12).
 
-The four capacity guards a placement is held to, and the test roster's: the reserve block, the attendance sheet's rows, the driver standings' rows and
-whatever an image type declares in code. Each counts the seats the change would fill, reads that
-count from the database, and asks the image module's drawing, handed by
-the builder (`image_drawing.ImageDrawing`), whether it could draw that many. It holds no template,
-posts nothing, and is handed no bot: core reaches the image module through the drawing alone.
-
-**Which connection it reads on.** A placement's guard runs in a change's check and reads on a
-connection of its own. The test roster's is in two halves, because the roster change judges inside
-its save and a save waits on nothing but its own connection: the seats are counted on a handed
-connection (`roster_questions_on`, awaiting that connection alone), and the drawing is asked
-before the save opens, in the change's check (`hold_roster`), whose answers the judge then reads
-back (`RosterCapacity`). The save judges once more with no drawing asked: the drawing reads other
-connections and parses every template, which takes seconds on the Raspberry Pi, and the lane runs
-one change at a time, so what the check was told still holds as the save begins.
+The four capacity guards a placement is held to: the reserve block, the attendance sheet's rows,
+the driver standings' rows and whatever an image type declares in code. Each counts the seats the
+change would fill, reads that count from the database, and asks the image module's drawing, handed
+by the builder (`image_drawing.ImageDrawing`), whether it could draw that many. It holds no
+template, posts nothing, and is handed no bot: core reaches the image module through the drawing
+alone. A guard runs in a change's check and reads on a connection of its own.
 
 **The guards' one catch.** Reading the seats and asking the drawing are one guard, not two
-(`_ask_drawing`). **The guards that run by caller:** the placement service asks `guard_image_capacity`
-of an assignment and a move (`guard_assign`, `guard_move`), the test roster's check asks
-`hold_roster`, and the server's test-mode flag, a precondition of an assignment alone,
-stays the placement service's.
+(`_ask_drawing`). **The guards that run by caller:** the placement service asks
+`guard_image_capacity` of an assignment and a move (`guard_assign`, `guard_move`), and the server's
+test-mode flag, a precondition of an assignment alone, stays the placement service's. A fake
+driver is placed as any driver is, so it meets the same guards.
 """
 from __future__ import annotations
 
 import logging
-from collections.abc import Awaitable, Callable, Mapping
-from dataclasses import dataclass
+from collections.abc import Awaitable, Callable
 
 import aiosqlite
 
@@ -52,62 +43,6 @@ def _refusal(guard: str, problem: CapacityProblem) -> str:
     if guard == "declared":
         return f"{problem.problem}. {problem.remedy}"
     return f"{problem.problem}. The driver was **not** assigned. {problem.remedy}"
-
-
-def _counted(seated: int) -> Callable[[], Awaitable[int | None]]:
-    """A count already taken, in the shape `_ask_drawing` reads one."""
-
-    async def count() -> int | None:
-        return seated
-
-    return count
-
-
-@dataclass(frozen=True)
-class CapacityQuestion:
-    """What a test roster would ask the drawing: whether *seated* drivers fit the template *guard*
-    names (`reserve`, `sheet` or `standings`)."""
-
-    guard: str
-    seated: int
-
-
-class RosterCapacity:
-    """The test roster's capacity guard as the roster change's judge reads it, in the two passes
-    the change's check makes (`TemplateCapacityService.hold_roster`).
-
-    The first pass is handed one with no verdicts: the judge counts the seats it would seat on its
-    own connection (`refusal_on`) and the questions are recorded, nothing refused. The drawing is
-    asked about them, and the second pass is handed the answers: the same judge, the same counts,
-    refusing where the drawing said an overflow. A judge handed none holds the roster to no
-    capacity, as the save's does.
-    """
-
-    def __init__(
-        self, service: TemplateCapacityService, verdicts: Mapping[CapacityQuestion, str] | None = None
-    ) -> None:
-        self._service = service
-        self._verdicts = verdicts or {}
-        #: What `refusal_on` was asked, in the order it was asked.
-        self.questions: list[CapacityQuestion] = []
-
-    async def refusal_on(
-        self, db: aiosqlite.Connection, division_id: int, added: Mapping[str, int]
-    ) -> str | None:
-        """The refusal a real placement into the same teams would meet, as the drawing has said it,
-        or None. Counts the seats on *db*, the connection the judge reads on, and awaits nothing
-        else.
-
-        *added* maps each team of *division_id* to the number of drivers the roster seats in it. A
-        team the division does not hold is skipped: the roster service refuses it in its own words.
-        """
-        questions = await self._service.roster_questions_on(db, division_id, added)
-        self.questions.extend(questions)
-        for question in questions:
-            refusal = self._verdicts.get(question)
-            if refusal is not None:
-                return refusal
-        return None
 
 
 async def _is_reserve_team_on(
@@ -231,8 +166,7 @@ class TemplateCapacityService:
 
         Reads its own count and asks the image module's handed drawing (``_ask_drawing``)
         under the one catch: never raises for its own reasons, only a genuine over-capacity
-        the drawing reports may. A test roster is asked the same of the reserve block by
-        ``roster_questions_on``.
+        the drawing reports may.
         """
 
         async def reserves_seated() -> int | None:
@@ -350,75 +284,3 @@ class TemplateCapacityService:
             return ((row["seated"] if row else 0) or 0) + 1
 
         await self._guard("declared", division_seated)
-
-    async def roster_questions_on(
-        self, db: aiosqlite.Connection, division_id: int, added: Mapping[str, int]
-    ) -> list[CapacityQuestion]:
-        """What a test roster would ask the drawing for the division, in the order a real
-        placement's guards ask it: the reserve block, the attendance sheet, the driver standings.
-
-        *added* maps each team of *division_id* to the number of drivers the change seats in it.
-        Test mode seats its fake drivers without passing through ``guard_assign``, so without these
-        questions a roster larger than the league's templates could hold would be accepted, and the
-        rehearsal would pass a configuration a real season would refuse.
-
-        **The count is per division, summed across its teams.** A bulk roster seats a whole
-        division at once, and two teams that each fit on their own can together outgrow the
-        standings. The three guards are asked once each, measuring the reserves, every driver, and
-        the classified drivers respectively. A team the division does not hold is skipped: the
-        roster service refuses it in its own words. The declared-capacity guard of
-        ``guard_image_capacity`` is not asked: every catalogue declares ``capacity=None`` today, so
-        it bounds no placement, real or test.
-
-        Reads on *db* and awaits nothing else, being run inside a save as well as in a check, and
-        commits nothing. A fault reading the seats goes up with the judge's own reads; it is not
-        the guard's catch (``_ask_drawing``), which is the drawing's.
-        """
-        reserves = classified = 0
-        for team_name, count in added.items():
-            is_reserve = await _is_reserve_team_on(db, division_id, team_name)
-            if is_reserve is None or count <= 0:
-                continue
-            if is_reserve:
-                reserves += count
-            else:
-                classified += count
-
-        questions: list[CapacityQuestion] = []
-        if reserves:
-            questions.append(
-                CapacityQuestion("reserve", await _reserves_on(db, division_id) + reserves)
-            )
-        if reserves + classified:
-            questions.append(
-                CapacityQuestion("sheet", await _drivers_on(db, division_id) + reserves + classified)
-            )
-        if classified:
-            questions.append(
-                CapacityQuestion("standings", await _classified_on(db, division_id) + classified)
-            )
-        return questions
-
-    async def hold_roster(
-        self, dry_run: Callable[[RosterCapacity], Awaitable[object]]
-    ) -> RosterCapacity:
-        """The capacity guard for a test roster's judge, with the drawing asked, before any save
-        is open.
-
-        *dry_run* is the judge, run once on a connection of the check's own and handed a
-        `RosterCapacity` that records what it counts and refuses nothing. The drawing is then
-        asked each question recorded (``_ask_drawing``, under the one catch), and what is handed
-        back refuses as a real placement into the same teams would be refused: the caller runs the
-        judge again with it, and the judge reads the answers. A service handed no drawing asks nothing, so the
-        judge is not run for it.
-        """
-        if self._drawing is None:
-            return RosterCapacity(self)
-        recording = RosterCapacity(self)
-        await dry_run(recording)
-        verdicts: dict[CapacityQuestion, str] = {}
-        for question in dict.fromkeys(recording.questions):
-            problem = await self._ask_drawing(question.guard, _counted(question.seated))
-            if problem is not None:
-                verdicts[question] = _refusal(question.guard, problem)
-        return RosterCapacity(self, verdicts)
