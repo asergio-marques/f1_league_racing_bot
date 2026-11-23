@@ -47,8 +47,10 @@ async def swap_driver_commands(
     """Show the `/driver` the flag calls for and sync both trees: with test mode on, no `/driver`
     on the global tree and the *variant* on the league's server; off, the *member* group on the
     global tree and none on the server. Where no server is claimed, the member group on the
-    global tree, synced, and nothing else: the global commands, `/bot init` among them, must
-    reach Discord before a league can claim a server. Returns the global commands synced. Raises
+    global tree, synced, and no `/driver` on any server the bot is on: the global commands,
+    `/bot init` among them, must reach Discord before a league can claim a server, and a factory
+    reset under test mode leaves the old league's server showing the test-mode group, which only
+    a restart can take off, there being no claim to find it by. Returns the global commands synced. Raises
     `GuildUnavailable` where a claimed server is not in the cache (the global tree synced first
     where test mode is off), and Discord's refusal of a sync as it came."""
     async with get_connection(bot.db_path) as db:
@@ -57,7 +59,11 @@ async def swap_driver_commands(
     test_mode = row is not None and bool(row["test_mode_active"])
     if await bot.league_settings.get_league_server_id() is None:
         bot.tree.add_command(member, override=True)
-        return await bot.tree.sync()
+        synced = await bot.tree.sync()
+        for server in bot.guilds:
+            bot.tree.remove_command(DRIVER_GROUP, guild=server)
+            await bot.tree.sync(guild=server)
+        return synced
     guild = await league_guild(bot)
     if guild is None:
         if not test_mode:
