@@ -423,3 +423,77 @@ round's start and the check-in's jobs belong to modules still on
       Every other output still `✅`. The output itself is left on: switching a module off
       changes none of the image settings.
     - **Log:** nothing; it is a view.
+
+---
+
+## Part E — Attendance off
+
+Switching attendance off lowers its flag and keeps its settings and every division's check-in
+and attendance channels for when it comes back; it clears only each division's record of its
+attendance sheet, which is a message and not a setting (`AttendanceService.switch_off_on`). It
+removes no job: the check-in's jobs stay in the scheduler and do nothing when they fire, each
+reading the flag first. Nothing already posted is deleted.
+
+27. **Do:** `/module disable module_name:attendance`
+
+    **Expect:**
+    - **Ack:** `Turning the attendance module off`
+    - **Then:** `✅ Attendance module disabled.`
+    - **Log:** `<you> | /module disable attendance | Success`
+    - **Posts:** none. The call of step 25 stays in `#d1-rsvp`, its buttons with it; each
+      division's attendance sheet stays in its `#dN-attendance`.
+
+28. **Do:** `/test-mode review`
+
+    **Expect:**
+    - **Reply:** results' cell alone is left on every round:
+      ```
+      **Division 1**
+        Round 1 · Silverstone Circuit · <YEAR+1>-03-01  Results: ⏳
+        Round 2 · Hungaroring     · <YEAR+1>-03-08  Results: ⏳
+        Round 3 · TBA             · <YEAR+1>-03-15  Results: ⏳
+      ```
+      and Division 2's three rounds likewise. No `RSVP`, `Last`, `Deadline` or `Cleared` cell,
+      Round 1's call of step 25 included.
+    - **Log:** nothing; it is a view.
+
+29. **The call's buttons answer nobody.** **Do:** in `#d1-rsvp`, press **✅ Accept** on the call of
+    step 25.
+
+    **Expect:**
+    - **Reply:** `❌ The Attendance module is switched off for this server, so check-in is no longer running. Your answer has not been recorded.`
+    - **Log:** `⛔ the “Accept” button of a check-in call refused for <you> — The Attendance module is switched off for this server, so check-in is no longer running. Your answer has not been recorded.`
+    - The call is not redrawn. The module is judged before who pressed: that you are no driver
+      of the division is never reached.
+
+30. **Do:** `/attendance test rsvp division:Division 1`
+
+    **Expect:**
+    - **Reply:** `❌ The Attendance module is not enabled, so there is no check-in to set.` No form opens.
+    - **Log:** ``⛔ `/attendance test rsvp` refused for <you> — The Attendance module is not enabled, so there is no check-in to set.``
+
+31. **Do:** `/attendance config no-show-penalty points:4`
+
+    **Expect:**
+    - **Reply:** ``❌ The Attendance module is not enabled. Use `/module enable attendance` first.``
+    - **Log:** ``⛔ `/attendance config no-show-penalty` refused for <you> — The Attendance module is not enabled. Use `/module enable attendance` first.``
+    - The no-show penalty is still 1: Part J reads it.
+
+32. **Do:** `/attendance config show`
+
+    **Expect:**
+    - **Reply:** ``❌ The Attendance module is not enabled. Use `/module enable attendance` first.``
+    - **Log:** nothing: a view, refused, records nothing.
+
+33. **Do:** `/images config view`
+
+    **Expect:**
+    - **Reply:** as step 26, and the two outputs attendance draws flagged as well:
+      ```
+        ⚠️ Attendance sheet
+            ↳ the attendance module is switched off, so there'd be nothing to draw. Switch it on with `/module enable module_name:attendance`
+        ⚠️ Check-in call
+            ↳ the attendance module is switched off, so there'd be nothing to draw. Switch it on with `/module enable module_name:attendance`
+      ```
+      with `⚠️ Weather forecasts` and its reason as at step 26, and the other six `✅`.
+    - **Log:** nothing; it is a view.
