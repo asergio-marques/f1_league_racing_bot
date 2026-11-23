@@ -21,6 +21,9 @@ league admin role.
 |---|---|
 | [00-base.md](00-base.md) | Builds the base from no database file: the server's roles and channels, every module on, teams, a two-division test season with its calendar and seated fake drivers, approved. Ends by saving that state as a **locked backup**. |
 | `01-full-season.md` | Restores the base and runs the season to completion. |
+| `02-roster-changes.md` | Restores the base and makes roster and team changes in test mode. |
+| `03-calendar-changes.md` | Restores the base and changes the calendar and the divisions mid-season. |
+| `04-points-and-syncs.md` | Restores the base and works the points configurations, a mid-season amendment of the season's points, and the results and standings syncs. |
 
 Run **`00-base.md` first**, from no database file. It fixes, in its **Fixture** table, every
 name and value the other specs reuse: channels, roles, divisions, teams and drivers.
@@ -82,6 +85,12 @@ a picture.
 Discord fault — a missing permission, a deleted channel, a role above the bot's own — is not a
 failure of the bot, and a spec does not test for one. If a step fails because the server is not
 as the Fixture says, put the server right and run the step again.
+
+## Not covered
+
+**Everything that needs a real driver.** The specs run in test mode, on fake drivers who have no
+Discord account, so every `/driver` command, each of which takes a server member, is left out, and
+so is the signup flow: test mode opens no signup window.
 
 ## Keeping them true
 
