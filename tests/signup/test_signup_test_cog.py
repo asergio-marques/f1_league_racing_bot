@@ -198,7 +198,7 @@ async def test_signup_start_is_refused(tmp_path, standing, named, words):
 
 @pytest.mark.xfail(strict=True, reason=_NOT_BUILT)
 @pytest.mark.parametrize("named", _MOCK_NAMED)
-async def test_cancel_of_a_fake_driver_by_id_asks_what_the_member_cancel_asks(
+async def test_cancel_of_a_fake_driver_by_mention_or_id_asks_what_the_member_cancel_asks(
     tmp_path, monkeypatch, named
 ):
     """Test mode is on. Kimi, a real driver, and Mock Alpha, a fake one, each have a signup
