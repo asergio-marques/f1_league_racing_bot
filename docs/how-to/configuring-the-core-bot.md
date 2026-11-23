@@ -36,7 +36,7 @@ You do not need to read those first. Start here.
 | Stage | What happens in it | How it ends |
 |---|---|---|
 | **Configuration** | You settle the team list, the modules and their settings, and test mode | `/season config-review`, confirmed |
-| **Waiting** | Nothing yet — the season waits for its signup window. Skipped where the signup module is off or test mode is on | `/signup open` |
+| **Waiting** | Nothing yet — the season waits for its signup window. Skipped where the signup module is off | `/signup open` |
 | **Signups** | Drivers sign up | The window closes |
 | **Placements** | You build the divisions and calendar, and place the drivers | `/season placements-review`, confirmed |
 | **Ongoing** | The season races. A new signup window may open mid-season, and its drivers are placed and confirmed the same way | Every division finishes |
@@ -309,7 +309,7 @@ Where nothing is wrong, the review ends by asking whether you confirm the config
 When it goes through, the season moves on:
 
 - **With the signup module on**, to **Waiting** — its signup window is yours to open next, in step 7.
-- **With the signup module off, or test mode on**, straight to **Placements** — skip to step 8.
+- **With the signup module off**, straight to **Placements** — skip to step 8.
 
 > **Every one of these checks runs again when you confirm placements.** Only the signup settings and the team list are fixed at this point, so a points configuration or a template can still go wrong in between — and the placements review will say so.
 
@@ -468,7 +468,7 @@ A driver may hold one seat per division. A team runs out of seats; the Reserve t
 
 **Each of the three answers at once** — "Assigning **Alice** to **Ferrari** in **Pro**", "Unassigning …", "Turning down **Bob**" — and updates that reply once it has run, judged again as it starts: a seat filled, a season moved on or a driver no longer Unassigned meanwhile refuses it then. `/driver reject` takes the driver role back once the driver is turned down; where Discord refuses that, the reply says so under **⚠️ Done, but on Discord:**, for you to take it by hand, and the rejection stands. With the signup module on, a rejection also withdraws the approval of the driver's signup. If a save fails it stops the queue (see [When a job stops the queue](#when-a-job-stops-the-queue)); if a league admin discards it, nothing was changed, and the reply says so and to run the command again.
 
-With test mode on, fake drivers are placed by `/test-mode roster add` instead, and `/driver assign` is refused for real ones. Every `/driver` command then names its driver by mention or ID, and acts on a fake driver as on a real one — see [Testing with test mode](test-mode.md).
+With test mode on, a fake driver is created by `/test-mode roster add`, signed up by `/signup start` and placed here once approved, and `/driver assign` is refused for real ones. Every `/driver` command then names its driver by mention or ID, and acts on a fake driver as on a real one — see [Testing with test mode](test-mode.md).
 
 ---
 
@@ -888,7 +888,7 @@ A button pressed by someone who may not use it, or on a notice whose job no long
 |---|---|
 | A command refuses with a short message only you can see | You are not in the command channel, or you hold neither the interaction role nor the league admin role. Check the channel first — it is almost always the channel |
 | A command does not appear in Discord's menu at all | The command list has not reached your server yet. Whoever hosts the bot can push it through immediately with `!sync` |
-| `/driver` takes a member, though test mode is on (or a text field, though it is off) | The bot could not change the `/driver` commands when test mode last changed, and the reply said so. `!sync` shows the right one at once; a restart does the same. Where no server is claimed, as after a factory reset, either one syncs the global commands and takes `/driver` off every server the bot is on |
+| `/driver` takes a member, though test mode is on (or a text field, though it is off) | The bot could not change the `/driver` and `/signup` commands when test mode last changed, and the reply said so. `!sync` shows the right ones at once; a restart does the same. Where no server is claimed, as after a factory reset, either one syncs the global commands and takes `/driver` and `/signup` off every server the bot is on |
 | "This command is a league admin's" | It asks for the league admin role, which you do not hold. The table at the top of this guide lists which commands those are; someone holding that role has to run them |
 | "No league admin role is configured" | Your league was set up before the bot had one. A server administrator can put that right from any channel with `/bot admin-role`, and every league admin command works again |
 | The bot placed a driver but the role did not appear | The bot's own role sits below the role it is trying to grant. Move it up |
