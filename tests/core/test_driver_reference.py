@@ -21,8 +21,6 @@ from leaguebot.core.models.driver_names import SignupName, SignupNames
 from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.framework.utils.hooks import AwaitedHook
 
-PENDING = "#600: no service resolves a driver named as text, nor lists drivers by name"
-
 LEWIS, GHOST, KIMI_OLD, KIMI = "101", "9000000000000000001", "201", "202"
 
 
@@ -72,7 +70,6 @@ async def _league(tmp_path, *, extra: int = 0) -> str:
     return db_path
 
 
-@pytest.mark.xfail(strict=True, reason=PENDING)
 @pytest.mark.parametrize("text", [f"<@{LEWIS}>", LEWIS, f"  {LEWIS}  "])
 async def test_a_mention_or_an_id_resolves_to_the_driver(tmp_path, text):
     from leaguebot.core.services.drivers.driver_reference import resolve_driver
@@ -83,7 +80,6 @@ async def test_a_mention_or_an_id_resolves_to_the_driver(tmp_path, text):
     assert (driver.profile_id, driver.discord_user_id, driver.is_test_driver) == (1, LEWIS, False)
 
 
-@pytest.mark.xfail(strict=True, reason=PENDING)
 @pytest.mark.parametrize("text", ["Lewis", "", "<#101>", "555"])
 async def test_text_naming_no_driver_resolves_to_none(tmp_path, text):
     from leaguebot.core.services.drivers.driver_reference import resolve_driver
@@ -91,7 +87,6 @@ async def test_text_naming_no_driver_resolves_to_none(tmp_path, text):
     assert await resolve_driver(await _league(tmp_path), text) is None
 
 
-@pytest.mark.xfail(strict=True, reason=PENDING)
 async def test_a_past_account_resolves_to_the_drivers_current_one(tmp_path):
     from leaguebot.core.services.drivers.driver_reference import resolve_driver
 
@@ -101,7 +96,6 @@ async def test_a_past_account_resolves_to_the_drivers_current_one(tmp_path):
     assert (driver.profile_id, driver.discord_user_id) == (3, KIMI)
 
 
-@pytest.mark.xfail(strict=True, reason=PENDING)
 async def test_a_fake_drivers_id_resolves_to_its_profile(tmp_path):
     from leaguebot.core.services.drivers.driver_reference import resolve_driver
 
@@ -113,7 +107,6 @@ async def test_a_fake_drivers_id_resolves_to_its_profile(tmp_path):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=PENDING)
 async def test_drivers_are_offered_by_name_fake_by_test_name_real_by_signup(tmp_path):
     from leaguebot.core.services.drivers.driver_reference import driver_choices
 
@@ -129,7 +122,6 @@ async def test_drivers_are_offered_by_name_fake_by_test_name_real_by_signup(tmp_
     assert [(c.name, c.value) for c in filtered] == [("Ghost", GHOST)]
 
 
-@pytest.mark.xfail(strict=True, reason=PENDING)
 async def test_the_name_list_is_bounded_to_what_discord_shows(tmp_path):
     from leaguebot.core.services.drivers.driver_reference import driver_choices
 
