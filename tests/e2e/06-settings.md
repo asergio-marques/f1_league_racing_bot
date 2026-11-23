@@ -519,3 +519,124 @@ permissions again (`bot_settings.REAPPLY_HUB`), silently where Discord takes the
       and mention.
     - Nothing changed: the interaction role is the league manager tier, and is no way into the
       settings that govern it.
+
+---
+
+## Part E — The log channel and the interaction channel
+
+The two channel settings refuse at the ask a channel already holding the setting, a channel doing
+another job, and then a channel the bot lacks a permission in, each judged again as the change
+starts (`bot_settings._bot_setting`). The log channel asks for View Channel and Send Messages; the
+interaction channel for those and, with a lineup or calendar picture on, Attach Files
+(`interaction_channel_needs`). Both need the spare channels of step 1.
+
+### The log channel
+
+36. **The channel it already is.** **Do:** `/bot log-channel channel:#bot-log`
+
+    **Expect:**
+    - **Reply:** `ℹ️ <#<bot-log id>> is already the bot log channel. Nothing was changed.`
+    - **Log** (`#bot-log`): ``⛔ `/bot log-channel` refused for <you> — <#<bot-log id>> is already the bot log channel. Nothing was changed.``
+
+37. **A channel doing another job.** **Do:** `/bot log-channel channel:#d1-results`
+
+    **Expect:**
+    - **Reply:** `❌ <#<d1-results id>> is already the results channel for **Division 1**. A channel does one job — pick one that is not in use, or clear the other setting first.`
+    - **Log:** ``⛔ `/bot log-channel` refused for <you> — <#<d1-results id>> is already the results channel for **Division 1**. A channel does one job — pick one that is not in use, or clear the other setting first.``
+
+38. **A channel the bot cannot use.** **Do:** `/bot log-channel channel:#bot-locked`
+
+    **Expect:**
+    - **Reply:** `❌ The bot is missing permissions it needs in <#<bot-locked id>> as the bot log channel: Send Messages. Give the bot them there, or pick another channel. Nothing was changed.`
+      Attach Files is not named: the log channel does not ask for it.
+    - **Log:** ``⛔ `/bot log-channel` refused for <you> — The bot is missing permissions it needs in <#<bot-locked id>> as the bot log channel: Send Messages. Give the bot them there, or pick another channel. Nothing was changed.``
+
+39. **Do:** `/bot log-channel channel:#bot-log-2`
+
+    **Expect:**
+    - **Ack:** `Setting **Log channel** to <#<bot-log-2 id>>`
+    - **Then:** `✅ **Log channel** set to <#<bot-log-2 id>>.`
+    - **Log**, in **`#bot-log-2`**, not `#bot-log`: a line is delivered once its save is made, to
+      the log channel as it is then (`OutputRouter.deliver_queued`):
+      ```
+      <you> | /bot log-channel | Success
+        log_channel_id: <#<bot-log-2 id>>
+      ```
+
+40. **Its effect.** **Do:** `/bot pack confirm:no`
+
+    **Expect:**
+    - **Reply:** as step 34.
+    - **Log**, in `#bot-log-2`: the line of step 34. Nothing in `#bot-log`.
+
+41. **Putting it back.** **Do:** `/bot log-channel channel:#bot-log`
+
+    **Expect:**
+    - **Ack:** `Setting **Log channel** to <#<bot-log id>>`
+    - **Then:** `✅ **Log channel** set to <#<bot-log id>>.`
+    - **Log**, in `#bot-log`:
+      ```
+      <you> | /bot log-channel | Success
+        log_channel_id: <#<bot-log id>>
+      ```
+      Nothing more in `#bot-log-2`.
+
+### The interaction channel
+
+42. **The channel it already is.** **Do:** `/bot interaction-channel channel:#bot-commands`
+
+    **Expect:**
+    - **Reply:** `ℹ️ <#<bot-commands id>> is already the bot command channel. Nothing was changed.`
+    - **Log:** ``⛔ `/bot interaction-channel` refused for <you> — <#<bot-commands id>> is already the bot command channel. Nothing was changed.``
+
+43. **A channel doing another job.** **Do:** `/bot interaction-channel channel:#bot-log`
+
+    **Expect:**
+    - **Reply:** `❌ <#<bot-log id>> is already the bot log channel. A channel does one job — pick one that is not in use, or clear the other setting first.`
+    - **Log:** ``⛔ `/bot interaction-channel` refused for <you> — <#<bot-log id>> is already the bot log channel. A channel does one job — pick one that is not in use, or clear the other setting first.``
+
+44. **A channel the bot cannot use.** **Do:** `/bot interaction-channel channel:#bot-locked`
+
+    **Expect:**
+    - **Reply:** `❌ The bot is missing permissions it needs in <#<bot-locked id>> as the bot command channel: Send Messages, Attach Files. Give the bot them there, or pick another channel. Nothing was changed.`
+      Attach Files is named because the lineup and calendar pictures are on: a season's reviews
+      post their pictures in this channel.
+    - **Log:** ``⛔ `/bot interaction-channel` refused for <you> — The bot is missing permissions it needs in <#<bot-locked id>> as the bot command channel: Send Messages, Attach Files. Give the bot them there, or pick another channel. Nothing was changed.``
+
+45. **Do:** `/bot interaction-channel channel:#bot-commands-2`
+
+    **Expect:**
+    - **Ack:** `Setting **Interaction channel** to <#<bot-commands-2 id>>`
+    - **Then:** `✅ **Interaction channel** set to <#<bot-commands-2 id>>.`
+    - **Log:**
+      ```
+      <you> | /bot interaction-channel | Success
+        interaction_channel_id: <#<bot-commands-2 id>>
+      ```
+
+46. **Its effect.** **Do**, still in `#bot-commands`: `/team list`, then `/bot pack confirm:no`.
+
+    **Expect:**
+    - **Reply**, for each: `⛔ This command can only be used in the configured interaction channel.`
+    - **Log:** nothing for the list, a view; for the pack,
+      ``⛔ `/bot pack` refused for <you> — This command can only be used in the configured interaction channel.``
+
+47. **Do**, in `#bot-commands-2`: `/team list`
+
+    **Expect:** as `00-base.md` step 17. No log line.
+
+48. **Putting it back.** **Do**, in `#bot-commands-2`: `/bot interaction-channel channel:#bot-commands`
+
+    **Expect:**
+    - **Ack:** `Setting **Interaction channel** to <#<bot-commands id>>`
+    - **Then:** `✅ **Interaction channel** set to <#<bot-commands id>>.`
+    - **Log:**
+      ```
+      <you> | /bot interaction-channel | Success
+        interaction_channel_id: <#<bot-commands id>>
+      ```
+
+49. **Do**, in `#bot-commands`: `/team list`; then, in `#bot-commands-2`, `/team list` again.
+
+    **Expect:** the first as `00-base.md` step 17; the second refused as in step 46. No log line.
+    Every later step is run in `#bot-commands` again.
