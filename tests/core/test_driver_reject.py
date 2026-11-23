@@ -434,7 +434,6 @@ async def test_the_driver_role_goes_after_the_rejection_is_saved_and_a_refusal_i
     assert last_said(kimi) == _turned_down("Kimi")
 
 
-@pytest.mark.xfail(strict=True, reason="#600: /driver reject still takes the driver role from a fake driver")
 async def test_a_fake_driver_rejection_takes_no_role(tmp_path):
     """The core specification's fake driver, never granted or revoked a Discord role. Test mode is
     on and the season in Placements, the league's driver role set; Ghost, a fake driver, is
