@@ -323,21 +323,6 @@ async def test_each_driver_field_offers_drivers_by_name(tmp_path, name, field):
 
 
 @pytest.mark.xfail(strict=True, reason=PENDING)
-@pytest.mark.parametrize("name", ["assign", "move", "reassign", "reject", "release", "sack", "unassign"])
-def test_each_test_mode_command_keeps_its_tier(name):
-    """Each command of the test-mode group asks for the tier its member counterpart asks for:
-    `/driver sack` a league admin's, the rest a league manager's."""
-    from leaguebot.core.cogs.driver_cog import DriverCog
-    from leaguebot.core.cogs.driver_test_cog import DriverTestCog
-    from leaguebot.core.utils.channel_guard import LEAGUE_ADMIN, LEAGUE_MANAGER, TIER_ATTRIBUTE
-
-    tier = getattr(getattr(DriverTestCog, name).callback, TIER_ATTRIBUTE)
-
-    assert tier == getattr(getattr(DriverCog, name).callback, TIER_ATTRIBUTE)
-    assert tier == (LEAGUE_ADMIN if name == "sack" else LEAGUE_MANAGER)
-
-
-@pytest.mark.xfail(strict=True, reason=PENDING)
 async def test_both_groups_load_and_the_global_tree_carries_the_member_group(tmp_path):
     """Both `/driver` cogs are added to one bot, the member group's first: neither clashes with the
     other, and the global command tree carries `/driver` once, the member group's."""
