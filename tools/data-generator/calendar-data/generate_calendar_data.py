@@ -18,7 +18,7 @@ run, then writes one file beside this script:
 Nothing here touches the database or needs a running bot. The bot applies its own
 validation when the payload goes in, and refuses the import whole if any round fails.
 
-This is the one script in the family that reads no roster.csv: a calendar names circuits
+This is the one script in the family that reads no seating.csv: a calendar names circuits
 and dates, never drivers, so it shares the conventions of its siblings but not their
 contract.
 

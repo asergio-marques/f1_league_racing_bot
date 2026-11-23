@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Random test-roster generator — emits /test-mode roster add commands.
+"""Random test-roster generator — emits /test-mode roster add commands and a roster to import.
 
 Driver nicknames are read from names.txt beside this script - extend that file rather
 than the code. Nationalities are not a file: they are imported from the bot itself, so
@@ -10,14 +10,19 @@ build_nationality_weights).
 Interactively asks for the division names and the team names, invents a plausible
 roster across them, then writes:
 
-  - commands.txt  (always, beside this script) — one ready-to-paste command per driver
-  - roster.csv    (only with --record, in tools/data-generator/) — the ID / name / team /
-    division / nationality mapping, for the sibling generator scripts to consume
+  - commands.txt  (always, beside this script) — one ready-to-paste command per driver, a name
+    alone: the bot allocates the ID, and a driver is created with no seat
+  - roster.csv    (only with --record, in tools/data-generator/) — ID and driver name, the two
+    columns /test-mode roster add-bulk imports
+  - seating.csv   (only with --record, in tools/data-generator/) — the ID / name / team /
+    division / nationality mapping, for the sibling generator scripts to consume: the seat each
+    driver is to be given with /driver assign once its signup is approved, and the nationality
+    to answer in its wizard
   - teams.txt     (only with --record, in tools/data-generator/) — the team names alone,
-    because a team whose seats both went empty has no row in the CSV to be found by
+    because a team whose seats both went empty has no row in the seating to be found by
 
 Nothing here touches the database or needs a running bot. The synthetic IDs simply
-mirror the convention in src/leaguebot/core/services/test_mode/test_roster_service.py, so the CSV lines up with
+mirror the convention in src/leaguebot/core/services/test_mode/test_roster_service.py, so the CSVs line up with
 what the bot creates when these commands are pasted into a clean test-mode season.
 
 Usage:
@@ -41,7 +46,8 @@ SRC_DIR = SCRIPT_DIR.parent.parent.parent / "src"
 COMMANDS_PATH = SCRIPT_DIR / "commands.txt"
 NAMES_PATH = SCRIPT_DIR / "names.txt"
 CSV_PATH = DATA_DIR / "roster.csv"
-CSV_BACKUP_PATH = DATA_DIR / "roster_old.csv"
+SEATING_PATH = DATA_DIR / "seating.csv"
+SEATING_BACKUP_PATH = DATA_DIR / "seating_old.csv"
 TEAMS_PATH = DATA_DIR / "teams.txt"
 
 # ─── Generation rules ────────────────────────────────────────────────────────
@@ -76,15 +82,15 @@ DEFAULT_TEAMS = [
     "McLaren", "Mercedes", "Red Bull", "VCARB", "Williams",
 ]
 
-COMMAND_TEMPLATE = (
-    "/test-mode roster add driver_name:{name} team_name:{team} division:{division} "
-    "nationality:{nationality}"
-)
+COMMAND_TEMPLATE = "/test-mode roster add driver_name:{name}"
 
-#: Appended, never inserted. The sibling generators read roster.csv by DictReader but then
+#: The two columns /test-mode roster add-bulk imports, and no others: it refuses a file of more.
+CSV_HEADERS = ["ID", "Driver name"]
+
+#: Appended, never inserted. The sibling generators read seating.csv by DictReader but then
 #: index each row positionally (row[0]..row[3]), so a column added anywhere but the end
 #: would break them silently.
-CSV_HEADERS = ["ID", "Driver name", "Team", "Division", "Nationality"]
+SEATING_HEADERS = ["ID", "Driver name", "Team", "Division", "Nationality"]
 
 
 # ─── Name pool ───────────────────────────────────────────────────────────────
@@ -366,46 +372,52 @@ def build_roster(divisions, teams, rng, pool, nationalities):
 
 
 def format_command(row):
-    """Render one roster row as its /test-mode roster add command."""
-    _, name, team, division, nationality = row
-    return COMMAND_TEMPLATE.format(
-        name=name, team=team, division=division, nationality=nationality
-    )
+    """Render one roster row as its /test-mode roster add command: the name alone."""
+    _, name, _team, _division, _nationality = row
+    return COMMAND_TEMPLATE.format(name=name)
 
 
 # ─── Output ──────────────────────────────────────────────────────────────────
 
 def confirm_overwrite(read_line=input):
-    """Ask whether the existing CSV may be replaced. Only an explicit yes passes.
+    """Ask whether the existing seating may be replaced. Only an explicit yes passes.
 
-    One question covers both recorded files: they describe the same roster and are
-    written together, so consenting to one is consenting to the other.
+    One question covers every recorded file: they describe the same roster and are
+    written together, so consenting to one is consenting to all.
     """
-    print(f"\n{CSV_PATH} already exists.")
-    print(f"Overwriting it will move the current file to {CSV_BACKUP_PATH.name}, ")
-    print(f"and replace {TEAMS_PATH.name} alongside it.")
+    print(f"\n{SEATING_PATH} already exists.")
+    print(f"Overwriting it will move the current file to {SEATING_BACKUP_PATH.name}, ")
+    print(f"and replace {CSV_PATH.name} and {TEAMS_PATH.name} alongside it.")
     answer = read_line("Overwrite? [y/N]: ")
     return answer.strip().casefold() in ("y", "yes")
 
 
 def write_csv(roster):
-    """Back up any existing CSV, then write the roster to CSV_PATH."""
-    if CSV_PATH.exists():
-        if CSV_BACKUP_PATH.exists():
-            CSV_BACKUP_PATH.unlink()
-        CSV_PATH.rename(CSV_BACKUP_PATH)
-        print(f"Existing roster moved to {CSV_BACKUP_PATH}")
-
+    """Write the roster the bot imports, ID and driver name, to CSV_PATH, replacing any there."""
     with CSV_PATH.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.writer(handle)
         writer.writerow(CSV_HEADERS)
+        writer.writerows(row[:2] for row in roster)
+
+
+def write_seating(roster):
+    """Back up any existing seating, then write the whole mapping to SEATING_PATH."""
+    if SEATING_PATH.exists():
+        if SEATING_BACKUP_PATH.exists():
+            SEATING_BACKUP_PATH.unlink()
+        SEATING_PATH.rename(SEATING_BACKUP_PATH)
+        print(f"Existing seating moved to {SEATING_BACKUP_PATH}")
+
+    with SEATING_PATH.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(SEATING_HEADERS)
         writer.writerows(roster)
 
 
 def write_teams(teams):
     """Write the team names to TEAMS_PATH, one per line, in input order.
 
-    The CSV cannot answer "which teams exist" on its own: it lists drivers, so a team
+    The seating cannot answer "which teams exist" on its own: it lists drivers, so a team
     whose two seats both came out empty leaves no row behind. Those are precisely the
     teams the bot ranks first when it hands out reserves, so a sibling that distributes
     them needs the list itself rather than the names it can infer from the drivers.
@@ -433,7 +445,7 @@ def main(argv=None):
     parser.add_argument(
         "--record",
         action="store_true",
-        help=f"Also persist the generated roster to {CSV_PATH}.",
+        help=f"Also persist the generated roster to {CSV_PATH} and {SEATING_PATH}.",
     )
     args = parser.parse_args(argv)
 
@@ -463,9 +475,9 @@ def main(argv=None):
         print(f"\n{error}")
         return 1
 
-    # Settle the CSV before writing anything, so a refused overwrite leaves both
-    # commands.txt and the CSV exactly as they were.
-    if args.record and CSV_PATH.exists() and not confirm_overwrite():
+    # Settle the seating before writing anything, so a refused overwrite leaves
+    # commands.txt and the recorded files exactly as they were.
+    if args.record and SEATING_PATH.exists() and not confirm_overwrite():
         print("Aborted - nothing was written.")
         return 1
 
@@ -474,6 +486,7 @@ def main(argv=None):
 
     if args.record:
         write_csv(roster)
+        write_seating(roster)
         write_teams(teams)
 
     print(
@@ -483,6 +496,7 @@ def main(argv=None):
     print(f"Commands written to {COMMANDS_PATH}")
     if args.record:
         print(f"Roster written to {CSV_PATH}")
+        print(f"Seating written to {SEATING_PATH}")
         print(f"Teams written to {TEAMS_PATH}")
     return 0
 

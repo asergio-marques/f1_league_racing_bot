@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Random results generator — emits the blocks the round-results wizard expects.
 
-Drivers are read from roster.csv in the parent directory and the teams they could be
+Drivers are read from seating.csv in the parent directory and the teams they could be
 driving for from teams.txt beside it, both written by the roster generator. Who turned
 up is read from the check-in files written by the check-in generator, so a round's
 results follow from the round's RSVPs rather than being invented afresh.
@@ -46,7 +46,7 @@ SCRIPT_DIR = pathlib.Path(__file__).parent
 DATA_DIR = SCRIPT_DIR.parent
 CHECK_IN_DIR = DATA_DIR / "check-in-data"
 
-CSV_PATH = DATA_DIR / "roster.csv"
+CSV_PATH = DATA_DIR / "seating.csv"
 TEAMS_PATH = DATA_DIR / "teams.txt"
 
 INITIAL_TEMPLATE = "{slug}_initial.txt"
@@ -878,7 +878,7 @@ def write_lines(path, lines):
     """Write the lines to *path*, replacing whatever was there.
 
     These files are disposable per-run output rather than a shared contract like
-    roster.csv, so nothing is asked and nothing is backed up. In practice there is nothing
+    seating.csv, so nothing is asked and nothing is backed up. In practice there is nothing
     to replace: the run's stamp is in the name, so a run only collides with another
     started in the same second.
     """
