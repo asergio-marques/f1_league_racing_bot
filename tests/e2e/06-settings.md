@@ -82,7 +82,8 @@ them.
      only on the channels or their category: setting the hub replaces the channel's own
      permissions, the bot's included (`hub_service.apply_hub_permissions`), so a permission held
      only there is gone after the first change;
-   - in `#bot-locked`, allow the bot View Channel and **deny** it Send Messages and Attach Files;
+   - in `#bot-locked`, allow the bot View Channel and Embed Links, and **deny** it Send Messages
+     and Attach Files;
    - create a role `@Stand-in`, below the bot's own role, held by nobody. It stands in for each of
      the league's roles in turn.
 
