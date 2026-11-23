@@ -514,3 +514,86 @@ review has no timer: it does not expire.
 28. **Do:** `/test-mode review`
 
     **Expect:** Division 1's `Round 1` line reads `Results: ✅ finalized`. No log line.
+
+---
+
+## Part F — An amendment of a round's results, left open
+
+`/results rounds amend` is a league admin's command and opens only a round at FINAL, which
+Division 1's round 1 now is. An amendment found open at a restart is ended, as the bot's change,
+before anything else runs (`amend_end_changes.recover_orphaned_amend_channels`): its channel
+deleted and the round put back where its corrected results had been recorded. What the log
+channel says turns on whether there was anything to put back. The amendment's own five-minute
+timer for a paste is a one-off timer with no lateness limit; step 30 lets it fall due while the
+bot is down.
+
+29. **Do:** `/results rounds amend division_name:Division 1 round_number:1 session:Feature Race`
+
+    **Expect:** as `01-full-season.md` step 135:
+    - **Ack:** `Opening an amendment of a round's results`
+    - **Then:** `✅ Amendment channel created: <#<amend channel id>>`
+    - **Posts:** the channel **`amend-s1-division-1-r1`**, with the opening
+      `📋 **Amend Results — Round 1 (Division 1)**` and its **❌ Cancel Amendment** button, and the
+      **Race** prompt.
+    - **Log:** nothing.
+
+30. **Nothing pasted, and the five minutes run out while the bot is down.** **Do:** without
+    pasting anything, **stop the bot**, wait **six minutes** from the prompt, and **start the
+    bot**.
+
+    **Expect**, once the bot is back:
+    - **Posts:** the channel `#amend-s1-division-1-r1` **deleted**. Nothing in any league channel.
+    - **Log**, one line:
+      ```
+      ℹ️ `/results rounds amend` of round 1 (Division 1), started by <you>, was ended by a restart
+        Sessions: Feature Race
+        Amendment channel being deleted; nothing needed putting back. If the amendment had not been approved, re-run /results rounds amend. If it had, its channels may be part-rebuilt: run /results rounds sync and /results standings sync.
+      ```
+      Neutral, not a lapse: the amendment had no corrected results to put back, and the bot
+      cannot tell an amendment never pasted from one approved and cut off mid-rebuild.
+    - **No** `⌛ … lapsed unconfirmed` line for the five minutes, though they ran out while the
+      bot was down. The catch-up asks the restart's ending before the scheduler resumes; the
+      late timer then finds the amendment ended and nothing more is done. The host log may say so:
+      ``ending the amendment of round 1 (Division 1): its five minutes ran out is no longer due``,
+      followed by `, so it was not asked for: the amendment has ended` or
+      `, so it was dropped: the amendment has ended`, as the race between the two fell.
+    - The acknowledgement of step 29 is not updated.
+
+31. **Do:** step 29 again.
+
+    **Expect:** as step 29: a new channel `amend-s1-division-1-r1` with its opening and **Race**
+    prompt. The amendment of step 29 is closed, and a round takes a new one.
+
+32. **Do:** within five minutes of the prompt, in `#amend-s1-division-1-r1`, send the corrected
+    race of `01-full-season.md` step 136, as it stands (22 lines,
+    `1, <@9000000000000000008>, DLT, 1:25:12.345, 1:29.100, N/A` first): Hiro Hayashi and Kevin
+    Keller swapped.
+
+    **Expect:** as `01-full-season.md` steps 136 and 137:
+    - **Posts** (amendment channel): your message marked ⏳, then deleted; then the report stage,
+      `🏁 **Penalty Review — Round 1 | Division 1**` with
+      `**Stage 2 of 3 — Reports.**`, and `**Staged Penalties (1):**` listing Rafael Rossi's +5s,
+      the decision the round already carries.
+    - **Log:**
+      ```
+      <you> | AMEND_STAGE_1 | Recorded
+        season: 1, division: 'Division 1'
+        round: 1, sessions: FEATURE_RACE=Standard
+        Corrected classification recorded. Nothing is published until the report and appeal stages are approved.
+      ```
+    - Nothing in the league's channels.
+
+33. **The corrected results recorded, and a restart.** **Do:** with the report stage standing,
+    **restart the bot**.
+
+    **Expect**, once the bot is back:
+    - **Posts:** the channel `#amend-s1-division-1-r1` **deleted**. Nothing in any league channel:
+      the amendment published nothing, so there is nothing to post back.
+    - **Log**, one line:
+      ```
+      ⌛ `/results rounds amend` of round 1 (Division 1) lapsed unconfirmed (started by <you>)
+        Sessions: Feature Race
+        Amendment channel being deleted, and the round put back as it was. Please re-run /results rounds amend.
+      ```
+    - The round is as step 27 left it, Kevin Keller its winner. Part G shows it, posting the
+      round's results again.
