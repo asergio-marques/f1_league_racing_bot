@@ -109,8 +109,8 @@ would otherwise collide with.
 the wizard starts and holds the settings, the slots by their durable identity, the window's tracks
 and the teams' names and shorthands; the wizard judges every answer against it, so a setting
 changed mid-signup changes nothing for a driver part-way through. Under test mode the frozen copy
-carries the test-mode nationality switch in place of the league's own setting, so the question is
-asked, or left out, as the switch says, a correction reading the same copy. A slot's display ordinal is never
+carries the test-mode nationality switch in place of the league's own setting
+(the signup specification, "Signup module configuration"), a correction reading the same copy. A slot's display ordinal is never
 stored (`_snapshot_to_dict`'s docstring; `AvailabilitySlot`'s docstring, pinned by
 `test_no_display_ordinal_is_ever_stored`).
 
@@ -259,7 +259,7 @@ The services sit flat in `signup/services/`, each file a topic. The table groups
 | Settings | `signup_settings`, `channel_setting`, `close_time_settings`, `module_switch_settings` | the five `/signup` settings that are not the channel or the close time, and `open_to_change`, the refusal they share; `/signup channel`; the close-time group; the switch-on |
 | The switch-off | `signup_off_change` | `module.off:signup` |
 | The window | `window_changes`, `window_close`, `information_post` | `signup.open` and `signup.close`, and the window's close at a season's end; the close timer, its handler and its catch-up; the one post of the information message |
-| The wizard | `wizard_changes`, `wizard_answers`, `wizard_service` | the start, the end, a held channel's deletion and a member leaving; the answers, the submission and the review panel; `WizardService`, the channel's making and lock, the prompts and the review panel's text |
+| The wizard | `wizard_changes`, `wizard_answers`, `wizard_service`, `driver_naming` | the start, the end, a held channel's deletion and a member leaving; the answers, the submission and the review panel; `WizardService`, the channel's making and lock, the prompts and the review panel's text; how a signup names its driver in its log lines and posts, a fake driver by its test name |
 | The review | `review_changes` | Approve, Request Changes, the correction choices and their lapse |
 | A channel's closing | `closing_steps` | the jobs that close a driver's channel (notice, lock, deletion armed), `signup.closing`, the timers' names and asks, the window's closing jobs, and the start-up catch-ups of the wizards and of the held channels |
 | Posting | `signup_posting`, `signup_views` | the one place signup posts (below); every view and button signup posts, with the pending reasons |
@@ -284,13 +284,13 @@ view, so its buttons answer after a restart.
 and `unassigned`. A command that changes something parses its own input (the close time, through
 `_parse_close_time`, one parser for `/signup open` and `/signup close-time`) and asks one change. A
 setting command holds no rule of its own; `/signup open` and `/signup close` also refuse at the ask
-(test mode, no configuration; signups not open, a season's end in hand, a close time armed), and
+(no configuration; signups not open, a season's end in hand, a close time armed), and
 `close` chooses between asking at once and `ConfirmCloseView`, the change's check judging again
 when its turn comes. `cancel` is the same shape: it reads the driver's state through the driver
 service on the bot (the cog runs no SQL), refuses at the ask through `cancellation_refusal`, a pure
 reader of that state, and opens `CancelSignupModal`, a `LeagueModal` with one optional reason; its
 submit reads the state again and asks `signup.end` with `CANCELLED`, the change's check judging a
-third time when its turn comes. Six commands run `_module_gate` after their tier guard: `time-slot
+third time when its turn comes. Six command bodies run `module_gate` (`signup_commands.py`) after the cog's tier guard: `time-slot
 list`, `open`, `close`, `cancel`, `unassigned list` and `unassigned export`. The setting commands go straight to the
 queue and leave the module-on refusal to their change's check: `open_to_change` for the five settings and
 `/signup channel`, the close-time group's own check for its three.
@@ -300,16 +300,16 @@ a command, with its tier and guard, and calling the function, so that the member
 test-mode group do one thing in each command and differ only in how the driver is named. The
 test-mode group is the member group's commands at the same tiers, with `cancel` taking its driver as
 text through core's `driver_reference`, as the test-mode `/driver` does, and `start`, which the member
-group has not: a fake driver, having no account to press the Sign Up button, is started by a league
-admin, `start` asking `signup.start` for it as the press does for a member. The signup module owns
+group has not, asking `signup.start` for a fake driver as the press does for a member (the core
+specification, "Fake drivers and rosters"). Both groups' commands parse, refuse and ask through those bodies. The signup module owns
 the group, so core's swap names neither: it is handed the member and test-mode groups as a pair.
 *Rejected:* the test-mode group subclassing `SignupCog`, which would inherit the member group into
 its own app commands, as the same rejection for `/driver` puts it (`core.md`); and `start` as a
-`/test-mode` command, which would have core ask the signup module, a layer the wrong way round: a
-module's test-mode tools sit in its own group.
+`/test-mode` command: it sits in the module's group, as `architecture.md` puts a module's test-mode
+tools.
 
-**One function judges who may answer a wizard**, `may_answer` (`signup_views.py`): the driver may, and
-under test mode a league admin may for a fake driver, no one else for a real one. Every button of
+**One function judges who may answer a wizard**, `may_answer` (`signup_views.py`), by the core
+specification's rule ("Fake drivers and rosters"). Every button of
 the wizard and every typed answer calls it, so that the rule is written once and the two cannot
 differ. It is handed what it reads rather than looking a service up: the listener passes the bot's config and
 driver services, and `WizardStepView` is handed them with the signup service and the change queue and
@@ -317,7 +317,7 @@ passes them on, the views registered at start-up being handed the same. A typed 
 wizard's owner, the fake driver, so the signup holds it as the driver's own.
 
 The cog holds three listeners. `on_message` hands a message typed in a driver's channel to
-`take_typed_answer`, once `may_answer` has admitted the author, which asks the driver's own `signup.answer` turn as the driver, after turning
+`take_typed_answer`, once `may_answer` has admitted the author, which asks the driver's own `signup.answer` turn, keyed to the driver, as whoever typed it, after turning
 away a message typed while an earlier answer waits and passing over one where the wizard asks
 nothing. The other two ask as the bot and leave the judgement to the change's check:
 `on_guild_channel_delete` asks a signup's ending where a wizard names the
