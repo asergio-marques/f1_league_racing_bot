@@ -494,3 +494,79 @@ ways out, then three amendments that go through.
         posted as: image
       ```
       and any notice block for the calendar.
+
+---
+
+## Part D — Moving a division's channels
+
+A division's channels may be changed while the season runs. Moving one moves where the next post
+goes and posts nothing by itself; `/division calendar-sync` is what puts the calendar in the new
+channel. This part needs one channel the Fixture does not hold.
+
+32. **The channel it already has.** **Do:** `/division lineup-channel name:Division 1 channel:#d1-lineup`
+
+    **Expect:**
+    - **Reply:** `ℹ️ <#<d1-lineup id>> is already the lineup channel for **Division 1**. Nothing was changed.`
+    - **Log:** ``⛔ `/division lineup-channel` refused for <you> — <#<d1-lineup id>> is already the lineup channel for **Division 1**. Nothing was changed.``
+
+33. **A channel doing another job.** **Do:** `/division calendar-channel name:Division 1 channel:#d2-calendar`
+
+    **Expect:**
+    - **Reply:** `❌ <#<d2-calendar id>> is already the calendar channel for **Division 2**. A channel does one job — pick one that is not in use, or clear the other setting first.`
+    - **Log:** ``⛔ `/division calendar-channel` refused for <you> — <#<d2-calendar id>> is already the calendar channel for **Division 2**. A channel does one job — pick one that is not in use, or clear the other setting first.``
+
+34. **Prepare a spare channel by hand.** In Discord, outside the bot, create `#d1-calendar-new`,
+    and give the bot in it View Channel, Send Messages, Embed Links, Attach Files, Read Message
+    History and Manage Messages, as `00-base.md` step 1 does for every Fixture channel.
+
+    **Expect:** nothing from the bot.
+
+35. **Do:** `/division calendar-channel name:Division 1 channel:#d1-calendar-new`
+
+    **Expect:**
+    - **Ack:** `Setting the calendar channel for **Division 1** to <#<d1-calendar-new id>>`
+    - **Then:** `✅ Calendar channel for **Division 1** updated to <#<d1-calendar-new id>>.` —
+      *updated*, not *set*: it replaced a channel.
+    - **Log:**
+      ```
+      <you> | /division calendar-channel | Success
+        division: Division 1
+        channel: #d1-calendar-new
+      ```
+    - **Posts:** none, in either channel.
+
+36. **Do:** `/division calendar-sync name:Division 1`
+
+    **Expect:**
+    - **Ack:** `Posting the calendar of **Division 1** again`
+    - **Then:** `✅ Calendar for **Division 1** reposted as image.`, and any notices section.
+    - **Posts** (`#d1-calendar-new`): the calendar of step 31, a picture with no text.
+    - **Log:** as step 31.
+    - **`#d1-calendar` keeps step 31's calendar.** The deletion of the calendar it replaces
+      looks for that message in the channel the new one went to (`standing_posts.replaced` is
+      handed the new posting's channel in `calendar_post_service`), finds nothing there, and
+      counts it gone. So after a change of channel the old calendar is never deleted, where
+      README's `/division calendar-sync` says the old one is deleted once the new one is up.
+      Believed a bot defect: record it, and carry on.
+
+37. **Do:** `/division calendar-channel name:Division 1 channel:#d1-calendar`
+
+    **Expect:**
+    - **Ack:** `Setting the calendar channel for **Division 1** to <#<d1-calendar id>>`
+    - **Then:** `✅ Calendar channel for **Division 1** updated to <#<d1-calendar id>>.`
+    - **Log:** as step 35, with `channel: #d1-calendar`.
+
+38. **Do:** `/division calendar-sync name:Division 1`
+
+    **Expect:**
+    - **Then:** `✅ Calendar for **Division 1** reposted as image.`, and any notices section.
+    - **Posts** (`#d1-calendar`): the calendar again. By the fault of step 36, step 36's
+      calendar stays in `#d1-calendar-new`, and `#d1-calendar` now holds step 31's calendar and
+      this one.
+    - **Log:** as step 31.
+
+39. **Tidy up by hand.** In Discord, delete step 31's calendar from `#d1-calendar`, leaving
+    step 38's, and delete the channel `#d1-calendar-new`.
+
+    **Expect:** nothing from the bot. `#d1-calendar` holds one calendar, the one the bot
+    records, which the cancellation of Part F replaces.
