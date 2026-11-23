@@ -834,15 +834,16 @@ stop nobody yet holds the role to clear.
   (`swap_driver_commands`, `core/services/test_mode/driver_commands.py`). The swap is an ACT step
   after the commit, and carries `Step.on_fault` as role moves do: where Discord refuses it, or the
   league's server is missing from the cache, the queue does not stop the lane but marks the job
-  done with the reply and log line saying the `/driver` commands could not be changed and will be
-  put right when the bot next restarts. The change it follows stands, and nothing behind it on the
+  done, for the reply and log line to say so. The change it follows stands, and nothing behind it on the
   lane waits on it: the swap is Discord work the save does not need, as a role move is, so a
   stopped lane would hold every change for a lost command definition. The remedy it names is a
   restart, never the change run again, which would flip test mode (and, turning it off, delete
-  every fake driver) or, after a season's end, be refused. Off the queue, start-up and `!sync` sync
-  the same trees and catch the refusal as `discord.HTTPException` by name, posting it through
-  `start_up_failure_line`. A factory reset and `/bot init` run no swap; their replies name the
-  restart. *Rejected:* stopping the lane on a refused swap, as other jobs do, which would hold the
+  every fake driver) or, after a season's end, be refused. What the member and the log channel are
+  told of it is the core specification's ("How a change is carried out"), as are the
+  moments of the swap and the restart named after a factory reset or `/bot init` ("Test mode").
+  Off the queue, start-up and `!sync` run the same swap and catch a refusal or a missing server
+  as `discord.HTTPException` or `GuildUnavailable` by name, posting it through
+  `start_up_failure_line`. *Rejected:* stopping the lane on a refused swap, as other jobs do, which would hold the
   lane for work nothing waits on; and the swap run off the queue after the outcome, which would
   need an exception of its own stated here and machinery of its own (a catch-all reporting through
   `post_log`), and leave the swap unrecorded on the change's job.
