@@ -904,6 +904,44 @@ async def _mock_expired(tmp_path: Any) -> SeasonLeague:
     return league
 
 
+async def _mock_cancel_refused_on_the_queue(tmp_path: Any) -> SeasonLeague:
+    """Kimi, made Mock Alpha awaiting review; the league admin Admin (77) runs the test-mode
+    `/signup cancel` naming his ID and submits the form, and before the queue runs it his signup
+    is approved, so that the queued cancellation is refused as it runs."""
+    from tests.signup.test_signup_test_cog import _run_test_command
+    from tests.signup.test_wizard_changes import _submit_cancel
+
+    league = await _league(tmp_path)
+    await _as_mock(league)
+    asked = await _run_test_command(league, "signup cancel", str(SIGNING_UP))
+    await _submit_cancel(league, asked, "Signed up twice")
+    await league.write(
+        "UPDATE driver_profiles SET current_state = 'UNASSIGNED' WHERE discord_user_id = ?",
+        str(SIGNING_UP),
+    )
+    await run_queue(league.bot)
+    return league
+
+
+async def _mock_rejection_stops_the_lane(tmp_path: Any) -> SeasonLeague:
+    """Kimi, made Mock Alpha awaiting review; manager 77 rejects it, typing the reason, and the
+    save of the job that ends the signup fails, so that the queue stops at it."""
+    from leaguebot.signup.services.closing_steps import END
+    from leaguebot.signup.services.wizard_changes import END_JOB
+    from tests.support.change_queue import refuse_the_job
+
+    league = await _league(tmp_path)
+    await _as_mock(league)
+    await refuse_the_job(league.db_path, END, END_JOB, True)
+    await _type_reason(league, "reject", "Lap time unverified")
+    return league
+
+
+#: Not yet true of a fake driver's signup on the queue (B2-T2).
+_QUEUE_NOT_YET_NAMED = (
+    "#600: the queue's refusal and stop lines still name a fake driver by a <@id> mention"
+)
+
 #: How a fake driver's signup is ended or sent back, the words of the log line it writes, and the
 #: words of the post its channel is sent naming it (None where the post names nobody).
 _FAKE_DRIVER_NAMED = [
@@ -914,6 +952,12 @@ _FAKE_DRIVER_NAMED = [
     pytest.param(_mock_withdrew, "| Signup | Withdrawn", None, id="withdrawal"),
     pytest.param(_mock_cancelled, "| Signup | Cancelled", "cancelled by", id="cancel"),
     pytest.param(_mock_expired, "lapsed unconfirmed", None, id="24-hour lapse"),
+    pytest.param(_mock_cancel_refused_on_the_queue, "signup has already been approved", None,
+                 id="cancel refused on the queue",
+                 marks=pytest.mark.xfail(strict=True, reason=_QUEUE_NOT_YET_NAMED)),
+    pytest.param(_mock_rejection_stops_the_lane, "The queue is stopped at job #", None,
+                 id="rejection stopping the lane",
+                 marks=pytest.mark.xfail(strict=True, reason=_QUEUE_NOT_YET_NAMED)),
 ]
 
 
@@ -925,8 +969,11 @@ async def test_a_fake_driver_s_signup_is_named_by_its_test_name_and_never_by_its
     server holding his ID. His signup is rejected or sent back for changes by manager 77 (typing
     the reason), the field to correct is picked by 77, a league admin presses Cancel Signup on
     his wizard, the league admin Admin (77) cancels it with the test-mode `/signup cancel` giving
-    a reason, or it lapses after 24 hours idle; the queue runs. The log channel's line for it
-    names Mock Alpha, and nothing in the log channel or in his signup channel mentions his ID;
+    a reason, or it lapses after 24 hours idle; or Admin's cancellation is refused as the queue
+    runs it, his signup approved meanwhile; or 77's rejection stops the queue, the save of the job
+    ending his signup failing; the queue runs. The log channel's line for it (the refusal, and the
+    notice of the stopped queue naming the job, included) names Mock Alpha, and nothing in the log
+    channel or in his signup channel mentions his ID;
     the rejection notice, the correction choices, the re-submit prompt and the cancellation
     notice posted in his channel name Mock Alpha."""
     league = await decide(tmp_path)
