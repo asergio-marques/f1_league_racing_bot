@@ -655,8 +655,8 @@ a restart loses them. The panel is not one of the reviews the start-up takes dow
       any more, so the press reaches nothing.
       > UNVERIFIED: Discord's exact wording, which is the client's and not the bot's.
     - Nothing approved, nothing posted, and nothing in `#bot-log`, neither for the press nor for
-      the panel: its five minutes were counted in memory, so no
-      `↩️`/`⌛ `/results amend review` …` line records its end. Run the review again.
+      the panel: its five minutes were counted in memory, so no line records its end, as one
+      does when the panel lapses with the bot running. Run the review again.
 
 39. **Do:** `/results amend review`, and within five minutes press **✅ Approve** on the panel.
 
@@ -685,3 +685,109 @@ a restart loses them. The panel is not one of the reviews the start-up takes dow
         rounds rescored and reposted: 1 across 1 division(s)
       ```
       and any notice blocks. The approval switches amendment mode off.
+
+---
+
+## Part H — A season review, standing and being posted
+
+A season review — `/season config-review` or `/season placements-review` — is posted by the
+change queue message by message, the question last, and its button is open for five minutes from
+when the question appears, counted by a one-off timer with no lateness limit. Every review found
+standing at a start is taken down (`season_review_changes.recover_expired_review_prompts`): the
+bot was down, so its five minutes cannot have been served.
+
+**The base has no review to stand.** Season #1 is ongoing, where `/season config-review` is for a
+season in configuration and `/season placements-review` refuses an ongoing season outside a
+mid-season placements window, which test mode never opens. So this part ends Season #1 the one
+way that keeps the saved backup, `/season cancel`, and sets up Season #2 to configuration, as
+`02-roster-changes.md` does. It restores the base first, so that the cancellation reads as that
+spec gives it.
+
+40. **Do:** steps 1 to 3 again: `/test-mode backup status`, `/test-mode backup restore` and
+    **♻️ Restore**, and restart the bot.
+
+    **Expect:** as steps 1 to 3. `bot.prerestore.db` and `scheduler.prerestore.db` now hold the
+    season as Part G left it.
+
+41. **Do:** `/season cancel confirm:CONFIRM`
+
+    **Expect:** as `02-roster-changes.md` step 27: `Cancelling season 1`, `✅ Season cancelled.`,
+    the cancellation notices in each division's channels, and `<you> | /season cancel | Success`.
+    Test mode is off and the fake drivers deleted; `bot.bkup.db`, `scheduler.bkup.db` and
+    `backup.lock` remain.
+
+42. **Do:** `/season setup game_edition:25`, then `/test-mode toggle`, then
+    `/results config append name:Standard`, each once the last has answered.
+
+    **Expect:** as `02-roster-changes.md` steps 43, 45 and 49: Season #2 (F1 25) set up, test
+    mode on with no configurations seeded, and `Standard` attached.
+
+### A review standing, and its five minutes run out while the bot is down
+
+43. **Do:** `/season config-review`
+
+    **Expect:** as `02-roster-changes.md` step 50: the review in `#bot-commands`, headed
+    `**Configuration Review (Season #2 — F1 25)**`, its question last with
+    **✅ Confirm configuration**, and `<you> | /season config-review | Review posted`. The
+    acknowledgement stands unchanged, as `00-base.md` step 20 records.
+
+44. **Do:** with the question standing, **stop the bot**, wait **six minutes** from the question,
+    and **start the bot**.
+
+    **Expect**, once the bot is back:
+    - **Posts** (`#bot-commands`): every message of the review of step 43 **deleted**, the question
+      first; then, pinging you alone:
+      ```
+      ⏱️ <@<your id>> your review expired while the bot was restarting and can no longer be answered. Run `/season config-review` again.
+      ```
+    - **Log**, one line:
+      ```
+      ⌛ `/season config-review` lapsed unconfirmed (started by <you>)
+        The bot restarted while it stood, so it can no longer be answered, and nothing has been confirmed. Run `/season config-review` again.
+      ```
+    - **Once.** The review's timer fell due while the bot was down and fires late on start, but
+      the scheduler resumes only after the catch-up has asked the take-down, and the timer finds
+      the review already being taken down. A second notice, or a
+      `⏱️ <@<your id>> your review has expired …` in place of the one above, is the timer having
+      won: a failure.
+    - Season #2 is still in configuration: nothing was confirmed.
+
+### A review cut off while it is being posted
+
+45. **Do:** `/season config-review`, and **restart the bot** the moment the acknowledgement
+    appears.
+
+    **Expect:**
+    - **Ack:** `Posting the review of /season config-review`, which is never updated, whichever
+      happens below.
+    - Either:
+      - **(a) the question was up before the stop:** once the bot is back, as step 44: the review
+        deleted, the notice pinging you, and the lapse line. `<you> | /season config-review | Review posted`
+        was written before the stop.
+      - **(b) the stop came before the question:** once the bot is back, the review carries on
+        from the first message not posted, the question last, and
+        `<you> | /season config-review | Review posted` is written as it appears. No message of
+        the review is posted twice, but for the accepted second copy. Nothing is taken down:
+        the question was not up when the bot stopped. Its five minutes run from when it appears.
+    - A press on **✅ Confirm configuration** in (a), between the start and the question's
+      deletion, confirms nothing: the button is routed again only to refuse.
+      > UNVERIFIED: which refusal it shows; `season_review_views` has three, and the take-down
+      > being in hand makes it `⛔ This review is already being answered by another press. **Nothing has been confirmed by this one.**`
+      > as `src/` reads.
+
+46. **Only in (b): the button answers after the restart.** **Do:** within five minutes of the
+    question, press **✅ Confirm configuration**.
+
+    **Expect:** as `02-roster-changes.md` step 51:
+    - **Ack:** `Confirming season 2's configuration`
+    - **Then:** ``✅ Season #2's configuration is confirmed. The season is now in placements — build its divisions and calendar, place its drivers, then run `/season placements-review`.``
+    - **Posts:** every message of step 45's review deleted from `#bot-commands`.
+    - **Log:**
+      ```
+      <you> | /season config-review | Confirmed
+        season: Season #2
+        stage: PLACEMENTS
+      ```
+
+    In (a), skip this step: Season #2 stays in configuration, which the restore below does not
+    mind.
