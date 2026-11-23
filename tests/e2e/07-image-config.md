@@ -1513,3 +1513,100 @@ their refusals and their record. No view shows them while the season is under wa
 107. **Do:** `/images use-pfp daily-toggle`
 
      **Expect:** step 93's refusal, naming `` `/images use-pfp daily-toggle` ``.
+
+---
+
+## Part G — Putting the base back
+
+The asset folders (step 44), the time zone and formats (step 56), the per-tier switch (step
+90) and the portraits (steps 104 to 106) are already as the base had them. What remains is the
+two templates still named `e2e_`, the template folder, the fastest-lap colour and the files this
+spec put in `resources/league/`.
+
+108. **Do:** `/images template calendar filename:calendar_template.svg`
+
+     **Expect:** step 23's acknowledgement, reply and line for `calendar`, `Calendar` and
+     `calendar_template.svg`.
+
+     **Then do:** `/images test calendar division:Division 1`
+
+     **Expect:** step 5's picture again: the red rule, and no logo box.
+
+109. **Do:** `/images template results-race filename:results_race_template.svg`
+
+     **Expect:** step 23's acknowledgement, reply and line for `results-race`, `Results — race`
+     and `results_race_template.svg`.
+
+     **Then do:** `/images test results division:Division 1 round:1`
+
+     **Expect:** both pictures with the red rule; the fastest lap time still green (`#00E676`).
+
+110. **Do:** `/images config template-directory directory:resources/defaults/templates`
+
+     **Expect:**
+     - **Ack:** ``Setting **Template directory** to `resources/defaults/templates` ``
+     - **Then:**
+       ```
+       ✅ **Template directory** set to `resources/defaults/templates`.
+       ✅ Every drawing the outputs you have switched on need is present and valid.
+       Searched: `<checkout>/resources/defaults/templates`
+       ```
+     - **Log:**
+       ```
+       <you> | /images config template-directory | Success
+         Template directory: resources/defaults/templates
+       ```
+
+111. **Do:** `/images config fastest-lap-colour colour:#A020F0`
+
+     **Expect:**
+     - **Ack:** ``Setting the fastest-lap colour to `#A020F0` ``
+     - **Then:**
+       ```
+       ✅ Fastest-lap colour set to `#A020F0`.
+       ℹ️ Contrast could not be measured: the race results template declares no `fastest_lap_background` element to measure against.
+       ```
+       The shipped race template marks no plate, so a league on the shipped templates is never
+       told the contrast, though the image guide's step 3 says it is. Believed a defect of the
+       shipped template or of the guide: record it, and carry on.
+     - **Log:** the success line with `Fastest-lap colour: #A020F0` beneath it.
+
+     **Then do:** `/images test results division:Division 1 round:1`
+
+     **Expect:** the fastest lap time on the race picture drawn in purple, as the base draws it.
+
+112. **Take the spec's files out**, by hand, on the bot host:
+
+     ```
+     cd <checkout>/resources/league
+     rm -r e2e
+     rm teams/alp.svg
+     find templates -type f ! -name .gitkeep -delete
+     ```
+
+     and put back any `teams/alp.svg` set aside in step 46.
+
+     **Expect:** `ls -A <checkout>/resources/league/templates` prints `.gitkeep` alone;
+     `resources/league/e2e` is gone; `resources/league/teams` holds what it held before step 46.
+
+113. **Do:** `/images config view`
+
+     **Expect:** step 4's reply, line for line, but for the `**Per-tier colours**` section,
+     which still lists the two colours no command can remove:
+     ```
+     **Per-tier colours**
+       Enabled: `off`
+       division_1: `accent` = `#0D2B4F`
+       division_2: `accent` = `#3B0D4F`
+       _Stored, but not drawn while this is off._
+     ```
+     They are drawn nowhere: no template the bot ships marks a slot.
+
+114. **Do:** `/images test calendar division:Division 1`, then
+     `/images test lineup division:Division 1`
+
+     **Expect:** the calendar identical to step 5's; the lineup as the base draws it, Alpha
+     Racing's badge no longer green.
+
+Every image setting is now as the base had it, the stored tier colours apart. The next spec
+restores the base's backup, which clears them.
