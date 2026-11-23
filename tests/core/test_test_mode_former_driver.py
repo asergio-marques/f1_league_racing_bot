@@ -58,7 +58,6 @@ _BY_TEXT = "#600: /test-mode set-former-driver does not yet take a driver as a m
 
 _AUDIT_TYPE = "TEST_FORMER_DRIVER_FLAG_SET"
 _NOT_IN_TEST_MODE = "⛔ This command is only available when test mode is enabled."
-_NO_PROFILE = f"⛔ No driver profile found for user {RACER} on this server."
 
 
 def _no_driver(text: str) -> str:
@@ -288,8 +287,9 @@ async def test_it_is_judged_again_as_it_starts(league, meanwhile):
     command for Racer with true and is acknowledged; before the queue runs it, test mode is
     switched off, or Racer's profile is deleted. The change judges again as it starts and is
     refused: nothing is saved or audited, Admin's reply becomes the refusal the command gives at
-    the ask, word for word, the log channel takes that refusal as its only line, and the queue is
-    not stopped."""
+    the ask, word for word (with the profile gone, "No driver found for `4242`", the one wording
+    the league sees for that fault), the log channel takes that refusal as its only line, and the
+    queue is not stopped."""
     await _seed_racer(league.db_path, former=False)
     interaction = _asks(league)
 
@@ -303,7 +303,7 @@ async def test_it_is_judged_again_as_it_starts(league, meanwhile):
         await db.commit()
     await run_queue(league.bot)
 
-    refusal = _NOT_IN_TEST_MODE if meanwhile == "test mode turned off" else _NO_PROFILE
+    refusal = _NOT_IN_TEST_MODE if meanwhile == "test mode turned off" else _no_driver(RACER)
     assert last_said(interaction) == refusal
     assert await _flags(league.db_path) == ([False] if meanwhile == "test mode turned off" else [])
     assert await audit_rows(league.db_path) == []
