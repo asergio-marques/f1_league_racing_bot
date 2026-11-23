@@ -23,6 +23,7 @@ from collections.abc import Awaitable, Callable, Sequence
 
 from discord import app_commands
 
+from leaguebot.core.services.test_mode.test_mode_service import test_mode_on
 from leaguebot.framework.db.database import get_connection
 from leaguebot.framework.models.change import GuildUnavailable, StepKind, StepResult
 from leaguebot.framework.services.posting.league_settings import LeagueSettings
@@ -59,9 +60,7 @@ async def swap_driver_commands(
     `GuildUnavailable` where a claimed server is not in the cache (the global tree synced first
     where test mode is off), and Discord's refusal of a sync as it came."""
     async with get_connection(bot.db_path) as db:
-        cursor = await db.execute("SELECT test_mode_active FROM server_configs")
-        row = await cursor.fetchone()
-    test_mode = row is not None and bool(row["test_mode_active"])
+        test_mode = await test_mode_on(db)
     server_id = await league_settings.get_league_server_id()
     if server_id is None:
         bot.tree.add_command(member, override=True)
