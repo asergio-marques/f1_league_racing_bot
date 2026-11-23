@@ -140,6 +140,52 @@ async def test_signup_start_asks_a_fake_driver_s_signup_with_the_admin_as_its_ac
     assert entry["new_value"] == {"new_state": "PENDING_SIGNUP_COMPLETION"}
 
 
+#: What is not yet true of `/signup start`'s reply.
+_REPLY_NOT_YET_NAMED = (
+    "#600: /signup start replies 'Your signup channel', and to press Sign Up where it was discarded"
+)
+
+
+@pytest.mark.xfail(strict=True, reason=_REPLY_NOT_YET_NAMED)
+@pytest.mark.parametrize("discarded", [False, True], ids=["channel created", "channel discarded"])
+async def test_signup_start_s_reply_names_the_fake_driver(tmp_path, discarded):
+    """Test mode is on, at Signups with the window open, and Mock Alpha a fake driver at Not
+    Signed Up. Admin runs the test-mode `/signup start` naming Mock Alpha by its ID, and the queue
+    runs; where the case says so, Discord refuses to create the signup channel and an admin
+    discards the job. All Admin is told names Mock Alpha, and never "Your signup channel"; where
+    the channel was discarded, it says to run `/signup start` again, never to press Sign Up."""
+    import discord
+
+    from tests.signup.test_wizard_changes import SIGNUP_CHANNEL
+    from tests.support.change_queue import (
+        acknowledgement,
+        discard_job,
+        http_error,
+        run_queue,
+        updated_reply,
+    )
+
+    league = await _league(tmp_path)
+    if discarded:
+        league.guild.create_text_channel = AsyncMock(
+            side_effect=http_error(discord.Forbidden, status=403, text="Missing Permissions")
+        )
+        league.channel(SIGNUP_CHANNEL).category.create_text_channel = (
+            league.guild.create_text_channel
+        )
+
+    asked = await _run_test_command(league, "signup start", str(MOCK))
+    await run_queue(league.bot)
+    if discarded:
+        await discard_job(league.bot)
+
+    told = "\n".join(part for part in (acknowledgement(asked), updated_reply(asked)) if part)
+    assert MOCK_NAME in told, told
+    assert "Your signup channel" not in told, told
+    if discarded:
+        assert "/signup start" in told and "Press Sign Up" not in told, told
+
+
 #: Each refusal of `/signup start`: how the league stands, the driver named, and words the reply
 #: carries. A fake driver's signup under way or approved is named by its test name, not addressed
 #: as "you" as a member's own Sign Up is.
