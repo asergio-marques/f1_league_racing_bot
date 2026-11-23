@@ -706,9 +706,7 @@ nothing and raises no notice.
         ↳ `tyre`: `resources/league/e2e/nowhere` — the configured directory does not exist
         ↳ `weather`: `resources/league/e2e/nowhere` — the configured directory does not exist
       ```
-      Every class is listed, not only those the lineup draws.
-      > UNVERIFIED: the order of the eight lines (the classes sorted by name, from
-      > `ASSET_CLASS_COLUMNS` in `image/services/preview/image_preview_service.py`). Record it.
+      Every class is listed, not only those the lineup draws, in alphabetical order of class.
     - **The picture**: every badge, flag and portrait the packaged grey one, Alpha Racing's and
       Adam Archer's included, each with its notice.
 
@@ -841,10 +839,9 @@ The calendar is the preview that shows the first three: every round's date and t
     `/images test rsvp division:Division 1 round:1`
 
     **Expect:** the calendar's dates `<YEAR+1>-03-02`, `<YEAR+1>-03-09` and `<YEAR+1>-03-16`,
-    each at `05:00 AM JST`; the check-in call's date and time for round 1 written the same way,
-    `<YEAR+1>-03-02` and `05:00 AM JST`.
-    > UNVERIFIED: where the check-in picture writes its date and time, and whether it carries
-    > both. Record what it shows.
+    each at `05:00 AM JST`. On the check-in call, the **DATE** card holds `<YEAR+1>-03-02`, the
+    **START TIME** card `05:00 AM JST`, and **CHECK-IN CLOSES** the check-in deadline written the
+    same way (`<the deadline's date, YYYY-MM-DD>` and `<its time, hh:mm AM/PM JST>`).
 
 55. **Do:** `/images config view`
 
@@ -1462,8 +1459,9 @@ their refusals and their record. No view shows them while the season is under wa
        <you> | /images use-pfp daily-toggle | Success
          Time of day: 03:00 UTC
        ```
-     > UNVERIFIED: where the acknowledgement appears — a new message beneath the question, the
-     > press having already been answered by taking its buttons down. Record it.
+     The acknowledgement is a new message, seen by you alone, beneath the question — the press
+     was already answered by taking the buttons down — and it is that message which is updated
+     with the outcome.
 
 101. **Do:** `/images use-pfp prerender-toggle`
 
