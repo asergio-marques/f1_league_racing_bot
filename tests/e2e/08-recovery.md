@@ -542,9 +542,12 @@ bot is down.
       **Race** prompt.
     - **Log:** nothing.
 
-30. **Nothing pasted, and the five minutes run out while the bot is down.** **Do:** without
-    pasting anything, **stop the bot**, wait **six minutes** from the prompt, and **start the
-    bot**.
+30. **Nothing pasted, and the five minutes run out while the bot is down.** **Do:** **within five
+    minutes of the prompt**, without pasting anything, stop the bot; start it once six minutes
+    have passed since the prompt. A stop after the five minutes lets the timer end the amendment
+    with the bot running: the acknowledgement of step 29 updated to
+    ``⏱️ Amendment expired — no answer came within 5 minutes, so it has been closed and nothing was written. Run `/results rounds amend` again to start over.``
+    and a `⌛ … lapsed unconfirmed` line. Run steps 29 and 30 again.
 
     **Expect**, once the bot is back:
     - **Posts:** the channel `#amend-s1-division-1-r1` **deleted**. Nothing in any league channel.
@@ -653,7 +656,9 @@ a restart loses them. The panel is not one of the reviews the start-up takes dow
     - **Log:** `<you> | /results amend review | Review posted`
 
 38. **The panel across a restart.** **Do:** with the panel of step 37 open, **restart the bot**.
-    Once it is back, press **✅ Approve** on that panel.
+    Once it is back, and **within five minutes of step 37**, press **✅ Approve** on that panel.
+    Past the five minutes the panel would have lapsed in any case, and the press would show
+    nothing of the restart: run steps 37 and 38 again.
 
     **Expect:**
     - Discord itself says the interaction failed: no part of the bot holds the panel's buttons
