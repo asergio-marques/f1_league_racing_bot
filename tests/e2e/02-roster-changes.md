@@ -676,3 +676,392 @@ cancelled, so this is Season #2.
 
     **Expect:** headed `**Server team list (Season 2 will use this list):**`, then the lines of
     step 34. No log line.
+
+---
+
+## Part F — The roster, in placements
+
+Season #2 is in placements with two empty divisions, each holding the Fixture's eleven teams of
+two seats and a Reserve team. Test mode's nationality switch is **on**, as it has stood since the
+base was built (it starts on, and nothing in `00-base.md` turns it).
+
+### Listing
+
+55. **Do:** `/test-mode roster list division:Division 1`
+
+    **Expect:**
+    - **Reply:** ``ℹ️ No fake drivers in **Division 1**. Use `/test-mode roster add` to create some.``
+    - **Log:** nothing.
+
+56. **Do:** `/test-mode roster list division:Division 9`
+
+    **Expect:**
+    - **Reply:** `⛔ Division 'Division 9' not found in the active season.`
+    - **Log:** nothing.
+
+### Importing a roster
+
+57. **A file wrong on its own.** **Do:** `/test-mode roster add-bulk`, paste the following into
+    **Paste roster.csv, header and all**, and submit.
+
+    ```
+    ID,Driver name,Team,Division,Nationality
+    9000000000000000001,Adam Archer,ALP,Division 1
+    1234,Bruno Bianchi,ALP,Division 1,Italian
+    abc,Carlos Cortes,BRV,Division 1,Spanish
+    9000000000000000004,Dirk Dekker,BRV,Division 1,Dutch
+    9000000000000000004,Emil Engel,CHL,Division 1,German
+    9000000000000000006,Dirk Dekker,CHL,Division 1,French
+    9000000000000000007,,DLT,Division 1,Brazilian
+    9000000000000000008,Hiro Hayashi,,Division 1,Japanese
+    9000000000000000009,Ian Irwin,ECH,,Australian
+    9000000000000000010,**Jari Jokinen**,ECH,Division 1,Finnish
+    ```
+
+    **Expect:** the form reads every line before refusing, and refuses the whole file; no
+    acknowledgement, nothing queued.
+    - **Reply:**
+      ```
+      ⛔ The roster was not imported — 9 problem(s). **No drivers were added.**
+      • Line 2: expected 5 columns (ID, driver, team, division, nationality) but found 4.
+      • Line 3: 1234 is below the range test drivers use. A real Discord account cannot be seated as a mock driver.
+      • Line 4: `abc` is not a driver ID.
+      • Line 6: driver ID 9000000000000000004 is already used on line 5.
+      • Line 7: `Dirk Dekker` is already named on line 5.
+      • Line 8: the driver has no name.
+      • Line 9: `Hiro Hayashi` names no team.
+      • Line 10: `Ian Irwin` names no division.
+      • Line 11: The formatting `` **Jari Jokinen** `` in the driver name reads differently as text and on a graphic. Remove it, then try again.
+      ```
+      Line 5 is sound, and is not listed.
+    - **Log:** `⛔ the “Import a test roster” form refused for <you> — The roster was not imported — 9 problem(s). **No drivers were added.**`
+
+58. **A file the database refuses.** **Do:** `/test-mode roster add-bulk`, paste the following,
+    and submit.
+
+    ```
+    ID,Driver name,Team,Division,Nationality
+    9000000000000000001,Adam Archer,ALP,Division 1,British
+    9000000000000000002,Bruno Bianchi,ALP,Division 1,Italian
+    9000000000000000003,Carlos Cortes,ALP,Division 1,Spanish
+    9000000000000000004,Dirk Dekker,XYZ,Division 1,Dutch
+    9000000000000000005,Emil Engel,CHL,Division 9,German
+    9000000000000000006,Felix Fournier,CHL,Division 1,Klingon
+    ```
+
+    **Expect:** refused by the change queue at the ask, every fault together, in the order
+    `judge_bulk_on` reads them: nationalities, divisions, IDs, teams, seats. No acknowledgement.
+    - **Reply:**
+      ```
+      ⛔ The roster was not imported — 4 problem(s). **No drivers were added.**
+      • Line 7: `Klingon` is not a nationality the bot knows. Give one like 'British', a country like 'United Kingdom', or 'other'.
+      • Division 'Division 9' is not in the current season.
+      • Line 5: No team of this division has the shorthand `XYZ`.
+      • Team 'ALP' has 2 free seat(s) but the roster gives it 3 driver(s).
+      ```
+    - **Log:** `⛔ the “Import a test roster” form refused for <you> — The roster was not imported — 4 problem(s). **No drivers were added.**`
+
+59. **More reserves than the lineup draws.** A Reserve team has no seat limit, but the lineup
+    template has a fixed number of reserve slots, ten in the shipped one. **Do:**
+    `/test-mode roster add-bulk`, paste the following, and submit.
+
+    ```
+    ID,Driver name,Team,Division,Nationality
+    9000000000000000101,Reserve One,Reserve,Division 2,British
+    9000000000000000102,Reserve Two,Reserve,Division 2,Italian
+    9000000000000000103,Reserve Three,Reserve,Division 2,Spanish
+    9000000000000000104,Reserve Four,Reserve,Division 2,Dutch
+    9000000000000000105,Reserve Five,Reserve,Division 2,German
+    9000000000000000106,Reserve Six,Reserve,Division 2,French
+    9000000000000000107,Reserve Seven,Reserve,Division 2,Brazilian
+    9000000000000000108,Reserve Eight,Reserve,Division 2,Japanese
+    9000000000000000109,Reserve Nine,Reserve,Division 2,Australian
+    9000000000000000110,Reserve Ten,Reserve,Division 2,Finnish
+    9000000000000000111,Reserve Eleven,Reserve,Division 2,American
+    ```
+
+    **Expect:**
+    - **Reply:**
+      ```
+      ⛔ The roster was not imported — 1 problem(s). **No drivers were added.**
+      • Division 'Division 2': that would give the division 11 reserve drivers, but the configured lineup template declares 10 reserve slots. The driver was **not** assigned. Enlarge the template, or turn the `lineup` image aspect off with `/images config toggle`.
+      ```
+    - **Log:** `⛔ the “Import a test roster” form refused for <you> — The roster was not imported — 1 problem(s). **No drivers were added.**`
+    > UNVERIFIED: the count of reserve slots where `resources/league/templates/` holds a lineup
+    > template of the league's own; the guard reads the configured template, and the ten are the
+    > shipped one's. It asks only while the image module and its `Lineup` output are on, as
+    > `00-base.md` leaves them.
+
+60. **Do:** `/test-mode roster add-bulk`, paste the following, and submit. Xavier Xu's last field
+    is left empty: a driver may lack a nationality.
+
+    ```
+    ID,Driver name,Team,Division,Nationality
+    9000000000000000001,Adam Archer,ALP,Division 1,British
+    9000000000000000002,Bruno Bianchi,ALP,Division 1,Italian
+    9000000000000000003,Carlos Cortes,BRV,Division 1,Spanish
+    9000000000000000023,Willem Wouters,Reserve,Division 1,German
+    9000000000000000024,Xavier Xu,Reserve,Division 1,
+    ```
+
+    **Expect:**
+    - **Ack:** `Seating 5 test drivers in **Division 1**`
+    - **Then:**
+      ```
+      ✅ Seated **5** test driver(s) across 1 division(s): Division 1.
+      `/test-mode roster list` shows a division's drivers with the mentions result submission wants.
+      ```
+    - **Log:**
+      ```
+      <you> | /test-mode roster add-bulk | Success
+        drivers_seated: 5
+        divisions: Division 1
+      ```
+    - **Posts:** nothing. A lineup is posted at approval, not as drivers are seated.
+
+61. **The same file again.** **Do:** step 60 again, the same paste.
+
+    **Expect:** refused whole; nothing added twice.
+    - **Reply:**
+      ```
+      ⛔ The roster was not imported — 7 problem(s). **No drivers were added.**
+      • Division 'Division 1' already holds 5 driver(s). Clear it with `/test-mode roster clear` before importing a roster into it.
+      • Line 2: a driver with ID 9000000000000000001 is already on this server.
+      • Line 3: a driver with ID 9000000000000000002 is already on this server.
+      • Line 4: a driver with ID 9000000000000000003 is already on this server.
+      • Line 5: a driver with ID 9000000000000000023 is already on this server.
+      • Line 6: a driver with ID 9000000000000000024 is already on this server.
+      • Team 'ALP' has 0 free seat(s) but the roster gives it 2 driver(s).
+      ```
+      `BRV` is not named: it still has the one free seat the file gives it.
+    - **Log:** `⛔ the “Import a test roster” form refused for <you> — The roster was not imported — 7 problem(s). **No drivers were added.**`
+
+62. **Do:** `/test-mode roster list division:Division 1`
+
+    **Expect:**
+    - **Reply:**
+      ````
+      **Fake Driver Roster — Division 1**
+      ```
+      Name                 Mention                        Team                 Nationality
+      --------------------------------------------------------------------------------------
+      Adam Archer          <@9000000000000000001>         Alpha Racing         British
+      Bruno Bianchi        <@9000000000000000002>         Alpha Racing         Italian
+      Carlos Cortes        <@9000000000000000003>         Bravo Motorsport     Spanish
+      Willem Wouters       <@9000000000000000023>         Reserve              German
+      Xavier Xu            <@9000000000000000024>         Reserve              —
+      ```
+      Copy mention strings above when submitting results in the format:
+      `Position, <@user_id>, <@&role_id>, ...`
+      ````
+      Racing teams first, by full name, then the Reserve team; within a team, in the order the
+      drivers were made.
+    - **Log:** nothing.
+
+### Seating one driver
+
+63. **A full team.** **Do:** `/test-mode roster add driver_name:Dirk Dekker team_name:ALP division:Division 1 nationality:Dutch`
+
+    **Expect:**
+    - **Reply:** `⛔ No free seats available in team 'ALP'.`
+    - **Log:** ``⛔ `/test-mode roster add` refused for <you> — No free seats available in team 'ALP'.``
+
+64. **Do:** `/test-mode roster add driver_name:Dirk Dekker team_name:XYZ division:Division 1 nationality:Dutch`
+
+    **Expect:**
+    - **Reply:** ``⛔ No team of this division has the shorthand `XYZ`. (division 'Division 1')``
+    - **Log:** ``⛔ `/test-mode roster add` refused for <you> — No team of this division has the shorthand `XYZ`. (division 'Division 1')``
+
+65. **Do:** `/test-mode roster add driver_name:Dirk Dekker team_name:BRV division:Division 9 nationality:Dutch`
+
+    **Expect:**
+    - **Reply:** `⛔ Division 'Division 9' not found in the active season.`
+    - **Log:** ``⛔ `/test-mode roster add` refused for <you> — Division 'Division 9' not found in the active season.``
+
+66. **Do:** `/test-mode roster add driver_name:Dirk Dekker team_name:BRV division:Division 1 nationality:Klingon`
+
+    **Expect:**
+    - **Reply:** `⛔ Invalid nationality 'Klingon'. Give a full nationality (e.g. 'British') or country name (e.g. 'United Kingdom'), or 'other'.`
+    - **Log:** ``⛔ `/test-mode roster add` refused for <you> — Invalid nationality 'Klingon'. Give a full nationality (e.g. 'British') or country name (e.g. 'United Kingdom'), or 'other'.``
+
+67. **A name that would notify.** **Do:** `/test-mode roster add driver_name:@everyone Dekker team_name:BRV division:Division 1`
+
+    **Expect:**
+    - **Reply:** ``⛔ `@everyone` in the driver name would notify everybody it covers. Remove it, then try again.``
+    - **Log:** ``⛔ `/test-mode roster add` refused for <you> — `@everyone` in the driver name would notify everybody it covers. Remove it, then try again.``
+    - Nobody is notified: the mention is quoted in code in both.
+
+68. **A nationality given as a country.** **Do:** `/test-mode roster add driver_name:Dirk Dekker team_name:BRV division:Division 1 nationality:United Kingdom`
+
+    **Expect:**
+    - **Ack:** `Adding fake driver **Dirk Dekker** to **Bravo Motorsport** in **Division 1**`
+    - **Then:**
+      ```
+      ✅ Added fake driver **Dirk Dekker** to **Bravo Motorsport** in **Division 1**.
+      Nationality: **British**
+      Mention string (copy-paste into results): `<@9000000000000000025>`
+      ```
+      The country is stored as its nationality. The ID is one above the highest fake driver's
+      (`9000000000000000024`), not the Fixture's for Dirk Dekker: a single add allocates its own.
+    - **Log:**
+      ```
+      <you> | /test-mode roster add | Success
+        driver: Dirk Dekker
+        team: Bravo Motorsport
+        division: Division 1
+        nationality: British
+      ```
+
+### The nationality switch
+
+69. **Do:** `/test-mode nationality`
+
+    **Expect:**
+    - **Ack:** `Turning test-mode nationality off`
+    - **Then:**
+      ```
+      ✅ Test-mode nationality: **OFF**.
+      Mock drivers already holding one keep it, and graphics draw no flag at all.
+      ```
+    - **Log:**
+      ```
+      <you> | /test-mode nationality | Success
+        test_mode_nationality: disabled
+      ```
+
+70. **Do:** `/test-mode roster add driver_name:Emil Engel team_name:CHL division:Division 1 nationality:German`
+
+    **Expect:**
+    - **Reply:** ``⛔ Nationality is switched off for test mode, so one cannot be recorded. Turn it on with `/test-mode nationality`, or leave the parameter out.``
+    - **Log:** ``⛔ `/test-mode roster add` refused for <you> — Nationality is switched off for test mode, so one cannot be recorded. Turn it on with `/test-mode nationality`, or leave the parameter out.``
+
+71. **Do:** `/test-mode roster add driver_name:Emil Engel team_name:CHL division:Division 1`
+
+    **Expect:**
+    - **Ack:** `Adding fake driver **Emil Engel** to **Charlie GP** in **Division 1**`
+    - **Then:**
+      ```
+      ✅ Added fake driver **Emil Engel** to **Charlie GP** in **Division 1**.
+      Mention string (copy-paste into results): `<@9000000000000000026>`
+      ```
+      No `Nationality:` line.
+    - **Log:**
+      ```
+      <you> | /test-mode roster add | Success
+        driver: Emil Engel
+        team: Charlie GP
+        division: Division 1
+        nationality: (none)
+      ```
+
+72. **Do:** `/test-mode nationality`
+
+    **Expect:**
+    - **Ack:** `Turning test-mode nationality on`
+    - **Then:**
+      ```
+      ✅ Test-mode nationality: **ON**.
+      Mock drivers may be given one with `/test-mode roster add`.
+      ```
+    - **Log:**
+      ```
+      <you> | /test-mode nationality | Success
+        test_mode_nationality: enabled
+      ```
+
+73. **A third reserve.** A Reserve team grows a seat where it has none free. **Do:**
+    `/test-mode roster add driver_name:Rory Reid team_name:Reserve division:Division 1 nationality:other`
+
+    **Expect:**
+    - **Ack:** `Adding fake driver **Rory Reid** to **Reserve** in **Division 1**`
+    - **Then:**
+      ```
+      ✅ Added fake driver **Rory Reid** to **Reserve** in **Division 1**.
+      Nationality: **Other**
+      Mention string (copy-paste into results): `<@9000000000000000027>`
+      ```
+    - **Log:** as step 68, with `driver: Rory Reid`, `team: Reserve` and `nationality: Other`.
+
+74. **Do:** `/test-mode roster list division:Division 1`
+
+    **Expect:** as step 62, the table now:
+    ```
+    Name                 Mention                        Team                 Nationality
+    --------------------------------------------------------------------------------------
+    Adam Archer          <@9000000000000000001>         Alpha Racing         British
+    Bruno Bianchi        <@9000000000000000002>         Alpha Racing         Italian
+    Carlos Cortes        <@9000000000000000003>         Bravo Motorsport     Spanish
+    Dirk Dekker          <@9000000000000000025>         Bravo Motorsport     British
+    Emil Engel           <@9000000000000000026>         Charlie GP           —
+    Willem Wouters       <@9000000000000000023>         Reserve              German
+    Xavier Xu            <@9000000000000000024>         Reserve              —
+    Rory Reid            <@9000000000000000027>         Reserve              Other
+    ```
+
+### Removing one driver
+
+75. **Do:** `/test-mode roster remove user_id:abc`
+
+    **Expect:**
+    - **Reply:** ``❌ `user_id` must be a numeric Discord user ID.``
+    - **Log:** ``⛔ `/test-mode roster remove` refused for <you> — `user_id` must be a numeric Discord user ID.``
+
+76. **Do:** `/test-mode roster remove user_id:9000000000000000099`
+
+    **Expect:**
+    - **Reply:** `⛔ No test driver found with that user ID on this server.`
+    - **Log:** ``⛔ `/test-mode roster remove` refused for <you> — No test driver found with that user ID on this server.``
+
+77. **Do:** `/test-mode roster remove user_id:9000000000000000025`
+
+    **Expect:**
+    - **Ack:** `Removing fake driver **Dirk Dekker**`
+    - **Then:** `✅ Removed fake driver **Dirk Dekker** from **Bravo Motorsport**.`
+    - **Log:**
+      ```
+      <you> | /test-mode roster remove | Success
+        driver: Dirk Dekker
+        team: Bravo Motorsport
+        user_id: 9000000000000000025
+      ```
+
+78. **The same driver again.** **Do:** step 77 again.
+
+    **Expect:** as step 76: the driver is gone.
+
+### Clearing a division
+
+79. **Do:** `/test-mode roster clear division:Division 9`
+
+    **Expect:**
+    - **Reply:** `⛔ Division 'Division 9' not found in the active season.`
+    - **Log:** ``⛔ `/test-mode roster clear` refused for <you> — Division 'Division 9' not found in the active season.``
+
+80. **A division with nobody to clear.** **Do:** `/test-mode roster clear division:Division 2`
+
+    **Expect:**
+    - **Ack:** `Clearing the fake drivers from **Division 2**`
+    - **Then:** `ℹ️ No fake drivers found in **Division 2**.`
+    - **Log:**
+      ```
+      <you> | /test-mode roster clear | Nothing changed
+        division: Division 2
+        reason: no fake drivers to remove
+      ```
+
+81. **A division named in another case.** The division is found whatever its case, and named
+    back as typed. **Do:** `/test-mode roster clear division:division 1`
+
+    **Expect:**
+    - **Ack:** `Clearing the fake drivers from **division 1**`
+    - **Then:** `✅ Removed **7** fake driver(s) from **division 1**.`
+    - **Log:**
+      ```
+      <you> | /test-mode roster clear | Success
+        division: division 1
+        removed_drivers: 7
+      ```
+
+82. **Do:** `/test-mode roster list division:Division 1`
+
+    **Expect:** as step 55: no fake drivers in Division 1.
