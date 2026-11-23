@@ -544,3 +544,139 @@ and each posting is made as text until the module is back. No picture already po
         division: Division 1
         posted as: text
       ```
+
+---
+
+## Part G — Results off
+
+Switching Results & Standings off part-way through a season is more than a flag: in one save it
+erases the season's results, lowers the flag and closes as final, with no results, every round
+waiting on them; then it takes down each result, standings and verdict message and each open
+submission channel, one job each (`results_off_change`). None of it can be undone, so it is
+confirmed first. The confirmation names what is at stake and only that: a running season's
+results, and attendance where attendance is still on. Here it is off (Part E), so only the first
+is named, and attendance's cascade is shown in Part J instead.
+
+37. **A round waiting on its results.** **Do:** `/test-mode advance`
+
+    **Expect:** as `01-full-season.md` step 20: the result submission of Division 1's Round 1,
+    nothing of weather or the check-in being left to come before it.
+    - **Reply:** `⏩ The result submission of **Division 1** — **Round 1** (**Silverstone Circuit**) is on the change queue: its submission channel appears as soon as the queue reaches it.`
+    - **Log:**
+      ```
+      <you> | /test-mode advance | Success
+        phase: result submission (on the change queue)
+        division: Division 1
+        round: Round 1
+      ```
+    - **Posts:** the channel `#s1-division-1-r1-results`, in the category of `#bot-commands`,
+      with the opening and the first prompt `📋 Submit **Qualifying** results …` as
+      `01-full-season.md` step 20 quotes them. Paste nothing into it.
+
+38. **Do:** `/module disable module_name:results`
+
+    **Expect:**
+    - **Reply**, with two buttons, **✅ Disable and delete the results** and **❌ Cancel**:
+      ```
+      ⚠️ **Disabling Results & Standings destroys this season's results.**
+      The season is running, and switching the module off does not pause it. If you continue:
+      • every classification recorded this season is deleted, and every standing computed from them;
+      • every results and standings message already posted is removed from its channel;
+      • every penalty and appeal verdict already announced is removed from the verdicts channel, with the banner heading it;
+      • every round still waiting on results, report verdicts or appeal verdicts is closed as final with no results;
+      • no further results are collected for the rest of the season.
+      **None of this can be undone**, and the module cannot be switched back on until the season ends.
+      Your points configurations, the season's copy of them, and every division's channels are kept, and so are any auto-sack and auto-reserve announcements in the verdicts channel.
+      ```
+      No paragraph headed `⚠️ **Attendance goes with it.**`: attendance is already off.
+    - **Log:** nothing yet. Nothing is written until the confirmation.
+
+39. **Do:** within two minutes, press **❌ Cancel**.
+
+    **Expect:**
+    - **Reply:** `Cancelled. Results & Standings remains enabled and nothing was deleted.`
+    - **Log:**
+      ```
+      ↩️ `/module disable` cancelled by <you>
+        Results & Standings remains enabled and nothing was deleted. Run `/module disable` again to disable results.
+      ```
+    - `#s1-division-1-r1-results` is still there.
+
+40. **Do:** `/module disable module_name:results` again, and within two minutes press
+    **✅ Disable and delete the results**.
+
+    **Expect:**
+    - **Ack** (a new message beneath the question): `Turning Results & Standings off`
+    - **Then:**
+      ```
+      ✅ Results & Standings module disabled.
+      🗑️ This season's results are gone: 0 session result(s) and 0 standings row(s) deleted, 4 results and standings message(s) and 0 verdict(s) removed, 1 round(s) closed with no results.
+      Points configurations and division channels are kept.
+      ```
+      The four messages are the opening classifications the base's approval posted, drivers' and
+      teams' in each division; the round closed is Division 1's Round 1, waiting on the results
+      step 37 asked for.
+    - **Posts:**
+      - `#s1-division-1-r1-results` is deleted.
+      - `#d1-standings`, `#d2-standings`: the opening classification, drivers' and teams', deleted.
+      - Nothing else. The calendars, lineups and attendance sheets stay, as do the forecast and
+        the call of Parts D and E.
+    - **Log**, two lines, the second once the take-downs are done:
+      ```
+      <you> | /module disable results | Success
+        season results deleted: 0 session results, 0 standings rows
+        rounds closed with no results: 1
+        messages to remove: 4 results and standings, 0 verdicts
+      ```
+      ```
+      <you> | /module disable results | Messages removed
+        results and standings messages removed: 4
+        verdicts removed: 0
+      ```
+      > UNVERIFIED: that each division's opening classification is two take-downs, one for the
+      > drivers' table and one for the teams', each counted once however many messages it took
+      > (`erase_season_on`, `_tally`). Where it counts otherwise, correct the 4 in the reply and
+      > both lines.
+
+41. **Do:** `/test-mode review`
+
+    **Expect:**
+    - **Reply:** every round's line with no module's marks at all, each ending after its date and
+      two spaces, and the legend beneath:
+      ```
+      **Season: Season starting <date: the season's start date> — ACTIVE**
+
+      **Division 1**
+        Round 1 · Silverstone Circuit · <YEAR+1>-03-01
+        Round 2 · Hungaroring     · <YEAR+1>-03-08
+        Round 3 · TBA             · <YEAR+1>-03-15
+
+      **Division 2**
+        Round 1 · Autodromo Nazionale Monza · <YEAR+1>-03-01
+        Round 2 · Circuit de Spa-Francorchamps · <YEAR+1>-03-08
+        Round 3 · Circuit Zandvoort · <YEAR+1>-03-15
+
+      *Legend: ✅ done  ⏳ pending (job scheduled)  ⚠️ pending (no job — use /test-mode advance)  ⏭️ passed over (its race has been run)*
+      ```
+      Division 1's Round 1, now final, keeps its line: the review leaves out only a cancelled round.
+    - **Log:** nothing; it is a view.
+
+42. **Nothing is left to advance.** **Do:** `/test-mode advance`
+
+    **Expect:**
+    - **Reply:**
+      ```
+      ℹ️ All phases for all rounds and divisions have been executed. There is nothing left to advance.
+      Use `/season complete` when all rounds are finalized to end the season.
+      ```
+      Every module that offers a step is off, so none is offered. The jobs of each round's start
+      are still in the scheduler, and will close each round as final at its race time, a year
+      ahead. The reply's "executed" and its pointer to `/season complete` do not fit a season
+      whose modules are off, but no rule is broken: record the wording if you wish.
+    - **Log:** ``⛔ `/test-mode advance` refused for <you> — All phases for all rounds and divisions have been executed. There is nothing left to advance.``
+
+43. **Do:** `/results config list scope:Server`
+
+    **Expect:**
+    - **Reply:** `❌ The Results & Standings module is not enabled on this server.`
+    - **Log:** nothing: a view, refused, records nothing.
