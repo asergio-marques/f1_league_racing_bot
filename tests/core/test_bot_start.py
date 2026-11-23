@@ -226,6 +226,7 @@ async def test_the_sync_command_in_a_direct_message_keeps_the_global_commands(
     still there."""
     bot, guild = await _ready_bot(tmp_path, test_mode=test_mode)
     test_group = bot.get_cog("DriverTestCog").driver
+    member_group = bot.get_cog("DriverCog").driver
     before = {command.name for command in bot.tree.get_commands()}
     left_over = next(
         command for command in sorted(bot.tree.get_commands(), key=lambda each: each.name)
@@ -248,8 +249,9 @@ async def test_the_sync_command_in_a_direct_message_keeps_the_global_commands(
 
     await bot.get_command("sync").callback(ctx)
 
-    [(_, global_names, _)] = [each for each in seen if each[0] is None]
+    [(_, global_names, global_driver)] = [each for each in seen if each[0] is None]
     assert global_names == (before - {"driver"} if test_mode else before)
+    assert global_driver is (None if test_mode else member_group)
     [(_, server_names, server_driver)] = [each for each in seen if each[0] is guild]
     assert server_driver is (test_group if test_mode else None)
     assert left_over.name in server_names
