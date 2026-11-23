@@ -46,15 +46,23 @@ async def swap_driver_commands(
 ) -> list[app_commands.AppCommand]:
     """Show the `/driver` the flag calls for and sync both trees: with test mode on, no `/driver`
     on the global tree and the *variant* on the league's server; off, the *member* group on the
-    global tree and none on the server. Returns the global commands synced. Raises
-    `GuildUnavailable` where the league's server is not in the cache, and Discord's refusal of a
-    sync as it came."""
+    global tree and none on the server. Where no server is claimed, the member group on the
+    global tree, synced, and nothing else: the global commands, `/bot init` among them, must
+    reach Discord before a league can claim a server. Returns the global commands synced. Raises
+    `GuildUnavailable` where a claimed server is not in the cache (the global tree synced first
+    where test mode is off), and Discord's refusal of a sync as it came."""
     async with get_connection(bot.db_path) as db:
         cursor = await db.execute("SELECT test_mode_active FROM server_configs")
         row = await cursor.fetchone()
     test_mode = row is not None and bool(row["test_mode_active"])
+    if await bot.league_settings.get_league_server_id() is None:
+        bot.tree.add_command(member, override=True)
+        return await bot.tree.sync()
     guild = await league_guild(bot)
     if guild is None:
+        if not test_mode:
+            bot.tree.add_command(member, override=True)
+            await bot.tree.sync()
         raise GuildUnavailable("the league's server is not in the cache")
     if test_mode:
         bot.tree.remove_command(DRIVER_GROUP)
