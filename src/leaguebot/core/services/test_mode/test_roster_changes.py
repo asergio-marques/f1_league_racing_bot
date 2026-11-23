@@ -50,10 +50,7 @@ from leaguebot.framework.services.queue.change_types import (
     StepContext,
 )
 from leaguebot.core.services.rounds.round_add_changes import saved_result
-from leaguebot.core.services.drivers.driver_service import (
-    SIGNUP_IN_PROGRESS,
-    divisions_taken_part_in,
-)
+from leaguebot.core.services.drivers.driver_service import SIGNUP_IN_PROGRESS
 from leaguebot.core.services.test_mode.test_mode_settings import NOT_IN_TEST_MODE
 from leaguebot.core.services.test_mode.test_roster_service import (
     AddPlan,
@@ -148,16 +145,20 @@ async def standing_refusal_on(db: aiosqlite.Connection) -> str | None:
 async def has_raced_or_holds_a_confirmed_seat(
     db: aiosqlite.Connection, driver: FakeDriver, divisions_raced_read: AwaitedHook
 ) -> bool:
-    """Whether the fake driver has raced or holds a confirmed seat: the former-driver flag is set,
-    or a division is one they took part in, as `/driver reassign` judges it
-    (`divisions_taken_part_in`), the modules asked through *divisions_raced_read*. Such a driver is
-    removed only by `/driver sack`, or by test mode ending."""
+    """Whether the fake driver has raced or holds a confirmed seat. Has raced: the former-driver
+    flag is set, or a module asked through *divisions_raced_read* holds a record of them in some
+    division. Holds a confirmed seat: they hold a committed placement now. A membership row a
+    confirmed placement once left is neither: a driver `/driver sack` freed without their racing
+    is removable. Such a driver is removed only by `/driver sack`, or by test mode ending."""
     if driver.former_driver:
         return True
-    taken = await divisions_taken_part_in(
-        db, driver.profile_id, [driver.discord_user_id], divisions_raced_read
+    cursor = await db.execute(
+        "SELECT 1 FROM driver_season_assignments WHERE driver_profile_id = ? AND committed = 1",
+        (driver.profile_id,),
     )
-    return bool(taken)
+    if await cursor.fetchone() is not None:
+        return True
+    return any(await divisions_raced_read.call(db, [driver.discord_user_id]))
 
 
 def test_roster_add_change() -> ChangeType:

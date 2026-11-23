@@ -318,10 +318,6 @@ async def _sacked_without_racing(league) -> None:
         await db.commit()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#600: a membership row left by a confirmed placement still counts as having raced",
-)
 async def test_a_fake_driver_sacked_without_racing_is_removed(league):
     """D15 refuses only a fake driver who has raced or holds a confirmed seat now. The season is
     in Placements under test mode, Mock Alpha a fake driver at McLaren in Am beside Charles, a
