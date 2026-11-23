@@ -146,13 +146,16 @@ async def _driver(db_path, uid: str, state: str, name: str | None = None):
 
 
 async def test_every_unsettled_signup_is_named(db_path):
-    """Each unsettled signup is named by its signup's name, or by its account where it holds
-    none; a fake driver left Unassigned, which holds no signup, is named by its test name (#600)."""
+    """Each unsettled signup is named by its signup's name, exactly as held (an emoji-only name and
+    "⚡ Speedy" among them), or by its account where it holds none; a fake driver left Unassigned,
+    which holds no signup, is named by its test name (#600)."""
     await _driver(db_path, "1", "UNASSIGNED", "Alice")
     await _driver(db_path, "2", "PENDING_ADMIN_APPROVAL", "Bob")
     await _driver(db_path, "3", "PENDING_DRIVER_CORRECTION")
     await _driver(db_path, "4", "ASSIGNED", "Placed")
     await _driver(db_path, "5", "NOT_SIGNED_UP", "Left")
+    await _driver(db_path, "6", "UNASSIGNED", "⚡ Speedy")
+    await _driver(db_path, "7", "UNASSIGNED", "🏁🏆")
     async with get_connection(db_path) as db:
         await db.execute(
             "INSERT INTO driver_profiles (discord_user_id, current_state, is_test_driver, "
@@ -164,10 +167,12 @@ async def test_every_unsettled_signup_is_named(db_path):
     unsettled, _ = await _faults(_cog(db_path))
 
     joined = "\n".join(unsettled)
-    assert len(unsettled) == 4
+    assert len(unsettled) == 6
     assert "**Alice** — not yet placed" in joined
     assert "**Bob** — awaiting approval" in joined
     assert "**3** — correcting their signup" in joined
+    assert "**⚡ Speedy** — not yet placed" in joined
+    assert "**🏁🏆** — not yet placed" in joined
     assert "**Ghost** — not yet placed" in joined
     assert _GHOST not in joined
 
