@@ -497,3 +497,50 @@ reading the flag first. Nothing already posted is deleted.
       ```
       with `⚠️ Weather forecasts` and its reason as at step 26, and the other six `✅`.
     - **Log:** nothing; it is a view.
+
+---
+
+## Part F — Images off
+
+Switching the image module off lowers its flag and deletes nothing: every output keeps its toggle,
+and each posting is made as text until the module is back. No picture already posted is touched.
+
+34. **Do:** `/module disable module_name:images`
+
+    **Expect:**
+    - **Ack:** `Turning the image module off`
+    - **Then:**
+      ```
+      ✅ Image module disabled. Every aspect reverts to text output.
+      Your configuration is kept — re-enabling restores it exactly.
+      ```
+    - **Log:** `<you> | /module disable images | Success`
+    - **Posts:** none.
+
+35. **Do:** `/images config view`
+
+    **Expect:**
+    - **Reply:** ``❌ The Image module is not enabled. Use `/module enable images` first.``
+    - **Log:** nothing: a view, refused, records nothing.
+
+36. **A calendar, as text.** **Do:** `/division calendar-sync name:Division 1`
+
+    **Expect:**
+    - **Ack:** `Posting the calendar of **Division 1** again`
+    - **Then:** `✅ Calendar for **Division 1** reposted as text.` No notices section: nothing was
+      drawn.
+    - **Posts** (`#d1-calendar`): a text message, no picture:
+      ```
+      📅 **Division 1 — Race Calendar**
+      Round 1: Silverstone Circuit — <t:<unix time: <YEAR+1>-03-01 20:00 UTC>:F>
+      Round 2: Hungaroring — <t:<unix time: <YEAR+1>-03-08 20:00 UTC>:F>
+      Round 3: Mystery — <t:<unix time: <YEAR+1>-03-15 20:00 UTC>:F>
+      ```
+      Discord shows each timestamp in your own time zone. Then the calendar picture posted at the
+      base's approval is deleted: the new posting goes up first, the old one comes down after it.
+    - **Log:**
+      ```
+      <you> | /division calendar-sync | Success
+        division: Division 1
+        posted as: text
+      ```
