@@ -8,14 +8,15 @@ chain and is pinned as a rule rather than left to chance, because nothing else a
 What actually blocked test mode was that a test season commonly sits in SETUP, and that is
 covered by the season widening.
 
-And the nationality of a mock driver. One created without a nationality records none and
-is drawn without a flag, as a real posting would draw them, and the reply says so —
-otherwise a maintainer reads the blank flags as a broken flag directory. One created with
-a nationality carries it in place of the signup record it has not got, and is drawn with a
-flag like anybody else.
+And the nationality of a mock driver, which is only ever the one its signup gave, as a real
+driver's is (#600). One with no signup, or whose signup gave none, is drawn without a flag, as a
+real posting would draw them, and the reply says so — otherwise a maintainer reads the blank flags
+as a broken flag directory. One whose signup gave one is drawn with a flag like anybody else.
 
 Discord is stubbed. Test drivers are created through `test_roster_service`, the same code
-`/test-mode roster add` calls, so the fixture cannot drift from what test mode really makes.
+`/test-mode roster add` calls, with an ID and a name alone, so the fixture cannot drift from what
+test mode really makes; they are then seated as `/driver assign` and the placements' commit leave
+a driver, which is not test mode's to do.
 """
 from __future__ import annotations
 
@@ -82,8 +83,8 @@ async def _seed_test_season(
 ):
     """A division of two teams, seated entirely with test-mode mock drivers.
 
-    *nationalities* is cycled over the mock drivers where given, in the forms a maintainer
-    may type; where it is empty every mock driver is created without one.
+    *nationalities* is cycled over the mock drivers where given, each given as the nationality an
+    approved signup of theirs to the season gave; where it is empty no mock driver has a signup.
     """
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -126,21 +127,67 @@ async def _seed_test_season(
                 )
         await db.commit()
 
-    # Seated through the same service `/test-mode roster add` calls, so the fixture cannot
-    # drift from what test mode actually creates.
+    # Created through the same service `/test-mode roster add` calls, so the fixture cannot
+    # drift from what test mode actually creates, then seated as a placement seats a driver.
     for index, name in enumerate(MOCK_NAMES):
         team = "Redline" if index < 2 else "Bluewave"
         async with get_connection(db_path) as db:
-            result = await test_roster_service.add_test_driver_on(
-                db,
-                name,
-                team,
-                "Division 1",
-                nationality=nationalities[index % len(nationalities)] if nationalities else None,
-            )
+            result = await test_roster_service.add_test_driver_on(db, name)
+            assert not isinstance(result, str), result
+            await _seat(db, result["profile_id"], team, season_id, division_id)
+            if nationalities:
+                await _signed_up(
+                    db, result["discord_user_id"], season_id,
+                    nationalities[index % len(nationalities)],
+                )
             await db.commit()
-        assert not isinstance(result, str), result
     return SimpleNamespace(season_id=season_id, division_id=division_id)
+
+
+async def _seat(db, profile_id: int, team_name: str, season_id: int, division_id: int) -> None:
+    """Seat fake driver *profile_id* in the first free seat of *team_name*, committed, on *db*:
+    the seat holds them, their assignment to the division names it, and they are Assigned, as
+    `/driver assign` and the placements' commit leave a driver."""
+    seat = await (
+        await db.execute(
+            "SELECT ts.id FROM team_seats ts "
+            "JOIN team_instances ti ON ti.id = ts.team_instance_id "
+            "WHERE ti.division_id = ? AND ti.name = ? AND ts.driver_profile_id IS NULL "
+            "ORDER BY ts.seat_number LIMIT 1",
+            (division_id, team_name),
+        )
+    ).fetchone()
+    await db.execute(
+        "UPDATE team_seats SET driver_profile_id = ? WHERE id = ?", (profile_id, seat["id"])
+    )
+    await db.execute(
+        "INSERT INTO driver_season_assignments "
+        "(driver_profile_id, season_id, division_id, team_seat_id, committed) "
+        "VALUES (?, ?, ?, ?, 1)",
+        (profile_id, season_id, division_id, seat["id"]),
+    )
+    await db.execute(
+        "UPDATE driver_profiles SET current_state = 'ASSIGNED' WHERE id = ?", (profile_id,)
+    )
+
+
+async def _signed_up(db, discord_user_id: int, season_id: int, nationality: str | None) -> None:
+    """An approved signup to *season_id* by the driver of *discord_user_id*, giving
+    *nationality*, on *db*."""
+    await db.execute(
+        "INSERT INTO signup_records (season_id, discord_user_id, nationality, created_at, "
+        "approved) VALUES (?, ?, ?, ?, 1)",
+        (season_id, str(discord_user_id), nationality, NOW.isoformat()),
+    )
+
+
+#: What is not yet true of every test here: a fake driver is created with an ID and a name alone.
+_NAME_ONLY = "#600: a fake driver is still created seated, from a team and a division"
+#: And, of those reading a fake driver's nationality, that it is its signup's.
+_SIGNUP_NATIONALITY = (
+    "#600: a fake driver is still created seated, and its nationality is still its own "
+    "rather than its signup's"
+)
 
 
 # ── T032: mock drivers are drawn by their mock names ──────────────────────
@@ -149,6 +196,7 @@ async def _seed_test_season(
 class TestMockDriversAreDrawnByTheirMockName:
     """FR-026."""
 
+    @pytest.mark.xfail(strict=True, reason=_NAME_ONLY)
     @pytest.mark.parametrize("status", ["SETUP", "ACTIVE"])
     async def test_every_mock_name_is_drawn(self, bot, db_path, status):
         await _seed_test_season(db_path, status=status)
@@ -157,6 +205,7 @@ class TestMockDriversAreDrawnByTheirMockName:
 
         assert sorted(d.display_name for d in context.drivers) == sorted(MOCK_NAMES)
 
+    @pytest.mark.xfail(strict=True, reason=_NAME_ONLY)
     async def test_the_seats_carry_the_mock_names_too(self, bot, db_path):
         """The lineup draws the seats, not the flat list, so both must be right."""
         await _seed_test_season(db_path)
@@ -170,6 +219,7 @@ class TestMockDriversAreDrawnByTheirMockName:
         ]
         assert sorted(n for n in seated if n) == sorted(MOCK_NAMES)
 
+    @pytest.mark.xfail(strict=True, reason=_NAME_ONLY)
     @pytest.mark.parametrize(
         "kind", ["results", "standings", "attendance", "verdict"]
     )
@@ -182,6 +232,7 @@ class TestMockDriversAreDrawnByTheirMockName:
 
         assert sorted(d.display_name for d in context.drivers) == sorted(MOCK_NAMES)
 
+    @pytest.mark.xfail(strict=True, reason=_NAME_ONLY)
     async def test_a_mock_driver_is_never_invented_over(self, bot, db_path):
         """FR-027 — a mock driver is a seated driver, not an empty seat."""
         await _seed_test_season(db_path)
@@ -196,8 +247,9 @@ class TestMockDriversAreDrawnByTheirMockName:
 
 
 class TestTheNationalityTally:
-    """FR-028. A mock driver records the nationality it was created with, or none."""
+    """FR-028. A mock driver is drawn under the nationality its signup gave, or none."""
 
+    @pytest.mark.xfail(strict=True, reason=_NAME_ONLY)
     async def test_mock_drivers_are_counted(self, bot, db_path):
         await _seed_test_season(db_path)
 
@@ -206,6 +258,7 @@ class TestTheNationalityTally:
         assert context.nationality_collected is True
         assert context.drivers_without_nationality == len(MOCK_NAMES)
 
+    @pytest.mark.xfail(strict=True, reason=_NAME_ONLY)
     async def test_they_are_drawn_without_a_flag_rather_than_given_one(
         self, bot, db_path
     ):
@@ -215,6 +268,7 @@ class TestTheNationalityTally:
 
         assert all(d.nationality in (None, "") for d in context.drivers)
 
+    @pytest.mark.xfail(strict=True, reason=_NAME_ONLY)
     async def test_nothing_is_counted_where_the_league_collects_no_nationality(
         self, bot, db_path
     ):
@@ -232,36 +286,36 @@ class TestTheNationalityTally:
         assert context.nationality_collected is False
         assert context.drivers_without_nationality == 0
 
+    @pytest.mark.xfail(strict=True, reason=_SIGNUP_NATIONALITY)
     async def test_a_driver_who_records_one_is_not_counted(self, bot, db_path):
-        """The tally is of drivers drawn without a flag, not of test drivers."""
-        await _seed_test_season(db_path)
+        """The tally is of drivers drawn without a flag, not of test drivers: one mock driver's
+        signup gave British, and only the other three are counted."""
+        seeded = await _seed_test_season(db_path)
         async with get_connection(db_path) as db:
             profile = await (
                 await db.execute(
-                    "SELECT id FROM driver_profiles "
-                    "WHERE is_test_driver = 1 LIMIT 1",
+                    "SELECT discord_user_id FROM driver_profiles "
+                    "WHERE is_test_driver = 1 ORDER BY id LIMIT 1",
                 )
             ).fetchone()
-            await db.execute(
-                "UPDATE driver_profiles SET test_nationality = 'British' WHERE id = ?",
-                (profile["id"],),
-            )
+            await _signed_up(db, profile["discord_user_id"], seeded.season_id, "British")
             await db.commit()
 
         context = await resolve_context(bot, "Division 1", kind="lineup")
 
         assert context.drivers_without_nationality == len(MOCK_NAMES) - 1
 
+    @pytest.mark.xfail(strict=True, reason=_SIGNUP_NATIONALITY)
     async def test_a_roster_created_with_nationalities_is_drawn_with_flags(
         self, bot, db_path
     ):
-        """The whole point of the column: a mock driver has a flag of its own."""
-        await _seed_test_season(db_path, nationalities=("british", "Dutch", "brazil"))
+        """A mock driver whose signup gave a nationality is drawn with its flag, as any driver
+        is: four mock drivers, their signups giving British, Dutch, Brazilian and British."""
+        await _seed_test_season(db_path, nationalities=("British", "Dutch", "Brazilian"))
 
         context = await resolve_context(bot, "Division 1", kind="lineup")
 
         assert context.drivers_without_nationality == 0
-        # Stored canonically, whatever form the roster command was given.
         assert sorted(d.nationality for d in context.drivers) == [
             "Brazilian",
             "British",
@@ -269,6 +323,7 @@ class TestTheNationalityTally:
             "Dutch",
         ]
 
+    @pytest.mark.xfail(strict=True, reason=_SIGNUP_NATIONALITY)
     async def test_the_test_mode_switch_stands_in_while_test_mode_is_on(
         self, bot, db_path
     ):
