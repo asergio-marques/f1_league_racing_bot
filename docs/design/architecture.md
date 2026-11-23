@@ -647,32 +647,33 @@ would make the file's write wait on a record of it.
   stopped; one that overtakes a stop says it runs past it, the stop standing (`held_behind_text`).
 
 **Five exceptions: a league's settings, `/bot init`, roles moved after a driver's or team's change,
-the settings a league repairs itself with, and the `/driver` swap after a test-mode change.** A change to one of a league's settings is one
-atomic save of its value and its audit record (its line with them, or in the save of the step after
-it that carries the line — the arming of the daily portrait job, a role's grant to every driver
-where it replaces one gone from the server while the season's configuration is fixed, the old hub
-stood down and the new one's permissions set once its channel is moved, or the signup channel's
-permissions set (the new channel's first, the old one's cleared last); see "The record is the
-queue's"), after any step before the save, and the work after it that the setting does not need
-(checking it against the templates, arming or removing a timed job, granting a role to every
-driver, asking the hub's panel to be posted again as the bot's own change, posting the signup
-information in the new signup channel where a window is open) is work nothing later depends on.
-Work the save waits on may come before it (a module's kept channels checked before it is switched
-on, the channels an output switched to a picture posts to, and what it put back on Discord): it saves nothing, and a fault in it, or a refusal by it, ends
-the setting with nothing saved and no audit record, what a step before the save changed on Discord
-being undone so that nothing is half-set (framework.md, "Settings"). A fault in any of these leaves
-nothing half-done and nothing behind it on the lane waits on it. A fault in a step before the save
-saves nothing, and one in the save is rolled back whole, so nothing is saved and the member can
-simply ask again; a fault in a step after the save leaves the setting saved, so asking again with
-the same value saves nothing and repeats no step, and the reply says what was not done, or what to
-do by hand, where the step has anything to say. So such a step carries `Step.on_fault`: where it
-raises, the queue does not stop the lane but marks the job done with what `on_fault` returns, in a
-save of its own with its lines, and the change carries on to its next step or finishes. A change
-type may likewise give `ChangeType.on_check_fault` for a check that raises as a **member's** change
-starts: the change is ended as REFUSED in one save, with the failure line in place of a refusal's,
-and the reply it returns. What the member is told and what the log channel records of either is the
-core specification's "How a change is carried out"; the full detail goes to the host's log. A step
-that is `undiscardable` may not carry `on_fault`, since it is a step a stop must hold.
+the settings a league repairs itself with, and the `/driver` swap after a test-mode change.** A
+change to one of a league's settings is one atomic save of its value and its audit record (its line
+with them, or in the save of the step after it that carries the line — the arming of the daily
+portrait job, a role's grant to every driver where it replaces one gone from the server while the
+season's configuration is fixed, the old hub stood down and the new one's permissions set once its
+channel is moved, or the signup channel's permissions set (the new channel's first, the old one's
+cleared last); see "The record is the queue's"), after any step before the save, and the work after
+it that the setting does not need (checking it against the templates, arming or removing a timed
+job, granting a role to every driver, asking the hub's panel to be posted again as the bot's own
+change, posting the signup information in the new signup channel where a window is open) is work
+nothing later depends on. Work the save waits on may come before it (a module's kept channels
+checked before it is switched on, the channels an output switched to a picture posts to, and what it
+put back on Discord): it saves nothing, and a fault in it, or a refusal by it, ends the setting with
+nothing saved and no audit record, what a step before the save changed on Discord being undone so
+that nothing is half-set (framework.md, "Settings"). A fault in any of these leaves nothing
+half-done and nothing behind it on the lane waits on it. A fault in a step before the save saves
+nothing, and one in the save is rolled back whole, so nothing is saved and the member can simply ask
+again; a fault in a step after the save leaves the setting saved, so asking again with the same
+value saves nothing and repeats no step, and the reply says what was not done, or what to do by
+hand, where the step has anything to say. So such a step carries `Step.on_fault`: where it raises,
+the queue does not stop the lane but marks the job done with what `on_fault` returns, in a save of
+its own with its lines, and the change carries on to its next step or finishes. A change type may
+likewise give `ChangeType.on_check_fault` for a check that raises as a **member's** change starts:
+the change is ended as REFUSED in one save, with the failure line in place of a refusal's, and the
+reply it returns. What the member is told and what the log channel records of either is the core
+specification's "How a change is carried out"; the full detail goes to the host's log. A step that
+is `undiscardable` may not carry `on_fault`, since it is a step a stop must hold.
 `framework/services/queue/setting_change.py` builds both callbacks for every settings command once.
 *Rejected:* a step that catches its own fault, which would leave its partial writes on the save's
 connection and could not catch what fails after it returns, the queue's own audit and line writes
@@ -754,6 +755,26 @@ stop nobody yet holds the role to clear.
   the one a later reader could tune away: a change that can stop its lane and claims a channel
   would need the save to re-check, or would need to be barred from being overtaken.
 
+  **A fifth exception: the swap of the `/driver` commands after a change of test mode.** Switching
+  test mode on or off, a test season's completion, abort and cancellation each end with the server
+  showing the `/driver` the flag calls for, the member group or the test-mode group
+  (`swap_driver_commands`, `core/services/test_mode/driver_commands.py`). The swap is an ACT step
+  after the commit, and carries `Step.on_fault` as role moves do: where Discord refuses it, or the
+  league's server is missing from the cache, the queue does not stop the lane but marks the job
+  done, for the reply and log line to say so. The change it follows stands, and nothing behind it on
+  the lane waits on it: the swap is Discord work the save does not need, as a role move is, so a
+  stopped lane would hold every change for a lost command definition. The remedy it names is a
+  restart, never the change run again, which would flip test mode (and, turning it off, delete every
+  fake driver) or, after a season's end, be refused. What the member and the log channel are told of
+  it is the core specification's ("How a change is carried out"), as are the moments of the swap and
+  the restart named after a factory reset or `/bot init` ("Test mode"). Off the queue, start-up and
+  `!sync` run the same swap and catch a refusal or a missing server as `discord.HTTPException` or
+  `GuildUnavailable` by name, posting it through `start_up_failure_line`. *Rejected:* stopping the
+  lane on a refused swap, as other jobs do, which would hold the lane for work nothing waits on; and
+  the swap run off the queue after the outcome, which would need an exception of its own stated here
+  and machinery of its own (a catch-all reporting through `post_log`), and leave the swap unrecorded
+  on the change's job.
+
   Nothing else overtakes the stopped job, so whatever runs outside the queue leaves alone what a
   change is in hand on, stopped included, as the queue tells it (`unfinished` or `in_hand`; core
   specification, "How a change is carried out"). Discord answering that a message is already
@@ -827,26 +848,6 @@ stop nobody yet holds the role to clear.
   stopped conversation's job when it ends the conversation, which would let a change overtake a
   stop. Also rejected: an automatic try after a restart, which "When the bot stops" in the core
   specification rules out.
-
-  **A fifth exception: the swap of the `/driver` commands after a change of test mode.** Switching
-  test mode on or off, a test season's completion, abort and cancellation each end with the server
-  showing the `/driver` the flag calls for, the member group or the test-mode group
-  (`swap_driver_commands`, `core/services/test_mode/driver_commands.py`). The swap is an ACT step
-  after the commit, and carries `Step.on_fault` as role moves do: where Discord refuses it, or the
-  league's server is missing from the cache, the queue does not stop the lane but marks the job
-  done, for the reply and log line to say so. The change it follows stands, and nothing behind it on the
-  lane waits on it: the swap is Discord work the save does not need, as a role move is, so a
-  stopped lane would hold every change for a lost command definition. The remedy it names is a
-  restart, never the change run again, which would flip test mode (and, turning it off, delete
-  every fake driver) or, after a season's end, be refused. What the member and the log channel are
-  told of it is the core specification's ("How a change is carried out"), as are the
-  moments of the swap and the restart named after a factory reset or `/bot init` ("Test mode").
-  Off the queue, start-up and `!sync` run the same swap and catch a refusal or a missing server
-  as `discord.HTTPException` or `GuildUnavailable` by name, posting it through
-  `start_up_failure_line`. *Rejected:* stopping the lane on a refused swap, as other jobs do, which would hold the
-  lane for work nothing waits on; and the swap run off the queue after the outcome, which would
-  need an exception of its own stated here and machinery of its own (a catch-all reporting through
-  `post_log`), and leave the swap unrecorded on the change's job.
 - **A failure that cannot be recorded is logged, and the job tried again.** Where the stop's own
   save raises, nothing is marked stopped: the lane's catch-all (`ChangeQueue._work_lane`, one for each lane) puts the
   error in the host's log, that lane's worker pauses and looks again, and the job runs again, so that its
