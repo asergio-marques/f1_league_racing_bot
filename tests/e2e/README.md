@@ -27,9 +27,15 @@ league admin role.
 | `05-modules-off-and-on.md` | Restores the base and switches modules off and on mid-season, checking each keeps its settings. |
 | `06-settings.md` | Restores the base and works the bot's settings, its views and the signup configuration in test mode. |
 | `07-image-config.md` | Restores the base and works the image configuration — templates, asset folders, colours and driver portraits — checking each change by preview, then puts the base's settings back. |
+| `08-recovery.md` | Restores the base and restarts the bot at awkward moments, checking what resumes. |
+| `09-season-endings.md` | Restores the base, cancels its season, aborts a season set up after it, packs the bot and factory-resets it. **Run last: it erases everything.** |
 
 Run **`00-base.md` first**, from no database file. It fixes, in its **Fixture** table, every
 name and value the other specs reuse: channels, roles, divisions, teams and drivers.
+
+Run **`09-season-endings.md` last of all.** It ends with a factory reset, which erases the
+bot's database and its messages on the server, the base with them: after it, run `00-base.md`
+again before any other spec.
 
 **Every other spec starts by restoring the base's locked backup:**
 
