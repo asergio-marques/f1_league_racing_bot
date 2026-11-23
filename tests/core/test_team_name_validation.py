@@ -271,12 +271,15 @@ def test_a_team_name_with_markup_an_emoji_or_a_group_mention_is_refused(name):
 
 
 def test_shorthand_refuses_a_comma():
-    """A shorthand is typed into the rows of a results submission and a test roster, which
-    are split on commas: one inside it would split the row in the wrong place."""
+    """A shorthand is typed into the rows of a results submission, which are split on commas: one
+    inside it would split the row in the wrong place. The test roster carries no team (#600), so
+    the refusal names the submission alone."""
     problem = validate_team_name("Red,Bull")
 
-    assert problem is not None
-    assert "comma" in problem
+    assert problem == (
+        '"Red,Bull" holds a comma. A shorthand is typed into the comma-separated rows of a '
+        "results submission, so it cannot hold one."
+    )
 
 
 def test_shorthand_refuses_seventeen_characters():

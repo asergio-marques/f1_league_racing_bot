@@ -39,7 +39,7 @@ def validate_team_name(name: str, existing_keys: dict[str, str] | None = None) -
     The shorthand is the team's short alias: typed wherever a team is entered, and the
     name of its artwork file. So it is held to two rules of its own besides the filename rules
     below — at most ``SHORTHAND_MAX`` characters, and no comma, because a shorthand is typed
-    into the comma-separated rows of a results submission and a test roster.
+    into the comma-separated rows of a results submission.
 
     The normalised shorthand is the filename under which every graphic that draws a team
     badge seeks that team's image (Constitution XIV.13) — the lineup, both results graphics,
@@ -81,7 +81,7 @@ def validate_team_name(name: str, existing_keys: dict[str, str] | None = None) -
     if "," in trimmed:
         return (
             f'"{trimmed}" holds a comma. A shorthand is typed into the comma-separated rows '
-            "of a results submission and a test roster, so it cannot hold one."
+            "of a results submission, so it cannot hold one."
         )
 
     refusal = NAME.check("shorthand", trimmed).refusal
@@ -697,7 +697,7 @@ def resolve_team_reference(
     """The team of *teams* whose shorthand *text* is, ignoring case, or why it names none.
 
     A team is typed by its **shorthand** and by nothing else: the commands offer it by autocomplete,
-    and pasted text — a results submission, a test roster — takes it alone. The full name is only
+    and pasted text — a results submission — takes it alone. The full name is only
     ever shown, and the role is only for mentioning the team, so neither names one here.
 
     A role mention, ``@everyone``, ``@here``, a mention of a member and a Discord ID typed out
