@@ -203,3 +203,148 @@ No season is live now, and test mode is off.
     - **Reply:** ``⛔ The backup commands run only while the server is in **test mode**. They copy and replace the whole database, which is not something to do to a league that is running. Turn test mode on with `/test-mode toggle` first.``
     - **Log:** nothing: the status is a view. The backup is still on disk (step 6); step 15 reads it
       again once test mode is back on.
+
+---
+
+## Part C — Aborting a season before its placements
+
+`/season abort` abandons a season whose placements were never confirmed, in configuration, waiting,
+signups or placements, **as if it had never been**: it is deleted with every record of it, and takes
+no number (`season_end_changes.season_abort_change`). It is shown twice: in configuration, with test
+mode off and nothing in the season; and in placements, with test mode on and two fake drivers
+seated.
+
+### In configuration
+
+11. **Do:** `/season setup game_edition:25`
+
+    **Expect:** as `02-roster-changes.md` step 43: **Season #2 (F1 25)**, the next number after the
+    cancelled Season #1, which the league keeps.
+
+12. **Do:** `/season status`
+
+    **Expect:** as step 7: `ℹ️ No season is being raced on this server.` A season in configuration
+    is not being raced: the status reads only a season whose placements are confirmed
+    (`SeasonService.get_confirmed_season`). No log line.
+
+13. **The pack is refused while a season is current.** **Do:** `/bot pack confirm:CONFIRM`
+
+    **Expect:**
+    - **Reply:** `⛔ Season 2 is current (stage: configuration). The bot does not leave a server while a season is under way — complete it, or cancel or abort it, first.`
+    - **Log:** `⛔ `/bot pack` refused for <you> — Season 2 is current (stage: configuration). The bot does not leave a server while a season is under way — complete it, or cancel or abort it, first.`,
+      with `` `/bot pack` `` in code. No `Pack under way` line: the refusal is asked before the
+      pack writes its line (`BotCog.handle_pack`).
+    - Nothing cleared.
+
+14. **Do:** `/season abort confirm:CONFIRM`
+
+    **Expect:**
+    - **Ack:** `Aborting the season being set up`
+    - **Then:** ``✅ The season has been aborted. Nothing of it remains, and a new season may be set up with `/season setup`.``
+    - **Posts:** nothing. No signup window stood open, and test mode is off.
+    - **Log:**
+      ```
+      <you> | /season abort | Success
+        drivers returned to Not Signed Up: 0
+        drivers deleted: 0
+      ```
+
+15. **The abort took no number.** **Do:** `/season setup game_edition:25`
+
+    **Expect:** as step 11: **Season #2 (F1 25)** again. The season of step 11 was deleted
+    whole; a cancelled season is kept, so the number after Season #1 is still 2
+    (`SeasonService.begin_setup_on`).
+
+### In placements, in test mode
+
+16. **Do:** `/test-mode toggle`
+
+    **Expect:** as `02-roster-changes.md` step 45: ``✅ Test mode **enabled**. …``, with no
+    `📌 Added default point configs` line, the server already holding `Standard` and `Half Points`.
+
+17. **The backup survived the cancellation.** **Do:** `/test-mode backup status`
+
+    **Expect:** as `02-roster-changes.md` step 1: taken at `00-base.md` step 33, `Readable: yes`,
+    locked. No log line.
+
+18. **Do:** `/results config append name:Standard`, then `/season config-review`, then, within five
+    minutes, press **✅ Confirm configuration** on the question.
+
+    **Expect:** as `02-roster-changes.md` steps 49, 50 and 51: `Standard` attached; the review
+    posted with nothing at fault, its acknowledgement left standing (believed a bot defect, as
+    `00-base.md` step 20 records); then
+    ``✅ Season #2's configuration is confirmed. The season is now in placements — …`` and the log
+    line `<you> | /season config-review | Confirmed` with `season: Season #2` and
+    `stage: PLACEMENTS` beneath.
+
+19. **Do:** `/bot pack confirm:CONFIRM`
+
+    **Expect:** as step 13, the stage now read as placements:
+    - **Reply:** `⛔ Season 2 is current (stage: placements). The bot does not leave a server while a season is under way — complete it, or cancel or abort it, first.`
+    - **Log:** the same, as a refusal of `` `/bot pack` ``.
+
+20. **Do:** `/division add name:Division 1 role:@Division 1 tier:1`
+
+    **Expect:** as `00-base.md` step 22.
+
+21. **Do:** `/test-mode roster add driver_name:Adam Archer team_name:ALP division:Division 1 nationality:British`
+
+    **Expect:**
+    - **Ack:** `Adding fake driver **Adam Archer** to **Alpha Racing** in **Division 1**`
+    - **Then:**
+      ```
+      ✅ Added fake driver **Adam Archer** to **Alpha Racing** in **Division 1**.
+      Nationality: **British**
+      Mention string (copy-paste into results): `<@9000000000000000001>`
+      ```
+      The first identifier again: the cancellation deleted every fake driver, and a single add
+      takes one above the highest left (`_next_synthetic_id_on`).
+    - **Log:**
+      ```
+      <you> | /test-mode roster add | Success
+        driver: Adam Archer
+        team: Alpha Racing
+        division: Division 1
+        nationality: British
+      ```
+
+22. **Do:** `/test-mode roster add driver_name:Bruno Bianchi team_name:ALP division:Division 1 nationality:Italian`
+
+    **Expect:** as step 21, for **Bruno Bianchi**, `Nationality: **Italian**`, the mention string
+    `<@9000000000000000002>`, and the log line's `driver:` and `nationality:` lines to match.
+
+23. **Do:** `/season abort confirm:Confirm`
+
+    **Expect:**
+    - **Reply:** ``❌ Type exactly `CONFIRM` in the `confirm` field to proceed.``
+    - **Log:** ``⛔ `/season abort` refused for <you> — Type exactly `CONFIRM` in the `confirm` field to proceed.``
+
+24. **Do:** `/season abort confirm:CONFIRM`
+
+    **Expect:**
+    - **Ack:** `Aborting the season being set up`
+    - **Then:** ``✅ The season has been aborted. Nothing of it remains, and a new season may be set up with `/season setup`.``
+    - **Posts:** nothing. Under test mode the abort first clears what test mode posted, and nothing
+      was posted.
+    - **Roles:** none taken. Fake drivers hold none.
+    - **Log:**
+      ```
+      <you> | /season abort | Success
+        drivers returned to Not Signed Up: 2
+        drivers deleted: 0
+      ```
+      Both fake drivers were seated, and the driver pass returns them to Not Signed Up; it deletes
+      only real drivers who never raced. The fake drivers are deleted by test mode being switched
+      off, in the same save, which the line does not count (`run_driver_pass_on`,
+      `switch_test_mode_off_on`).
+    - **Test mode is off**, and both fake drivers are gone. **The saved backup is kept**:
+      `bot.bkup.db`, `scheduler.bkup.db` and `backup.lock` are still in the bot host folder.
+
+25. **Do:** `/test-mode roster list division:Division 1`
+
+    **Expect:**
+    - **Reply:** `⛔ This command is only available when test mode is enabled.`
+    - **Log:** nothing: the list is a view.
+    - **Host check (optional):**
+      `sqlite3 bot.db "SELECT season_number, status FROM seasons;"` answers `1|CANCELLED` alone:
+      nothing of Season #2 remains.
