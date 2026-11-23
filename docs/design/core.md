@@ -341,7 +341,7 @@ undone; the bodies moving into a core service, which would have services take th
 refuse through it, a wider refactor than the change needs; and the member group on the server
 always, which would need a swap after `/bot init` and after a factory reset as well, a `/bot init`
 job that stops the lane and a reset clean-up run off the queue, two more moments to cover, where a
-league that never uses test mode now sees `/driver` exactly as before.
+league that never uses test mode sees only the member's `/driver`.
 
 **The swap that shows the right one** is `swap_driver_commands`
 (`core/services/test_mode/driver_commands.py`): it reads the flag off the database, takes the one group off the global tree
