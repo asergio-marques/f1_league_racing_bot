@@ -31,7 +31,6 @@ from leaguebot.core.services.seasons.confirmation_refusals import Confirmation, 
 from leaguebot.core.services.modules.image_drawing import DivisionTeams, ImageDrawing, TeamSeats
 from leaguebot.framework.services.switches.module_service import ModuleService, SwitchNotSignedUp
 from leaguebot.core.services.seasons.season_service import SeasonService
-from leaguebot.core.services.drivers.driver_names import resolve_driver_name
 from leaguebot.core.services.drivers.team_service import TeamService, validate_team_name
 from leaguebot.core.utils.asset_slug import normalise
 from leaguebot.utils.messages import discord_ts
@@ -343,19 +342,19 @@ async def division_channel_faults(
 
 def _named(row: Any, signup_names: Mapping[int, str]) -> str:
     """The name an unsettled driver is listed under (see `unsettled_signups`)."""
-    return resolve_driver_name(
-        discord_user_id=row["discord_user_id"],
-        signup_display_name=signup_names.get(row["id"]),
-        test_display_name=row["test_display_name"] if row["is_test_driver"] else None,
+    return (
+        signup_names.get(row["id"])
+        or (row["test_display_name"] if row["is_test_driver"] else None)
+        or str(row["discord_user_id"])
     )
 
 
 async def unsettled_signups(db_path: str, driver_names_read: AwaitedHook) -> list[str]:
     """The signups not yet settled, named: what the review and the confirmation both list.
 
-    Each driver is named as `resolve_driver_name` names one: by what *driver_names_read* hands back
-    for them, the name signup holds from their latest signup, else, for a fake driver, which holds
-    no signup, its test name, else their account.
+    Each driver is named by what *driver_names_read* hands back for them, the name signup holds from
+    their latest signup, as held and never cleaned as a name drawn in an image is, else, for a fake
+    driver, which holds no signup, its test name, else their account.
     """
     from leaguebot.core.services.seasons.season_lifecycle_service import UNSETTLED_STATES
 
