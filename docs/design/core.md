@@ -170,7 +170,7 @@ folder.
 | Configuration | `config_service` (`ConfigService`) | `server_configs`, and the claim on the server; it also fulfils the framework's protocols, answering the league's settings (the claimed server, the settings row) and the authority tiers (who is a league admin, who a league manager) the change queue asks, each tier delegating to `channel_guard`, where the rule stays |
 | Seasons, divisions, rounds | `season_service` (`SeasonService`), `season_lifecycle_service`, `season_end_service`, `round_moments`, `track_service`, `round_context` (`round_context`, `division_context`, `division_rounds`) | seasons, divisions, rounds, sessions; reads `tracks`; `round_context` answers a round's, and a division's, season, tier and grand prix for the module that heads a picture with them (image's pictures), and `division_rounds` a division's rounds in order, for a picture that lists them |
 | Teams and placements | `team_service` (`TeamService`), `placement_service` (`PlacementService`), `team_role_service` (`TeamRoleService`), `template_capacity_service` (`TemplateCapacityService`), `lineup_posting` (`LineupPoster`), `lineup_command` (`lineups_for_command`), `division_seating` (`division_seating`) | the list and the divisions' teams; the seats and placements (`PlacementService`, which posts nothing, reads a team's role through the team-role service it is handed, joins `team_role_configs` in its own queries for the roles a driver's placements carry, reads the driver role from the settings row, and gives and takes roles only through that service's helpers); `team_role_configs` and the helpers that give and take a team's Discord role (`TeamRoleService`); nothing for the capacity guards, which ask the image module's drawing whether its templates could draw a seat (`TemplateCapacityService`); nothing for the lineup's posting, the picture or its text (`LineupPoster`), nor for `/team lineup`'s pictures, which refuse rather than fall back to text (`lineups_for_command`); the seats and who sits in them, read as the lineup of record shows them, for every module that lists who races in a division (`division_seating`: the text lineup, image's lineup, standings and previews, each handing in its own filter on the state of the driver who sits); the portrait roster reads `active_season_driver_ids` beside it, which takes no filter: every driver assigned in the active season, a placement not yet confirmed included, test drivers left out |
-| Drivers | `driver_service` (`DriverService`), `driver_names` | profiles, accounts, memberships, and the state machine; history is written by `season_end_service.write_driver_history_entries_on`; nothing for `driver_names`, which reads a driver's name, username and nationality, and whether the league collects a nationality, from the profile, the accounts, the test-mode fields and signup's hook |
+| Drivers | `driver_service` (`DriverService`), `driver_names`, `driver_reference` | profiles, accounts, memberships, and the state machine; history is written by `season_end_service.write_driver_history_entries_on`; nothing for `driver_names`, which reads a driver's name, username and nationality, and whether the league collects a nationality, from the profile, the accounts, the test-mode fields and signup's hook; nothing for `driver_reference`, which resolves a driver named as text and lists drivers by name through `current_account_of` and `driver_names` |
 | A round's timed work | `round_jobs` (`RoundJobs`) | nothing: it is handed the rounds it arms, and reads the live seasons' rounds only to cancel their jobs (`cancel_live_rounds`) |
 | Channels | `channel_registry_service` | nothing: it reads core's channel columns, and the modules' through a hook, and asks Discord, through `judged_presence`, whether a channel being set can be used as its needs ask (`unusable_refusal`) |
 | The image module | `image_drawing` (the `ImageDrawing` protocol) | nothing: it declares what core asks |
@@ -178,7 +178,7 @@ folder.
 | Season reviews and confirmations | `approval_checks`, `approval_window_service` (`calendar_faults`, what is already behind a season on the day it is approved), `review_sections`, `confirmation_refusals`, `season_fingerprint_service`, `season_review_changes`, `season_review_views`, `season_review_workflows` | `season_review_prompts` |
 | The hub | `hub_service`, `about_service` | `server_configs.hub_message_id` |
 | A module or an output switched on | `kept_channels` (`kept_channels_check`), `picture_channels` (`picture_channels_check`, `core_picture_channels`) | nothing: the first reads the channels a module kept through the reader its switch-on hands it, asks the registry, through the bot's `channel_uses_read` hook that every module holding channels answers, which are taken, and Discord which are gone or unusable; the second reads, through the `picture_channels_read` hook, the channels an output switched to a picture posts to, and asks Discord which are gone or lack what a picture needs |
-| Test mode | `test_mode_service`, `test_roster_service`, `backup_service` | `server_configs.test_mode_active` |
+| Test mode | `test_mode_service`, `test_roster_service`, `backup_service`, `driver_commands` (`swap_driver_commands`) | `server_configs.test_mode_active`; nothing for `driver_commands`, which reads the flag and is handed the two `/driver` groups |
 | Starting over | `pack_service`, `factory_reset_service`, `in_memory_state` | — |
 
 The services core runs on, the change queue, the scheduler, posting, the record of what changed
@@ -349,11 +349,15 @@ and puts the other where the flag calls for, and syncs both trees. It is handed 
 groups by the entry point, the cogs being made before the change types that carry it, so that a
 service imports no cog and finds none on the bot. It runs as the step after the save of the toggle
 and of a test season's completion, abort and cancellation (`Step.on_fault`, a fifth exception to
-the lane stop, `architecture.md`), at start-up before the global sync, and in `!sync`; a refusal
-off the queue is caught as `discord.HTTPException` and posted through `start_up_failure_line`. A
-factory reset and `/bot init` run none: their replies name the restart that does. A swap that
-failed may leave the wrong form in place until the next one, which is accepted, the remedy being a
-restart.
+the lane stop, `architecture.md`), and off the queue it is start-up's command sync and `!sync`'s,
+both trees, where a refusal, or the league's server missing from the cache, is caught as
+`discord.HTTPException` or `GuildUnavailable` and posted through `start_up_failure_line`. The
+moments of the swap, and the restart a factory reset's and `/bot init`'s replies name, are the core
+specification's ("Test mode"). A swap that failed may leave the wrong form in place until the next
+one, which is accepted, the remedy being a restart. With no server claimed it syncs the global tree
+with the member group and takes `/driver` off every server the bot is on, there being no claim to
+find the server by: that is what makes a restart put right the server a factory reset left
+showing the test-mode form.
 
 No module's command sits under one of these groups. The retry loop for log lines runs in the
 framework's cog (`framework/cogs/retry_cog.py`), which holds no command.
@@ -408,9 +412,9 @@ Every core change type runs on the league lane; none is a conversation's. Each i
 | `season.round.amend` | `/round amend` on an ongoing season | the round, the modules' part (`round_amended`) and the audit entries | timed work armed again; the modules' posts and clean-ups |
 | `season.round.rearm` | a cancellation refused in its save | none | the round's timed work armed again |
 | `season.round.cancel`, `season.division.cancel` | `/round cancel`, `/division cancel` | the rounds cancelled, the division finished, the season moved on | the modules' notices, the calendar, the closing line |
-| `season.cancel` | `/season cancel` | `apply`: the divisions and rounds cancelled; then `end`: history, driver pass, season cancelled | notices, calls taken down, calendars, roles |
-| `season.complete` | `/season complete` | `settle`, then `end` (history, driver pass, season completed) | each division's final posts, roles |
-| `season.abort` | `/season abort` | `end`: the driver pass and the season deleted | signup channels, roles, portraits |
+| `season.cancel` | `/season cancel` | `apply`: the divisions and rounds cancelled; then `end`: history, driver pass, season cancelled | the swap of the `/driver` commands, notices, calls taken down, calendars, roles |
+| `season.complete` | `/season complete` | `settle`, then `end` (history, driver pass, season completed) | the swap of the `/driver` commands, each division's final posts, roles |
+| `season.abort` | `/season abort` | `end`: the driver pass and the season deleted | the swap of the `/driver` commands, signup channels, roles, portraits |
 | `season.wind_down` | a follow-on of what finished the last division | the season turned down to Pending completion | — |
 | `season.review.post` | `/season placements-review`, `config-review` | none: the question's row is its job's `record` | the review's posts and its expiry timer |
 | `season.review.take_down` | the expiry timer, start-up, a refused press, Approve | `forget`, which drops the row | — |
@@ -420,7 +424,7 @@ Every core change type runs on the league lane; none is a conversation's. Each i
 | `season.approve.tell`, `channel.tell` | an approval, or a mid-season confirmation, refused or discarded | none | one line in the review's channel |
 | `core.driver_*` (seven) | `/driver …` | the seats or the state, and the audit entry | role moves, lineups |
 | `core.team_*` (four) | `/team add`, `modify`, `remove`, `reserve-role` | the list and the role mapping, audited | role moves |
-| `core.test_mode_toggle` | `/test-mode toggle` | the flag, the modules' part, the audit entries (its own and those the modules' part hands back); turned off, every fake driver deleted | the jobs the modules hand back for what test mode posted, the backup deleted |
+| `core.test_mode_toggle` | `/test-mode toggle` | the flag, the modules' part, the audit entries (its own and those the modules' part hands back); turned off, every fake driver deleted | the swap of the `/driver` commands, the jobs the modules hand back for what test mode posted, the backup deleted |
 | `core.test_mode_former_driver` | `/test-mode set-former-driver` | the flag and the audit entry | — |
 | `core.test_roster_add` | `/test-mode roster add` | the fake driver, its seat and assignment, and the audit entry | — |
 | `core.test_roster_add_bulk` | `/test-mode roster add-bulk` | every driver of the file, their seats and assignments, and an audit entry for each | — |
@@ -910,7 +914,8 @@ and the audit entries, its own first and then those the modules' part hands back
 `TestModePart` (the names it seeded and the audit entries of its writes, declared by core as
 `AmendmentPart` is). Turning it off is one save too (`switch_test_mode_off_on`), deleting every fake
 driver through `delete_driver_profiles`, followed by the jobs the modules hand back through `test_mode_flushed`
-to clear what test mode posted, and the deletion of the saved backup. A season's end switches it off in its own `end` save. Whether a
+to clear what test mode posted, and the deletion of the saved backup. A season's end switches it off in its own `end` save. After the save of the toggle and of a
+season's end the swap of the `/driver` commands is the first job (`swap_driver_commands_step`). Whether a
 real driver stands in the way is counted by `count_live_real_drivers`. `/test-mode nationality` is a
 `Setting`.
 
