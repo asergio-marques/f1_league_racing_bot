@@ -729,7 +729,7 @@ section states the rules it holds to.
 - The identifiers of such drivers shall be drawn from a range above any identifier a real Discord account can hold.
 - A driver created by test mode shall never be granted or revoked a Discord role.
 - Every driver command shall act on a driver created by test mode as on a real one, in any state of the season, seating, moving, releasing, sacking and rejecting it, and a driver created by test mode may hold a seat in more than one division, as a real driver may. Under test mode a command shall name the driver by mention or identifier, and shall refuse text that names no driver, naming what was typed. A real driver shall still be refused a placement while test mode is enabled, and reassigning shall refuse a driver created by test mode on either side. Decided 2026-11-23 (#600).
-- A driver created by test mode left Unassigned shall be named by its test name, never by its identifier, in the placements review and in the list of unassigned signups.
+- A driver created by test mode left Unassigned shall be named by its test name, never by its identifier, in the placements review, in the list of unassigned signups and in its export.
 - The name of a driver created by test mode shall be held to the rules a division's name is held to, whether the driver is added alone or by a roster. Decided 2026-09-21 (#362).
 - The commands adding, removing and clearing drivers created by test mode shall be refused in any state but Placements.
 - A command shall take a whole roster at once, as comma-separated values written one driver to a line, stating the driver's identifier, name, team, division and nationality. A header line naming the columns shall be accepted and ignored.
