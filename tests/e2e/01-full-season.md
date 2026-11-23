@@ -690,14 +690,15 @@ sessions `Sprint Qualifying`, `Sprint Race`, `Feature Qualifying` and `Feature R
         `**Season 1 Division 1 Round 1 — Race**` with `Provisional Results` beneath. Drivers: Kevin
         Keller 34, Hiro Hayashi 30, Rafael Rossi 25, Emil Engel 21, Bruno Bianchi 18, Samuel Shaw
         15, Olivier Orsini 13, Ian Irwin 11, Mateo Morales 9, Carlos Cortes 7, Ugo Ulivi 5, Willem
-        Wouters 4, Liam Lavoie 3, Gabriel Gomes 2, Quinn Quayle 1, then the drivers on 0 —
+        Wouters 4, Liam Lavoie 3, Gabriel Gomes 2, Quinn Quayle 1, then the drivers on 0 in
+        countback order — Felix Fournier, Tomas Torres, Pim Prasert, Jari Jokinen, Niels Nygaard,
+        Dirk Dekker, Victor Vance, and Adam Archer last, having taken part in no session —
         twenty-three in all: the 22 racing drivers, Adam Archer among them on 0, and Willem
         Wouters, a reserve shown because he raced (`driver_is_drawn`). Xavier Xu, who did not
         race, is not shown. Teams: Foxtrot Motorsport 37, Delta Racing 32, India Motorsport 26,
         Alpha Racing 22, Charlie GP 21, Juliett GP 15, Hotel Racing 13, Echo Racing 11, Golf GP 9,
         Bravo Motorsport 7, Kilo Racing 5: eleven, no Reserve team. Willem Wouters's 4 points count
         for Alpha Racing, the team he raced for;
-        > UNVERIFIED: the order of the drivers on 0, decided by the countback (`order_drivers`).
       - submission channel: the penalty review, with the buttons **➕ Add Penalty**,
         **No Penalties / Confirm**, **✅ Approve** (greyed out), **🔄 Resubmit Initial Results**
         and, beneath, **🏳️ Attendance Pardon**:
@@ -804,8 +805,9 @@ sessions `Sprint Qualifying`, `Sprint Race`, `Feature Qualifying` and `Feature R
       ```
       and any notice blocks. No attendance sanction: Adam Archer's 3 is short of the
       auto-reserve threshold of 6.
-      > UNVERIFIED: whether the verdict banner carries text of its own, and whether the new
-      > attendance sheet replaces the opening one or is posted beside it. Record each.
+      The verdict banner's message carries no text, the picture alone. The attendance sheet
+      replaces the opening one, which is deleted: a division keeps one sheet, each round's
+      replacing the last.
 
 31. **Close the appeals.** **Do:** press **No Changes / Confirm** on the appeals review.
 
@@ -1067,7 +1069,6 @@ Stefan Sommer for `CHL`, as their placements in step 39 want, both without a poi
       14, Hotel Racing 11, Juliett GP 9, Kilo Racing 7, and **Bravo Motorsport 0** last: every
       racing team of the division, the one with no driver of its own included, and no Reserve team
       (`compute_team_standings_on`).
-      > UNVERIFIED: the order of the six drivers on 0.
     - the penalty review, `🏁 **Penalty Review — Round 1 | Division 2**`, with
       `**Preliminary Attendees (21):**`.
     - **Log:** as step 26, with `round 1 (Division 2)`.
@@ -1590,8 +1591,7 @@ two drivers). The sprint sessions and the feature sessions take the same two pas
       - `#d1-standings`: `Final Results`: Bruno Bianchi 42, Samuel Shaw 35, as step 66;
       - `#d1-verdicts`: the correction's verdict, Bruno Bianchi `5 seconds removed` in the Sprint
         Race;
-        > UNVERIFIED: whether the correction's verdict comes under a heading of its own or under
-        > the round's banner of step 72. Record it.
+        it comes under a banner of its own, posted above it, not under step 72's;
       - the submission channel deleted.
     - **Log:**
       ```
@@ -2111,7 +2111,8 @@ the round's reports are approved. Both reserves decline, so none is placed.
          sanction's card, a picture: `Moved to Reserve`, `Moved to Reserve due to accumulation of
          attendance points.`, and
          `<@9000000000000000016> (Pim Prasert) has reached the 6 attendance point limit in order to be removed from their full-time seat. Therefore, they have been demoted to a reserve driver effective immediately, and their current full-time seat will be offered to another driver.`
-         > UNVERIFIED: the heading's form and the text of the card's message, if any.
+         The heading is the round's banner picture, its message carrying no text.
+         > UNVERIFIED: the text of the card's own message, if any.
        - `#d1-lineup`: the lineup posted again, the earlier one deleted: `Hotel Racing` with Olivier
          Orsini and a blank seat, and Pim Prasert in the reserve block beside Willem Wouters and
          Xavier Xu. No role changes: a fake driver has no account;
@@ -2121,8 +2122,7 @@ the round's reports are approved. Both reserves decline, so none is placed.
      - **Log:** `<you> | PENALTY_REVIEW_APPROVED | Success` with `round: 3 (Division 1)` and
        `penalties: none`; the sanction's line,
        `ATTENDANCE_AUTORESERVE | <@9000000000000000016> (Pim Prasert) | driver_profile_id=<id: Pim Prasert's profile> | total=7 >= threshold=6 → moved to Reserve`;
-       and any notice blocks.
-       > UNVERIFIED: whether the first sheet is deleted when the second is posted.
+       and any notice blocks. The first sheet is deleted when the second is posted.
 
 109. **Do:** press **No Changes / Confirm** on the appeals review.
 
@@ -2184,8 +2184,8 @@ the auto-sack. The two thresholds cannot both be active, so the auto-reserve goe
        ✅ Attendance of **Division 1** recalculated from round 1 on.
        No sanction was owed.
        ```
-     - **Posts** (`#d1-attendance`): the attendance sheet posted again, its totals as step
-       108 left them, its plate now `SACKED AT 6`.
+     - **Posts** (`#d1-attendance`): the attendance sheet posted again, the previous one deleted,
+       its totals as step 108 left them, its plate now `SACKED AT 6`.
      - **Log:**
        ```
        <you> | /attendance sync | Success
@@ -2436,12 +2436,13 @@ season ends.
        - `#d2-verdicts`: a heading, then the sanction's card, a picture: `Sacked`, `Sacked due to
          accumulation of attendance points.`, and
          `<@9000000000000000037> (Kai Kimura) has reached the 6 attendance point limit in order to be removed from their full-time seat. Therefore, they have been removed from all driving seats effective immediately, and their current full-time seat will be offered to another driver.`
-         > UNVERIFIED: the heading's form and the text of the card's message, if any.
+         The heading is the round's banner picture, its message carrying no text.
+         > UNVERIFIED: the text of the card's own message, if any.
        - `#d2-lineup`: the lineup posted again, the earlier one deleted: `Hotel Racing` with Jonas
          Janssen and a blank seat; Kai Kimura nowhere, a sacked driver holding no seat in any
          division. No role changes: a fake driver has no account;
-       - `#d2-attendance`: the sheet posted again, Kai Kimura marked as having reached the limit,
-         its plate `SACKED AT 6`. He keeps his row at his last total;
+       - `#d2-attendance`: the sheet posted again, the first deleted, Kai Kimura marked as having
+         reached the limit, its plate `SACKED AT 6`. He keeps his row at his last total;
          > UNVERIFIED: whether the picture draws a sacked driver's row, which the sheet's rows
          > keep (`attendance_sheet._sheet_rows`) but the drawing's notes say never reaches it.
        - the appeals review `⚖️ **Appeals Review — Round 3 | Division 2**`.
@@ -2662,10 +2663,8 @@ paste of step 136 ready before step 135.
          opening classification posted at approval is left where it stands;
        - `#d1-attendance`: the attendance sheet again, a new picture, the old one deleted; its
          totals unchanged (Pim Prasert 7, Dirk Dekker 4, Adam Archer 3, Ian Irwin 3, Victor Vance
-         2), a swap of places moving nobody's attendance. Nobody is sanctioned: the sheet's rows
-         are recalculated, not judged;
-         > UNVERIFIED: that an amendment's recalculation judges no threshold. Were it to judge the
-         > auto-sack of 6, Pim Prasert is in Reserve and nobody else in Division 1 stands at 6.
+         2), a swap of places moving nobody's attendance. The sanctions are judged at Round 3
+         against the auto-sack of 6: nobody is owed one, Pim Prasert being in Reserve;
        - `#d1-verdicts`: Round 1's and then Round 2's verdicts posted again, each under a new
          banner — Rafael Rossi's +5s; Bruno Bianchi's `5 seconds added` and `5 seconds removed` —
          and the earlier banners and verdicts of both rounds deleted once their replacements are
