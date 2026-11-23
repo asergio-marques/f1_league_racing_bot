@@ -138,8 +138,9 @@ class PlacementService:
 
         Test mode and a real league may not share a server, so a real driver never enters
         a division while the flag is on: their signup is refused at the button, and their
-        placement here. A fake driver is untouched by this — the roster commands seat them
-        by another path, but attendance autoreserve moves them through this very call.
+        placement here. A fake driver is let through: `/driver assign` of one, by the test-mode
+        `/driver`, passes this guard, and the roster commands seat them by another path. Attendance
+        autoreserve moves drivers through `move_on`, which this guard does not govern.
 
         Unlike the capacity guards above, this is a genuine precondition rather than a
         best-effort check, so it does **not** swallow its own errors: a fault reading the
