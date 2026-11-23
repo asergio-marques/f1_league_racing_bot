@@ -20,8 +20,9 @@ a league's server missing from the cache is raised as `GuildUnavailable`, as a r
 the step that runs it (`Step.on_fault`) or the start-up to report. A swap that fails may leave the
 wrong commands in place until the next one, which is accepted: the remedy is a restart.
 
-**The notices name the groups in words** (`COMMANDS_NAMED`), for the notice a factory reset or
-`/bot init` adds is built where no swap is, and the swap never reads it.
+**The notices name the groups in words** (`COMMANDS_NAMED`): the notice a factory reset or
+`/bot init` adds, built where no swap is, and the swap's own refusal (`SWAP_PROBLEM`) are both built
+from it; only the step's describe line spells the names out.
 """
 
 from __future__ import annotations
