@@ -214,10 +214,12 @@ These are traditional `!` prefix commands restricted to the **bot owner** (the a
 Clears any guild-scoped command overrides and pushes the latest global slash command schema. Use this immediately after deploying changes to avoid waiting up to an hour for Discord's default propagation delay.
 
 **What it does:**
-1. Clears any guild-specific command overrides for the current server
+1. Clears any guild-specific command overrides for the current server (sent in a direct message there is no server, so none is cleared and the global commands are left as they are)
 2. Syncs the cleared guild state (removes leftover duplicates)
 3. Pushes the full global command tree to Discord, and leaves the server showing the right [`/driver`](#driver-commands): with test mode on, the test-mode one on the server and none on the global list; off, the member one on the global list and none on the server. Where no server is claimed it syncs the global commands, the member `/driver` among them, and takes `/driver` off every server the bot is on, as a start-up does
 4. Confirms with the count of synced commands (message auto-deletes after 15 seconds)
+
+If the sync fails, it replies "⚠️ The commands could not be synced; the failure is in the log channel." (also auto-deleted after 15 seconds), and posts the failure to the log channel.
 
 > **Note:** The bot requires **Manage Messages** in the channel you run this from to delete your `!sync` invocation. If it lacks that permission the command still runs successfully — the original message just won't be removed.
 
