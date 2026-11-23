@@ -2463,16 +2463,17 @@ season ends.
      - `#d1-standings`, drivers: Kevin Keller 114, Hiro Hayashi 102, Rafael Rossi 81, Emil Engel
        73, Bruno Bianchi 60, Samuel Shaw 50, Olivier Orsini 43, Mateo Morales 32, Carlos Cortes 25,
        Ian Irwin 22, Ugo Ulivi 18, Liam Lavoie 10, Adam Archer 9, Gabriel Gomes 7, Willem Wouters 4,
-       Quinn Quayle 3, Felix Fournier 2, then the seven on 0 — Tomas Torres, Pim Prasert, Jari
-       Jokinen, Niels Nygaard, Dirk Dekker, Victor Vance and Xavier Xu, in the order the countback
-       decides: twenty-four, both reserves having raced. Pim Prasert, in Reserve now, is still
+       Quinn Quayle 3, Felix Fournier 2, then the seven on 0 in countback order — Tomas Torres,
+       Xavier Xu, Pim Prasert, Jari Jokinen, Niels Nygaard, Dirk Dekker and Victor Vance:
+       twenty-four, both reserves having raced. Pim Prasert, in Reserve now, is still
        shown, having raced. Teams: Foxtrot Motorsport 124, Delta Racing 109, India Motorsport 84, Charlie GP
        75, Alpha Racing 73, Juliett GP 50, Hotel Racing 43, Golf GP 32, Bravo Motorsport 25, Echo
        Racing 22, Kilo Racing 18. Ian Irwin and Echo Racing carry the round Ian Irwin missed.
      - `#d2-standings`, drivers: Yuki Yamada 108, Finn Fischer 102, Aaron Abbott 85, Lucas Lambert
        66, Bastien Blanc 59, Diego Duarte 56, Hugo Hartley 45, Jonas Janssen 36, Noah Novak 29, Pablo
        Pena 22, Zane Zeller 15, Conor Cole 12, Elias Eriksen 9, Gianni Galli 6, Isaac Ingram 3, then
-       Kai Kimura, Marco Moretti, Owen Oakley, Quentin Quint, Rory Reid and Stefan Sommer on 0.
+       the six on 0 in countback order: Owen Oakley, Marco Moretti, Kai Kimura, Rory Reid, Stefan
+       Sommer and Quentin Quint.
        Teams: Alpha Racing 123, Foxtrot Motorsport 108, Charlie GP 85, Delta Racing 71, India
        Motorsport 66, Echo Racing 65, Golf GP 48, Hotel Racing 36, Juliett GP 29, Kilo Racing 22,
        **Bravo Motorsport 0**.
