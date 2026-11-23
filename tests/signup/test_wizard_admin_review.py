@@ -937,8 +937,76 @@ async def _mock_rejection_stops_the_lane(tmp_path: Any) -> SeasonLeague:
     return league
 
 
-#: How a fake driver's signup is ended or sent back, the words of the log line it writes, and the
-#: words of the post its channel is sent naming it (None where the post names nobody).
+async def _mock_channel_gone_stops_the_lane(tmp_path: Any) -> SeasonLeague:
+    """Kimi, made Mock Alpha awaiting review; his signup channel is deleted, the bot sees it go
+    and asks for his signup's end, and the save of the job that ends it fails, so that the queue
+    stops at it. The fault is lifted and a league manager presses Retry."""
+    from leaguebot.signup.cogs.signup_cog import SignupCog
+    from leaguebot.signup.services.closing_steps import END
+    from leaguebot.signup.services.wizard_changes import END_JOB
+    from tests.support.change_queue import refuse_the_job, retry_job
+
+    league = await _league(tmp_path)
+    await _as_mock(league)
+    await refuse_the_job(league.db_path, END, END_JOB, True)
+    gone = league.channel(KIMI_CHANNEL)
+    league.remove_channel(KIMI_CHANNEL)
+    cog = SignupCog.__new__(SignupCog)
+    cog.bot = league.bot
+    await cog.on_guild_channel_delete(gone)
+    await run_queue(league.bot)
+    await refuse_the_job(league.db_path, END, END_JOB, False)
+    await retry_job(league.bot, lane="league")
+    # What the channel was sent before it went stays readable, for the test to read.
+    league.channels[KIMI_CHANNEL] = gone
+    return league
+
+
+async def _mock_lapse_stops_the_lane(tmp_path: Any) -> SeasonLeague:
+    """Kimi, made Mock Alpha awaiting the choice of a field to correct; its five minutes run out
+    and the timer asks for the lapse, whose job telling his channel the correction lapsed fails
+    to be saved as done, so that the queue stops at it. A league admin presses Discard."""
+    from leaguebot.signup.services.review_changes import LAPSE, POST_LAPSE
+    from tests.signup.test_correction_parameter_timeout import _fire_the_timer
+    from tests.signup.test_correction_parameter_timeout import _league as lapsing_league
+    from tests.support.change_queue import refuse_the_job
+
+    league = await lapsing_league(tmp_path)
+    await _as_mock(league)
+    await refuse_the_job(league.db_path, LAPSE, POST_LAPSE, True)
+    await _fire_the_timer(league)
+    await run_queue(league.bot)
+    await discard_job(league.bot, lane="league")
+    return league
+
+
+async def _mock_stale_press(tmp_path: Any) -> SeasonLeague:
+    """Kimi, made Mock Alpha awaiting review, his wizard past its questions; the league admin
+    Admin (77) scrolls up his channel and presses Steam on the platform question, the view handed
+    the services that judge who may answer it, and the queue runs."""
+    from leaguebot.signup.services.signup_views import PlatformButtonView
+    from tests.support.change_queue import tier_member
+    from tests.support.season_league import ADMIN_ID
+
+    league = await _league(tmp_path)
+    await _as_mock(league)
+    press = member_interaction(league.bot, user=tier_member("admin", member_id=ADMIN_ID))
+    press.guild = league.guild
+    press.channel_id = KIMI_CHANNEL
+    press.channel = league.channel(KIMI_CHANNEL)
+    view = PlatformButtonView(
+        str(SIGNING_UP), league.bot.change_queue, signup=league.bot.signup_module_service,
+        config=league.bot.config_service, drivers=league.bot.driver_service,
+    )
+    [button] = [child for child in view.children if getattr(child, "label", None) == "Steam"]
+    await button.callback(press)
+    await run_queue(league.bot)
+    return league
+
+
+#: How a fake driver's signup is ended, sent back or refused; the words of each log entry it
+#: writes that must name it, one or several; and the words of the post its channel is sent naming
+#: it (None where the post names nobody).
 _FAKE_DRIVER_NAMED = [
     pytest.param(_mock_rejected, "| Signup | Rejected", "rejected by", id="reject"),
     pytest.param(_mock_changes_requested, "| Signup | Correction requested",
@@ -951,6 +1019,14 @@ _FAKE_DRIVER_NAMED = [
                  id="cancel refused on the queue"),
     pytest.param(_mock_rejection_stops_the_lane, "The queue is stopped at job #", None,
                  id="rejection stopping the lane"),
+    pytest.param(_mock_channel_gone_stops_the_lane,
+                 ("The queue is stopped at job #", "| Retried"), None,
+                 id="deleted channel's ending stopping the lane, retried"),
+    pytest.param(_mock_lapse_stops_the_lane,
+                 ("The queue is stopped at job #", "| Discarded"), None,
+                 id="correction lapse stopping the lane, discarded"),
+    pytest.param(_mock_stale_press, "button of Mock Alpha's signup wizard refused", None,
+                 id="stale button pressed by a league admin"),
 ]
 
 
@@ -964,16 +1040,21 @@ async def test_a_fake_driver_s_signup_is_named_by_its_test_name_and_never_by_its
     his wizard, the league admin Admin (77) cancels it with the test-mode `/signup cancel` giving
     a reason, or it lapses after 24 hours idle; or Admin's cancellation is refused as the queue
     runs it, his signup approved meanwhile; or 77's rejection stops the queue, the save of the job
-    ending his signup failing; the queue runs. The log channel's line for it (the refusal, and the
-    notice of the stopped queue naming the job, included) names Mock Alpha, and nothing in the log
-    channel or in his signup channel mentions his ID;
+    ending his signup failing; or his signup channel is deleted and the save of the ending fails,
+    a league manager pressing Retry once the fault is lifted; or his correction lapses and its job
+    telling his channel fails to be saved, a league admin pressing Discard; or Admin presses Steam
+    on his wizard's platform question after it has been answered; the queue runs. Each log entry
+    the case names (the refusal, the notice of the stopped queue naming the job, and the Retry
+    and Discard lines included) names Mock Alpha, and nothing in the log channel or in his signup
+    channel mentions his ID;
     the rejection notice, the correction choices, the re-submit prompt and the cancellation
     notice posted in his channel name Mock Alpha."""
     league = await decide(tmp_path)
 
     log = league.log().replace("`", "")
-    assert logged in log, log
-    assert MOCK_KIMI in log, log
+    entries = [entry.replace("`", "") for entry in league.bot.log_channel.sent]
+    for words in (logged,) if isinstance(logged, str) else logged:
+        assert [entry for entry in entries if words in entry and MOCK_KIMI in entry], log
     assert f"<@{SIGNING_UP}>" not in log, log
     texts = _texts(league)
     assert not [text for text in texts if f"<@{SIGNING_UP}>" in text], texts

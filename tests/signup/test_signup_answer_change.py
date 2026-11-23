@@ -22,7 +22,7 @@ import asyncio
 import os
 from datetime import timedelta
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
@@ -749,6 +749,44 @@ async def test_a_league_admin_s_press_on_a_fake_driver_s_wizard_is_saved_as_its_
     assert "Platform: Steam" in answered, answered
     assert f"<@{ADMIN_ID}>" in answered and MOCK_NAME in answered, answered
     assert f"<@{MOCK}>" not in league.log().replace("`", ""), league.log()
+
+
+async def test_a_stale_press_on_a_fake_driver_s_wizard_refused_as_it_runs_names_it_by_its_test_name(
+    tmp_path,
+):
+    """The server is in test mode. Mock Alpha, a fake driver, has answered its platform and is at
+    the platform ID question. A league admin's press of Steam on its platform question, asked
+    before the answer moved the wizard on, comes up as the queue runs it: the answer change's
+    judge job is run for that press, whose payload names the button and no owner. It is refused,
+    and its one log line names the step of Mock Alpha's signup wizard by its test name and
+    mentions no account by Mock Alpha's ID."""
+    from leaguebot.framework.services.queue.change_types import StepContext
+    from leaguebot.signup.services.wizard_answers import ANSWER, JUDGE, answer_change
+    from tests.signup.test_wizard_changes import MOCK, MOCK_NAME
+    from tests.support.season_league import ADMIN_ID
+
+    league = await _league(tmp_path)
+    await _mock_alpha_at(league, "COLLECTING_PLATFORM_ID",
+                         draft={"nationality": "British", "platform": "Steam"})
+    await league.set_test_mode(True)
+    bot = league.bot
+    change = answer_change(
+        signup=lambda: bot.signup_module_service, queue_of=lambda: bot.change_queue,
+        config=bot.config_service, drivers=lambda: bot.driver_service,
+        now=lambda: league.clock.now, arm_once=MagicMock(),
+    )
+    payload = {"user_id": str(MOCK), "channel_id": MOCK_CHANNEL, "button": "platform",
+               "value": "Steam"}
+
+    result = await change.steps[JUDGE].run(StepContext(
+        bot=bot, db_path=league.db_path, change_id=1, kind=ANSWER, payload=dict(payload),
+        what="an answer", actor_id=ADMIN_ID, actor_name="Admin", named=f"Admin (<@{ADMIN_ID}>)",
+        steps=(), step_name=JUDGE, step_payload=dict(payload),
+    ))
+
+    [line] = result.lines
+    assert f"step of {MOCK_NAME}'s signup wizard" in line, line
+    assert f"<@{MOCK}>" not in line, line
 
 
 async def test_a_league_admin_s_last_answer_submits_the_fake_driver_s_signup_for_review(tmp_path):
