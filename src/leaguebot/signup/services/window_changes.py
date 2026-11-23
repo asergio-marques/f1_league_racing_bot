@@ -95,6 +95,7 @@ from leaguebot.signup.services.closing_steps import (
     window_close_jobs,
     window_close_steps,
 )
+from leaguebot.signup.services.driver_naming import fake_name_of
 from leaguebot.signup.services.information_post import post_information
 from leaguebot.signup.services.information_post import stamp as _stamp
 from leaguebot.signup.services.window_close import CLOSE_TIMER, CLOSE_TIMER_KEY, close_time_of
@@ -348,12 +349,19 @@ def discarded(view: StepView | None) -> bool:
 
 
 def failed_jobs(steps: tuple[StepView, ...]) -> list[str]:
-    """One plain sentence for each job of a close a league admin discarded, in the order they ran."""
+    """One plain sentence for each job of a close a league admin discarded, in the order they ran.
+    A fake driver is named by its test name, which the return of the drivers kept in its result
+    (`return_drivers_step`): the jobs that follow it are planned from that return alone."""
+    names: dict[str, str] = {}
+    for view in steps:
+        if view.name == RETURN_DRIVERS:
+            names.update((view.result or {}).get("fake_names") or {})
     failed: list[str] = []
     for view in steps:
         if not discarded(view):
             continue
-        who = f"<@{view.payload.get('user_id')}>"
+        user_id = str(view.payload.get("user_id"))
+        who = names.get(user_id) or f"<@{user_id}>"
         if view.name == RETURN_DRIVERS:
             failed.append(NOT_RETURNED)
         elif view.name == DELETE_BUTTON:
@@ -474,6 +482,7 @@ def return_drivers_step(
         channel_id = None if config is None else config["signup_channel_id"]
         button_id = None if config is None else config["signup_button_message_id"]
         returned: list[tuple[str, int | None]] = []
+        fake_names: dict[str, str] = {}
         for row in rows:
             account = str(row["discord_user_id"])
             current = DriverState(row["current_state"])
@@ -489,6 +498,9 @@ def return_drivers_step(
             )
             wizard = await cursor.fetchone()
             returned.append((account, None if wizard is None else wizard["signup_channel_id"]))
+            fake = await fake_name_of(ctx.db_path, account)
+            if fake is not None:
+                fake_names[account] = fake
         planned = (
             *disarming(
                 [account for account, _ in returned],
@@ -496,7 +508,10 @@ def return_drivers_step(
             ),
             *plan_after(ctx, channel_id, button_id, returned),
         )
-        return StepResult(result={"returned": [account for account, _ in returned]}, then=planned)
+        result: dict[str, Any] = {"returned": [account for account, _ in returned]}
+        if fake_names:
+            result["fake_names"] = fake_names
+        return StepResult(result=result, then=planned)
 
     async def describe_return(_ctx: StepContext) -> str:
         return "returning the drivers still signing up to Not Signed Up"
