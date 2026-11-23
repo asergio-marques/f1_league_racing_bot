@@ -123,6 +123,63 @@ async def test_a_sync_discord_refuses_is_raised(tmp_path):
         await swap_driver_commands(bot, member=member_group, variant=test_group)
 
 
+@pytest.mark.parametrize(
+    ("claimed", "on"),
+    [(False, True), (False, False), (True, False)],
+    ids=["unclaimed-test-mode-on", "unclaimed-test-mode-off", "claimed-server-not-in-cache"],
+)
+async def test_an_unclaimed_bot_syncs_the_global_tree_with_the_member_driver(
+    tmp_path, claimed, on
+):
+    """A swap under test mode has left no `/driver` on the global tree. Then either no server is
+    claimed (as after a factory reset), with test mode on or off, or the league's server is
+    claimed but missing from the bot's cache, with test mode off. The swap puts the member group
+    back on the global tree and syncs it. With no server claimed it raises nothing; with the
+    claimed server missing it raises `GuildUnavailable`, having synced the global tree first."""
+    from leaguebot.core.services.test_mode.driver_commands import swap_driver_commands
+    from leaguebot.framework.models.change import GuildUnavailable
+
+    db_path = await _flag_db(tmp_path, on=True)
+    bot, guild, member_group, test_group = await _bare_bot(db_path)
+    await swap_driver_commands(bot, member=member_group, variant=test_group)
+    await _set_flag(db_path, on)
+    bot.tree.sync.reset_mock()
+    if claimed:
+        bot.get_guild = MagicMock(return_value=None)
+        with pytest.raises(GuildUnavailable):
+            await swap_driver_commands(bot, member=member_group, variant=test_group)
+    else:
+        bot.league_settings.get_league_server_id = AsyncMock(return_value=None)
+        await swap_driver_commands(bot, member=member_group, variant=test_group)
+
+    assert bot.tree.get_command("driver") is member_group
+    assert call() in bot.tree.sync.await_args_list
+
+
+async def test_an_unclaimed_bot_takes_driver_off_every_server_it_is_on(tmp_path):
+    """No server is claimed and test mode is on, and the bot is on two servers, each still
+    carrying the test-mode `/driver`. The swap takes `/driver` off both servers and syncs each,
+    besides syncing the global tree, which carries the member group."""
+    from leaguebot.core.services.test_mode.driver_commands import swap_driver_commands
+    from tests.support.change_queue import set_guilds
+
+    db_path = await _flag_db(tmp_path, on=True)
+    bot, _guild, member_group, test_group = await _bare_bot(db_path)
+    servers = [discord.Object(id=5001), discord.Object(id=5002)]
+    set_guilds(bot, servers)
+    for server in servers:
+        bot.tree.add_command(test_group, guild=server)
+    bot.league_settings.get_league_server_id = AsyncMock(return_value=None)
+
+    await swap_driver_commands(bot, member=member_group, variant=test_group)
+
+    assert [bot.tree.get_command("driver", guild=server) for server in servers] == [None, None]
+    assert bot.tree.get_command("driver") is member_group
+    assert sorted(map(str, bot.tree.sync.await_args_list)) == sorted(
+        map(str, [call(), *(call(guild=server) for server in servers)])
+    )
+
+
 # ── After the toggle ──────────────────────────────────────────────────────────
 
 
