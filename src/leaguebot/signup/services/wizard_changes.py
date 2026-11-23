@@ -448,8 +448,19 @@ def start_change(
 
     async def start(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         user_id = str(ctx.step_payload["user_id"])
+        prior = await drivers().state_of_account_on(db, user_id) or DriverState.NOT_SIGNED_UP
         await drivers().transition_on(db, user_id, DriverState.PENDING_SIGNUP_COMPLETION)
-        return StepResult(result={})
+        # The move out of Not Signed Up is audited, as the later ones are, whoever started the
+        # signup: the member pressing Sign Up (who has no profile until now), or a league admin
+        # for a fake driver.
+        return StepResult(
+            result={},
+            audits=(AuditRecord(
+                "SIGNUP_START",
+                {"state": prior.value, "discord_user_id": user_id},
+                {"new_state": DriverState.PENDING_SIGNUP_COMPLETION.value},
+            ),),
+        )
 
     async def arm_inactivity(ctx: StepContext) -> StepResult:
         arm_once(INACTIVITY_TIMER, str(ctx.step_payload["user_id"]), now() + INACTIVITY)

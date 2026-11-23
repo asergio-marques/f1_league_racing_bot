@@ -730,7 +730,6 @@ async def test_sign_up_welcomes_the_driver_by_name_and_writes_its_started_line(t
     assert len(started) == 1 and f"<@{SIGNING_UP}>" in started[0]
 
 
-@pytest.mark.xfail(strict=True, reason="#600: a member's own Sign Up press writes no audit entry")
 async def test_a_member_s_sign_up_is_audited_as_its_start(tmp_path):
     """Kimi, signed up to nothing, presses Sign Up while signups are open and test mode is off,
     and the queue runs. One `SIGNUP_START` audit entry is written beside the "Signup | Started"
