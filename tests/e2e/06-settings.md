@@ -334,8 +334,8 @@ channel; it overtakes a stopped job on the league's lane, as every channel setti
       Press an option below.
       ```
       with one button, **About** (core's only option; no module offers one yet).
-      > UNVERIFIED: whether the panel's refresh, a change the bot asks for itself, writes a line of
-      > its own to the log channel. Its outcome is empty (`hub_refresh_change`).
+      **Log:** nothing more for the panel: its refresh, a change the bot asks for itself, writes
+      no line (`hub_refresh_change`).
     - **Permissions** on `#hub`, replaced whole (`hub_service.apply_hub_permissions`): `@everyone`
       may not view it, the base role being set; `@Members`, `@League Manager` and `@League Admin`
       may view it and may not send; the bot may view, send and embed links. Nobody but the bot can
@@ -376,7 +376,8 @@ channel; it overtakes a stopped job on the league's lane, as every channel setti
       it; `#hub-2` takes the permissions step 20 gave `#hub`.
     - **Posts:** the panel of step 20 in `#hub-2`; then the panel in `#hub` is deleted. The new
       panel goes up first, and the old comes down after it (`hub_refresh_change`, `DELETE_OLD`).
-      > UNVERIFIED: whether the deletion of the old panel writes a line of its own.
+      **Log:** nothing more for the panel: neither its refresh nor the deletion of the old one
+      writes a line (`hub_refresh_change`, `standing_posts.delete_replaced_step`).
 
 24. **Do:** in `#hub-2`, press **About**.
 
@@ -670,8 +671,9 @@ neither held to the interaction channel nor recorded in the log channel.
     **Expect:**
     - Nothing from the bot: no reply, and the message is not deleted.
     - **Log:** nothing.
-    > UNVERIFIED: what the host's log shows. The bot has no `on_command_error` handler, so the
-    > refusal falls to discord.py's own, which logs the `NotOwner` it raises.
+    - **Host log**, at ERROR: `Ignoring exception in command sync`, with a traceback ending
+      `discord.ext.commands.errors.NotOwner: You do not own this bot.` The bot has no
+      `on_command_error` handler, so the refusal falls to discord.py's own.
 
 ---
 
@@ -780,8 +782,8 @@ time zone is free text, autocompleted, and checked.
       `<YEAR+1>-03-09` at `05:00 AM JST`, round 3 the mystery round `<YEAR+1>-03-16` at
       `05:00 AM JST`. Where the base drew `<weekday> 01 Mar <YEAR+1>` and `20:00 UTC`.
       > UNVERIFIED: how the default template lays the date and the time out, and whether a long
-      > time such as `05:00 AM JST` fits its box. The values are `format_date_and_time`'s; the
-      > template draws each round's `round_<n>_date` and `round_<n>_time`.
+      > time such as `05:00 AM JST` fits its box. The values themselves are
+      > `format_date_and_time`'s, drawn into each round's `round_<n>_date` and `round_<n>_time`.
 
 60. **Who may, and where.** **Do**, in `#d1-results`: `/images config time-zone zone:UTC`, then
     `/bot hub-channel channel:#hub`. Then, back in `#bot-commands`, take `@League Admin` off
