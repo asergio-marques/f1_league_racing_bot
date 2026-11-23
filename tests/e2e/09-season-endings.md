@@ -32,9 +32,10 @@ The order keeps something to act on at each step:
 
 **You must be the server owner for Part E.** `/bot factory-reset` is the server owner's alone,
 whatever roles or permissions anybody else holds (`channel_guard.server_owner_only`). If you hold
-Discord's Administrator permission but do not own the server, run Parts A to D yourself, and have
-the owner run Part E from step 36, with `<you>` standing for the owner. Step 35 needs a second
-Discord account, which is not the owner; skip it where you have none.
+Discord's Administrator permission but do not own the server, run Parts A to D yourself, and step
+35 too, as its helper; have the owner run step 36 onwards, with `<you>` standing for the owner.
+Otherwise step 35 needs a second Discord account, which is not the owner; skip it where you have
+none.
 
 **Allow the owner direct messages from server members** (Discord: the server's *Privacy Settings*,
 *Direct Messages*). The factory reset reports its clean-up in a direct message; where it cannot send
@@ -353,7 +354,7 @@ seated.
 No season is live and test mode is off. A pack readies the bot to serve the league from another
 server: what is the league's it keeps, what is the server's it clears, and it touches nothing in
 Discord (`pack_service`). Here the "other" server is this one again: `/bot init` claims whichever
-server it is given on once the claim is free. `06-settings.md` steps 33, 34 and 46 show the pack
+server it is given on once the claim is free. `06-settings.md` steps 32, 34 and 46 show the pack
 refused for the tier, for the word and for the channel; they are not shown again.
 
 ### The pack
@@ -513,8 +514,9 @@ server owner's alone, from any channel, and nothing inside the bot can undo it.
       ```
       `<moment>` is the moment of the reset in UTC, written `YYYYMMDDTHHMMSSZ`
       (`factory_reset_service.take_backup`), the same in both names. Where the bot could not send
-      you a direct message, the last words read `in the host's log` instead, and the progress
-      below goes to the host's log, each as `factory reset: <its first line>`.
+      you a direct message, the last words read `in the host's log` instead. Either way the host's
+      log records each stage of the progress below, as `factory reset: <its first line>`
+      (`bot_cog.handle_factory_reset`, `report`).
     - **Direct message** from the bot, one message edited as the clean-up goes:
       - first `🧹 Factory reset: starting the Discord clean-up.`;
       - then, before each channel it works,
@@ -543,8 +545,10 @@ server owner's alone, from any channel, and nothing inside the bot can undo it.
     - **Host log**, at WARNING:
       `/bot factory-reset by <your user> (id=<your id>): the league was erased; backup at <path of bot.factory-<moment>.db>`.
 
-38. **Optional, and only while the direct message of step 37 still reads `cleaning up`.** A clean-up
-    of a few hundred recent messages may finish before you can run this; if it has, skip the step.
+38. **Optional, and only until the direct message of step 37 reads `✅ Factory reset: Discord cleaned up`.**
+    A clean-up of a few hundred recent messages may finish before you can run this; if it has,
+    skip the step. If the first command below is not refused, the clean-up had finished: skip the
+    second.
     **Do:** `/bot init interaction_role:@League Manager league_admin_role:@League Admin interaction_channel:#bot-commands log_channel:#bot-log`,
     then `/bot factory-reset confirm:CONFIRM`.
 
@@ -577,8 +581,9 @@ server owner's alone, from any channel, and nothing inside the bot can undo it.
       migrations seed and no change may remove (`001_baseline.sql`); no claim. Then `0`: the job
       store is empty. Then `1|CANCELLED` and `2|SETUP`: the backup holds the league as step 34
       left it.
-      The job store stays empty until the bot is next started, when the image module arms its
-      daily portrait refresh again.
+      The job store stays empty, after a restart too: a fresh install has no scheduled work, and
+      the daily portrait refresh is armed at start-up only where a league asked for it
+      (`driver_portrait_service.rearm_daily_refresh`).
 
 40. **Do:** `/season status`
 
