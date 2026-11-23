@@ -384,3 +384,138 @@ channel; it overtakes a stopped job on the league's lane, as every channel setti
 had none. Part J's restore takes it back out of the database; the panel in `#hub-2` and its
 permissions stay on Discord, for you to delete by hand once the spec is done. Until then the hub
 is `#hub-2`, and each role change below sets its permissions again.
+
+---
+
+## Part D — The interaction role and the league admin role
+
+Each is one of the four settings that repair the bot: run from any channel, and open to Discord's
+Administrator permission, which the tester holds as owner or administrator. A role given the role
+it already holds is acknowledged and answered "Nothing changed"; a role changed sets the hub's
+permissions again (`bot_settings.REAPPLY_HUB`), silently where Discord takes them.
+
+### The interaction role
+
+25. **The role it already holds.** **Do:** `/bot interaction-role role:@League Manager`
+
+    **Expect:**
+    - **Ack:** `Setting **Interaction role** to <@&<League Manager role id>>`
+    - **Then:** `ℹ️ Nothing changed: **Interaction role** is already <@&<League Manager role id>>.`
+    - **Log:**
+      ```
+      <you> | /bot interaction-role | Nothing changed
+        interaction_role_id: <@&<League Manager role id>>
+      ```
+    - `#hub-2`'s permissions are not set again.
+
+26. **Do:** `/bot interaction-role role:@Stand-in`
+
+    **Expect:**
+    - **Ack:** `Setting **Interaction role** to <@&<Stand-in role id>>`
+    - **Then:** `✅ **Interaction role** set to <@&<Stand-in role id>>.`
+    - **Log:**
+      ```
+      <you> | /bot interaction-role | Success
+        interaction_role_id: <@&<Stand-in role id>>
+      ```
+    - **Permissions** on `#hub-2`: `@Stand-in` may now view it and not send; `@League Manager` has
+      no overwrite there any more. `@Members` and `@League Admin` are as before.
+
+27. **Its effect.** In Discord, take `@League Admin` off yourself, holding none of `@League Admin`,
+    `@League Manager` and `@Stand-in`. **Do:** `/team list`
+
+    **Expect:**
+    - **Reply:** `⛔ You don't have permission to use this command. You need **Stand-in**, or **League Admin**.`
+      The refusal names the role now set, not `League Manager`.
+    - **Log:** nothing: it is a view.
+
+28. In Discord, give yourself `@Stand-in`, still without `@League Admin`. **Do:** `/team list`
+
+    **Expect:** as `00-base.md` step 17. No log line. `@Stand-in` is now the league manager tier.
+
+29. **Putting it back.** In Discord, take `@Stand-in` off yourself and give yourself
+    `@League Admin` again. **Do:** `/bot interaction-role role:@League Manager`
+
+    **Expect:**
+    - **Ack:** `Setting **Interaction role** to <@&<League Manager role id>>`
+    - **Then:** `✅ **Interaction role** set to <@&<League Manager role id>>.`
+    - **Log:**
+      ```
+      <you> | /bot interaction-role | Success
+        interaction_role_id: <@&<League Manager role id>>
+      ```
+    - **Permissions** on `#hub-2`: as step 23 left them, `@League Manager` back and `@Stand-in`
+      gone.
+
+### The league admin role
+
+30. **From any channel, the role it already holds.** **Do**, in `#d1-results` rather than
+    `#bot-commands`: `/bot admin-role role:@League Admin`
+
+    **Expect:**
+    - **Ack** (in `#d1-results`, seen by you alone): `Setting **League admin role** to <@&<League Admin role id>>`
+    - **Then:** `ℹ️ Nothing changed: **League admin role** is already <@&<League Admin role id>>.`
+    - **Log:**
+      ```
+      <you> | /bot admin-role | Nothing changed
+        league_admin_role_id: <@&<League Admin role id>>
+      ```
+    - Not refused for the channel: the four repair settings are exempt from it.
+
+31. **Do:** `/bot admin-role role:@Stand-in`
+
+    **Expect:**
+    - **Ack:** `Setting **League admin role** to <@&<Stand-in role id>>`
+    - **Then:** `✅ **League admin role** set to <@&<Stand-in role id>>.`
+    - **Log:**
+      ```
+      <you> | /bot admin-role | Success
+        league_admin_role_id: <@&<Stand-in role id>>
+      ```
+    - **Permissions** on `#hub-2`: `@Stand-in` may view and not send; `@League Admin` has no
+      overwrite there any more.
+
+32. **Its effect.** You hold `@League Admin`, which is no longer the tier. **Do:**
+    `/bot pack confirm:no`, then `/team list`.
+
+    **Expect:**
+    - **Reply**, for the first: `⛔ This command is a league admin's. You need **Stand-in**.`
+      Nothing is packed: the tier is judged before anything else.
+    - **Log**, for the first: ``⛔ `/bot pack` refused for <you> — This command is a league admin's. You need **Stand-in**.``
+    - **Reply**, for the second: `⛔ You don't have permission to use this command. You need **League Manager**, or **Stand-in**.`
+    - **Log**, for the second: nothing; it is a view.
+
+33. **Putting it back.** You hold neither tier, but Discord's Administrator permission still
+    reaches the four repair settings. **Do:** `/bot admin-role role:@League Admin`
+
+    **Expect:**
+    - **Ack:** `Setting **League admin role** to <@&<League Admin role id>>`
+    - **Then:** `✅ **League admin role** set to <@&<League Admin role id>>.`
+    - **Log:**
+      ```
+      <you> | /bot admin-role | Success
+        league_admin_role_id: <@&<League Admin role id>>
+      ```
+    - **Permissions** on `#hub-2`: as step 23 left them.
+
+34. **Do:** `/bot pack confirm:no`
+
+    **Expect:**
+    - **Reply:** ``❌ Nothing was changed. Pass `confirm:CONFIRM` (case-sensitive) to free this server.``
+      The tier passes again: the refusal is now the command's own.
+    - **Log:** ``⛔ `/bot pack` refused for <you> — Nothing was changed. Pass `confirm:CONFIRM` (case-sensitive) to free this server.``
+
+### The wrong person
+
+35. **Needs a second Discord account; skip it where you have none.** In Discord, give a second
+    account, the helper, `@League Manager` alone: not `@League Admin`, not the server's ownership,
+    and no role carrying Administrator. **Do**, as the helper, in `#bot-commands`:
+    `/bot admin-role role:@Stand-in`, then `/bot interaction-role role:@Stand-in`.
+
+    **Expect**, for each:
+    - **Reply:** ``⛔ You need **League Admin**, or Discord's **Administrator** permission, to change the bot's settings.``
+    - **Log:** ``⛔ `/bot admin-role` refused for <helper> — You need **League Admin**, or Discord's **Administrator** permission, to change the bot's settings.``,
+      and the same for `` `/bot interaction-role` ``, `<helper>` being the helper's display name
+      and mention.
+    - Nothing changed: the interaction role is the league manager tier, and is no way into the
+      settings that govern it.
