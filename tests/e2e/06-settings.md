@@ -735,10 +735,9 @@ time zone is free text, autocompleted, and checked.
     - **Then:** `✅ Date format set to **2026-06-14**.`
     - **Log:**
       ```
-      <you> | /images config time-format | Success
+      <you> | /images config date-format | Success
         Date format: 2026-06-14 (YYYY_MM_DD)
       ```
-      with `/images config date-format` as the command: each of the three names its own.
 
 57. **The same again.** **Do:** `/images config date-format style:2026-06-14`
 
