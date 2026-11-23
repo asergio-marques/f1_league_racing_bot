@@ -1004,9 +1004,8 @@ cancelled. Division 1 runs on, so the season stays ongoing.
     - **Posts** (`#d2-calendar`): the calendar of step 59 again, every round covered; then step
       58's deleted.
     - **Log:** as step 31, with `division: Division 2`.
-    The calendar of a cancelled division is reposted: neither the command nor its change's check
-    (`calendar_post_service`) looks at the division's status, and the README is silent. Whether it
-    should be refused instead is with the owner: the owner is asked whether this should be refused.
+    The calendar of a cancelled division is reposted, as the core specification provides: a
+    division's calendar may be reposted on demand whether or not the division is cancelled.
 
 64. **Do:** `/test-mode review`
 
