@@ -325,3 +325,97 @@ change on from the first job not done. The weather and check-in posts themselves
         division: Division 1
         round: Round 1
       ```
+
+---
+
+## Part D — A results submission half pasted
+
+A results paste is a turn on the round's own lane of the queue, but the choice of points
+configuration it asks for lives in the bot's memory: a restart leaves it dead
+(`submission_turn_change`, "The points configuration is a second change"). A submission that is
+neither in its review nor has a change in hand on the queue is taken, at a restart, for a first
+paste cut short: its sessions are cleared, its channel deleted and the submission opened afresh
+(`submission_recovery.recover_orphaned_submission_channels`, `results.submission.restart`).
+
+Every paste below is typed **as a message in the round's submission channel**, not as a command.
+
+16. **Do:** in `#s1-division-1-r1-results`, send the qualifying paste of `01-full-season.md`
+    step 23, as it stands (22 lines, `1, <@9000000000000000008>, DLT, Soft, 1:27.100, N/A` first).
+
+    **Expect:**
+    - **Posts** (submission channel): your message marked ⏳, then the choice, with **Half Points**
+      and **Standard**: `🔧 Select the points configuration for this session:`.
+    - **Log:** nothing yet.
+
+17. **Do:** press **Standard**.
+
+    **Expect:** as `01-full-season.md` step 24:
+    - the choice edited to `🔧 Config selected: **Standard**`;
+    - **Ack:** `Saving the Qualifying of round 1 with the Standard configuration`
+    - **Then:** `✅ The Qualifying of round 1 is saved, scored by **Standard**.`
+    - **Posts** (submission channel): `✅ **Qualifying** results saved.`, then the **Race** prompt;
+    - **Log:** the `<you> | RESULT_SUBMISSION_ACCEPTED | Success` line with
+      `session: FEATURE_QUALIFYING`, and the
+      `<you> | the “Standard” button of the points-configuration choice for the Qualifying of round 1 (Division 1) | Success`
+      line.
+
+18. **Do:** in the submission channel, send the race paste of `01-full-season.md` step 25, as it
+    stands (22 lines, `1, <@9000000000000000011>, FOX, 1:25:12.345, 1:29.100, N/A` first).
+
+    **Expect:** your message marked ⏳, then the choice, as in step 16. **Do not press it.**
+
+19. **Do:** with the choice of step 18 standing, **restart the bot**.
+
+    **Expect**, once the bot is back:
+    - **Host log:** `Recovery: asking the queue to clear and reopen round <round id>'s submission`.
+    - **Log:**
+      ```
+      System | Bot restarted mid-result-submission | Notice
+        round: R1
+        Sessions submitted before restart have been cleared. Submission wizard re-opened — please re-submit all sessions.
+      ```
+      The line names the round by its number alone, not its division: with two divisions, `R1`
+      could be either. This is believed a bot defect: record it, and carry on.
+    - **Posts**, in this order:
+      - the channel `#s1-division-1-r1-results` **deleted**, with the pastes and the dead choice in
+        it;
+      - a **new** channel `s1-division-1-r1-results`, in the same category and seen by the same
+        roles, with the opening pinging `@League Manager` and the **Qualifying** prompt, as
+        `01-full-season.md` step 20. Qualifying, not Race: the Qualifying saved at step 17 was
+        cleared with the rest.
+    - Nothing in `#d1-results` or `#d1-standings`: no result is published before the review.
+
+    **Had the stop fallen between your paste and the choice**, the outcome turns on whether the
+    paste's turn reached the queue's record before the stop; the ⏳ mark is put on first, so it
+    does not tell you. Either:
+    - **(a) the turn was recorded:** the start leaves the round to it (`review_recovery`, "A round
+      whose review, or whose submission, a change is carrying out is left alone"). No line in
+      `#bot-log`, the channel stays, and the choice appears in it once the queue starts: carry on
+      from step 21's press of **Standard** for the race;
+    - **(b) it was not:** as above, the channel cleared and opened afresh.
+
+20. **Do:** in the new `#s1-division-1-r1-results`, send the qualifying paste of step 16 again, and
+    press **Standard** on the choice.
+
+    **Expect:** as steps 16 and 17. The choice's buttons answer: they belong to a choice posted
+    since the restart.
+
+21. **Do:** send the race paste of step 18 again, and press **Standard** on the choice.
+
+    **Expect:** as `01-full-season.md` step 26, but for the check-in:
+    - the choice edited to `🔧 Config selected: **Standard**`;
+    - **Ack:** `Saving the Race of round 1 with the Standard configuration`
+    - **Then:** `✅ The Race of round 1 is saved, scored by **Standard**.`
+    - **Posts**, in this order: in the submission channel `✅ **Race** results saved.` and
+      `⏳ The penalty review is being opened (job #<n: the review's first job>).`; in `#d1-results`
+      the two pictures of round 1, `Provisional Results`; in `#d1-standings` drivers and teams,
+      `Provisional Results`, the totals of `01-full-season.md` step 26 (Kevin Keller 34, Hiro
+      Hayashi 30, …); in the submission channel the penalty review,
+      `🏁 **Penalty Review — Round 1 | Division 1**`, with `**Preliminary Attendees (22):**` and
+      `**Staged Penalties:** *(none — click Add Penalty to stage one)*`.
+    - **Log:** the `RESULT_SUBMISSION_ACCEPTED` line with `session: FEATURE_RACE`, the button's
+      line, any notice blocks, and
+      ```
+      <you> | Penalty review opened | Success
+        round 1 (Division 1)
+      ```
