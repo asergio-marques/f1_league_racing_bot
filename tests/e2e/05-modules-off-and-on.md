@@ -747,3 +747,192 @@ their channels is told; with images off, the calendars go out as text.
       > UNVERIFIED: whether any line follows it, as in `02-roster-changes.md` step 27.
     - **Test mode is off**, and every fake driver deleted. **The saved backup is kept**:
       `bot.bkup.db`, `scheduler.bkup.db` and `backup.lock` are still in the bot host folder.
+
+---
+
+## Part J — Back on, with no season live
+
+No season is live, so every module may be switched on and off. Each switch-on first checks the
+channels its module kept for the live season's divisions, naming one gone or taken by another
+setting; with no season live there are none to check, so none is named. What each module kept
+while it was off is then read back against Part B.
+
+### The dependency, and switching back on
+
+47. **Attendance needs results.** **Do:** `/module enable module_name:attendance`
+
+    **Expect:** as `00-base.md` step 7:
+    - **Reply:** `❌ The Attendance module requires the Results & Standings module to be enabled first.`
+    - **Log:** ``⛔ `/module enable` refused for <you> — The Attendance module requires the Results & Standings module to be enabled first.``
+
+48. **Do:** `/module enable module_name:results`
+
+    **Expect:**
+    - **Ack:** `Turning Results & Standings on`
+    - **Then:** `✅ Results & Standings module enabled.`
+    - **Log:** `<you> | /module enable results | Success`
+
+49. **The same again.** **Do:** `/module enable module_name:results`
+
+    **Expect:**
+    - **Reply:** `⚠️ Results & Standings module is already enabled.` No acknowledgement.
+    - **Log:** ``⛔ `/module enable` refused for <you> — Results & Standings module is already enabled.``
+
+50. **Do:** `/results config list scope:Server`
+
+    **Expect:** as step 12: `Half Points` and `Standard`, `2 configurations.` Switching results
+    off kept the server's points configurations.
+
+51. **Do:** `/module enable module_name:attendance`
+
+    **Expect:**
+    - **Ack:** `Turning the attendance module on`
+    - **Then:** `✅ Attendance module enabled.`
+    - **Log:** `<you> | /module enable attendance | Success`
+
+52. **Do:** `/attendance config show`
+
+    **Expect:** as step 8, word for word: No-RSVP **2**, Absent penalty **1**, No-show **1**,
+    Auto-reserve threshold **6**. The settings of steps 6 and 7 came back with the module, and
+    step 31's change, refused, never landed. A reply with the packaged values (No-RSVP **1**,
+    auto-reserve **disabled**) means the switch reset them: a failure.
+
+53. **Do:** `/module enable module_name:weather`
+
+    **Expect:**
+    - **Ack:** `Turning the weather module on`
+    - **Then:** `✅ Weather module enabled.`
+    - **Log:** `<you> | /module enable weather | Success`
+
+54. **Do:** `/weather config view`
+
+    **Expect:** as step 9: 5 days, 2 days, 2h.
+
+55. **Do:** `/module enable module_name:images`
+
+    **Expect:**
+    - **Ack:** `Turning the image module on`
+    - **Then:** ``✅ Image module enabled. Your configuration is kept as it stood, each output aspect on or off as you left it — `/images config view` shows which are on.``
+      Not `00-base.md` step 12's "All output aspects start disabled": the module had been on before.
+      Nothing follows it: a further paragraph means Inkscape was not found.
+    - **Log:** `<you> | /module enable images | Success`
+
+56. **Do:** `/images config view`
+
+    **Expect:** as step 10: the nine outputs each `✅`, none with a reason. Every output kept the
+    toggle `00-base.md` step 14 gave it, and with weather, attendance and results back on, none is
+    flagged for its module.
+
+### Attendance goes down with results
+
+57. **Do:** `/module disable module_name:results`
+
+    **Expect:**
+    - **Reply**, with two buttons, **✅ Disable both** and **❌ Cancel**:
+      ```
+      ⚠️ **Attendance goes with it.** Attendance depends on Results & Standings and cannot run alone. If you continue:
+      • every check-in call, reminder and deadline still to come will stop;
+      • Attendance cannot be switched back on once a season's placements are confirmed.
+      Its settings and every division's check-in and attendance channels are kept for when it is switched back on; any channel deleted or put to another use meanwhile will be named, for you to set again.
+      ```
+      No paragraph about destroying the season's results: no season is running.
+    - **Log:** nothing yet.
+
+58. **Do:** within two minutes, press **✅ Disable both**.
+
+    **Expect:**
+    - **Ack:** `Turning Results & Standings off`
+    - **Then:**
+      ```
+      ✅ Results & Standings module disabled.
+      ✅ Attendance module disabled with it. Its settings and its per-division check-in and attendance channels are kept.
+      ```
+      No `🗑️` line: with no season live there are no results to erase.
+    - **Log:** two lines, results' and then attendance's:
+      ```
+      <you> | /module disable results | Success
+      ```
+      ```
+      <you> | /module disable attendance | Success
+      ```
+      No `Messages removed` line: there was nothing to take down.
+    - **Posts:** none.
+
+59. **Do:** `/module disable module_name:attendance`
+
+    **Expect:**
+    - **Reply:** `⚠️ Attendance module is already disabled.`
+    - **Log:** ``⛔ `/module disable` refused for <you> — Attendance module is already disabled.``
+
+60. **Do:** `/module enable module_name:attendance`
+
+    **Expect:** the refusal of step 47: results is off again.
+
+61. **Do:** `/module enable module_name:results`, then `/module enable module_name:attendance`.
+
+    **Expect:** as steps 48 and 51.
+
+62. **Do:** `/attendance config show`
+
+    **Expect:** as step 52. The cascade keeps attendance's settings as its own switch-off does.
+
+### The signup module
+
+63. **A setting to tell by.** **Do:** `/signup nationality`
+
+    **Expect:**
+    - **Ack:** `Toggling the nationality requirement`
+    - **Then:** `✅ Nationality requirement: **OFF**.`
+    - **Log:**
+      ```
+      <you> | /signup nationality | Success
+        nationality_required: False
+      ```
+      No season is live, so the signup settings are free to change.
+
+64. **Do:** `/module disable module_name:signup`
+
+    **Expect:**
+    - **Ack:** `Turning the signup module off`
+    - **Then:** `✅ Signup module disabled. Its channel, time slots and question settings are kept, and so are the league's base role and driver role. The permissions the bot set on the channel are removed, and put back when the module is switched on again.`
+    - **Log:** `<you> | /module disable signup | Success`
+    - **`#signup`:** the permission overwrites `/signup channel` set (`00-base.md` step 13) are
+      gone: those of `@everyone`, the bot, `@Members`, `@League Manager` and `@League Admin`.
+      Look at the channel's permissions in Discord.
+      > UNVERIFIED: the bot's own overwrite is among those removed, so the bot keeps Manage
+      > Permissions on `#signup` only through a server-wide or category grant (`00-base.md` step 1).
+      > Where a `⚠️ Permissions the bot set on the signup channel <#<signup id>> could not be removed: remove them by hand.`
+      > line follows the reply, the bot lacked it; note which overwrites remain.
+
+65. **Do:** `/signup config view`
+
+    **Expect:**
+    - **Reply:** as step 11, but `Nationality Required` `OFF`: the `Channel` is still
+      <#<signup id>>, and `Time Type` and `Time Image Required` as they were. The view reads the
+      settings whether or not the module is on.
+    - **Log:** nothing; it is a view.
+
+66. **Do:** `/signup nationality`
+
+    **Expect:**
+    - **Reply:** ``⛔ Signup module is not enabled. Use `/module enable signup` first.`` No acknowledgement.
+    - **Log:** ``⛔ `/signup nationality` refused for <you> — Signup module is not enabled. Use `/module enable signup` first.``
+
+67. **Do:** `/module disable module_name:signup`
+
+    **Expect:**
+    - **Reply:** `⚠️ Signup module is already disabled.`
+    - **Log:** ``⛔ `/module disable` refused for <you> — Signup module is already disabled.``
+
+68. **Do:** `/module enable module_name:signup`
+
+    **Expect:**
+    - **Ack:** `Turning the signup module on`
+    - **Then:** `✅ Signup module enabled.` alone. No `Next steps` list, unlike `00-base.md`
+      step 11: the channel was kept, and the base and driver roles are set.
+    - **Log:** `<you> | /module enable signup | Success`
+    - **`#signup`:** the overwrites of step 64 are back as `/signup channel` set them.
+
+69. **Do:** `/signup config view`
+
+    **Expect:** as step 65: `Nationality Required` still `OFF`, `Channel` <#<signup id>>.
