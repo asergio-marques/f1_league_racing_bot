@@ -1108,3 +1108,80 @@ Keller 43, Liam Lavoie 3) and Delta Racing from 32 to **34** (Hiro Hayashi 32, G
     **Expect:**
     - **Reply:** `❌ Amendment mode is not active.`
     - **Log:** ``⛔ `/results amend revert` refused for <you> — Amendment mode is not active.``
+
+---
+
+## Part E — The syncs
+
+`/results rounds sync` posts a division's results again, every session of every round with
+results, in round order; `/results standings sync` works each round's standings out again from
+its results and posts them. Each new message is posted before the one it replaces is deleted. A
+division counts as having something to post once any round of it holds results, final or not.
+
+83. **Do:** `/results rounds sync division:Division 1`
+
+    **Expect:**
+    - **Ack:** `Syncing the results of every round of **Division 1**`
+    - **Then:** `✅ Results for all rounds in **Division 1** synced to the results channel.`
+    - **Posts** (`#d1-results`): the two pictures of round 1 again, `Final Results`, as step 74
+      left them, and the pair before them deleted. Nothing in `#d1-standings`: the standings are
+      the other sync's.
+    - **Log:**
+      ```
+      <you> | /results rounds sync | Success
+        division: Division 1
+      ```
+
+84. **A repeat is carried out again.** **Do:** step 83 again.
+
+    **Expect:** as step 83: a sync may be asked for again whenever it is wanted, and is never
+    refused as a repeat nor answered that nothing changed.
+
+85. **Nothing to post.** **Do:** `/results rounds sync division:Division 2`
+
+    **Expect:**
+    - **Reply:** `ℹ️ No completed rounds found for **Division 2**. No results to post.` No
+      acknowledgement: nothing is asked of the queue.
+    - **Log:**
+      ```
+      <you> | /results rounds sync | Nothing changed
+        division: Division 2
+        reason: no completed rounds, so nothing was posted
+      ```
+    - Nothing posted in `#d2-results`.
+
+86. **A refusal: a division the season does not hold.** **Do:**
+    `/results rounds sync division:Division 9`
+
+    **Expect:**
+    - **Reply:** `❌ Division 'Division 9' not found.`
+    - **Log:** ``⛔ `/results rounds sync` refused for <you> — Division 'Division 9' not found.``
+
+87. **Do:** `/results standings sync division:division 1`, the name in lower case.
+
+    **Expect:** the name is matched whatever its case, and given back as the season holds it.
+    - **Ack:** `Syncing the standings of every round of **Division 1**`
+    - **Then:** `✅ Standings for **Division 1** synced to the standings channel.`
+    - **Posts** (`#d1-standings`): drivers and teams again, `Final Results`, with the amended
+      totals of step 74 (Kevin Keller 43, Hiro Hayashi 32; Foxtrot Motorsport 46, Delta Racing
+      34), and the pair before them deleted. Nothing in `#d1-results`.
+    - **Log:**
+      ```
+      <you> | /results standings sync | Success
+        division: Division 1
+      ```
+
+88. **Nothing to post.** **Do:** `/results standings sync division:Division 2`
+
+    **Expect:**
+    - **Reply:** `ℹ️ No completed rounds found for **Division 2**. No standings to post.`
+    - **Log:**
+      ```
+      <you> | /results standings sync | Nothing changed
+        division: Division 2
+        reason: no completed rounds, so nothing was posted
+      ```
+    - Nothing posted in `#d2-standings`: the opening classification of the approval stands.
+
+The season is still ongoing, with Division 1's round 1 final and scored by the amended
+`Standard`, and the server's store holding `Standard` alone. Restore the base before the next spec.
