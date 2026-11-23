@@ -111,3 +111,130 @@ Discord timestamp, `<t:<unix time>:F>`, which Discord shows in your own time zon
      `Circuit de Spa-Francorchamps` and `Circuit Zandvoort`, on `<YEAR+1>-03-01`, `-03-08` and
      `-03-15`.
    - **Log:** nothing; it is a view.
+
+---
+
+## Part B — What a running season refuses
+
+Once placements are confirmed the calendar, the divisions and the weather deadlines are fixed:
+rounds may be amended or cancelled, and divisions cancelled, but nothing is added, deleted or
+renamed. Each refusal below comes before any other check of the command, so the values given
+are never judged.
+
+### The calendar is fixed
+
+6. **Do:** `/round add division_name:Division 1 format:NORMAL scheduled_at:<YEAR+1>-03-29T20:00:00 track:12`
+
+   **Expect:**
+   - **Reply:** ``❌ No pending season setup. Run `/season setup` first.``
+   - **Log:** ``⛔ `/round add` refused for <you> — No pending season setup. Run `/season setup` first.``
+
+7. **A paste the form cannot read is refused first, whatever the season.** **Do:**
+   `/round add-bulk division_name:Division 1`. In the form **Add rounds in bulk**, paste into
+   **datetime UTC, format, track — one per line**, and submit:
+
+   ```
+   <YEAR+1>-03-29T20:00, Rally, 12
+   ```
+
+   **Expect:**
+   - **Reply:**
+     ```
+     ❌ Import rejected — 1 problem(s). **No rounds were added.**
+       • Line 1: unknown format `Rally`. Choose from: NORMAL, SPRINT, MYSTERY, ENDURANCE.
+     ```
+   - **Log:** ``⛔ the “Add rounds in bulk” form refused for <you> — Line 1: unknown format `Rally`. Choose from: NORMAL, SPRINT, MYSTERY, ENDURANCE.``
+
+8. **Do:** `/round add-bulk division_name:Division 1`, and paste:
+
+   ```
+   <YEAR+1>-03-29T20:00, Normal, 12
+   ```
+
+   **Expect:**
+   - **Reply:** ``❌ No pending season setup. Run `/season setup` first.``
+   - **Log:** ``⛔ the “Add rounds in bulk” form refused for <you> — No pending season setup. Run `/season setup` first.``
+
+9. **Do:** `/round delete division_name:Division 1 round_number:3`
+
+   **Expect:**
+   - **Reply:** ``❌ `/round delete` can only be used while the season is in placements.``
+   - **Log:** ``⛔ `/round delete` refused for <you> — `/round delete` can only be used while the season is in placements.``
+
+### The divisions are fixed
+
+10. **Do** each command of the table, in its order.
+
+    | Do | Reply |
+    |---|---|
+    | `/division add name:Division 3 role:@Division 2 tier:3` | ``❌ No pending season setup. Run `/season setup` first.`` |
+    | `/division duplicate source_name:Division 2 new_name:Division 3 role:@Division 2 tier:3 day_offset:7` | ``❌ `/division duplicate` can only be used while the season is in placements.`` |
+    | `/division rename current_name:Division 2 new_name:Division Two` | ``❌ `/division rename` can only be used while the season is in placements.`` |
+    | `/division amend name:Division 2` | ``❌ Provide at least one of: `new_name`, `tier`, `role`.`` |
+    | `/division amend name:Division 2 tier:3` | ``❌ `/division amend` is only permitted while the season is in placements.`` |
+    | `/division delete name:Division 2` | ``❌ `/division delete` can only be used while the season is in placements.`` |
+
+    **Expect**, for each row: the **Reply** the table gives, and a **Log** line
+    ``⛔ `<the command, e.g. /division rename>` refused for <you> — <the reply without its ❌>``.
+    The empty `/division amend` is refused for its missing fields before the season is looked at
+    (`division_edit_changes._amend_check`).
+
+### The weather deadlines are fixed
+
+11. **Do** each command of the table, in its order: a new value, the value already held, and one
+    out of range.
+
+    | Do |
+    |---|
+    | `/weather config phase-1-deadline days:6` |
+    | `/weather config phase-2-deadline days:2` |
+    | `/weather config phase-3-deadline hours:0` |
+
+    **Expect**, for each row, the same refusal: the confirmed season is judged before the value,
+    so neither the unchanged value nor the zero is reached (`weather_settings.deadline_setting`).
+    - **Reply:** `❌ Phase deadline configuration cannot be changed once a season's placements are confirmed.`
+    - **Log:** ``⛔ `/weather config <the subcommand, e.g. phase-1-deadline>` refused for <you> — Phase deadline configuration cannot be changed once a season's placements are confirmed.``
+
+12. **Do:** `/weather config view`
+
+    **Expect:**
+    - **Reply:**
+      ```
+      **Weather deadlines**
+        • Phase 1 deadline: 5 day(s) before race
+        • Phase 2 deadline: 2 day(s) before race
+        • Phase 3 deadline: 2h before race
+      ```
+      the packaged defaults, which the base never changed and step 11 could not.
+    - **Log:** nothing; it is a view.
+
+### The wrong channel and the wrong role
+
+13. **Do**, in `#d1-calendar` rather than `#bot-commands`:
+    `/round amend division_name:Division 1 round_number:1 format:SPRINT`
+
+    **Expect:**
+    - **Reply:** `⛔ This command can only be used in the configured interaction channel.`
+    - **Log:** ``⛔ `/round amend` refused for <you> — This command can only be used in the configured interaction channel.``
+    - Nothing posted in `#d1-calendar`: the reply is seen by you alone.
+
+14. **Take away your league admin role.** In Discord, outside the bot, remove `@League Admin` from
+    yourself. You hold no `@League Manager` either (the Fixture gives you none), so you now hold
+    neither tier; being the server owner, or holding Administrator, counts for neither.
+
+    **Do:** `/round cancel division_name:Division 1 round_number:1 confirm:CONFIRM`
+
+    **Expect:**
+    - **Reply:** `⛔ This command is a league admin's. You need **League Admin**.`
+    - **Log:** ``⛔ `/round cancel` refused for <you> — This command is a league admin's. You need **League Admin**.``
+    - Nothing cancelled.
+
+15. **Do:** `/round amend division_name:Division 1 round_number:1 format:SPRINT`
+
+    **Expect:**
+    - **Reply:** `⛔ You don't have permission to use this command. You need **League Manager**, or **League Admin**.`
+    - **Log:** ``⛔ `/round amend` refused for <you> — You don't have permission to use this command. You need **League Manager**, or **League Admin**.``
+
+16. **Give the role back.** In Discord, give yourself `@League Admin` again.
+
+    **Expect:** nothing from the bot. Every later step needs the role.
