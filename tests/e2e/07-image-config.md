@@ -555,11 +555,14 @@ otherwise:
     <Label>: <value>
   ```
 
-**A notice of a fallback** in a preview reads, for a class the league supplies,
-``• <image type> — no `<class>` image is supplied for “<datum>”; the directory's fallback was drawn instead.``
-and, for one of the bot's own files (a marker, a weather icon, a tyre, `mystery`, `other`),
-``• <image type> — the configured `<class>` directory has no image for “<datum>”; the bot's own `<name>.svg` was drawn instead.``
-A missing division logo draws nothing and raises no notice.
+**A notice of a fallback** in a preview sits under `  [ASSET_FALLBACK_USED] ×<n>`, the image
+type being the template's key (`lineup_template`, `calendar_template`, …). A notice met once
+names its field, one met several times is counted. For a class the league supplies:
+``• <image type>[ / `<field id>`] — no `<class>` image is supplied for “<datum>”; the directory's fallback was drawn instead.[ (×<n>)]``
+and, for one of the bot's own files (a marker, a weather icon, a tyre, `mystery`, `other`):
+``• <image type>[ / `<field id>`] — the configured `<class>` directory has no image for “<datum>”; the bot's own `<name>.svg` was drawn instead.[ (×<n>)]``
+A step below quotes only the detail, the part after the `—`. A missing division logo draws
+nothing and raises no notice.
 
 ### A folder of the league's own
 
@@ -572,7 +575,9 @@ A missing division logo draws nothing and raises no notice.
     **Expect:** `✅ Lineup`. On the PNG, Alpha Racing's badge is a **green square**; the badge of
     every other team and of the reserve block is the packaged grey shield. Among the notices, one
     ``no `team` image is supplied for “<shorthand>”`` for each of `BRV`, `CHL`, `DLT`, `ECH`, `FOX`,
-    `GLF`, `HTL`, `IND`, `JLT`, `KLO` and the reserve team, and **none** for `ALP`.
+    `GLF`, `HTL`, `IND`, `JLT`, `KLO` and the reserve team, and **none** for `ALP`. Each is met
+    once, so names its field, for example
+    ``• lineup_template / `team_2_image` — no `team` image is supplied for “BRV”; the directory's fallback was drawn instead.``
 
 30. **A fallback of the league's own.** Make one by hand, in the shell of step 7:
 
