@@ -65,9 +65,10 @@ Feature Qualifying and Feature Race.
      Everything the bot holds now — seasons, rounds, drivers, results and every scheduled job — is replaced by what that backup holds. A copy of the current database is kept beside it first.
      **The bot must be restarted afterwards** to pick it up.
      ```
-     The reply ``📭 There is no saved backup. Take one with `/test-mode backup save`.`` means the
-     base must be built again: run `00-base.md`.
-   - **Log:** nothing yet.
+     The reply ``⛔ There is no saved backup to restore. Take one with `/test-mode backup save`.``
+     means the base must be built again: run `00-base.md`. That refusal is logged:
+     ``⛔ `/test-mode backup restore` refused for <you> — There is no saved backup to restore. Take one with `/test-mode backup save`.``
+   - **Log:** nothing yet, where the question is posted.
 
 2. **Do:** within two minutes, press **♻️ Restore**.
 
