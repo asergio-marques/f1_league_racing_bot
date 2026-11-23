@@ -647,9 +647,6 @@ async def test_a_season_confirmed_while_the_abort_waited_is_refused_when_it_runs
 WINDOW_JOBS = ("delete_button", "post_closed", "disarm_timers")
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#600: the swap's step is not yet named swap_test_mode_commands"
-)
 async def test_the_jobs_run_in_order(tmp_path):
     league = await setup_league(tmp_path, signups_open=True, test_mode=True)
     await signing_up(league)

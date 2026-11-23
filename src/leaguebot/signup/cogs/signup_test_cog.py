@@ -78,6 +78,13 @@ class SignupTestCog(commands.Cog):
         has run, so the cog offers it none. The swap puts the group on the league's server."""
         self.__cog_app_commands__.clear()
 
+    def get_app_commands(
+        self,
+    ) -> list[app_commands.Command[SignupTestCog, ..., object] | app_commands.Group]:
+        """The group the cog declares, which it still does once it is loaded and offers the tree
+        none: the swap is handed it by the entry point."""
+        return [self.signup]
+
     async def _test_mode_on(self, interaction: discord.Interaction) -> bool:
         """Whether test mode is on, read as the command is given; where it is not, the command is
         refused."""

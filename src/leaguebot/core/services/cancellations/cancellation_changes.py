@@ -88,7 +88,7 @@ driver's roles taken back, after the notices, since the check-in notice mentions
 the signup window closed and the forecasts posted under test mode cleared; and then a second save,
 `end`, that writes the history marked cancelled, runs the driver pass, switches test mode off and
 marks the season cancelled, **last**. The saved test-mode state is kept: a season cancelled is one
-abandoned, not run to its end. Where test mode was on, the `/driver` swap follows `end` as its first
+abandoned, not run to its end. Where test mode was on, the `/driver` and `/signup` swap follows `end` as its first
 job and ends on a fault where Discord refuses it, the reply and the line naming a restart as the
 remedy (`driver_commands`). The jobs the other ends of a season share (`season_end_changes`)
 carry out the rest. A run that stops at `end` and is discarded is run again, and tells no division
@@ -182,7 +182,7 @@ from leaguebot.core.services.seasons.season_service import (
     discard_uncommitted_placements_on,
 )
 from leaguebot.core.services.test_mode.driver_commands import (
-    SWAP_DRIVER_COMMANDS,
+    SWAP_TEST_MODE_COMMANDS,
     swap_not_done_line,
     swap_not_done_reply,
 )
@@ -1249,7 +1249,7 @@ def season_cancel_change(
     test_mode_flushed: AwaitedHook,
     drivers_deleted: AwaitedHook,
     profiles_deleted: AwaitedHook,
-    swap_driver: Step,
+    swap_commands: Step,
     now: Callable[[], datetime],
 ) -> ChangeType:
     """The change that cancels the season being raced; see the module.
@@ -1261,8 +1261,8 @@ def season_cancel_change(
     *rounds_called_off*, *cancellation_notices*, *rounds_made_final*, *cancellation_steps*,
     *season_end_refused*, *season_standing_read*, *season_end_closes*, *drivers_returned*,
     *driver_returned_jobs*, *season_end_steps*, *test_mode_flushed*, *drivers_deleted*), the hook
-    each driver deleted calls (*profiles_deleted*), the job that swaps `/driver` back where test
-    mode was on (*swap_driver*) and the queue's clock *now*.
+    each driver deleted calls (*profiles_deleted*), the job that swaps `/driver` and `/signup` back where test
+    mode was on (*swap_commands*) and the queue's clock *now*.
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -1472,7 +1472,7 @@ def season_cancel_change(
             )
         )
         if test_mode:
-            planned.insert(0, PlannedStep(SWAP_DRIVER_COMMANDS))
+            planned.insert(0, PlannedStep(SWAP_TEST_MODE_COMMANDS))
         if driver_pass.accounts:
             planned.append(PlannedStep(DISCARD_PORTRAITS, {"accounts": driver_pass.accounts}))
         audit = AuditRecord(
@@ -1568,7 +1568,7 @@ def season_cancel_change(
             roles, scheduler, season_end_steps=season_end_steps, drivers_deleted=drivers_deleted,
         ),
         **steps_of_the_modules(cancellation_steps),
-        SWAP_DRIVER_COMMANDS: swap_driver,
+        SWAP_TEST_MODE_COMMANDS: swap_commands,
         UNARM: Step(
             UNARM, StepKind.ACT, unarm,
             describe=describing("removing the timed work of the rounds of season {number}"),

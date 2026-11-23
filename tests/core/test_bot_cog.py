@@ -87,9 +87,6 @@ _DRIVER_RESTART = (
     "The `/driver` and `/signup` commands will show correctly once the bot is restarted."
 )
 
-#: Why a reply naming the restart fails until it names `/signup` beside `/driver`.
-_BOTH_NAMED = "#600: the restart notice does not yet name /signup beside /driver"
-
 #: `/bot init` refused on a server already configured, word for word.
 _ALREADY_CONFIGURED = (
     "⚠️ This server is already configured, and `/bot init` runs once.\n"
@@ -633,7 +630,6 @@ async def test_bot_init_on_a_second_server_is_refused_and_writes_nothing(tmp_pat
     assert await _audit_rows(db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason=_BOTH_NAMED)
 async def test_a_pack_frees_the_server_for_another(tmp_path):
     """The claim is the configuration row's `server_id`, and `/bot pack` clears it (#247).
 
@@ -770,7 +766,7 @@ async def test_a_second_bot_init_queued_behind_the_first_is_refused_as_it_starts
 @pytest.mark.parametrize("where", ["save", "check"])
 @pytest.mark.parametrize(
     "before",
-    ["fresh", pytest.param("packed", marks=pytest.mark.xfail(strict=True, reason=_BOTH_NAMED))],
+    ["fresh", "packed"],
 )
 async def test_bot_init_ends_on_a_fault_without_stopping_the_queue(
     tmp_path, monkeypatch, caplog, before, where
@@ -2135,7 +2131,7 @@ async def test_bot_factory_reset_backs_up_then_wipes_then_reports_by_dm(tmp_path
 @pytest.mark.parametrize(
     "test_mode",
     [
-        pytest.param(1, id="on", marks=pytest.mark.xfail(strict=True, reason=_BOTH_NAMED)),
+        pytest.param(1, id="on"),
         pytest.param(0, id="off"),
     ],
 )

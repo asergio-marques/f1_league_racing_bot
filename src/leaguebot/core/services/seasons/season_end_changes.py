@@ -30,7 +30,7 @@ fails:
    `season_standing_read`), the driver pass, test mode switched off and the season marked
    completed, **last**, with its audit record. A fault leaves the season as it was, Pending
    completion, for the queue to retry.
-5. Then, where test mode was on, the `/driver` swap (`swap_driver_commands`), which ends on a
+5. Then, where test mode was on, the `/driver` and `/signup` swap (`swap_test_mode_commands`), which ends on a
    fault where Discord refuses it, so that the lane carries on and the reply and the line name a
    restart as the remedy (architecture.md, "A job that fails stops its lane"); the Discord side of
    the driver pass (`signup_notice` and `close_signup` for each signup closed, `take_driver_role`
@@ -49,7 +49,7 @@ used: no season set up or active, or one past the confirmation of its placements
 `close_window` (the signup close timer cancelled, the window closed), `flush_forecasts` where
 test mode is on, then `end`, one save that runs the driver pass (no history is written, the season
 having none), switches test mode off and deletes the season, **last**. After that save, where test mode
-was on, the `/driver` swap runs (as in the completion's fifth step), then each driver the pass reaches has their signup channel's notice and lock or their driver role as jobs of their
+was on, the `/driver` and `/signup` swap runs (as in the completion's fifth step), then each driver the pass reaches has their signup channel's notice and lock or their driver role as jobs of their
 own, and the portraits of the drivers deleted are discarded. The saved test-mode state is kept,
 a season aborted being one abandoned. The signup records are keyed by account and outlive the season, so a channel is still
 held after the save.
@@ -121,7 +121,7 @@ from leaguebot.core.services.seasons.season_service import (
     refresh_division_status_on,
 )
 from leaguebot.core.services.test_mode.driver_commands import (
-    SWAP_DRIVER_COMMANDS,
+    SWAP_TEST_MODE_COMMANDS,
     swap_not_done_line,
     swap_not_done_reply,
 )
@@ -480,7 +480,7 @@ def season_complete_change(
     test_mode_flushed: AwaitedHook,
     drivers_deleted: AwaitedHook,
     profiles_deleted: AwaitedHook,
-    swap_driver: Step,
+    swap_commands: Step,
     now: Callable[[], datetime],
 ) -> ChangeType:
     """The change that completes the confirmed season; see the module.
@@ -492,7 +492,7 @@ def season_complete_change(
     *season_completed_steps*, *season_end_refused*, *season_end_closes*, *drivers_returned*,
     *driver_turned_down*, *driver_returned_jobs*, *season_end_steps*, *test_mode_flushed*,
     *drivers_deleted*), the hook each driver deleted calls (*profiles_deleted*), the job that swaps
-    `/driver` back where test mode was on (*swap_driver*) and the queue's clock *now*, which
+    `/driver` and `/signup` back where test mode was on (*swap_commands*) and the queue's clock *now*, which
     stamps the audit entries of the turn-down and the driver pass.
     """
 
@@ -639,7 +639,7 @@ def season_complete_change(
             )
         )
         if test_mode:
-            planned.insert(0, PlannedStep(SWAP_DRIVER_COMMANDS))
+            planned.insert(0, PlannedStep(SWAP_TEST_MODE_COMMANDS))
         if driver_pass.accounts:
             planned.append(PlannedStep(DISCARD_PORTRAITS, {"accounts": driver_pass.accounts}))
         if test_mode:
@@ -773,7 +773,7 @@ def season_complete_change(
         **classification_steps,
         END: Step(END, StepKind.SAVE, end, describe=describe_end),
         CLOSE: Step(CLOSE, StepKind.SAVE, close, describe=describe_close),
-        SWAP_DRIVER_COMMANDS: swap_driver,
+        SWAP_TEST_MODE_COMMANDS: swap_commands,
         **winding,
         TURN_DOWN_STEP: replace(turn_down, run=turn_down_then_settle),
         **shared_steps(
@@ -807,7 +807,7 @@ def season_abort_change(
     divisions_deleted: AwaitedHook,
     season_deleted: AwaitedHook,
     profiles_deleted: AwaitedHook,
-    swap_driver: Step,
+    swap_commands: Step,
     now: Callable[[], datetime],
 ) -> ChangeType:
     """The change that aborts the season being set up; see the module.
@@ -819,7 +819,7 @@ def season_abort_change(
     (*season_end_closes*, *drivers_returned*, *driver_returned_jobs*, *season_end_steps*,
     *test_mode_flushed*, *drivers_deleted*), the hooks the season's deletion calls
     (*rounds_deleted*, *divisions_deleted*, *season_deleted*), the hook each driver deleted calls
-    (*profiles_deleted*), the job that swaps `/driver` back where test mode was on (*swap_driver*)
+    (*profiles_deleted*), the job that swaps `/driver` and `/signup` back where test mode was on (*swap_commands*)
     and the queue's clock *now*, which stamps the driver pass's audit entry.
     """
 
@@ -881,7 +881,7 @@ def season_abort_change(
             )
         )
         if test_mode:
-            planned.insert(0, PlannedStep(SWAP_DRIVER_COMMANDS))
+            planned.insert(0, PlannedStep(SWAP_TEST_MODE_COMMANDS))
         if driver_pass.accounts:
             planned.append(PlannedStep(DISCARD_PORTRAITS, {"accounts": driver_pass.accounts}))
         return StepResult(
@@ -961,7 +961,7 @@ def season_abort_change(
     )
     steps: dict[str, Step] = {
         **shared,
-        SWAP_DRIVER_COMMANDS: swap_driver,
+        SWAP_TEST_MODE_COMMANDS: swap_commands,
         END: Step(END, StepKind.SAVE, end, describe=describe_end),
         CLOSE: Step(CLOSE, StepKind.SAVE, close, describe=describe_close),
     }

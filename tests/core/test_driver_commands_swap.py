@@ -40,9 +40,6 @@ from tests.support.change_queue import (
 NOW = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
 ACTOR_ID = 77
 
-#: Why a test of the swap fails until it carries `/signup` beside `/driver`.
-_BOTH_GROUPS = "#600: the swap does not yet carry the test-mode /signup beside /driver"
-
 #: The groups the swap moves, by name.
 _NAMES = ("driver", "signup")
 
@@ -125,7 +122,6 @@ def _called_for(pairs, on: bool) -> dict[str, tuple[Any, Any]]:
 # ── The swap ──────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=_BOTH_GROUPS)
 @pytest.mark.parametrize("on", [True, False], ids=["test-mode-on", "test-mode-off"])
 async def test_the_swap_shows_the_driver_group_the_flag_calls_for(tmp_path, on):
     """Both `/driver` cogs and both `/signup` cogs are loaded, the member groups on the global
@@ -149,7 +145,6 @@ async def test_the_swap_shows_the_driver_group_the_flag_calls_for(tmp_path, on):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_BOTH_GROUPS)
 async def test_a_sync_discord_refuses_is_raised(tmp_path):
     """Test mode is on and Discord refuses the sync: the swap of `/driver` and `/signup` raises
     Discord's refusal, for the step that runs it to report."""
@@ -161,7 +156,6 @@ async def test_a_sync_discord_refuses_is_raised(tmp_path):
         await _swap(bot, pairs)
 
 
-@pytest.mark.xfail(strict=True, reason=_BOTH_GROUPS)
 @pytest.mark.parametrize(
     ("claimed", "on"),
     [(False, True), (False, False), (True, False)],
@@ -197,7 +191,6 @@ async def test_an_unclaimed_bot_syncs_the_global_tree_with_the_member_driver(
     assert call() in bot.tree.sync.await_args_list
 
 
-@pytest.mark.xfail(strict=True, reason=_BOTH_GROUPS)
 async def test_an_unclaimed_bot_takes_driver_off_every_server_it_is_on(tmp_path):
     """No server is claimed and test mode is on, and the bot is on two servers, each still
     carrying the test-mode `/driver` and the test-mode `/signup`. The swap takes both off both
@@ -287,7 +280,6 @@ def _log_lines(bot) -> list[str]:
     return [unruled(str(line)) for line in bot.log_channel.sent]
 
 
-@pytest.mark.xfail(strict=True, reason=_BOTH_GROUPS)
 @pytest.mark.parametrize("on", [True, False], ids=["on", "off"])
 async def test_the_toggle_swaps_driver_after_its_save(toggling, on):
     """Admin turns test mode on, and then, for the second case, off again. Once the queue has run
@@ -326,7 +318,6 @@ async def test_a_refused_toggle_swaps_nothing(toggling):
     bot.tree.sync.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=_BOTH_GROUPS)
 async def test_a_swap_discord_refuses_ends_on_a_fault_and_the_toggle_stands(toggling):
     """Discord refuses every sync. Admin turns test mode on: test mode is on all the same, the
     queue is not stopped, and both Admin's reply and a line in the log channel say the `/driver`
@@ -386,13 +377,7 @@ _ENDS = {"complete": _completed, "abort": _aborted, "cancel": _cancelled}
 @pytest.mark.parametrize(
     ("end", "test_mode"),
     [
-        *(
-            pytest.param(
-                end, True, id=f"{end}-test-season",
-                marks=pytest.mark.xfail(strict=True, reason=_BOTH_GROUPS),
-            )
-            for end in sorted(_ENDS)
-        ),
+        *(pytest.param(end, True, id=f"{end}-test-season") for end in sorted(_ENDS)),
         *(pytest.param(end, False, id=f"{end}-real-season") for end in sorted(_ENDS)),
     ],
 )
@@ -423,7 +408,6 @@ async def test_a_test_seasons_end_swaps_driver_back_and_a_real_ones_does_not(
 _ENDED = {"complete": [{"status": "COMPLETED"}], "cancel": [{"status": "CANCELLED"}], "abort": []}
 
 
-@pytest.mark.xfail(strict=True, reason=_BOTH_GROUPS)
 @pytest.mark.parametrize("end", sorted(_ENDS))
 async def test_a_swap_discord_refuses_at_a_test_seasons_end_ends_on_a_fault_and_the_season_ends(
     tmp_path, end

@@ -27,8 +27,8 @@ flag reads off) and the deletion of the saved test-mode backup, which the backup
 in test mode alone, could no longer restore (`discard_backup`). A job a league admin discards is
 dropped, and the reply says what was not done and what to do by hand, in the season end's words.
 
-**The `/driver` swap follows the save**, as the first job after it, whichever way the flag went
-(`swap_driver_commands`, `driver_commands.py`). It ends on a fault where Discord refuses it, as role
+**The `/driver` and `/signup` swap follows the save**, as the first job after it, whichever way the flag went
+(`swap_test_mode_commands`, `driver_commands.py`). It ends on a fault where Discord refuses it, as role
 moves do: the change stands, the lane carries on, and the reply and the line say the commands
 could not be changed and will be put right when the bot next restarts, never asking for the toggle
 again, which a refused swap could only meet again.
@@ -88,7 +88,7 @@ from leaguebot.core.services.seasons.season_lifecycle_service import (
     steps_of_the_modules,
 )
 from leaguebot.core.services.test_mode.driver_commands import (
-    SWAP_DRIVER_COMMANDS,
+    SWAP_TEST_MODE_COMMANDS,
     swap_not_done_line,
     swap_not_done_reply,
 )
@@ -179,7 +179,7 @@ def _save(
                         AUDIT_TYPE, {"test_mode_active": True}, {"test_mode_active": False}
                     ),
                 ),
-                then=(PlannedStep(SWAP_DRIVER_COMMANDS), *flush, PlannedStep(DISCARD_BACKUP)),
+                then=(PlannedStep(SWAP_TEST_MODE_COMMANDS), *flush, PlannedStep(DISCARD_BACKUP)),
             )
         await db.execute("UPDATE server_configs SET test_mode_active = 1")
         live = await live_season_stage_on(db)
@@ -188,7 +188,7 @@ def _save(
         )
         return StepResult(
             result={"outcome": ON, "seeded": [name for part in parts for name in part.seeded]},
-            then=(PlannedStep(SWAP_DRIVER_COMMANDS),),
+            then=(PlannedStep(SWAP_TEST_MODE_COMMANDS),),
             audits=(
                 AuditRecord(AUDIT_TYPE, {"test_mode_active": False}, {"test_mode_active": True}),
                 *(audit for part in parts for audit in part.audits),
@@ -209,7 +209,7 @@ def _backup_deleted(ctx: OutcomeContext) -> bool:
 
 def _finished_lines(ctx: OutcomeContext) -> tuple[str, ...]:
     """The one line of the change, once it is done: Success, or Nothing changed where the flag
-    already stood; none where the save never finished. A `/driver` swap Discord refused is a
+    already stood; none where the save never finished. A `/driver` and `/signup` swap Discord refused is a
     `not done` line of it."""
     saved = saved_result(ctx)
     found = saved.get("outcome")
@@ -239,14 +239,14 @@ def test_mode_toggle_change(
     test_mode_flushed: AwaitedHook,
     season_end_steps: Hook,
     scheduler: "SchedulerService",
-    swap_driver: Step,
+    swap_commands: Step,
 ) -> ChangeType:
     """The `core.test_mode_toggle` change type, for the builder to register: *test_mode_turned_on*
     is the hook each module's part of turning test mode on is signed up to, *profiles_deleted* the
     hook each module's rows of a fake driver are deleted through, *test_mode_flushed* the hook the
     modules hand back the jobs that clear what test mode posted through, *season_end_steps* the
     hook they define those jobs' steps through, *scheduler* holds the job store the saved
-    backup sits beside, and *swap_driver* is the job that swaps `/driver` after the save (see
+    backup sits beside, and *swap_commands* is the job that swaps `/driver` and `/signup` after the save (see
     `driver_commands`): ended by a fault when Discord refuses it, the reply and the line saying
     the commands will be put right when the bot next restarts."""
 
@@ -257,7 +257,7 @@ def test_mode_toggle_change(
         SAVE: Step(
             SAVE, StepKind.SAVE, _save(test_mode_turned_on, profiles_deleted, test_mode_flushed), describe=describe
         ),
-        SWAP_DRIVER_COMMANDS: swap_driver,
+        SWAP_TEST_MODE_COMMANDS: swap_commands,
         DISCARD_BACKUP: discard_backup_step(scheduler),
         **steps_of_the_modules(season_end_steps, line_prefix=None),
     }

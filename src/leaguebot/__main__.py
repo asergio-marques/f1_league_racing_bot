@@ -650,7 +650,7 @@ def register_change_types(bot: LeagueBot) -> None:
         test_roster_remove_change,
     )
     from leaguebot.core.services.test_mode.test_mode_toggle_change import test_mode_toggle_change
-    from leaguebot.core.services.test_mode.driver_commands import swap_driver_commands_step
+    from leaguebot.core.services.test_mode.driver_commands import swap_test_mode_commands_step
     from leaguebot.core.services.upkeep.clean_change import clean_change
     from leaguebot.core.services.modules.hub_service import hub_refresh_change
     from leaguebot.core.services.drivers.lineup_posting import lineup_post_change
@@ -778,7 +778,7 @@ def register_change_types(bot: LeagueBot) -> None:
             test_mode_flushed=bot.test_mode_flushed,
             drivers_deleted=bot.drivers_deleted,
             profiles_deleted=bot.profiles_deleted,
-            swap_driver=swap_driver_commands_step(bot.driver_swap),
+            swap_commands=swap_test_mode_commands_step(bot.driver_swap),
             now=lambda: bot.change_queue.now(),
         )
     )
@@ -803,7 +803,7 @@ def register_change_types(bot: LeagueBot) -> None:
             test_mode_flushed=bot.test_mode_flushed,
             drivers_deleted=bot.drivers_deleted,
             profiles_deleted=bot.profiles_deleted,
-            swap_driver=swap_driver_commands_step(bot.driver_swap),
+            swap_commands=swap_test_mode_commands_step(bot.driver_swap),
             now=lambda: bot.change_queue.now(),
         )
     )
@@ -822,7 +822,7 @@ def register_change_types(bot: LeagueBot) -> None:
             divisions_deleted=bot.divisions_deleted,
             season_deleted=bot.season_deleted,
             profiles_deleted=bot.profiles_deleted,
-            swap_driver=swap_driver_commands_step(bot.driver_swap),
+            swap_commands=swap_test_mode_commands_step(bot.driver_swap),
             now=lambda: bot.change_queue.now(),
         )
     )
@@ -930,7 +930,7 @@ def register_change_types(bot: LeagueBot) -> None:
             test_mode_flushed=bot.test_mode_flushed,
             season_end_steps=bot.season_end_steps,
             scheduler=bot.scheduler_service,
-            swap_driver=swap_driver_commands_step(bot.driver_swap),
+            swap_commands=swap_test_mode_commands_step(bot.driver_swap),
         )
     )
     bot.change_queue.register(test_mode_former_driver_change())
@@ -1239,17 +1239,22 @@ async def build(settings: Settings) -> LeagueBot:
     signup_wiring.sign_up(bot)
     weather_wiring.sign_up(bot)
     image_wiring.sign_up(bot)
-    # The two `/driver` cogs are made first, so that the swap is handed the groups they hold; they
-    # are loaded with the rest below.
+    # The `/driver` and `/signup` cogs are made first, a member cog and a test-mode cog of each, so
+    # that the swap is handed the groups they hold, in pairs; they are loaded with the rest below.
     from leaguebot.core.cogs.driver_cog import DriverCog
     from leaguebot.core.cogs.driver_test_cog import DriverTestCog
-    from leaguebot.core.services.test_mode.driver_commands import swap_driver_commands
+    from leaguebot.core.services.test_mode.driver_commands import swap_test_mode_commands
+    from leaguebot.signup.cogs.signup_cog import SignupCog
+    from leaguebot.signup.cogs.signup_test_cog import SignupTestCog
 
     driver_cog, driver_test_cog = DriverCog(bot), DriverTestCog(bot)
+    signup_cog, signup_test_cog = SignupCog(bot), SignupTestCog(bot)
     bot.driver_swap = partial(
-        swap_driver_commands,
-        member=driver_cog.driver,
-        variant=driver_test_cog.driver,
+        swap_test_mode_commands,
+        groups=[
+            (driver_cog.driver, driver_test_cog.driver),
+            (signup_cog.signup, signup_test_cog.signup),
+        ],
         league_settings=bot.league_settings,
     )
     register_change_types(bot)
@@ -1267,8 +1272,6 @@ async def build(settings: Settings) -> LeagueBot:
     from leaguebot.core.cogs.track_cog import TrackCog
     from leaguebot.core.cogs.team_cog import TeamCog
     from leaguebot.core.cogs.module_cog import ModuleCog
-    from leaguebot.signup.cogs.signup_cog import SignupCog
-    from leaguebot.signup.cogs.signup_test_cog import SignupTestCog
     from leaguebot.signup.cogs.admin_review_cog import AdminReviewCog
     from leaguebot.framework.cogs.retry_cog import RetryCog
     from leaguebot.results.cogs.results_cog import ResultsCog
@@ -1287,8 +1290,8 @@ async def build(settings: Settings) -> LeagueBot:
     await bot.add_cog(driver_test_cog)
     await bot.add_cog(TeamCog(bot))
     await bot.add_cog(ModuleCog(bot))
-    await bot.add_cog(SignupCog(bot))
-    await bot.add_cog(SignupTestCog(bot))
+    await bot.add_cog(signup_cog)
+    await bot.add_cog(signup_test_cog)
     await bot.add_cog(AdminReviewCog(bot))
     retry_cog = RetryCog(bot)
     await bot.add_cog(retry_cog)
@@ -1375,10 +1378,10 @@ async def build(settings: Settings) -> LeagueBot:
     @bot.command(name="sync", hidden=True)
     @commands.is_owner()
     async def guild_sync(ctx: commands.Context) -> None:
-        """Owner-only: clear guild command overrides and sync both trees, with the `/driver` the
+        """Owner-only: clear guild command overrides and sync both trees, with the `/driver` and `/signup` the
         test-mode flag calls for."""
         # Remove any guild-specific copies (e.g. left over from a previous copy_global_to); the
-        # swap then puts the test-mode `/driver` back on the server if test mode is on, and syncs
+        # swap then puts the test-mode `/driver` and `/signup` back on the server if test mode is on, and syncs
         # the server's tree and the global one, so that Discord has the latest command schema.
         # Sent in a direct message there is no server, and clearing for none would wipe the global
         # commands: nothing is cleared, and the swap syncs by the flag as anywhere else.
@@ -1443,7 +1446,7 @@ def _sign_up_to_starting(bot: LeagueBot) -> None:
 
 async def _when_ready(bot: LeagueBot) -> None:
     """What the bot does each time discord.py reports it ready: start up, then sync its commands,
-    with the `/driver` the test-mode flag calls for (`swap_driver_commands`).
+    with the `/driver` and `/signup` the test-mode flag calls for (`swap_test_mode_commands`).
 
     discord.py reports the bot ready again after a network drop it could not resume, with no
     restart. So this runs every step of the start-up through `start_up` alone, whose guard runs them
@@ -1465,7 +1468,7 @@ async def _when_ready(bot: LeagueBot) -> None:
     ):
         return
 
-    # Swap `/driver` as the test-mode flag calls for, then sync the global tree (may take up to 1
+    # Swap `/driver` and `/signup` as the test-mode flag calls for, then sync the global tree (may take up to 1
     # hour to propagate) and the league's server's: a refusal off the queue, or a server missing
     # from the cache, is one line in the log channel, and the bot goes on. The remedy is the next
     # restart.

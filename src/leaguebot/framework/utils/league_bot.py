@@ -211,9 +211,9 @@ class LeagueBot(commands.Bot):
     #: scheduler, as the module service holds each module's switch reader (architecture.md, "How
     #: modules and core fit together"). A kind with none is a fault in the bot's assembly.
     advance_steps: AdvanceSteps
-    #: The swap of `/driver` that a change switching test mode on or off, and start-up, run: the
-    #: builder makes it from the two `/driver` cogs' groups, before it registers the change types
-    #: that carry it, so that a service never imports a cog.
+    #: The swap of `/driver` and `/signup` that a change switching test mode on or off, and
+    #: start-up, run: the builder makes it from the (member, test-mode) groups of the cogs of each,
+    #: before it registers the change types that carry it, so that a service never imports a cog.
     driver_swap: Callable[[LeagueBot], Awaitable[list[discord.app_commands.AppCommand]]]
     #: Every option the hub's panel can carry, one for each key: the builder makes it and signs
     #: each option up on it (core's About, and any module's), so that nothing is registered at

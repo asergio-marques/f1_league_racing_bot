@@ -83,6 +83,7 @@ from leaguebot.framework.models.change import (
 )
 from leaguebot.core.models.server_config import ServerConfig
 from leaguebot.core.services.settings.bot_settings import init_channel_refusals
+from leaguebot.core.services.test_mode.driver_commands import COMMANDS_NAMED
 from leaguebot.framework.services.queue.change_types import (
     ChangeType,
     CheckContext,
@@ -124,9 +125,10 @@ ANOTHER_SERVER = (
 COMMAND = "/bot init"
 
 #: What `/bot init` and `/bot factory-reset` add to their reply where the test-mode flag is on once
-#: they have run. Neither swaps the server's `/driver` commands (`swap_driver_commands`, which the
-#: toggle and a test season's end carry): a restart does, and the member is told so.
-DRIVER_RESTART = "The `/driver` commands will show correctly once the bot is restarted."
+#: they have run. Neither swaps the server's `/driver` and `/signup` commands
+#: (`swap_test_mode_commands`, which the toggle and a test season's end carry): a restart does, and
+#: the member is told so.
+DRIVER_RESTART = f"{COMMANDS_NAMED.capitalize()} will show correctly once the bot is restarted."
 
 #: The four settings `/bot init` claims: the column, the reply's label, and the line's own key
 #: for it. The reply names each by its mention alone; the line adds a role's name beside its

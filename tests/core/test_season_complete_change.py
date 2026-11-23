@@ -1052,9 +1052,6 @@ async def test_a_refusal_found_when_the_completion_runs_updates_the_reply_and_th
 # ── What it does ────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#600: the swap's step is not yet named swap_test_mode_commands"
-)
 async def test_the_jobs_run_in_order(tmp_path):
     """Results, attendance and test mode on; Pro's last round with results is its round 2, Am's
     its round 1. The jobs run in the core specification's order: the save, then for Pro and then

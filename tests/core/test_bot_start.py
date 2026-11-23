@@ -214,12 +214,7 @@ async def test_the_sync_command_leaves_the_driver_the_flag_calls_for(tmp_path, t
 @pytest.mark.parametrize(
     "test_mode",
     [
-        pytest.param(
-            True, id="test-mode-on",
-            marks=pytest.mark.xfail(
-                strict=True, reason="#600: the swap does not yet take /signup off the global tree"
-            ),
-        ),
+        pytest.param(True, id="test-mode-on"),
         pytest.param(False, id="test-mode-off"),
     ],
 )
