@@ -25,6 +25,12 @@ from tests.support.season_league import ADMIN_ID, LEWIS, SIGNING_UP, SeasonLeagu
 
 _NOT_BUILT = "#600: the test-mode /signup group is not yet built"
 
+#: The two ways a driver field names Mock Alpha: by its ID, and by mention.
+_MOCK_NAMED = [
+    pytest.param(str(MOCK), id="by its ID"),
+    pytest.param(f"<@{MOCK}>", id="by mention"),
+]
+
 #: Every subcommand of the member `/signup`, by its qualified name, read off the member group.
 _MEMBER_COMMANDS = sorted(
     command.qualified_name
@@ -104,10 +110,13 @@ async def _driver_state(league: SeasonLeague, user_id: int) -> str | None:
 
 
 @pytest.mark.xfail(strict=True, reason=_NOT_BUILT)
-async def test_signup_start_asks_a_fake_driver_s_signup_with_the_admin_as_its_actor(tmp_path):
+@pytest.mark.parametrize("named", _MOCK_NAMED)
+async def test_signup_start_asks_a_fake_driver_s_signup_with_the_admin_as_its_actor(
+    tmp_path, named
+):
     """Test mode is on, at Signups with the window open, and Mock Alpha a fake driver at Not
-    Signed Up. Admin runs the test-mode `/signup start` naming Mock Alpha by its ID, and the queue
-    runs. One `signup.start` was asked, for Mock Alpha's ID, recorded as asked by Admin, and ran
+    Signed Up. Admin runs the test-mode `/signup start` naming Mock Alpha by its ID, or by mention,
+    and the queue runs. One `signup.start` was asked, for Mock Alpha's ID, recorded as asked by Admin, and ran
     to its end; the log channel's "Signup | Started" line names Admin as the one who acted and
     Mock Alpha by its test name; and beside it one `SIGNUP_START` audit entry, by Admin, records
     Mock Alpha moved from Not Signed Up to Pending Signup Completion."""
@@ -118,7 +127,7 @@ async def test_signup_start_asks_a_fake_driver_s_signup_with_the_admin_as_its_ac
 
     league = await _league(tmp_path)
 
-    await _run_test_command(league, "signup start", str(MOCK))
+    await _run_test_command(league, "signup start", named)
     await run_queue(league.bot)
 
     [change] = [row for row in await change_rows(league.db_path) if row["kind"] == START_KIND]
@@ -188,12 +197,13 @@ async def test_signup_start_is_refused(tmp_path, standing, named, words):
 
 
 @pytest.mark.xfail(strict=True, reason=_NOT_BUILT)
+@pytest.mark.parametrize("named", _MOCK_NAMED)
 async def test_cancel_of_a_fake_driver_by_id_asks_what_the_member_cancel_asks(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, named
 ):
     """Test mode is on. Kimi, a real driver, and Mock Alpha, a fake one, each have a signup
     awaiting review. Admin runs the member `/signup cancel` of Kimi and the test-mode one of Mock
-    Alpha by its ID, submitting each form with the same reason. Each asks the queue for the same
+    Alpha by its ID, or by mention, submitting each form with the same reason. Each asks the queue for the same
     change with the same payload, but for its own driver: Mock Alpha's ID in place of Kimi's."""
     from leaguebot.signup.cogs.signup_cog import SignupCog
     from tests.signup.test_wizard_changes import _submit_cancel
@@ -214,7 +224,7 @@ async def test_cancel_of_a_fake_driver_by_id_asks_what_the_member_cancel_asks(
         SignupCog(league.bot), member, league._member(SIGNING_UP)
     )
     await _submit_cancel(league, member, "Signed up twice")
-    fake = await _run_test_command(league, "signup cancel", str(MOCK))
+    fake = await _run_test_command(league, "signup cancel", named)
     await _submit_cancel(league, fake, "Signed up twice")
 
     [(real_kind, real_payload), (fake_kind, fake_payload)] = [
