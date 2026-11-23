@@ -727,3 +727,162 @@ round has started cannot be reached with a round dated a year ahead.
       `📋 **Phase 1 Calculation Log** | Round 1 in **Division 1** | Suzuka International Racing Course`
       with its JSON, `"track": "Suzuka International Racing Course"`, `"mu": 0.25, "sigma": 0.07`:
       the new circuit's parameters, not Silverstone's.
+
+---
+
+## Part F — Cancelling rounds
+
+Division 2's round 3, which nothing has touched, is cancelled first; then Division 1's round 1,
+whose forecast and call are out. The bot announces nothing of its own: each enabled module posts
+its own word in its own channel, and the calendar is reposted with the round covered.
+
+47. **Do:** `/round cancel division_name:Division 2 round_number:3 confirm:confirm`
+
+    **Expect:**
+    - **Reply:** ``❌ Type exactly `CONFIRM` in the `confirm` field to proceed.``
+    - **Log:** ``⛔ `/round cancel` refused for <you> — Type exactly `CONFIRM` in the `confirm` field to proceed.``
+
+48. **Do:** `/round cancel division_name:Division 2 round_number:9 confirm:CONFIRM`
+
+    **Expect:**
+    - **Reply:** ``❌ Round 9 not found in division `Division 2`.``
+    - **Log:** ``⛔ `/round cancel` refused for <you> — Round 9 not found in division `Division 2`.``
+
+### A round nothing has touched
+
+49. **Do:** `/round cancel division_name:Division 2 round_number:3 confirm:CONFIRM`
+
+    **Expect:**
+    - **Ack:** `Cancelling round 3 in **Division 2**`
+    - **Then:** `✅ Round **3** in **Division 2** cancelled.`, and any notices section for the
+      calendar.
+    - **Posts:**
+      - `#d2-rsvp`, mentioning the division role, although no call was ever posted for the round:
+        ```
+        <@&<Division 2 role id>>
+        📢 **Round 3 Cancelled: Division 2**
+        Round 3 (Circuit Zandvoort) has been cancelled. There is no check-in to answer for it, and nobody is charged for it.
+        ```
+      - `#d2-results`, silently, mentioning nobody:
+        ```
+        📢 **Round 3 Cancelled: Division 2**
+        Round 3 (Circuit Zandvoort) has been cancelled. No results will be posted for it.
+        ```
+      - `#d2-weather`, silently, mentioning nobody:
+        ```
+        📢 **Round 3 Cancelled: Division 2**
+        Round 3 (Circuit Zandvoort) has been cancelled. No weather forecast will be posted for it.
+        ```
+      - `#d2-calendar`: a new calendar, a picture with no text, round 3 covered by its
+        cancellation overlay; then the calendar posted at approval is deleted.
+    - **Log:**
+      ```
+      <you> | /round cancel | Success
+        division: Division 2
+        round: 3
+      ```
+      with nothing beneath: no call was posted, so there is no check-in to record. Any notice
+      block for the calendar.
+
+50. **A repeat.** **Do** step 49's command again.
+
+    **Expect:**
+    - **Reply:** `❌ Round 3 in **Division 2** is already cancelled.`
+    - **Log:** ``⛔ `/round cancel` refused for <you> — Round 3 in **Division 2** is already cancelled.``
+    - Nothing posted.
+
+51. **Do:** `/round amend division_name:Division 2 round_number:3 format:SPRINT`
+
+    **Expect:**
+    - **Reply:**
+      ```
+      ⛔ **Round 3** in **Division 2** cannot be amended:
+      • This round has been cancelled and can no longer be amended.
+
+      **Nothing has been changed.**
+      ```
+    - **Log:** ``⛔ `/round amend` of round 3 in Division 2 refused for <you> — This round has been cancelled and can no longer be amended.``
+
+### A round whose forecast and call are out
+
+52. **Do:** `/round cancel division_name:Division 1 round_number:1 confirm:CONFIRM`
+
+    **Expect:**
+    - **Ack:** `Cancelling round 1 in **Division 1**`
+    - **Then:** `✅ Round **1** in **Division 1** cancelled.`, and any notices section for the
+      calendar.
+    - **Posts:**
+      - `#d1-rsvp`: the notice, mentioning the division role:
+        ```
+        <@&<Division 1 role id>>
+        📢 **Round 1 Cancelled: Division 1**
+        Round 1 (Suzuka International Racing Course) has been cancelled. There is no check-in to answer for it, and nobody is charged for it.
+        ```
+        then the call of step 44 deleted, with its picture.
+      - `#d1-results` and `#d1-weather`: the silent notes of step 49, reading
+        `📢 **Round 1 Cancelled: Division 1**` and
+        `Round 1 (Suzuka International Racing Course) has been cancelled. …`.
+      - `#d1-weather` keeps the Phase 1 forecast of step 46 and the notice of step 44: a forecast
+        already posted is not deleted when its round is called off, and the clean-up a day after
+        the round is unscheduled with the rest (weather specification, "Forecasts already posted
+        shall not be deleted").
+      - `#d1-calendar`: a new calendar, round 1 covered by its cancellation overlay; then step
+        38's calendar deleted.
+    - **Log:** the round's line, with the check-in it held beneath, read before the call came
+      down:
+      ```
+      <you> | /round cancel | Success
+        division: Division 1
+        round: 1
+        check-in, Division 1, Round 1 (Suzuka International Racing Course):
+          accepted: <@9000000000000000001> (Adam Archer)
+          tentative: <@9000000000000000003> (Carlos Cortes)
+          declined: <@9000000000000000002> (Bruno Bianchi)
+          no answer: <@9000000000000000004> (Dirk Dekker), <@9000000000000000005> (Emil Engel), … , <@9000000000000000024> (Xavier Xu)
+      ```
+      `no answer` names the other twenty-one drivers of Division 1, both reserves included, by ID.
+      No `reserves:` line: the deadline never ran. Any notice block for the calendar.
+
+53. **Do:** `/test-mode review`
+
+    **Expect:**
+    - **Reply:** the two cancelled rounds are gone from it:
+      ```
+      **Division 1**
+        Round 2 · TBA             · <YEAR+1>-03-15  Notice: ⏳  |  Results: ⏳  |  RSVP: ⏳  Last: ⏳  Deadline: ⏳  Cleared: ⏳
+        Round 3 · Hungaroring     · <YEAR+1>-03-22  P1: ⏳  P2: ⏳  P3: ⏳  Cleanup: ⏳  |  Results: ⏳  |  RSVP: ⏳  Last: ⏳  Deadline: ⏳  Cleared: ⏳
+
+      **Division 2**
+        Round 1 · Autodromo Nazionale Monza · <YEAR+1>-03-01  P1: ⏳  P2: ⏳  P3: ⏳  Cleanup: ⏳  |  Results: ⏳  |  RSVP: ⏳  Last: ⏳  Deadline: ⏳  Cleared: ⏳
+        Round 2 · Circuit de Spa-Francorchamps · <YEAR+1>-03-08  P1: ⏳  P2: ⏳  P3: ⏳  Cleanup: ⏳  |  Results: ⏳  |  RSVP: ⏳  Last: ⏳  Deadline: ⏳  Cleared: ⏳
+      ```
+      and the legend. The rounds keep their numbers: a cancellation renumbers nothing.
+    - **Log:** nothing; it is a view.
+
+54. **Do:** `/test-mode advance`
+
+    **Expect:** the next step is Division 2's round 1, not anything of Division 1's round 1,
+    whose timed work is gone.
+    - **Reply:** ``⏩ **Phase 1** for **Division 2** — **Autodromo Nazionale Monza** is on the change queue: its forecast goes to the forecast channel and its calculation to the log channel as soon as the queue reaches it.``
+    - **Posts** (`#d2-weather`): `<@&<Division 2 role id>>` with the Phase 1 picture, headed
+      `Initial chance of rain`, the track `Autodromo Nazionale Monza`.
+    - **Log:**
+      ```
+      <you> | /test-mode advance | Success
+        phase: 1
+        division: Division 2
+        track: Autodromo Nazionale Monza
+        round: 1
+      ```
+      then `📋 **Phase 1 Calculation Log** | Round 1 in **Division 2** | Autodromo Nazionale Monza`
+      with its JSON, `"mu": 0.15, "sigma": 0.03`, and any notice block.
+
+55. **Do:** `/test-mode advance`
+
+    **Expect:**
+    - **Reply:** `📨 The **RSVP notice** for **Division 2** — **Round 1** (**Autodromo Nazionale Monza**) is on the change queue: it goes to the RSVP channel as soon as the queue reaches it.`
+    - **Log:** as step 41, with `division: Division 2`.
+    - **Posts** (`#d2-rsvp`): `<@&<Division 2 role id>>`, the check-in picture of the
+      `Italian Grand Prix`, the embed titled `Season 1 Round 1 — Autodromo Nazionale Monza` with
+      `🏁 Event Type` `Sprint`, as step 29 made it, every Division 2 driver `()`, and the three
+      buttons.
