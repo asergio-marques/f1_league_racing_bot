@@ -46,9 +46,10 @@ judge one in a browser, and never open a template's SVG in one: the rasteriser d
 browser hides.
 
 **Artwork.** The base may hold the league's own artwork in `resources/league/` (`00-base.md`
-step 1). This spec never touches it: what it adds goes into folders of its own, under
-`resources/league/templates/` and `resources/league/e2e/`, and one file into
-`resources/league/teams/` which Part G takes out again. Every file it adds is solid green
+step 1). This spec never overwrites or deletes any of it: what it adds goes into a folder of
+its own, `resources/league/e2e/`, which Part G removes whole, and the one file step 46 drops into
+`resources/league/teams/` to show the ordinary way is set aside first where the league has one
+of that name, and put back in Part G. Every file it adds is solid green
 (`#00C853`), so where it is drawn is plain on the PNG.
 
 ---
@@ -178,8 +179,8 @@ step 1). This spec never touches it: what it adds goes into folders of its own, 
    `e2e_<name>` whose heading rule is drawn green, and two files that are not usable templates:
 
    ```
-   cd <checkout>/resources/league/templates
-   for f in ../../defaults/templates/*_template.svg; do
+   mkdir -p <checkout>/resources/league/e2e/templates && cd <checkout>/resources/league/e2e/templates
+   for f in ../../../defaults/templates/*_template.svg; do
      name=$(basename "$f")
      cp "$f" "$name"
      sed 's/y="93" \(width="[0-9]*"\) height="3" fill="#E8113C"/y="93" \1 height="3" fill="#00C853"/' "$f" > "e2e_$name"
@@ -201,9 +202,9 @@ step 1). This spec never touches it: what it adds goes into folders of its own, 
    | `e2e_broken.svg` | not well-formed: a `<g>` never closed | a malformed template |
    | `e2e_blank.svg` | a well-formed SVG with a canvas and nothing to fill | a drawing missing what a template must carry |
 
-   **Expect:** `ls <checkout>/resources/league/templates` lists `.gitkeep`, the sixteen
+   **Expect:** `ls <checkout>/resources/league/e2e/templates` lists the sixteen
    `<kind>_template.svg`, the sixteen `e2e_<kind>_template.svg`, `e2e_broken.svg` and
-   `e2e_blank.svg` — 34 files and `.gitkeep`. `grep -c 00C853 e2e_lineup_template.svg` prints
+   `e2e_blank.svg` — 34 files. `grep -c 00C853 e2e_lineup_template.svg` prints
    `1`; `grep -c division_logo e2e_calendar_template.svg` prints `1`.
 
 7. **Prepare the league's artwork folders by hand**, in the same shell. Each file is a solid
@@ -236,7 +237,7 @@ step 1). This spec never touches it: what it adds goes into folders of its own, 
    | `e2e/tyres` | `soft`, `medium`, `hard`, `intermediate`, `wet` (`.svg`) | 64 × 64 | every compound |
    | `e2e/division-logos` | `division_1.svg` | 88 × 88, the box `e2e_calendar_template.svg` gives it | a logo is keyed on the division's **name**; Division 2 is left without one on purpose |
 
-   **Expect:** `find <checkout>/resources/league/e2e -name '*.svg' | wc -l` prints `21`.
+   **Expect:** `find <checkout>/resources/league/e2e -name '*.svg' -not -path '*/templates/*' | wc -l` prints `21`.
 
 ---
 
@@ -280,31 +281,31 @@ command checks the file it names. A filename is always a file **inside** the con
      ```
    - **Log:** ``⛔ `/images config template-directory` refused for <you> — `..` resolves to `<the folder holding <checkout>>`, which is outside the project root.``
 
-10. **Do:** `/images config template-directory directory:resources/league/templates`
+10. **Do:** `/images config template-directory directory:resources/league/e2e/templates`
 
     **Expect:**
-    - **Ack:** ``Setting **Template directory** to `resources/league/templates` ``
+    - **Ack:** ``Setting **Template directory** to `resources/league/e2e/templates` ``
     - **Then:**
       ```
-      ✅ **Template directory** set to `resources/league/templates`.
+      ✅ **Template directory** set to `resources/league/e2e/templates`.
       ✅ Every drawing the outputs you have switched on need is present and valid.
-      Searched: `<checkout>/resources/league/templates`
+      Searched: `<checkout>/resources/league/e2e/templates`
       ```
     - **Log:**
       ```
       <you> | /images config template-directory | Success
-        Template directory: resources/league/templates
+        Template directory: resources/league/e2e/templates
       ```
 
-11. **The same folder again.** **Do:** `/images config template-directory directory:resources/league/templates`
+11. **The same folder again.** **Do:** `/images config template-directory directory:resources/league/e2e/templates`
 
     **Expect:**
     - **Ack:** as step 10.
-    - **Then:** ``ℹ️ Nothing changed: Template directory is already **`resources/league/templates`**.``
+    - **Then:** ``ℹ️ Nothing changed: Template directory is already **`resources/league/e2e/templates`**.``
     - **Log:**
       ```
       <you> | /images config template-directory | Nothing changed
-        Template directory: resources/league/templates
+        Template directory: resources/league/e2e/templates
       ```
 
 12. **Do:** `/images test calendar division:Division 1`
@@ -343,10 +344,10 @@ command checks the file it names. A filename is always a file **inside** the con
     **Expect:**
     - **Reply**, no acknowledgement:
       ```
-      ❌ **Calendar** template was **not** changed — file not found: <checkout>/resources/league/templates/e2e_missing.svg
+      ❌ **Calendar** template was **not** changed — file not found: <checkout>/resources/league/e2e/templates/e2e_missing.svg
       The previously configured filename is still in force.
       ```
-    - **Log:** ``⛔ `/images template calendar` refused for <you> — **Calendar** template was **not** changed — file not found: <checkout>/resources/league/templates/e2e_missing.svg``
+    - **Log:** ``⛔ `/images template calendar` refused for <you> — **Calendar** template was **not** changed — file not found: <checkout>/resources/league/e2e/templates/e2e_missing.svg``
 
 16. **A refusal: a malformed template.** **Do:** `/images template calendar filename:e2e_broken.svg`
 
@@ -462,7 +463,7 @@ command checks the file it names. A filename is always a file **inside** the con
     **Expect**, for each, nothing stored and no acknowledgement:
     - **Reply**, the first:
       ```
-      ❌ **<Label>** template was **not** changed — file not found: <checkout>/resources/league/templates/e2e_missing.svg
+      ❌ **<Label>** template was **not** changed — file not found: <checkout>/resources/league/e2e/templates/e2e_missing.svg
       The previously configured filename is still in force.
       ```
       and the second:
@@ -475,7 +476,7 @@ command checks the file it names. A filename is always a file **inside** the con
 
 25. **Do:** `/images config view`
 
-    **Expect:** under `**Templates**`, ``  Directory: `resources/league/templates` `` and the
+    **Expect:** under `**Templates**`, ``  Directory: `resources/league/e2e/templates` `` and the
     sixteen lines of step 4, each `✅` with its `e2e_` filename
     (``  ✅ Calendar: `e2e_calendar_template.svg` `` and so on). Every other section as step 4.
 
@@ -510,7 +511,7 @@ command checks the file it names. A filename is always a file **inside** the con
 
 28. **Do:** `/images config view`
 
-    **Expect:** under `**Templates**`, ``  Directory: `resources/league/templates` ``,
+    **Expect:** under `**Templates**`, ``  Directory: `resources/league/e2e/templates` ``,
     ``  ✅ Calendar: `e2e_calendar_template.svg` ``,
     ``  ✅ Results — race: `e2e_results_race_template.svg` `` and the other fourteen as in
     step 4.
@@ -1581,13 +1582,11 @@ spec put in `resources/league/`.
      cd <checkout>/resources/league
      rm -r e2e
      rm teams/alp.svg
-     find templates -type f ! -name .gitkeep -delete
      ```
 
      and put back any `teams/alp.svg` set aside in step 46.
 
-     **Expect:** `ls -A <checkout>/resources/league/templates` prints `.gitkeep` alone;
-     `resources/league/e2e` is gone; `resources/league/teams` holds what it held before step 46.
+     **Expect:** `resources/league/e2e` is gone, the templates with it; `resources/league/teams` holds what it held before step 46.
 
 113. **Do:** `/images config view`
 
