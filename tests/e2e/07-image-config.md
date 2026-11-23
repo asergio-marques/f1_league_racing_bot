@@ -945,3 +945,401 @@ plate (`#14171C`), so the contrast can be measured.
 
     **Expect:** step 61's acknowledgement, reply and line. Part E uses this colour; Part G puts
     the base's back.
+
+---
+
+## Part E — Per-tier colours
+
+A league gives each tier its own colours by marking elements of its own template with a colour
+slot, and setting a colour for each slot per division. Nothing the bot ships marks a slot.
+`e2e_calendar_template.svg`, named since step 13, marks its page background with the slot
+`accent`, so each division's calendar is drawn on a background of its own colour once per-tier
+colours are on. A tier's colours are stored under the division's normalised name
+(`division_1`, `division_2`).
+
+**No command removes a tier's colour once stored.** This part stores `accent` for both
+divisions, and Part G cannot take it out again: it is left stored, and drawn nowhere once
+per-tier colours are off and no template marks the slot. The next spec's restore clears it.
+
+### Refusals of a single colour
+
+66. **Do:** `/images config per-tier-set-colour division:--- slot:accent colour:#0D2B4F`
+
+    **Expect:**
+    - **Reply**, no acknowledgement:
+      ``❌ `---` is not a division name the bot can store colours under. Nothing was stored.``
+    - **Log:** ``⛔ `/images config per-tier-set-colour` refused for <you> — `---` is not a division name the bot can store colours under. Nothing was stored.``
+
+67. **Do:** `/images config per-tier-set-colour division:Division 1 slot:Accent! colour:#0D2B4F`
+
+    **Expect:**
+    - **Reply:**
+      ```
+      ❌ `Accent!` is not a usable colour slot. A slot is 1 to 64 characters of lower-case letters, digits, `-` or `_` — for example `accent`.
+      Nothing was stored.
+      ```
+    - **Log:** ``⛔ `/images config per-tier-set-colour` refused for <you> — `Accent!` is not a usable colour slot. A slot is 1 to 64 characters of lower-case letters, digits, `-` or `_` — for example `accent`.``
+
+68. **Do:** `/images config per-tier-set-colour division:Division 1 slot:accent colour:#12345`
+
+    **Expect:**
+    - **Reply:**
+      ```
+      ❌ `#12345` is not a valid colour. Give a `#` followed by exactly six hexadecimal digits, for example `#A020F0`.
+      Nothing was stored.
+      ```
+    - **Log:** the refusal line, its reason the reply's first line after `❌ `.
+
+### Switching them on before the colours are set
+
+69. **Do:** `/images config per-tier-colour-toggle enable:True`
+
+    **Expect:**
+    - **Ack:** `Turning per-tier colours on`
+    - **Then:**
+      ```
+      ✅ Per-tier colours are now **on**.
+
+      ⚠️ These are wanted before your graphics will draw:
+        • `calendar_template` — `accent` is not set for **Division 1**
+        • `calendar_template` — `accent` is not set for **Division 2**
+      ```
+    - **Log:**
+      ```
+      <you> | /images config per-tier-colour-toggle | Success
+        Per-tier colours: on
+      ```
+
+70. **The same again.** **Do:** `/images config per-tier-colour-toggle enable:True`
+
+    **Expect:**
+    - **Then:** `ℹ️ Nothing changed: the per-tier colours setting is already **on**.` and nothing
+      more: the wanted colours are not listed again.
+    - **Log:**
+      ```
+      <you> | /images config per-tier-colour-toggle | Nothing changed
+        Per-tier colours: on
+      ```
+
+71. **Do:** `/images config view`
+
+    **Expect:**
+    - under `**Per-tier colours**`: ``  Enabled: `on` `` and `  No tier has a colour set.`;
+    - under `**Output aspects**`, the calendar marked as unable to draw, the other eight `✅`:
+      ```
+        ⚠️ Calendar
+            ↳ `calendar_template` needs a per-tier colour: `accent` is not set for **Division 1**. Set it with `/images config per-tier-set-colour`.
+            ↳ `calendar_template` needs a per-tier colour: `accent` is not set for **Division 2**. Set it with `/images config per-tier-set-colour`.
+      ```
+
+72. **Do:** `/images config toggle aspect:Calendar`
+
+    **Expect:**
+    - **Ack:** `Switching **Calendar** image output off`
+    - **Then:** `❌ **Calendar** image output **disabled**. Posting stays as text.`
+    - **Log:**
+      ```
+      <you> | /images config toggle | Success
+        Calendar image output: disabled
+      ```
+    - **Posts:** none.
+
+73. **A refusal: switching it back on with the colours wanting.** **Do:**
+    `/images config toggle aspect:Calendar`
+
+    **Expect:**
+    - **Reply**, no acknowledgement:
+      ```
+      ⛔ **Calendar** image output was **not** switched on — it cannot be drawn as things stand:
+        • `calendar_template` needs a per-tier colour: `accent` is not set for **Division 1**. Set it with `/images config per-tier-set-colour`.
+        • `calendar_template` needs a per-tier colour: `accent` is not set for **Division 2**. Set it with `/images config per-tier-set-colour`.
+      Put that right and run this command again. The output is still posted as text in the meantime.
+      ```
+    - **Log:**
+      ```
+      ⛔ `/images config toggle` refused for <you> — **Calendar** image output was **not** switched on — it cannot be drawn as things stand:
+      `calendar_template` needs a per-tier colour: `accent` is not set for **Division 1**. Set it with `/images config per-tier-set-colour`.
+      `calendar_template` needs a per-tier colour: `accent` is not set for **Division 2**. Set it with `/images config per-tier-set-colour`.
+      ```
+
+### Setting them: one, a pasted block, and an import
+
+74. **Do:** `/images config per-tier-set-colour division:Division 1 slot:accent colour:#0D2B4F`
+
+    **Expect:**
+    - **Ack:** ``Setting `accent` for **Division 1** to `#0D2B4F` ``
+    - **Then:** ``✅ **Division 1** — `accent` set to `#0D2B4F`.`` and nothing more: a
+      template marks the slot, and per-tier colours are on.
+    - **Log:**
+      ```
+      <you> | /images config per-tier-set-colour | Success
+        Tier colour: Division 1 / accent = #0D2B4F
+      ```
+
+75. **A refusal: a pasted block with faulty lines.** **Do:**
+    `/images config per-tier-bulk-colour division:Division 2`, and into the form **Set one
+    tier's colours**, field **One `slot colour` per line**, paste:
+
+    ```
+    accent #3B0D4F
+    stripe
+    ink #GG0000
+    ```
+
+    and submit.
+
+    **Expect:**
+    - **Reply:**
+      ```
+      ❌ Nothing was stored — 2 line(s) could not be read:
+        • line 2: expected a slot and a colour, got 'stripe'.
+        • line 3: `#GG0000` is not a valid colour. Give a `#` followed by exactly six hexadecimal digits, for example `#A020F0`.
+      ```
+      The good first line is not stored either: a tier is set whole or not at all.
+    - **Log:**
+      ```
+      ⛔ the “Set one tier's colours” form refused for <you> — 2 line(s) could not be read:
+        • line 2: expected a slot and a colour, got 'stripe'.
+        • line 3: `#GG0000` is not a valid colour. Give a `#` followed by exactly six hexadecimal digits, for example `#A020F0`.
+      ```
+
+76. **Do:** `/images config per-tier-bulk-colour division:Division 2`, and paste:
+
+    ```
+    # Division 2's palette
+    accent #3B0D4F
+    ```
+
+    and submit. A line starting `#` is a comment and is skipped.
+
+    **Expect:**
+    - **Ack:** `Setting 1 colour(s) for **Division 2**`
+    - **Then:**
+      ```
+      ✅ **Division 2** — 1 colour(s) set.
+        • `accent` = `#3B0D4F`
+      ```
+    - **Log:**
+      ```
+      <you> | /images config per-tier-bulk-colour | Success
+        Tier colours: Division 2
+        accent = #3B0D4F
+      ```
+
+77. **Do:** `/images config toggle aspect:Calendar`
+
+    **Expect:**
+    - **Ack:** `Switching **Calendar** image output on`
+    - **Then:** `✅ **Calendar** image output **enabled**.`
+    - **Log:**
+      ```
+      <you> | /images config toggle | Success
+        Calendar image output: enabled
+      ```
+
+78. **Do:** `/images test calendar division:Division 1`, then
+    `/images test calendar division:Division 2`
+
+    **Expect:** Division 1's calendar drawn on a **navy** background (`#0D2B4F`), Division 2's on
+    a **dark purple** one (`#3B0D4F`); both with the green heading rule, and every card, text and
+    picture on them as before. The logo box is empty on both: the division logo folder is back
+    on `resources/league/division-logos`.
+
+79. **Do:** `/images config view`
+
+    **Expect:**
+    - under `**Per-tier colours**`:
+      ```
+        Enabled: `on`
+        division_1: `accent` = `#0D2B4F`
+        division_2: `accent` = `#3B0D4F`
+      ```
+    - under `**Output aspects**`, all nine `✅`.
+
+80. **A refusal: a document that does not parse.** **Do:** `/images config colour-xml-import`
+    with no file, and into the form **Import tier colours**, field **XML payload**, paste
+    `<palettes><division name="Division 1">` and submit.
+
+    **Expect:**
+    - **Reply:**
+      ```
+      ❌ Nothing was stored:
+        • XML syntax error: <the parser's message, for example "Premature end of data in tag division line 1, line 1, column 39 (<string>, line 1)">
+      ```
+    - **Log:**
+      ```
+      ⛔ the “Import tier colours” form refused for <you> — the document could not be read:
+        • XML syntax error: <the same message>
+      ```
+
+81. **A refusal: every block rejected.** **Do:** `/images config colour-xml-import`, and paste:
+
+    ```
+    <palettes><division name="---"><colour slot="accent">#000000</colour></division></palettes>
+    ```
+
+    **Expect:**
+    - **Reply:**
+      ```
+      ⚠️ 1 block(s) were not imported:
+        • `---` is not a division name the bot can store colours under.
+      ```
+    - **Log:**
+      ```
+      ⛔ the “Import tier colours” form refused for <you> — every block was rejected:
+        • `---` is not a division name the bot can store colours under.
+      ```
+
+82. **Some blocks taken, some passed over.** **Do:** `/images config colour-xml-import`, and
+    paste:
+
+    ```
+    <palettes>
+      <division name="Division 1"><colour slot="accent">#1B5E20</colour></division>
+      <division name="Division 2"><colour slot="accent">#4E342E</colour><colour slot="accent">#000000</colour></division>
+      <division name="---"><colour slot="accent">#000000</colour></division>
+    </palettes>
+    ```
+
+    **Expect:**
+    - **Ack:** `Importing colours for 1 tier(s)`
+    - **Then:**
+      ```
+      ✅ Imported 1 colour(s) across 1 tier(s).
+        • **Division 1** — 1 colour(s)
+      ⚠️ 2 block(s) were not imported:
+        • `Division 2`: `accent` is given twice, as #4E342E and #000000.
+        • `---` is not a division name the bot can store colours under.
+      ```
+    - **Log:**
+      ```
+      <you> | /images config colour-xml-import | Success
+        Division 1: 1 colour(s)
+        passed over:
+          `Division 2`: `accent` is given twice, as #4E342E and #000000.
+          `---` is not a division name the bot can store colours under.
+      ```
+
+83. **Do:** `/images test calendar division:Division 1`, then
+    `/images test calendar division:Division 2`
+
+    **Expect:** Division 1 on a **dark green** background (`#1B5E20`); Division 2 still dark
+    purple, its block having been passed over whole.
+
+84. **An attached file.** On your own computer, save this as `e2e-palette.xml`:
+
+    ```
+    <palettes>
+      <division name="Division 1"><colour slot="accent">#0D2B4F</colour></division>
+      <division name="Division 2"><colour slot="accent">#3B0D4F</colour></division>
+    </palettes>
+    ```
+
+    **Do:** `/images config colour-xml-import file:e2e-palette.xml`
+
+    **Expect:**
+    - **Ack:** `Importing colours for 2 tier(s)`
+    - **Then:**
+      ```
+      ✅ Imported 2 colour(s) across 2 tier(s) (1 changed, 1 already held).
+        • **Division 1** — 1 colour(s)
+        • **Division 2** — 1 colour(s)
+      ```
+    - **Log:**
+      ```
+      <you> | /images config colour-xml-import | Success
+        Division 1: 1 colour(s)
+        Division 2: 1 colour(s)
+      ```
+
+85. **The same file again.** **Do:** `/images config colour-xml-import file:e2e-palette.xml`
+
+    **Expect:**
+    - **Then:** `ℹ️ Nothing changed: every colour named is already held.`
+    - **Log:**
+      ```
+      <you> | /images config colour-xml-import | Nothing changed
+        Division 1: 1 colour(s)
+        Division 2: 1 colour(s)
+      ```
+
+86. **The same single colour again.** **Do:**
+    `/images config per-tier-set-colour division:Division 1 slot:accent colour:#0D2B4F`
+
+    **Expect:**
+    - **Then:** ``ℹ️ Nothing changed: `accent` for **Division 1** is already **`#0D2B4F`**.``
+    - **Log:**
+      ```
+      <you> | /images config per-tier-set-colour | Nothing changed
+        Tier colour: Division 1 / accent = #0D2B4F
+      ```
+
+87. **Do:** `/images test calendar division:Division 1`
+
+    **Expect:** step 78's navy background again.
+
+### The fastest-lap colour, measured per tier
+
+88. **The same colour again.** **Do:** `/images config fastest-lap-colour colour:#00FF00`
+
+    **Expect:**
+    - **Then:** ``ℹ️ Nothing changed: the fastest-lap colour is already **`#00FF00`**.``, with no
+      contrast line: a value already held is not measured again.
+    - **Log:**
+      ```
+      <you> | /images config fastest-lap-colour | Nothing changed
+        Fastest-lap colour: #00FF00
+      ```
+
+    The image guide (`docs/how-to/configuring-the-image-module.md`, "Then set the fastest-lap
+    colour again") and the README tell a league to set the **same** colour again to have it
+    measured in every tier's colours; the bot answers as above instead. Believed a defect of
+    those documents: record it, and carry on.
+
+89. **Do:** `/images config fastest-lap-colour colour:#00E676`
+
+    **Expect:**
+    - **Then:**
+      ```
+      ✅ Fastest-lap colour set to `#00E676`.
+      Contrast against the template's plate (`#14171C`) is the same for every division: **10.76:1**
+      ```
+      Each tier's palette is painted onto the plate before it is measured; nothing on the race
+      template takes the `accent` slot, so both tiers read alike.
+    - **Log:** the success line with `Fastest-lap colour: #00E676` beneath it.
+
+    **Then do:** `/images test results division:Division 1 round:1`
+
+    **Expect:** the fastest lap time on the race picture in a slightly softer green than step
+    62's.
+
+### Switching them off
+
+90. **Do:** `/images config per-tier-colour-toggle enable:False`
+
+    **Expect:**
+    - **Ack:** `Turning per-tier colours off`
+    - **Then:**
+      ```
+      ✅ Per-tier colours are now **off**.
+      Your templates draw the colours they were authored in, and nothing is validated while this is off.
+      ```
+    - **Log:**
+      ```
+      <you> | /images config per-tier-colour-toggle | Success
+        Per-tier colours: off
+      ```
+
+91. **Do:** `/images test calendar division:Division 1`
+
+    **Expect:** step 14's picture: the background `#0B0D10` again.
+
+92. **Do:** `/images config view`
+
+    **Expect:** under `**Per-tier colours**`:
+    ```
+      Enabled: `off`
+      division_1: `accent` = `#0D2B4F`
+      division_2: `accent` = `#3B0D4F`
+      _Stored, but not drawn while this is off._
+    ```
