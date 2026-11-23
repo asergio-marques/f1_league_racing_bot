@@ -450,8 +450,7 @@ def parse_nationality(text: str | None) -> str | None:
     """The canonical nationality *text* names, or None where it names none.
 
     An adjective (``british``) or a country (``United Kingdom``), in any case, or ``other``,
-    looked up in ``NATIONALITY_LOOKUP``. The signup wizard and a test driver read it alike, so
-    a mock driver's flag is resolved exactly as a real one's is.
+    looked up in ``NATIONALITY_LOOKUP``, as the signup wizard reads a driver's answer.
     """
     return NATIONALITY_LOOKUP.get((text or "").strip().lower())
 

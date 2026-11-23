@@ -5,11 +5,12 @@ APScheduler triggers:
 
   /test-mode toggle            — enable or disable test mode (state persists), a change on
                                  the change queue
-  /test-mode nationality       — toggle whether mock drivers carry a nationality
+  /test-mode nationality       — toggle whether the signup wizard asks a fake driver's
+                                 nationality
   /test-mode advance           — immediately execute the next pending phase
   /test-mode review            — show season/round/phase status summary (ephemeral)
   /test-mode set-former-driver — set or clear a driver's former-driver flag
-  /test-mode roster …          — manage the fake driver roster of a division
+  /test-mode roster …          — create, list and remove fake drivers
   /test-mode backup …          — save the whole database, and put it back
 
 A module's own test tool sits under that module's group, not here, and is test mode's all the

@@ -106,9 +106,9 @@ async def _driver_nationality(
 ) -> str | None:
     """The nationality recorded for the driver — the datum a flag is resolved from.
 
-    Read through core's reader of a driver's record: a mock driver has no signup to hold a
-    nationality and carries its own, and a real driver's is read from their signup to
-    *season_id*, where one is named (issue #220).
+    Read through core's reader of a driver's record, from the driver's signup to *season_id*,
+    where one is named, or their latest where they have none to it (issue #220); a fake driver's
+    is read from its signup as any driver's.
 
     The driver is found by any account they have held, as a verdict names the account the
     result was recorded under, which may be one they have since left (issue #243).
