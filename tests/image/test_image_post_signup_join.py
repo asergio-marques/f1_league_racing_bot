@@ -96,12 +96,6 @@ async def _seed_test_driver(db_path, *, name: str = "Mock Alpha", nationality=No
         await db.commit()
 
 
-#: The reason a mock driver's nationality is not yet read from its signup.
-_FROM_ITS_SIGNUP = (
-    "#600: a mock driver's nationality is still read from its profile, not its signup"
-)
-
-
 # ── The join ──────────────────────────────────────────────────────────────
 
 
@@ -125,10 +119,7 @@ class TestSignupRecordsJoin:
         [
             pytest.param(_seed_driver, USER_ID, "Dutch", id="seeded"),
             pytest.param(_seed_driver, USER_ID, None, id="seeded-none-stated"),
-            pytest.param(
-                _seed_test_driver, TEST_USER_ID, "Brazilian", id="mock",
-                marks=pytest.mark.xfail(strict=True, reason=_FROM_ITS_SIGNUP),
-            ),
+            pytest.param(_seed_test_driver, TEST_USER_ID, "Brazilian", id="mock"),
             pytest.param(_seed_test_driver, TEST_USER_ID, None, id="mock-none-given"),
         ],
     )
@@ -145,7 +136,6 @@ class TestSignupRecordsJoin:
 
         assert await read_driver_nationalities(db_path, _hook(db_path), [user_id]) == {user_id: nationality}
 
-    @pytest.mark.xfail(strict=True, reason=_FROM_ITS_SIGNUP)
     async def test_the_verdict_lookup_reads_both_kinds_of_driver(self, db_path):
         """The fourth site, which joined the phantom column until this was written. A real
         driver's nationality and a mock driver's are each their signup's."""
@@ -157,7 +147,6 @@ class TestSignupRecordsJoin:
         assert await _driver_nationality(db_path, _hook(db_path), USER_ID) == "Dutch"
         assert await _driver_nationality(db_path, _hook(db_path), TEST_USER_ID) == "Italian"
 
-    @pytest.mark.xfail(strict=True, reason=_FROM_ITS_SIGNUP)
     async def test_a_mock_driver_with_no_signup_to_the_season_is_read_from_its_latest(
         self, db_path
     ):

@@ -181,13 +181,6 @@ async def _signed_up(db, discord_user_id: int, season_id: int, nationality: str 
     )
 
 
-#: And, of those reading a fake driver's nationality, that it is its signup's.
-_SIGNUP_NATIONALITY = (
-    "#600: a fake driver is still created seated, and its nationality is still its own "
-    "rather than its signup's"
-)
-
-
 # ── T032: mock drivers are drawn by their mock names ──────────────────────
 
 
@@ -277,7 +270,6 @@ class TestTheNationalityTally:
         assert context.nationality_collected is False
         assert context.drivers_without_nationality == 0
 
-    @pytest.mark.xfail(strict=True, reason=_SIGNUP_NATIONALITY)
     async def test_a_driver_who_records_one_is_not_counted(self, bot, db_path):
         """The tally is of drivers drawn without a flag, not of test drivers: one mock driver's
         signup gave British, and only the other three are counted."""
@@ -296,7 +288,6 @@ class TestTheNationalityTally:
 
         assert context.drivers_without_nationality == len(MOCK_NAMES) - 1
 
-    @pytest.mark.xfail(strict=True, reason=_SIGNUP_NATIONALITY)
     async def test_a_roster_created_with_nationalities_is_drawn_with_flags(
         self, bot, db_path
     ):
