@@ -605,7 +605,9 @@ def answer_change(
                 ))
         if isinstance(judged, Refused):
             reason = judged.reply.splitlines()[0].removeprefix("❌").removeprefix("⛔").strip()
-            what = _what(judged.step, str(payload.get("owner") or _owner(None, user_id)))
+            # A button's payload names no owner: a fake driver's wizard is named by its test name.
+            owner = payload.get("owner") or _owner(await drivers().fake_driver_name(user_id), user_id)
+            what = _what(judged.step, str(owner))
             return StepResult(
                 result={"refused": reason},
                 lines=(refusal_line(ctx.named, what, reason),),
