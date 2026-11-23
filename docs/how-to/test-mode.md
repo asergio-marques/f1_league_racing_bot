@@ -193,7 +193,7 @@ flips whether the signup wizard asks a fake driver its nationality at all. It is
 
 > **A posting is blanked exactly as the preview is.** The switch is read before the driver's own value, so a fake driver whose signup gave a nationality loses its flag with everyone else's on a real posting, not only in `/images test`. Nothing need be rebuilt to see it.
 
-Generating a roster by hand is tedious, and `tools/data-generator/test-roster/` writes the commands for you. See [the generator's README](../../tools/data-generator/README.md).
+Generating a roster by hand is tedious, and `tools/data-generator/test-roster/` writes the `roster add` commands for you, and with `--record` the `roster.csv` that `add-bulk` takes. See [the generator's README](../../tools/data-generator/README.md).
 
 ### Attendance
 
