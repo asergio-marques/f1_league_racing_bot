@@ -1372,10 +1372,8 @@ async def build(settings: Settings) -> LeagueBot:
             await ctx.message.delete()
         except discord.HTTPException:
             pass
-        await ctx.send(
-            f"✅ Cleared guild overrides and synced {len(synced)} global command(s).",
-            delete_after=15,
-        )
+        cleared = "Cleared guild overrides and synced" if ctx.guild is not None else "Synced"
+        await ctx.send(f"✅ {cleared} {len(synced)} global command(s).", delete_after=15)
 
     _sign_up_to_starting(bot)
 

@@ -251,3 +251,5 @@ async def test_the_sync_command_in_a_direct_message_keeps_the_global_commands(
     [(_, server_names, server_driver)] = [each for each in seen if each[0] is guild]
     assert server_driver is (test_group if test_mode else None)
     assert left_over.name in server_names
+    [reply] = [each.args[0] for each in ctx.send.await_args_list]
+    assert reply.startswith("✅ Synced ") and "overrides" not in reply
