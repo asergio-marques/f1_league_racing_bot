@@ -385,7 +385,7 @@ def start_change(
             raise StepFailedOnDiscord("the member signing up could not be found on the server")
         # A fake driver has no member: it is named by its test name and the staff roles alone see
         # its channel.
-        named = fake if fake is not None else None
+        named = fake
         cfg = await signup().get_config()
         server_cfg = await config.get_server_config()
         try:
