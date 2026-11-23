@@ -656,8 +656,9 @@ announcement, and a reserve may still race for any team.
     | 6 | `🏁 The **RSVP deadline** for **Division 1** — **Round 1** (**Silverstone Circuit**) is on the change queue: …` | 19 |
 
     The last notice (advance 4) names every one of Division 1's 22 racing drivers, nobody having
-    answered; the deadline (advance 6) takes the call's buttons down and posts nothing else in
-    `#d1-rsvp`: no reserve accepted, so there is nothing to announce.
+    answered; the deadline (advance 6) takes the call's buttons down and posts in `#d1-rsvp`
+    `✅ **Reserve Distribution** — No reserves were placed; all seats are filled.`: no reserve
+    accepted, so nobody is placed.
 
 47. **Do:** `/test-mode advance`
 
