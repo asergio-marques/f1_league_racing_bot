@@ -7,10 +7,11 @@ each where the flag calls for and syncs both trees: with test mode on, the membe
 the global tree and the test-mode group goes onto the server's; off, the reverse.
 
 **It is handed the two groups** by the entry point, which gets them from the cogs it makes: a
-service never imports a cog, and never finds one on the bot. **It is handed the league's settings**
-for the same reason, to tell a bot with no server claimed from one with a claim; the claimed
-server itself is reached through `league_guild`, the one route to it. **It reads the flag itself**, off the
-database, as the step that runs it follows the save that set the flag.
+service never imports a cog, and never finds one on the bot. **It is handed the league's settings**,
+the very ones the bot carries, to tell a bot with no server claimed from one with a claim; the
+claimed server itself is reached through `league_guild`, the one route to it, which reads the same
+settings off the bot. **It reads the flag itself**, off the database, as the step that runs it
+follows the save that set the flag.
 
 **It reports nothing and refuses nothing.** Discord's refusal of a sync is raised as it came, and
 a league's server missing from the cache is raised as `GuildUnavailable`, as a role move's is, for
