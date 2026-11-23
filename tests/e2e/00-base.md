@@ -121,11 +121,14 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
    - give yourself `@League Admin`;
    - drag the bot's own role **above** every role in the Fixture;
    - give the bot, in every Fixture channel, View Channel, Send Messages, Embed Links, Attach
-     Files, Read Message History and Manage Messages, and in `#signup` also Manage Channels and
-     Manage Permissions;
-   - give the bot, on the server or on the category holding `#bot-commands`, Manage Channels,
-     Manage Roles (Manage Permissions) and Manage Messages: the bot creates each round's results
-     and amendment channels in that category, sets their permissions, and deletes them when done.
+     Files, Read Message History and Manage Messages;
+   - give the bot's own role, **on the server itself**, not only on a category or a channel,
+     Manage Channels, Manage Roles (Manage Permissions) and Manage Messages: the bot replaces
+     every permission overwrite of the channels it sets up, `#signup` and the hub, its own
+     included (`signup/services/channel_setting.py`, `hub_service.apply_hub_permissions`), so a
+     grant held only there is gone after step 13; and it creates each round's results and
+     amendment channels in the category of `#bot-commands`, sets their permissions, and deletes
+     them when done.
 
    On the bot host: Inkscape is installed and found (see `CLAUDE.md`, "Working conventions").
    For flags to draw, `resources/league/flags/` holds the league's flag artwork; without it each
