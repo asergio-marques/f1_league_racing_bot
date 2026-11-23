@@ -2910,8 +2910,10 @@ backup is gone.
          on it. Division 1's carries the amended totals of Part F (Kevin Keller 109, Hiro Hayashi
          107); Division 2's `Bravo Motorsport` on 0. The last round's standings stay where they are;
        - `#d1-attendance`, `#d2-attendance`: the **final attendance sheet**, one picture, with no
-         text: Division 1's as step 131 gives it, Pim Prasert on 7 marked as moved to
-         reserve; Division 2's, Kai Kimura on 8 marked as sacked;
+         text: each as step 131 gives it, its plate `SACKED AT 6`, the auto-sack being
+         the threshold then live. Pim Prasert (7) and Kai Kimura (8) each carry the limit-reached
+         mark; the final sheet carries no sanction annotation, so nothing tells the driver moved to
+         reserve from the driver sacked;
        - `#d1-weather`: the mystery notice of step 99 is **deleted**. It is recorded
          as a forecast (its phase 0), and the completion clears every forecast posted under test mode
          (`forecast_deletes`, with no round named), though no clean-up ever took it down;
