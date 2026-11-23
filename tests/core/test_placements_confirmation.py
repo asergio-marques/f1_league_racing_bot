@@ -145,10 +145,6 @@ async def _driver(db_path, uid: str, state: str, name: str | None = None):
 # ── The faults ──────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#600: an Unassigned fake driver is listed by its raw ID, not its test name",
-)
 async def test_every_unsettled_signup_is_named(db_path):
     """Each unsettled signup is named by its signup's name, or by its account where it holds
     none; a fake driver left Unassigned, which holds no signup, is named by its test name (#600)."""
