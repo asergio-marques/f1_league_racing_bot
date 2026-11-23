@@ -705,9 +705,7 @@ round has started cannot be reached with a round dated a year ahead.
         round 1 (round_id: <id: Division 1's round 1>)
         track: Silverstone Circuit → Suzuka International Racing Course
       ```
-      > UNVERIFIED: whether the take-down, the reposted call or the forecast's deletion writes a
-      > line of its own to `#bot-log`. None is written in `src/` for a job that goes through;
-      > record any that appears.
+      and no further line: the call's take-down, the forecast's deletion and the notice write none.
 
 45. **Do:** `/test-mode review`
 
@@ -1006,9 +1004,9 @@ cancelled. Division 1 runs on, so the season stays ongoing.
     - **Posts** (`#d2-calendar`): the calendar of step 59 again, every round covered; then step
       58's deleted.
     - **Log:** as step 31, with `division: Division 2`.
-    > UNVERIFIED: whether the sync of a cancelled division should be refused instead. Neither the
-    > command nor its change's check (`calendar_post_service`) looks at the division's status, so
-    > `src/` reposts it; the README is silent. Record what the bot does.
+    The calendar of a cancelled division is reposted: neither the command nor its change's check
+    (`calendar_post_service`) looks at the division's status, and the README is silent. Whether it
+    should be refused instead is with the owner: the owner is asked whether this should be refused.
 
 64. **Do:** `/test-mode review`
 
