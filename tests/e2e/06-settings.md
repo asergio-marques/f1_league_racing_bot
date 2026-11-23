@@ -293,3 +293,94 @@ Each view answers you alone and writes nothing to the log channel.
     - **Log:** nothing for either: a view's refusal is not recorded.
     - **Then:** give yourself `@League Admin` again. Every later step needs it, unless it says
       otherwise.
+
+---
+
+## Part C — The hub
+
+The base sets no hub. `/bot hub-channel` is a league manager's command, given in the interaction
+channel; it overtakes a stopped job on the league's lane, as every channel setting does.
+
+18. **A channel doing another job.** **Do:** `/bot hub-channel channel:#bot-log`
+
+    **Expect:**
+    - **Reply:** `❌ <#<bot-log id>> is already the bot log channel. A channel does one job — pick one that is not in use, or clear the other setting first.`
+    - **Log:** ``⛔ `/bot hub-channel` refused for <you> — <#<bot-log id>> is already the bot log channel. A channel does one job — pick one that is not in use, or clear the other setting first.``
+
+19. **A channel the bot cannot use.** **Do:** `/bot hub-channel channel:#bot-locked`
+
+    **Expect:**
+    - **Reply:** `❌ The bot is missing permissions it needs in <#<bot-locked id>> as the hub channel: Send Messages. Give the bot them there, or pick another channel. Nothing was changed.`
+      Send Messages alone: the hub asks for View Channel, Send Messages, Embed Links, Manage
+      Channel and Manage Permissions (`HUB_NEEDS`), not Attach Files, and the bot holds the last
+      two on the server (step 1).
+    - **Log:** ``⛔ `/bot hub-channel` refused for <you> — The bot is missing permissions it needs in <#<bot-locked id>> as the hub channel: Send Messages. Give the bot them there, or pick another channel. Nothing was changed.``
+
+20. **Do:** `/bot hub-channel channel:#hub`
+
+    **Expect:**
+    - **Ack:** `Setting **Hub channel** to <#<hub id>>`
+    - **Then:** `✅ **Hub channel** set to <#<hub id>>. Its panel follows on the change queue.`
+    - **Log:**
+      ```
+      <you> | /bot hub-channel | Success
+        channel: <#<hub id>>
+      ```
+    - **Posts** (`#hub`), a moment later, as the queue reaches the panel's refresh:
+      ```
+      🏁 **League hub**
+      Press an option below.
+      ```
+      with one button, **About** (core's only option; no module offers one yet).
+      > UNVERIFIED: whether the panel's refresh, a change the bot asks for itself, writes a line of
+      > its own to the log channel. Its outcome is empty (`hub_refresh_change`).
+    - **Permissions** on `#hub`, replaced whole (`hub_service.apply_hub_permissions`): `@everyone`
+      may not view it, the base role being set; `@Members`, `@League Manager` and `@League Admin`
+      may view it and may not send; the bot may view, send and embed links. Nobody but the bot can
+      post there.
+
+21. **Do:** in `#hub`, press **About**.
+
+    **Expect:**
+    - **Reply**, seen by you alone:
+      ```
+      **F1 League Racing Bot**
+      Version: <the version the bot started on, e.g. v0.5.0, or unknown>
+      Dated: <t:<unix time the version was made>:F>
+      Source: <https://github.com/asergio-marques/f1_league_racing_bot>
+      ```
+      The `Dated:` line is left out where the date could not be told (`about_service.about_text`).
+    - **Log:** nothing: a press changes nothing.
+
+22. **The hub it already is.** **Do:** `/bot hub-channel channel:#hub`
+
+    **Expect:**
+    - **Reply:** `ℹ️ <#<hub id>> is already the hub channel. Nothing was changed.`
+    - **Log:** ``⛔ `/bot hub-channel` refused for <you> — <#<hub id>> is already the hub channel. Nothing was changed.``
+    - The panel in `#hub` is untouched.
+
+23. **Moving the hub.** **Do:** `/bot hub-channel channel:#hub-2`
+
+    **Expect:**
+    - **Ack:** `Setting **Hub channel** to <#<hub-2 id>>`
+    - **Then:** `✅ **Hub channel** set to <#<hub-2 id>>. Its panel follows on the change queue.`
+    - **Log:**
+      ```
+      <you> | /bot hub-channel | Success
+        channel: <#<hub-2 id>>
+      ```
+    - **Permissions:** `#hub` has every permission overwrite cleared, the bot's own included
+      (`bot_settings._restyle_hub`), so it is open to whoever the server or its category lets see
+      it; `#hub-2` takes the permissions step 20 gave `#hub`.
+    - **Posts:** the panel of step 20 in `#hub-2`; then the panel in `#hub` is deleted. The new
+      panel goes up first, and the old comes down after it (`hub_refresh_change`, `DELETE_OLD`).
+      > UNVERIFIED: whether the deletion of the old panel writes a line of its own.
+
+24. **Do:** in `#hub-2`, press **About**.
+
+    **Expect:** as step 21.
+
+**Putting the hub back is not something a command does.** No command unsets the hub, and the base
+had none. Part J's restore takes it back out of the database; the panel in `#hub-2` and its
+permissions stay on Discord, for you to delete by hand once the spec is done. Until then the hub
+is `#hub-2`, and each role change below sets its permissions again.
