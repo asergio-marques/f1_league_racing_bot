@@ -245,7 +245,7 @@ are never judged.
 
 Nothing has run yet: no forecast is drawn and no check-in call posted, so an amendment costs no
 round anything it has already been given. The refusals come first, then the confirmation's two
-ways out, then three amendments that go through.
+ways out, then the amendments: two go through, and one the bot should refuse is cancelled.
 
 ### What the command refuses
 
@@ -384,7 +384,7 @@ ways out, then three amendments that go through.
       ```
     - Nothing changed.
 
-### Three amendments that go through
+### Amendments that go through, and one that should not
 
 26. **The date.** **Do** step 25's command again, and within two minutes press **✅ Confirm**.
 
@@ -427,6 +427,11 @@ ways out, then three amendments that go through.
       • `scheduled_at` → `<YEAR+1>-03-15 20:00:00`
     ```
     Believed a bot defect: record it, press **❌ Cancel**, and carry on.
+    - **Log**, on Cancel:
+      ```
+      ↩️ `/round amend` of round 3 cancelled by <you>
+        Nothing was changed. Run `/round amend` again to start over.
+      ```
 
 28. **The format.** **Do:** `/round amend division_name:Division 2 round_number:1 format:SPRINT`
 
@@ -559,6 +564,7 @@ channel. This part needs one channel the Fixture does not hold.
 38. **Do:** `/division calendar-sync name:Division 1`
 
     **Expect:**
+    - **Ack:** `Posting the calendar of **Division 1** again`
     - **Then:** `✅ Calendar for **Division 1** reposted as image.`, and any notices section.
     - **Posts** (`#d1-calendar`): the calendar again. By the fault of step 36, step 36's
       calendar stays in `#d1-calendar-new`, and `#d1-calendar` now holds step 31's calendar and
