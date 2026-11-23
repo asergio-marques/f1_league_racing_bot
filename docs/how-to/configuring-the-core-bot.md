@@ -888,7 +888,7 @@ A button pressed by someone who may not use it, or on a notice whose job no long
 |---|---|
 | A command refuses with a short message only you can see | You are not in the command channel, or you hold neither the interaction role nor the league admin role. Check the channel first — it is almost always the channel |
 | A command does not appear in Discord's menu at all | The command list has not reached your server yet. Whoever hosts the bot can push it through immediately with `!sync` |
-| `/driver` takes a member, though test mode is on (or a text field, though it is off) | The bot could not change the `/driver` commands when test mode last changed, and the reply said so. `!sync` shows the right one at once; a restart does the same |
+| `/driver` takes a member, though test mode is on (or a text field, though it is off) | The bot could not change the `/driver` commands when test mode last changed, and the reply said so. `!sync` shows the right one at once; a restart does the same. Where no server is claimed, as after a factory reset, either one syncs the global commands and takes `/driver` off every server the bot is on |
 | "This command is a league admin's" | It asks for the league admin role, which you do not hold. The table at the top of this guide lists which commands those are; someone holding that role has to run them |
 | "No league admin role is configured" | Your league was set up before the bot had one. A server administrator can put that right from any channel with `/bot admin-role`, and every league admin command works again |
 | The bot placed a driver but the role did not appear | The bot's own role sits below the role it is trying to grant. Move it up |
