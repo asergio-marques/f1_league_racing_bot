@@ -478,8 +478,9 @@ recur:
   due only where test mode is still on as each comes up, and the module's job reads it; core names
   no module's step.
 - **A fault in a job stops the lane**, save in `/bot init`'s save, a `Setting`'s steps before its
-  save, its save and the steps after it, and a role move (`role_moves.role_move_step`), each of
-  which ends on a fault instead. `/season setup`'s docstring says why its save stops the lane where
+  save, its save and the steps after it, a role move (`role_moves.role_move_step`) and the swap of
+  the `/driver` commands after a test-mode change (`driver_commands.swap_driver_commands_step`),
+  each of which ends on a fault instead. `/season setup`'s docstring says why its save stops the lane where
   `/bot init`'s does not.
 - **A step the league cannot discard** is marked so where dropping it would leave a season or a
   round stuck: the approval's arming, an amendment's arming, a cancellation's save, a
