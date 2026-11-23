@@ -273,7 +273,7 @@ are seated in placements. The team list is fixed too, but a team's role is not.
 
 **No command in this spec reposts a lineup.** The bot posts a division's lineup at the season's
 approval, at a mid-season confirmation of placements, on `/driver move`, `release` and `sack`,
-and after a stewarding verdict that moves a driver (`lineup_posting`), every one of which needs a
+and after the attendance sanctions a penalty review applies (`lineup_posting`), every one of which needs a
 real driver or belongs to another spec. A change of a team's role plans role moves only, a test
 roster change posts nothing, and in placements no lineup is posted until approval. `/team lineup`
 draws the lineup on demand, which is what this section checks.
@@ -338,3 +338,217 @@ draws the lineup on demand, which is what this section checks.
     - **Log:** nothing: `/team lineup` is a view.
 
     **Then:** give yourself `@League Admin` again, in Discord. Every later step needs it.
+
+---
+
+## Part C — Ending Season #1
+
+25. **Do:** `/season cancel confirm:yes`
+
+    **Expect:**
+    - **Reply:** ``❌ Type exactly `CONFIRM` in the `confirm` field to proceed.``
+    - **Log:** ``⛔ `/season cancel` refused for <you> — Type exactly `CONFIRM` in the `confirm` field to proceed.``
+
+26. **Abort is not the way out of an ongoing season.** **Do:** `/season abort confirm:CONFIRM`
+
+    **Expect:**
+    - **Reply:** ``❌ `/season abort` is available only before a season's placements are first confirmed. An ongoing season is cancelled with `/season cancel`.``
+    - **Log:** ``⛔ `/season abort` refused for <you> — `/season abort` is available only before a season's placements are first confirmed. An ongoing season is cancelled with `/season cancel`.``
+
+27. **Do:** `/season cancel confirm:CONFIRM`
+
+    **Expect:**
+    - **Ack:** `Cancelling season 1`
+    - **Then:** `✅ Season cancelled.`, followed, where a calendar drew with notices, by a blank
+      line and a `⚠️ **Image notices**` section naming each calendar with its notices.
+    - **Posts**, for each division in turn, Division 1 then Division 2 (`N` being its number):
+      - `#dN-rsvp`:
+        ```
+        <@&<Division N role id>>
+        📢 **Season Cancelled**
+        The season has been cancelled. There are no further check-ins to answer.
+        ```
+      - `#dN-weather`:
+        ```
+        📢 **Season Cancelled**
+        No further weather forecasts will be posted this season.
+        ```
+      - `#dN-results`:
+        ```
+        📢 **Season Cancelled**
+        No further results will be posted this season.
+        ```
+      - `#dN-calendar`: the division's calendar, posted again as a picture with its three rounds
+        cancelled, and the calendar `00-base.md` step 32 posted deleted.
+      - Nothing in `#dN-lineup`, `#dN-standings` or `#dN-attendance`: their pictures stay.
+      > UNVERIFIED: the order of the weather and results notes within a division (both are planned
+      > after the check-in notice, in the order the modules signed up), and how the calendar
+      > draws a cancelled round.
+    - **Roles:** none taken. Fake drivers hold none.
+    - **Log:**
+      ```
+      <you> | /season cancel | Success
+      ```
+      > UNVERIFIED: whether any line follows it. A round called off carries its check-in's audit
+      > beneath the line where it had one (`_audit_lines`); the base posted no check-in, so none
+      > is expected.
+    - **Test mode is off**, and every fake driver deleted, as the season's end does it. **The saved
+      backup is kept**: `bot.bkup.db`, `scheduler.bkup.db` and `backup.lock` are still in the bot
+      host folder.
+
+---
+
+## Part D — No season live
+
+Season #1 is cancelled and no season is live. Test mode is off, so every test-mode command but
+the toggle is refused; the team list is open.
+
+### Test mode, off
+
+28. **Do:** `/test-mode backup status`
+
+    **Expect:**
+    - **Reply:** ``⛔ The backup commands run only while the server is in **test mode**. They copy and replace the whole database, which is not something to do to a league that is running. Turn test mode on with `/test-mode toggle` first.``
+    - **Log:** nothing: the status is a view. The backup is still on disk (step 27); step 46 sees
+      it again once test mode is back on.
+
+29. **Do:** `/test-mode roster add driver_name:Adam Archer team_name:ALP division:Division 1`
+
+    **Expect:**
+    - **Reply:** `⛔ This command is only available when test mode is enabled.`
+    - **Log:** ``⛔ `/test-mode roster add` refused for <you> — This command is only available when test mode is enabled.``
+
+30. **Do:** `/test-mode roster list division:Division 1`
+
+    **Expect:**
+    - **Reply:** `⛔ This command is only available when test mode is enabled.`
+    - **Log:** nothing.
+
+31. **Do:** `/test-mode nationality`
+
+    **Expect:**
+    - **Reply:** `⛔ This command is only available when test mode is enabled.`
+    - **Log:** ``⛔ `/test-mode nationality` refused for <you> — This command is only available when test mode is enabled.``
+
+32. **Do:** `/test-mode toggle`
+
+    **Expect:**
+    - **Reply:** ``⛔ Test mode can only be switched while a season is in configuration. Start one with `/season setup`; a season whose configuration is confirmed keeps test mode as it stands until the season ends.``
+    - **Log:** ``⛔ `/test-mode toggle` refused for <you> — Test mode can only be switched while a season is in configuration. Start one with `/season setup`; a season whose configuration is confirmed keeps test mode as it stands until the season ends.``
+
+33. **Do:** `/team lineup`
+
+    **Expect:**
+    - **Reply:** `⛔ No season is being raced, so no lineup is confirmed.`
+    - **Log:** nothing.
+
+### The team list, open
+
+34. **Do:** `/team list`
+
+    **Expect:** as `00-base.md` step 17: headed `**Server team list:**`, the eleven teams `ALP`
+    to `KLO`, then `Reserve`. No log line.
+
+35. **Do:** `/team add`, and in the form **Add a team** fill **Shorthand** `LMA`, **Full name**
+    `Lima Racing`, **Role** `@Lima Racing`, and submit.
+
+    **Expect:**
+    - **Ack:** `Adding **Lima Racing**`
+    - **Then:** ``✅ Team "Lima Racing" added as `LMA`, with role <@&<Lima Racing role id>>.``
+    - **Log:**
+      ```
+      <you> | /team add | Success
+        team: Lima Racing
+        shorthand: LMA
+        role: Lima Racing (<@&<Lima Racing role id>>)
+      ```
+
+36. **What a team may not be.** **Do**, once for each row below: `/team add`, fill the form with
+    the row's **Shorthand**, **Full name** and **Role**, and submit. `@Driver` stands in as a role
+    no team holds, so that the names alone are judged; none of these rows adds a team, so it is
+    never given to one.
+
+    | Shorthand | Full name | Role | Reply |
+    |---|---|---|---|
+    | `ALP` | `Alpha Two` | `@Driver` | `⛔ A default team named "ALP" already exists.` |
+    | `alp` | `Alpha Two` | `@Driver` | `⛔ "alp" and "ALP" both reduce to "alp", so both would draw the same team image. Choose a more distinct name.` |
+    | `Reserve` | `Reserve Two` | `@Driver` | `⛔ The team name "Reserve" is protected and cannot be managed.` |
+    | `reserve` | `Reserve Two` | `@Driver` | `⛔ "reserve" reduces to "reserve", which is reserved for the Reserve team of every division. Choose another name.` |
+    | `A,B` | `Alpha Bravo` | `@Driver` | `⛔ "A,B" holds a comma. A shorthand is typed into the comma-separated rows of a results submission and a test roster, so it cannot hold one.` |
+    | `???` | `Question Racing` | `@Driver` | `⛔ "???" holds no letter or digit, so it cannot name an image file. Choose a name with at least one.` |
+    | `MKE` | `alpha racing` | `@Driver` | `⛔ "Alpha Racing" is already the full name of a team. A full name names one team only.` |
+    | `NOV` | `**November**` | `@Driver` | ``⛔ The formatting `` **November** `` in the full name reads differently as text and on a graphic. Remove it, then try again.`` |
+    | `NOV` | `November Racing` | `@Alpha Racing` | `⛔ <@&<Alpha Racing role id>> is already the role of "ALP". A role belongs to one team only.` |
+    | `NOV` | `November Racing` | `@Lima Racing` | `⛔ <@&<Lima Racing role id>> is already the role of "LMA". A role belongs to one team only.` |
+    | `NOV` | `November Racing` | the bot's own role | `⛔ <@&<bot's role id>> is managed by an integration — a bot, a subscription or a linked role — so Discord will not let me grant it. Choose a role of the team's own.` |
+
+    **Expect**, for each row: the **Reply** as the table gives it, to you alone, and no
+    acknowledgement; and the **Log**
+    `⛔ the “Add a team” form refused for <you> — <the reply, without its ⛔>`.
+    The role is judged before the names, so the last three rows are refused for the role
+    whatever their names.
+    > UNVERIFIED: that the form's role picker offers the bot's own role. Where it does not, skip
+    > the last row.
+
+37. **Do:** `/team modify team:LMA`
+
+    **Expect:** the form **Modify a team** opens with all three fields, filled: **Shorthand**
+    `LMA`, **Full name** `Lima Racing`, **Role** `@Lima Racing`. The names are offered: the
+    team list is open.
+
+    **Then do:** set **Shorthand** to `LIM` and **Full name** to `Lima Motorsport`, leave
+    **Role**, and submit.
+
+    **Expect:**
+    - **Ack:** `Changing **Lima Racing**`
+    - **Then:**
+      ```
+      ✅ Team "Lima Motorsport" updated.
+        Full name: "Lima Racing" → "Lima Motorsport"
+        Shorthand: `LMA` → `LIM`
+        Its artwork is now looked for as `lim`, not `lma` — rename the file in the team image directory.
+      ```
+    - **Log:**
+      ```
+      <you> | /team modify | Success
+        team: Lima Motorsport
+        shorthand: LIM
+        seated drivers moved: 0
+      ```
+      No `role:` line: the role was not changed.
+
+38. **Do:** `/team modify team:LIM`, set **Shorthand** to `ALP`, and submit.
+
+    **Expect:**
+    - **Reply:** `⛔ A default team named "ALP" already exists.`
+    - **Log:** `⛔ the “Modify a team” form refused for <you> — A default team named "ALP" already exists.`
+    - `LIM` is unchanged.
+
+39. **The Reserve team cannot be removed.** The autocomplete does not offer it: type it.
+    **Do:** `/team remove name:Reserve`
+
+    **Expect:**
+    - **Reply:** `⛔ The team name "Reserve" is protected and cannot be managed.`
+    - **Log:** ``⛔ `/team remove` refused for <you> — The team name "Reserve" is protected and cannot be managed.``
+
+40. **Do:** `/team remove name:XYZ`
+
+    **Expect:**
+    - **Reply:** ``⛔ No team in the server's list has the shorthand `XYZ`.``
+    - **Log:** ``⛔ `/team remove` refused for <you> — No team in the server's list has the shorthand `XYZ`.``
+
+41. **Do:** `/team remove name:LIM`
+
+    **Expect:**
+    - **Ack:** `Removing **Lima Motorsport**`
+    - **Then:** `✅ Team "Lima Motorsport" removed from the server list.`
+    - **Log:**
+      ```
+      <you> | /team remove | Success
+        team: Lima Motorsport
+        shorthand: LIM
+      ```
+
+42. **Do:** `/team list`
+
+    **Expect:** as step 34: the Fixture's eleven teams and `Reserve`, and no `Lima Motorsport`.
