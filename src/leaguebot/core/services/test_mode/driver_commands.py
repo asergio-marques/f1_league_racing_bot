@@ -59,9 +59,9 @@ async def swap_driver_commands(
     global tree, synced, and no `/driver` on any server the bot is on: the global commands,
     `/bot init` among them, must reach Discord before a league can claim a server, and a factory
     reset under test mode leaves the old league's server showing the test-mode group, which only
-    a restart can take off, there being no claim to find it by. Returns the global commands synced. Raises
-    `GuildUnavailable` where a claimed server is not in the cache (the global tree synced first
-    where test mode is off), and Discord's refusal of a sync as it came."""
+    a restart can take off, there being no claim to find it by. Returns the global commands
+    synced. Raises `GuildUnavailable` where a claimed server is not in the cache (the global tree
+    synced first where test mode is off), and Discord's refusal of a sync as it came."""
     async with get_connection(bot.db_path) as db:
         test_mode = await test_mode_on(db)
     server_id = await league_settings.get_league_server_id()
