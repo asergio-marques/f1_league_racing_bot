@@ -67,6 +67,12 @@ notifying, and every line ends with a rule of `―` characters.
 A step marked `> UNVERIFIED:` quotes something the author could not settle from `src/` alone.
 Settle it on the run and correct the step.
 
+**Wait for a step's last reply before the next step.** A change goes onto the bot's queue, and
+asking for the same one again before the first has started is refused as a repeat:
+`⚠️ … has already been asked for and has not started yet, so it was not asked for again.` A step
+that repeats a command on purpose — to show that it changes nothing — expects its own answer only
+once the first has finished.
+
 ## Dates
 
 Rounds are dated in the **year after the run**, written `<YEAR+1>`: run in 2026, type 2027. That
