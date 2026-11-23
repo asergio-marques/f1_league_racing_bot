@@ -129,23 +129,29 @@ async def test_a_second_ready_runs_no_start_up_step_and_syncs_nothing(tmp_path):
 
 
 @pytest.mark.xfail(strict=True, reason=PENDING)
-async def test_start_up_under_test_mode_shows_the_test_mode_driver_on_the_server(
-    tmp_path, monkeypatch
-):
-    """The bot the entry point builds is in test mode, and is reported ready. The global tree no
-    longer carries `/driver` when it is synced, and the league's server is synced carrying the
-    test-mode `/driver`, the bot's own cog's group. Nothing is posted to the log channel."""
+@pytest.mark.parametrize("test_mode", [True, False], ids=["test-mode-on", "test-mode-off"])
+async def test_start_up_shows_the_driver_the_flag_calls_for(tmp_path, monkeypatch, test_mode):
+    """The bot the entry point builds is reported ready. In test mode, the global tree no longer
+    carries `/driver` when it is synced, and the league's server is synced carrying the test-mode
+    `/driver`, the bot's own cog's group. Out of it, the server still carries the test-mode group,
+    as a swap Discord refused would leave it: the global tree is synced carrying the member
+    `/driver`, and the server is synced carrying none. Nothing is posted to the log channel."""
     from leaguebot import __main__ as bot_module
 
     monkeypatch.setattr(bot_module, "start_up", AsyncMock(return_value=True))
-    bot, guild = await _ready_bot(tmp_path, test_mode=True)
+    bot, guild = await _ready_bot(tmp_path, test_mode=test_mode)
+    member_group = bot.get_cog("DriverCog").driver
+    test_group = bot.get_cog("DriverTestCog").driver
+    if not test_mode:
+        bot.tree.add_command(test_group, guild=guild)
     seen = _syncs_seeing_driver(bot)
 
     await bot_module._when_ready(bot)
 
-    assert sorted(seen, key=lambda each: each[0] is not None) == [
-        (None, None), (guild, bot.get_cog("DriverTestCog").driver)
-    ]
+    assert sorted(seen, key=lambda each: each[0] is not None) == (
+        [(None, None), (guild, test_group)] if test_mode
+        else [(None, member_group), (guild, None)]
+    )
     bot.output_router.post_log.assert_not_awaited()
 
 
