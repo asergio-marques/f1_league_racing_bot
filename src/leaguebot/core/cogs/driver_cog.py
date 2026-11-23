@@ -1,4 +1,8 @@
-"""DriverCog — /driver command group."""
+"""DriverCog — the member `/driver` command group.
+
+Each command's driver field is a Discord member; what the command does with the driver is
+`driver_commands`, shared with the test-mode group (`driver_test_cog`).
+"""
 from __future__ import annotations
 
 import logging
@@ -7,19 +11,9 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from leaguebot.core.models.season import ONGOING_STAGES, SeasonStage
-from leaguebot.core.services.drivers.driver_changes import (
-    DRIVER_ASSIGN,
-    DRIVER_MOVE,
-    DRIVER_REASSIGN,
-    DRIVER_REJECT,
-    DRIVER_RELEASE,
-    DRIVER_SACK,
-    DRIVER_UNASSIGN,
-    NOT_PLACING_REFUSAL,
-    NOT_UNASSIGNED_REFUSAL,
-    PAST_ACCOUNT_REFUSAL,
-)
+from leaguebot.core.cogs import driver_commands
+from leaguebot.core.cogs.driver_commands import ResolvedDriver
+from leaguebot.core.services.drivers.driver_changes import PAST_ACCOUNT_REFUSAL
 from leaguebot.framework.utils.autocomplete import bounded_autocomplete
 from leaguebot.core.utils.team_autocomplete import team_autocomplete
 from leaguebot.core.utils.channel_guard import league_admin_only, league_manager_only
@@ -27,13 +21,8 @@ from leaguebot.core.utils.input_validator import parse_user_id
 from leaguebot.framework.utils.interaction_errors import describe
 from leaguebot.framework.utils.league_bot import LeagueBot
 from leaguebot.framework.utils.log_lines import refuse
-from leaguebot.core.services.seasons.season_service import SeasonImmutableError
 
 log = logging.getLogger(__name__)
-
-#: The stages `/driver assign` and `/driver unassign` are available in: while the
-#: season is built, and mid-season for the drivers of the window just closed.
-_PLACING_STAGES = frozenset({SeasonStage.PLACEMENTS, SeasonStage.ONGOING_PLACEMENTS})
 
 
 class DriverCog(commands.Cog):
@@ -80,6 +69,16 @@ class DriverCog(commands.Cog):
             )
         return member
 
+    async def _resolved(
+        self, interaction: discord.Interaction, user: discord.Member
+    ) -> ResolvedDriver | None:
+        """The driver *user* names, as the commands act on them; None, having replied, where the
+        driver's current account is no longer in the server."""
+        current = await self._current_member(interaction, user)
+        if current is None:
+            return None
+        return ResolvedDriver(str(current.id), current.display_name, current)
+
     # ------------------------------------------------------------------
     # /driver reassign
     # ------------------------------------------------------------------
@@ -103,32 +102,9 @@ class DriverCog(commands.Cog):
     ) -> None:
         """Make *new_user* the current account of the driver the old account names.
 
-        The account it replaces joins the driver's past accounts, and every account the driver
-        has held goes on identifying them. Nothing the league holds is rewritten.
-
-        **Only while drivers are being placed** — Placements, or Ongoing, placements.
-        Re-keying a profile onto another Discord account is part of settling who sits where;
-        everywhere else `/driver move` is the command for changing where a driver sits. The
-        consequence is accepted: a person who changes account between seasons is re-keyed
-        once the next season reaches placements, which is the moment they would be placed
-        anyway.
+        Only while drivers are being placed (`driver_commands.reassign_stage_ok`).
         """
-        from leaguebot.core.utils.season_gate import PLACEMENT_STAGES, season_for_command
-
-        # Checked before the parameters, so that a manager running it in the wrong stage is
-        # told the rule rather than told they mis-typed a snowflake.
-        if await season_for_command(
-            interaction,
-            self.bot.season_service,
-            "driver reassign",
-            stages=PLACEMENT_STAGES,
-            refusal=(
-                "⛔ A driver's account is changed only while drivers are being placed "
-                "— while the season is in **Placements**, or in **Ongoing, placements** "
-                "with the drivers of a closed signup window still to place. Elsewhere, "
-                "`/driver move` is the command for changing where a driver sits."
-            ),
-        ) is None:
+        if not await driver_commands.reassign_stage_ok(self.bot, interaction):
             return
 
         # Resolve old user ID — accept Member mention or raw snowflake string
@@ -152,18 +128,7 @@ class DriverCog(commands.Cog):
             )
             return
 
-        # The reassignment, its roles, the held signup channel and the portrait are a change on
-        # the queue, which refuses again as it starts what the service refuses
-        # (`core/services/drivers/driver_changes.py`).
-        await self.bot.change_queue.ask(
-            DRIVER_REASSIGN,
-            {
-                "old_user_id": resolved_old_id,
-                "new_user_id": str(new_user.id),
-                "new_name": new_user.display_name,
-            },
-            interaction=interaction, what=describe(interaction),
-        )
+        await driver_commands.reassign(self.bot, interaction, resolved_old_id, new_user)
 
     # ------------------------------------------------------------------
     # /driver assign
@@ -187,80 +152,10 @@ class DriverCog(commands.Cog):
         team: str,
     ) -> None:
         await interaction.response.defer(ephemeral=True)
-        current = await self._current_member(interaction, user)
-        if current is None:
+        driver = await self._resolved(interaction, user)
+        if driver is None:
             return
-        user = current
-
-        # Resolve season, and the stage placements may be made in
-        season = await self.bot.season_service.get_setup_or_active_season()
-        if season is None or season.stage not in _PLACING_STAGES:
-            await refuse(
-                interaction,
-                NOT_PLACING_REFUSAL.format(command="/driver assign"),
-                what=describe(interaction),
-            )
-            return
-
-        try:
-            await self.bot.season_service.assert_season_mutable(season)
-        except SeasonImmutableError:
-            await refuse(
-                interaction,
-                "❌ This season is archived (COMPLETED) and cannot be modified.",
-                what=describe(interaction),
-            )
-            return
-
-        # Resolve division
-        resolved = await self.bot.placement_service.resolve_division(
-            season.id, division
-        )
-        if resolved is None:
-            await refuse(
-                interaction,
-                f"⛔ Division **{division}** not found in the active season.",
-                what=describe(interaction),
-            )
-            return
-        division_id, division_name = resolved
-
-        # A team is typed by its shorthand.
-        reference = await self.bot.team_service.resolve_division_team(
-            division_id, team
-        )
-        if reference.team is None:
-            await refuse(interaction, f"⛔ {reference.refusal}", what=describe(interaction))
-            return
-
-        # Fetch the driver profile
-        profile = await self.bot.driver_service.get_profile(
-            str(user.id)
-        )
-        if profile is None:
-            await refuse(
-                interaction,
-                f"⛓ No driver profile found for **{user.display_name}**.",
-                what=describe(interaction),
-            )
-            return
-
-        # The assignment is a change on the queue, which refuses again as it starts what is
-        # refused here (`core/services/drivers/driver_changes.py`).
-        await self.bot.change_queue.ask(
-            DRIVER_ASSIGN,
-            {
-                "driver_profile_id": profile.id,
-                "discord_user_id": str(user.id),
-                "driver_name": user.display_name,
-                "season_id": season.id,
-                "division_id": division_id,
-                "division": division_name,
-                "team_name": reference.team["name"],
-                "team_full_name": reference.team["full_name"],
-            },
-            interaction=interaction, what=describe(interaction),
-        )
+        await driver_commands.assign(self.bot, interaction, driver, division, team)
 
     # ------------------------------------------------------------------
     # /driver unassign
@@ -282,67 +177,10 @@ class DriverCog(commands.Cog):
         division: str,
     ) -> None:
         await interaction.response.defer(ephemeral=True)
-        current = await self._current_member(interaction, user)
-        if current is None:
+        driver = await self._resolved(interaction, user)
+        if driver is None:
             return
-        user = current
-
-        season = await self.bot.season_service.get_setup_or_active_season()
-        if season is None or season.stage not in _PLACING_STAGES:
-            await refuse(
-                interaction,
-                NOT_PLACING_REFUSAL.format(command="/driver unassign"),
-                what=describe(interaction),
-            )
-            return
-
-        try:
-            await self.bot.season_service.assert_season_mutable(season)
-        except SeasonImmutableError:
-            await refuse(
-                interaction,
-                "❌ This season is archived (COMPLETED) and cannot be modified.",
-                what=describe(interaction),
-            )
-            return
-
-        resolved = await self.bot.placement_service.resolve_division(
-            season.id, division
-        )
-        if resolved is None:
-            await refuse(
-                interaction,
-                f"⛔ Division **{division}** not found in the active season.",
-                what=describe(interaction),
-            )
-            return
-        division_id, division_name = resolved
-
-        profile = await self.bot.driver_service.get_profile(
-            str(user.id)
-        )
-        if profile is None:
-            await refuse(
-                interaction,
-                f"⛓ No driver profile found for **{user.display_name}**.",
-                what=describe(interaction),
-            )
-            return
-
-        # The removal is a change on the queue, which refuses again as it starts what is
-        # refused here (`core/services/drivers/driver_changes.py`).
-        await self.bot.change_queue.ask(
-            DRIVER_UNASSIGN,
-            {
-                "driver_profile_id": profile.id,
-                "discord_user_id": str(user.id),
-                "driver_name": user.display_name,
-                "season_id": season.id,
-                "division_id": division_id,
-                "division": division_name,
-            },
-            interaction=interaction, what=describe(interaction),
-        )
+        await driver_commands.unassign(self.bot, interaction, driver, division)
 
     # ------------------------------------------------------------------
     # /driver move
@@ -367,87 +205,12 @@ class DriverCog(commands.Cog):
         team: str,
         to_division: str | None = None,
     ) -> None:
-        """Move a committed driver in one step.
-
-        Full-time to Reserve, team to team, or a promotion or relegation between divisions,
-        with the roles swapped and each lineup touched posted once. Available in the three
-        ongoing stages; before placements are confirmed a seat is changed by unassigning and
-        assigning again.
-        """
+        """Move a committed driver in one step (`driver_commands.move`)."""
         await interaction.response.defer(ephemeral=True)
-        current = await self._current_member(interaction, user)
-        if current is None:
+        driver = await self._resolved(interaction, user)
+        if driver is None:
             return
-        user = current
-
-        season = await self.bot.season_service.get_confirmed_season()
-        if season is None or season.stage not in ONGOING_STAGES:
-            await refuse(
-                interaction,
-                "⛔ `/driver move` is available only while the season is ongoing.",
-                what=describe(interaction),
-            )
-            return
-
-        resolved_from = await self.bot.placement_service.resolve_division(
-            season.id, from_division
-        )
-        if resolved_from is None:
-            await refuse(
-                interaction,
-                f"⛔ Division **{from_division}** not found in the active season.",
-                what=describe(interaction),
-            )
-            return
-        resolved_to = resolved_from
-        if to_division is not None:
-            found_to = await self.bot.placement_service.resolve_division(
-                season.id, to_division
-            )
-            if found_to is None:
-                await refuse(
-                    interaction,
-                    f"⛔ Division **{to_division}** not found in the active season.",
-                    what=describe(interaction),
-                )
-                return
-            resolved_to = found_to
-
-        # A team is typed by its shorthand, in the division moved into.
-        reference = await self.bot.team_service.resolve_division_team(
-            resolved_to[0], team
-        )
-        if reference.team is None:
-            await refuse(interaction, f"⛔ {reference.refusal}", what=describe(interaction))
-            return
-
-        profile = await self.bot.driver_service.get_profile(str(user.id))
-        if profile is None:
-            await refuse(
-                interaction,
-                f"⛓ No driver profile found for **{user.display_name}**.",
-                what=describe(interaction),
-            )
-            return
-
-        # The move, its roles and its lineups are a change on the queue, which refuses again
-        # as it starts what is refused here (`core/services/drivers/driver_changes.py`).
-        await self.bot.change_queue.ask(
-            DRIVER_MOVE,
-            {
-                "driver_profile_id": profile.id,
-                "discord_user_id": str(user.id),
-                "driver_name": user.display_name,
-                "season_id": season.id,
-                "from_division_id": resolved_from[0],
-                "from_division": resolved_from[1],
-                "to_division_id": resolved_to[0],
-                "to_division": resolved_to[1],
-                "team_name": reference.team["name"],
-                "team_full_name": reference.team["full_name"],
-            },
-            interaction=interaction, what=describe(interaction),
-        )
+        await driver_commands.move(self.bot, interaction, driver, from_division, team, to_division)
 
     # ------------------------------------------------------------------
     # /driver release
@@ -470,54 +233,10 @@ class DriverCog(commands.Cog):
     ) -> None:
         """Release a committed driver from one division, in the ongoing stages."""
         await interaction.response.defer(ephemeral=True)
-        current = await self._current_member(interaction, user)
-        if current is None:
+        driver = await self._resolved(interaction, user)
+        if driver is None:
             return
-        user = current
-
-        season = await self.bot.season_service.get_confirmed_season()
-        if season is None or season.stage not in ONGOING_STAGES:
-            await refuse(
-                interaction,
-                "⛔ `/driver release` is available only while the season is ongoing.",
-                what=describe(interaction),
-            )
-            return
-
-        resolved = await self.bot.placement_service.resolve_division(
-            season.id, division
-        )
-        if resolved is None:
-            await refuse(
-                interaction,
-                f"⛔ Division **{division}** not found in the active season.",
-                what=describe(interaction),
-            )
-            return
-
-        profile = await self.bot.driver_service.get_profile(str(user.id))
-        if profile is None:
-            await refuse(
-                interaction,
-                f"⛓ No driver profile found for **{user.display_name}**.",
-                what=describe(interaction),
-            )
-            return
-
-        # The release, its roles and its lineup are a change on the queue, which refuses again as
-        # it starts what is refused here (`core/services/drivers/driver_changes.py`).
-        await self.bot.change_queue.ask(
-            DRIVER_RELEASE,
-            {
-                "driver_profile_id": profile.id,
-                "discord_user_id": str(user.id),
-                "driver_name": user.display_name,
-                "season_id": season.id,
-                "division_id": resolved[0],
-                "division": resolved[1],
-            },
-            interaction=interaction, what=describe(interaction),
-        )
+        await driver_commands.release(self.bot, interaction, driver, division)
 
     # ------------------------------------------------------------------
     # /driver reject
@@ -529,52 +248,17 @@ class DriverCog(commands.Cog):
     )
     @app_commands.describe(user="The Unassigned driver to turn down.")
     @league_manager_only
-    async def reject(self, interaction: discord.Interaction, user: discord.Member) -> None:
-        """Turn down an Unassigned driver.
-
-        Available while the season is in Placements or Ongoing, placements — where the
-        drivers of a window are settled. The driver returns to Not Signed Up and loses the
-        driver role; their signup is kept with the season.
-        """
-        from leaguebot.core.models.driver_profile import DriverState
-
+    async def reject(
+        self,
+        interaction: discord.Interaction,
+        user: discord.Member,
+    ) -> None:
+        """Turn down an Unassigned driver (`driver_commands.reject`)."""
         await interaction.response.defer(ephemeral=True)
-        current = await self._current_member(interaction, user)
-        if current is None:
+        driver = await self._resolved(interaction, user)
+        if driver is None:
             return
-        user = current
-
-        season = await self.bot.season_service.get_setup_or_active_season()
-        if season is None or season.stage not in _PLACING_STAGES:
-            await refuse(
-                interaction,
-                NOT_PLACING_REFUSAL.format(command="/driver reject"),
-                what=describe(interaction),
-            )
-            return
-
-        profile = await self.bot.driver_service.get_profile(str(user.id))
-        if profile is None or profile.current_state is not DriverState.UNASSIGNED:
-            await refuse(
-                interaction,
-                NOT_UNASSIGNED_REFUSAL.format(driver_name=user.display_name),
-                what=describe(interaction),
-            )
-            return
-
-        # The turn-down, its approval's withdrawal, its audit entry and the driver role are a
-        # change on the queue, which refuses again as it starts what is refused here
-        # (`core/services/drivers/driver_changes.py`).
-        await self.bot.change_queue.ask(
-            DRIVER_REJECT,
-            {
-                "driver_profile_id": profile.id,
-                "discord_user_id": str(user.id),
-                "driver_name": user.display_name,
-                "season_id": season.id,
-            },
-            interaction=interaction, what=describe(interaction),
-        )
+        await driver_commands.reject(self.bot, interaction, driver)
 
     # ------------------------------------------------------------------
     # /driver sack
@@ -594,46 +278,10 @@ class DriverCog(commands.Cog):
         user: discord.Member,
     ) -> None:
         await interaction.response.defer(ephemeral=True)
-        current = await self._current_member(interaction, user)
-        if current is None:
+        driver = await self._resolved(interaction, user)
+        if driver is None:
             return
-        user = current
-
-        # Sacking is available only while the season is ongoing. Between seasons every driver has
-        # already been returned to Not Signed Up by the season's end, and a season still being built
-        # has no confirmed placement to sack anyone from.
-        season = await self.bot.season_service.get_confirmed_season()
-        if season is None or season.stage not in ONGOING_STAGES:
-            await refuse(
-                interaction,
-                "⛔ `/driver sack` is available only while the season is ongoing.",
-                what=describe(interaction),
-            )
-            return
-
-        profile = await self.bot.driver_service.get_profile(
-            str(user.id)
-        )
-        if profile is None:
-            await refuse(
-                interaction,
-                f"⛓ No driver profile found for **{user.display_name}**.",
-                what=describe(interaction),
-            )
-            return
-
-        # The sack, its roles and its lineups are a change on the queue, which refuses again as
-        # it starts what is refused here (`core/services/drivers/driver_changes.py`).
-        await self.bot.change_queue.ask(
-            DRIVER_SACK,
-            {
-                "driver_profile_id": profile.id,
-                "discord_user_id": str(user.id),
-                "driver_name": user.display_name,
-                "season_id": season.id,
-            },
-            interaction=interaction, what=describe(interaction),
-        )
+        await driver_commands.sack(self.bot, interaction, driver)
 
     # ------------------------------------------------------------------
     # The team parameter's autocomplete
