@@ -834,8 +834,9 @@ stop nobody yet holds the role to clear.
   second rule beside "every failure stops its lane", which is the rule the core specification's
   "How a change is carried out" records. A conversation runs apart from a stop on the league lane,
   or on another conversation's, only because its work is its own, and what a conversation hands
-  the league goes to the league lane's back. The first three exceptions and the fifth (above) are not a job
-  stepping aside either: the job is ended, not stopped, and nothing it leaves undone is waited on.
+  the league goes to the league lane's back. The first three exceptions and the fifth (above) are
+  not a job stepping aside either: the job is ended, not stopped, and nothing it leaves undone is
+  waited on.
   The fourth exception is the one true overtake: the settings a league repairs itself with run
   ahead of their own lane's stopped head, by design, because a league locked out of the bot has no
   other lane to wait apart on, and a channel stop's remedy has to be able to run. It is kept
