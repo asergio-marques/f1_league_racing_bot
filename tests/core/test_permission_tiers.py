@@ -616,7 +616,8 @@ def test_the_view_commands_are_marked_as_changing_nothing():
 
     marked = {
         name
-        for name, command in COMMANDS.items()
+        for name, commands in COMMANDS.items()
+        for command in commands
         if getattr(command.callback, CHANGES_NOTHING_ATTRIBUTE, False)
     }
 
