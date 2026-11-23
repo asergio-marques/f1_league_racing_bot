@@ -61,12 +61,6 @@ def _kept(names: str) -> str:
     )
 
 
-#: The reason the refusal #600 adds is not yet given.
-_NOT_YET_REFUSED = (
-    "#600: roster clear does not yet refuse a division holding a raced or confirmed fake driver"
-)
-
-
 async def _seat_fake(league, user_id, name, team, seat, division) -> None:
     await league.write(
         "INSERT INTO driver_profiles (discord_user_id, current_state, is_test_driver, "
@@ -169,9 +163,6 @@ def _refused(refusal: str) -> str:
     return f"⛔ `/test-mode roster clear` refused for {_NAMED} — {refusal[2:]}"
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#600: the clear's audit entries still record a nationality"
-)
 async def test_a_clear_and_its_audit_entries_and_line_are_one_save(league):
     """The core specification's test roster, changed by hand under test mode, and its record of
     what changed. The season is in Placements under test mode, Mock Alpha and Mock Beta
@@ -294,12 +285,10 @@ async def _both_raced(league) -> None:
         pytest.param(_test_mode_off, "Am", _NOT_IN_TEST_MODE, id="test mode off"),
         pytest.param(None, "Gold", _NO_DIVISION, id="a division the season does not hold"),
         pytest.param(
-            _alpha_confirmed, "Am", _kept("**Mock Alpha**"), id="a confirmed seat",
-            marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_REFUSED),
+            _alpha_confirmed, "Am", _kept("**Mock Alpha**"), id="a confirmed seat"
         ),
         pytest.param(
-            _both_raced, "Am", _kept("**Mock Alpha**, **Mock Beta**"), id="two who raced",
-            marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_REFUSED),
+            _both_raced, "Am", _kept("**Mock Alpha**, **Mock Beta**"), id="two who raced"
         ),
     ],
 )
@@ -338,8 +327,7 @@ async def test_it_is_refused_at_the_ask(league, meanwhile, division, refusal):
     [
         pytest.param(_test_mode_off, _NOT_IN_TEST_MODE, id="test mode turned off"),
         pytest.param(
-            _alpha_confirmed, _kept("**Mock Alpha**"), id="a seat confirmed",
-            marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_REFUSED),
+            _alpha_confirmed, _kept("**Mock Alpha**"), id="a seat confirmed"
         ),
     ],
 )

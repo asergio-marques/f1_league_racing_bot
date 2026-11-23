@@ -937,10 +937,16 @@ def register_change_types(bot: LeagueBot) -> None:
     bot.change_queue.register(test_roster_add_change())
     bot.change_queue.register(test_roster_add_bulk_change())
     bot.change_queue.register(
-        test_roster_remove_change(profiles_deleted=bot.profiles_deleted)
+        test_roster_remove_change(
+            profiles_deleted=bot.profiles_deleted,
+            divisions_raced_read=bot.divisions_raced_read,
+        )
     )
     bot.change_queue.register(
-        test_roster_clear_change(profiles_deleted=bot.profiles_deleted)
+        test_roster_clear_change(
+            profiles_deleted=bot.profiles_deleted,
+            divisions_raced_read=bot.divisions_raced_read,
+        )
     )
     for setting in (
         log_channel_setting(config=bot.config_service, channel_uses_read=bot.channel_uses_read),

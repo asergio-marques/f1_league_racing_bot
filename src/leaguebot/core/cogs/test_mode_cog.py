@@ -34,7 +34,6 @@ from discord.ext import commands
 
 from leaguebot.core.services.test_mode.test_mode_settings import NOT_IN_TEST_MODE
 from leaguebot.core.services.test_mode.test_roster_changes import (
-    NOT_PLACING,
     TEST_ROSTER_ADD,
     TEST_ROSTER_ADD_BULK,
     TEST_ROSTER_CLEAR,
@@ -49,7 +48,6 @@ from leaguebot.core.services.test_mode.test_mode_service import (
     AdvanceStatus,
     advance_next_step,
 )
-from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.services.upkeep import backup_service
 from leaguebot.framework.utils.catch_up_gate import after_the_catch_up
 from leaguebot.core.utils.channel_guard import league_admin_only, changes_nothing
@@ -339,28 +337,6 @@ class TestModeCog(commands.Cog):
         default_permissions=None,
     )
 
-    async def _refuse_roster_change_outside_placements(
-        self, interaction: discord.Interaction, *, record: bool = True
-    ) -> bool:
-        """Reply and return True where the season is not in Placements, having recorded the refusal
-        in the log channel unless *record* is False.
-
-        Fake drivers are seated, removed and cleared only while the season is in Placements,
-        which is where real drivers are placed too: test mode replicates the live flow rather
-        than inventing one. Listing the roster is left free.
-        """
-        from leaguebot.core.services.seasons.season_lifecycle_service import live_season_stage
-
-        live = await live_season_stage(self.bot.db_path)
-        if live is not None and live[1] is SeasonStage.PLACEMENTS:
-            return False
-        reply = NOT_PLACING
-        if record:
-            await refuse(interaction, reply, what=describe(interaction))
-        else:
-            await interaction.response.send_message(reply, ephemeral=True)
-        return True
-
     async def _refuse_outside_test_mode(
         self, interaction: discord.Interaction, *, record: bool = True
     ) -> bool:
@@ -616,8 +592,6 @@ class TestModeCog(commands.Cog):
                 what=describe(interaction),
             )
             return
-        if await self._refuse_roster_change_outside_placements(interaction):
-            return
 
         await interaction.response.send_modal(_RosterImportModal(self))
 
@@ -638,7 +612,7 @@ class TestModeCog(commands.Cog):
     ) -> None:
         """Ask the change that removes the fake driver, once the ID reads as a number.
 
-        Test mode, the season's stage and the driver are judged by the change, as it is asked and
+        Test mode and the driver are judged by the change, as it is asked and
         as it starts (`test_roster_changes`).
         """
         discord_uid = parse_user_id(user_id)
@@ -745,7 +719,7 @@ class TestModeCog(commands.Cog):
     ) -> None:
         """Ask the change that clears the division of its fake drivers.
 
-        Test mode, the season's stage and the division are judged by the change, as it is asked
+        Test mode and the division are judged by the change, as it is asked
         and as it starts (`test_roster_changes`).
         """
         await self.bot.change_queue.ask(

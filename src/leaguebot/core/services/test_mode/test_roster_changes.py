@@ -13,8 +13,7 @@ Its division, team and seat are decided as any driver's, by `/driver assign` onc
 approved, and its nationality is the one its signup gave.
 
 **The refusals are the check's**, judged at the ask and again as the change starts, in the league's
-log channel either time, in the words the command has always used: test mode not on, the season
-not in Placements, and what creating the driver is refused for (`judge_add_on`): the name and no
+log channel either time, in the words the command has always used: test mode not on, and what creating the driver is refused for (`judge_add_on`): the name and no
 live season. The save judges once more on its own connection, ending the change in the same words
 where one has come up since, changing nothing and not stopping the lane.
 
@@ -43,7 +42,6 @@ from leaguebot.framework.models.change import (
     StepResult,
     Verdict,
 )
-from leaguebot.core.models.season import SeasonStage
 from leaguebot.framework.services.queue.change_types import (
     ChangeType,
     CheckContext,
@@ -52,7 +50,10 @@ from leaguebot.framework.services.queue.change_types import (
     StepContext,
 )
 from leaguebot.core.services.rounds.round_add_changes import saved_result
-from leaguebot.core.services.seasons.season_lifecycle_service import live_season_stage_on
+from leaguebot.core.services.drivers.driver_service import (
+    SIGNUP_IN_PROGRESS,
+    divisions_taken_part_in,
+)
 from leaguebot.core.services.test_mode.test_mode_settings import NOT_IN_TEST_MODE
 from leaguebot.core.services.test_mode.test_roster_service import (
     AddPlan,
@@ -82,8 +83,20 @@ SAVE = "save"
 #: `/test-mode roster add` as the line names it.
 ADD_COMMAND = "/test-mode roster add"
 
-#: What a roster command answers outside Placements.
-NOT_PLACING = "⛔ The test roster can only be changed while the season is in placements."
+#: What `roster remove` answers a fake driver part way through a signup, and what it and `roster
+#: clear` answer one who has raced or holds a confirmed seat, which only `/driver sack` undoes.
+SIGNUP_UNDER_WAY = (
+    "⛔ **{driver_name}** has a signup in progress. Finish it — approve or reject it — or cancel "
+    "it first."
+)
+KEPT_REMOVAL = (
+    "⛔ **{driver_name}** has raced or holds a confirmed seat. Run `/driver sack` first; a fake "
+    "driver who has raced stays until test mode ends."
+)
+KEPT_CLEARING = (
+    "⛔ **{division}** holds fake drivers who have raced or hold a confirmed seat: {names}. "
+    "Run `/driver sack` first; a fake driver who has raced stays until test mode ends."
+)
 
 #: `/test-mode roster add-bulk` as the line names it.
 ADD_BULK_COMMAND = "/test-mode roster add-bulk"
@@ -124,15 +137,27 @@ NOBODY_ADDED = (
 
 async def standing_refusal_on(db: aiosqlite.Connection) -> str | None:
     """What a roster command is refused for before it looks at what it names, in its words: test mode
-    not on, or the season not in Placements."""
+    not on. The roster changes in any stage of the season while it is."""
     cursor = await db.execute("SELECT test_mode_active FROM server_configs")
     config = await cursor.fetchone()
     if config is None or not config["test_mode_active"]:
         return NOT_IN_TEST_MODE
-    live = await live_season_stage_on(db)
-    if live is None or live[1] is not SeasonStage.PLACEMENTS:
-        return NOT_PLACING
     return None
+
+
+async def has_raced_or_holds_a_confirmed_seat(
+    db: aiosqlite.Connection, driver: FakeDriver, divisions_raced_read: AwaitedHook
+) -> bool:
+    """Whether the fake driver has raced or holds a confirmed seat: the former-driver flag is set,
+    or a division is one they took part in, as `/driver reassign` judges it
+    (`divisions_taken_part_in`), the modules asked through *divisions_raced_read*. Such a driver is
+    removed only by `/driver sack`, or by test mode ending."""
+    if driver.former_driver:
+        return True
+    taken = await divisions_taken_part_in(
+        db, driver.profile_id, [driver.discord_user_id], divisions_raced_read
+    )
+    return bool(taken)
 
 
 def test_roster_add_change() -> ChangeType:
@@ -223,7 +248,7 @@ def test_roster_add_bulk_change() -> ChangeType:
     """The `core.test_roster_add_bulk` change type, for the builder to register.
 
     **The refusals are the check's**, judged at the ask and again as the change starts: test mode
-    not on, the season not in Placements, and every fault the database shows in the roster
+    not on, and every fault the database shows in the roster
     (`judge_bulk_on`), listed together as the form has always listed them. A fault the file shows
     on its own is refused by the form, before the ask. **One SAVE** judges once more on its own
     connection, creates every driver (`seat_bulk_on`) and writes a `TEST_DRIVER_ADDED` audit entry
@@ -303,21 +328,24 @@ def _removed_entry(found: FakeDriver) -> dict[str, Any]:
         "user_id": found.discord_user_id,
         "team": found.team_name,
         "division": found.division_name,
-        "nationality": found.nationality,
     }
 
 
-def test_roster_remove_change(*, profiles_deleted: AwaitedHook) -> ChangeType:
+def test_roster_remove_change(
+    *, profiles_deleted: AwaitedHook, divisions_raced_read: AwaitedHook
+) -> ChangeType:
     """The `core.test_roster_remove` change type, for the builder to register: *profiles_deleted*
-    is the hook each module signs up to so that it deletes its own rows of the drivers deleted.
+    is the hook each module signs up to so that it deletes its own rows of the drivers deleted, and
+    *divisions_raced_read* the one results signs up to so that a driver who has raced is known.
 
     A change type of its own on the league lane, **carrying the synthetic id typed** (`user_id`),
     which the form of the command has read as a number. The ask reads the driver's name and
     division into the payload (`fill`), for the reply of a save a league admin discarded.
 
     **The refusals are the check's**, judged at the ask and again as the change starts: test mode
-    not on, the season not in Placements, and no fake driver holding the id (a real driver's id
-    is one). **One SAVE** judges once more on its own connection, deletes the driver, keeping
+    not on, no fake driver holding the id (a real driver's id is one), a signup in progress
+    (finish it, or cancel it, first), and a driver who has raced or holds a confirmed seat, which
+    `/driver sack` undoes first. **One SAVE** judges once more on its own connection, deletes the driver, keeping
     their history, and writes the `TEST_DRIVER_REMOVED` audit entry, on the division they were
     seated in, and the line. A fault in the save stops the lane.
     """
@@ -327,7 +355,13 @@ def test_roster_remove_change(*, profiles_deleted: AwaitedHook) -> ChangeType:
         if refusal is not None:
             return refusal
         found = await find_test_driver_on(db, int(payload["user_id"]))
-        return f"⛔ {found}" if isinstance(found, str) else found
+        if isinstance(found, str):
+            return f"⛔ {found}"
+        if found.state in SIGNUP_IN_PROGRESS:
+            return SIGNUP_UNDER_WAY.format(driver_name=found.display_name)
+        if await has_raced_or_holds_a_confirmed_seat(db, found, divisions_raced_read):
+            return KEPT_REMOVAL.format(driver_name=found.display_name)
+        return found
 
     async def fill(ctx: CheckContext) -> None:
         async with get_connection(ctx.db_path) as db:
@@ -398,27 +432,46 @@ def test_roster_remove_change(*, profiles_deleted: AwaitedHook) -> ChangeType:
 # ─── /test-mode roster clear ──────────────────────────────────────────────────
 
 
-def test_roster_clear_change(*, profiles_deleted: AwaitedHook) -> ChangeType:
+def test_roster_clear_change(
+    *, profiles_deleted: AwaitedHook, divisions_raced_read: AwaitedHook
+) -> ChangeType:
     """The `core.test_roster_clear` change type, for the builder to register: *profiles_deleted*
     is the hook each module signs up to so that it deletes its own rows of the drivers deleted.
 
     A change type of its own on the league lane, **carrying the division as typed**.
 
-    **The refusals are the check's**, judged at the ask and again as the change starts, for run
-    against a live season the command would delete real drivers: test mode not on, the season not
-    in Placements, and no such division in the live season. **One SAVE** judges once more on its
+    **The refusals are the check's**, judged at the ask and again as the change starts: test mode
+    not on, no such division in the live season, and a fake driver in it who has raced or holds a
+    confirmed seat, which refuses the whole division and names them, `/driver sack` undoing it
+    first. **One SAVE** judges once more on its
     own connection, deletes every fake driver seated in the division, keeping their history, and
     writes a `TEST_DRIVER_REMOVED` audit entry for each, in the order they were created, and the
     line. A division holding no fake driver is an ordinary answer: it is said, and the line says
     nothing changed, with no audit entry. A fault in the save stops the lane.
     """
 
-    async def judge(db: aiosqlite.Connection, payload: dict[str, Any]) -> tuple[int, str] | str:
+    async def judge(
+        db: aiosqlite.Connection, payload: dict[str, Any]
+    ) -> tuple[int, list[FakeDriver]] | str:
+        """The division's id and the fake drivers seated in it, or the reply refusing the clear."""
         refusal = await standing_refusal_on(db)
         if refusal is not None:
             return refusal
         located = await locate_division_on(db, str(payload["division"]))
-        return f"⛔ {located}" if isinstance(located, str) else located
+        if isinstance(located, str):
+            return f"⛔ {located}"
+        division_id, division_name = located
+        drivers = await fake_drivers_in_division_on(db, division_id)
+        kept = [
+            driver for driver in drivers
+            if await has_raced_or_holds_a_confirmed_seat(db, driver, divisions_raced_read)
+        ]
+        if kept:
+            return KEPT_CLEARING.format(
+                division=division_name,
+                names=", ".join(f"**{driver.display_name}**" for driver in kept),
+            )
+        return division_id, drivers
 
     async def check(ctx: CheckContext) -> Verdict:
         async with get_connection(ctx.db_path) as db:
@@ -433,9 +486,8 @@ def test_roster_clear_change(*, profiles_deleted: AwaitedHook) -> ChangeType:
                 result={"refused": judged},
                 lines=(refusal_line(ctx.named, ctx.what, reply_reason(judged)),),
             )
-        division_id, _name = judged
+        _division_id, drivers = judged
         division = str(ctx.payload["division"])
-        drivers = await fake_drivers_in_division_on(db, division_id)
         if not drivers:
             line = (
                 f"{ctx.named} | {CLEAR_COMMAND} | Nothing changed\n"
@@ -491,7 +543,6 @@ def test_roster_clear_change(*, profiles_deleted: AwaitedHook) -> ChangeType:
 
 
 __all__ = [
-    "NOT_PLACING",
     "TEST_ROSTER_ADD",
     "TEST_ROSTER_ADD_BULK",
     "TEST_ROSTER_CLEAR",

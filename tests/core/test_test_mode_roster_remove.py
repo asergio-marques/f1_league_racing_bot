@@ -46,12 +46,6 @@ _KEPT = (
     "driver who has raced stays until test mode ends."
 )
 
-#: The reason each refusal #600 adds is not yet given.
-_NOT_YET_REFUSED = (
-    "#600: roster remove does not yet refuse a fake driver mid-signup, raced or confirmed"
-)
-
-
 @pytest.fixture
 async def league(tmp_path):
     """`season_league`'s season in Placements under test mode, Mock Alpha a fake driver
@@ -144,9 +138,6 @@ def _refused(refusal: str) -> str:
     return f"⛔ `/test-mode roster remove` refused for {_NAMED} — {refusal[2:]}"
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#600: the removal's audit entry still records a nationality"
-)
 async def test_a_removal_and_its_audit_entry_and_line_are_one_save(league):
     """The core specification's test roster, changed by hand under test mode, and its record of
     what changed. The season is in Placements under test mode, Mock Alpha a fake driver
@@ -258,8 +249,7 @@ async def _seat_confirmed(league) -> None:
         pytest.param(None, str(CHARLES), _NOT_FOUND, id="a real driver's id"),
         *(
             pytest.param(
-                _signing_up(state), MOCK_ID, _MID_SIGNUP, id=f"a driver at {state}",
-                marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_REFUSED),
+                _signing_up(state), MOCK_ID, _MID_SIGNUP, id=f"a driver at {state}"
             )
             for state in (
                 "PENDING_SIGNUP_COMPLETION", "PENDING_ADMIN_APPROVAL",
@@ -267,16 +257,13 @@ async def _seat_confirmed(league) -> None:
             )
         ),
         pytest.param(
-            _former_driver, MOCK_ID, _KEPT, id="a former driver",
-            marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_REFUSED),
+            _former_driver, MOCK_ID, _KEPT, id="a former driver"
         ),
         pytest.param(
-            _raced, MOCK_ID, _KEPT, id="a driver who raced",
-            marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_REFUSED),
+            _raced, MOCK_ID, _KEPT, id="a driver who raced"
         ),
         pytest.param(
-            _seat_confirmed, MOCK_ID, _KEPT, id="a confirmed seat",
-            marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_REFUSED),
+            _seat_confirmed, MOCK_ID, _KEPT, id="a confirmed seat"
         ),
     ],
 )
@@ -332,8 +319,7 @@ async def _removed_meanwhile(league) -> None:
         pytest.param(_test_mode_off, _NOT_IN_TEST_MODE, id="test mode turned off"),
         pytest.param(_removed_meanwhile, _NOT_FOUND, id="the driver gone"),
         pytest.param(
-            _seat_confirmed, _KEPT, id="the seat confirmed",
-            marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_REFUSED),
+            _seat_confirmed, _KEPT, id="the seat confirmed"
         ),
     ],
 )

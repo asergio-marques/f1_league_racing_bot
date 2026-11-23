@@ -15,9 +15,6 @@ import pytest
 from leaguebot.core.models.season import SeasonStage, status_of_stage
 from tests.support.undecorate import undecorate
 
-_ANY_STAGE = "#600: the roster still changes only in Placements, and roster add still seats"
-
-
 async def _a_fake_driver_in_am(league, user_id: str, name: str) -> None:
     """*name*, a fake driver in McLaren's second seat in Am, the placement not yet committed."""
     from tests.support.season_league import AM, MCLAREN, SEASON_ID
@@ -40,7 +37,6 @@ async def _a_fake_driver_in_am(league, user_id: str, name: str) -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_ANY_STAGE)
 @pytest.mark.parametrize(
     "stage",
     [

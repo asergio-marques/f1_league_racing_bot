@@ -57,9 +57,6 @@ def _cog(*, test_mode: bool = True):
 # ── The command ───────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#600: the import form still opens only while the season is in Placements"
-)
 async def test_the_command_opens_the_box_without_deferring():
     """`send_modal` has to be the first response, which inverts the rule the rest of the
     cog follows. Do not "fix" this back."""
