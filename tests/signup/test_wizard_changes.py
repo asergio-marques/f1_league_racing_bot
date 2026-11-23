@@ -565,7 +565,8 @@ async def _start_mock(league: SeasonLeague) -> None:
 
 @pytest.mark.xfail(
     strict=True,
-    reason="#600: signup.start does not yet start a fake driver's signup with no member behind it",
+    reason="#600: signup.start does not yet start a fake driver's signup with no member behind "
+    "it, nor welcome it by its test name",
 )
 async def test_a_fake_driver_s_signup_starts_with_no_member_behind_it(tmp_path):
     """The server is in test mode, at Signups with the window open. Mock Alpha is a fake driver
@@ -577,7 +578,7 @@ async def test_a_fake_driver_s_signup_starts_with_no_member_behind_it(tmp_path):
     its test name and created hidden from everyone but the league's interaction and league admin
     roles, with no overwrite for the fake driver's ID; its wizard's draft holds its test name as
     both its username and its server name; it is at Pending Signup Completion; and the welcome is
-    posted in the new channel."""
+    posted in the new channel, naming it "Mock Alpha" and mentioning no account by its ID."""
     league = await _league(tmp_path)
     await league.set_test_mode(True)
     [roles] = await league.rows(
@@ -608,7 +609,9 @@ async def test_a_fake_driver_s_signup_starts_with_no_member_behind_it(tmp_path):
         MOCK_NAME, MOCK_NAME
     )
     assert await _driver_state(league, MOCK) == "PENDING_SIGNUP_COMPLETION"
-    assert league.channel(NEW_CHANNEL).texts != []
+    welcome = "\n".join(league.channel(NEW_CHANNEL).texts)
+    assert "Welcome to the signup wizard" in welcome and MOCK_NAME in welcome
+    assert f"<@{MOCK}>" not in welcome
 
 
 _FOLLOWS_THE_SWITCH = (

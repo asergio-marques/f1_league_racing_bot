@@ -747,6 +747,52 @@ async def test_a_league_admin_s_press_on_a_fake_driver_s_wizard_is_saved_as_its_
     assert any("Step 3 — Platform ID" in text for text in league.channel(MOCK_CHANNEL).texts)
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#600: a league admin's last answer in a fake driver's channel is ignored, and the "
+    "review panel names a driver by mention",
+)
+async def test_a_league_admin_s_last_answer_submits_the_fake_driver_s_signup_for_review(tmp_path):
+    """The server is in test mode. Mock Alpha, a fake driver, has answered every question but its
+    notes, its draft naming it "Mock Alpha". The league admin Admin (77) types "Happy to race
+    anywhere" in Mock Alpha's signup channel, and the queue runs. Mock Alpha's signup is saved
+    under its ID with its test name and those notes, it is Pending Admin Approval, and one review
+    panel is posted in its channel, naming it "Mock Alpha" and mentioning no account by its ID;
+    no signup is saved for the admin."""
+    from tests.signup.test_wizard_changes import MOCK, MOCK_NAME
+    from tests.support.change_queue import tier_member
+    from tests.support.season_league import ADMIN_ID
+
+    league = await _league(tmp_path)
+    await _mock_alpha_at(league, "COLLECTING_NOTES", draft=dict(
+        ANSWERED_TO_NOTES, discord_username=MOCK_NAME, server_display_name=MOCK_NAME,
+    ))
+    await league.set_test_mode(True)
+
+    await _typed_by(
+        league, tier_member("admin", member_id=ADMIN_ID), MOCK_CHANNEL, "Happy to race anywhere"
+    )
+    await run_queue(league.bot)
+
+    [record] = await league.rows(
+        "SELECT * FROM signup_records WHERE discord_user_id = ?", str(MOCK)
+    )
+    assert (record["server_display_name"], record["notes"]) == (
+        MOCK_NAME, "Happy to race anywhere"
+    )
+    [profile] = await league.rows(
+        "SELECT current_state FROM driver_profiles WHERE discord_user_id = ?", str(MOCK)
+    )
+    assert profile["current_state"] == "PENDING_ADMIN_APPROVAL"
+    [panel] = [call for call in league.channel(MOCK_CHANNEL).send.call_args_list
+               if type(call.kwargs.get("view")).__name__ == "AdminReviewView"]
+    shown = str(panel.args[0] if panel.args else panel.kwargs.get("content"))
+    assert MOCK_NAME in shown and f"<@{MOCK}>" not in shown
+    assert await league.rows(
+        "SELECT * FROM signup_records WHERE discord_user_id = ?", str(ADMIN_ID)
+    ) == []
+
+
 #: For each step, what Kimi types, and the refusal and step name the wizard gives him today.
 _REFUSED = [
     pytest.param("COLLECTING_NATIONALITY", "Atlantis", "Nationality",
