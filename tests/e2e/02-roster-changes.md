@@ -1065,3 +1065,29 @@ base was built (it starts on, and nothing in `00-base.md` turns it).
 82. **Do:** `/test-mode roster list division:Division 1`
 
     **Expect:** as step 55: no fake drivers in Division 1.
+
+---
+
+## Part G — Restoring the base
+
+Season #2 is left in placements, test mode on. Putting the base back is what lets the next spec
+start where `00-base.md` left off.
+
+83. **Do:** steps 1 to 4 again: `/test-mode backup status`, `/test-mode backup restore`, press
+    **♻️ Restore**, and restart the bot.
+
+    **Expect:** as steps 1 to 4. `bot.prerestore.db` and `scheduler.prerestore.db` now hold
+    Season #2 as this part found it, should it be wanted.
+
+84. **Do:** `/test-mode roster list division:Division 1`
+
+    **Expect:** as `00-base.md` step 28: the 24 Division 1 drivers of the Fixture, every seat
+    as the base left it. Season #1 is ongoing again, and Season #2 and the cancellation are gone.
+
+85. **Do:** `/team list`
+
+    **Expect:** as `00-base.md` step 17: the Fixture's eleven teams and `Reserve`, `ALP` back on
+    `@Alpha Racing`.
+
+The base is as `00-base.md` left it, its backup still saved and locked. `@Lima Racing` stays on
+the server: it was made by hand, and the restore does not reach Discord. Delete it if you wish.
