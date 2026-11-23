@@ -302,3 +302,39 @@ async def test_a_test_seasons_end_swaps_driver_back_and_a_real_ones_does_not(
         assert call(guild=guild) in bot.tree.sync.await_args_list
     else:
         bot.tree.sync.assert_not_awaited()
+
+
+#: What each end leaves of season 7: completed, cancelled, or deleted by its abort.
+_ENDED = {"complete": [{"status": "COMPLETED"}], "cancel": [{"status": "CANCELLED"}], "abort": []}
+
+
+@pytest.mark.xfail(strict=True, reason=PENDING)
+@pytest.mark.parametrize("end", sorted(_ENDS))
+async def test_a_swap_discord_refuses_at_a_test_seasons_end_ends_on_a_fault_and_the_season_ends(
+    tmp_path, end
+):
+    """Season 7 is a test season, the test-mode group on the league's server, and Discord refuses
+    every sync. Admin 77 runs `/season complete`, `/season abort` or `/season cancel`, and the
+    queue carries it out: the season has ended all the same (completed, deleted, or cancelled),
+    test mode is off, the queue is not stopped, and both the reply and a line in the log channel
+    name `/driver` and a restart, never asking for anything to be run again."""
+    from tests.support.season_league import SEASON_ID, reply
+
+    league, ending = await _ENDS[end](tmp_path, True)
+    bot, guild = league.bot, league.guild
+    bot.tree.remove_command("driver")
+    bot.tree.add_command(bot.get_cog("DriverTestCog").driver, guild=guild)
+    bot.tree.sync = AsyncMock(side_effect=http_error())
+
+    asked = await ending(league)
+    await run_queue(bot)
+
+    assert await league.rows("SELECT status FROM seasons WHERE id = ?", SEASON_ID) == _ENDED[end]
+    assert (await league.rows("SELECT test_mode_active FROM server_configs"))[0][
+        "test_mode_active"
+    ] == 0
+    assert await stopped_job(league.db_path) is None
+    logged = [line for posted in _log_lines(bot) for line in posted.splitlines()]
+    for told in (reply(asked).splitlines(), logged):
+        named = [line for line in told if "/driver" in line]
+        assert named and all("restart" in line and "again" not in line for line in named)
