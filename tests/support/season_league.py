@@ -312,7 +312,12 @@ class SeasonLeague:
         #: The cogs of `/division` and `/round`, the season's setup being the other's.
         self.division_cog = DivisionCog(bot)
         self.round_cog = RoundCog(bot)
-        bot.get_cog = MagicMock(side_effect=lambda name: self.cog if name == "SeasonCog" else None)
+        # The season's cog is this league's own; every other name, the two `/driver` cogs among
+        # them, is the bot's own answer.
+        real_get_cog = bot.get_cog
+        bot.get_cog = MagicMock(
+            side_effect=lambda name: self.cog if name == "SeasonCog" else real_get_cog(name)
+        )
         league_queue(bot, db_path, now=self.clock)
 
     # ── The Discord side ────────────────────────────────────────────────────────
