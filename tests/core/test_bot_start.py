@@ -207,3 +207,49 @@ async def test_the_sync_command_leaves_the_driver_the_flag_calls_for(tmp_path, t
     assert sorted(seen, key=lambda each: each[0] is not None) == [
         (None, expected[0]), (guild, expected[1])
     ]
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#600: !sync in a direct message clears the global commands, not just no server's",
+)
+@pytest.mark.parametrize("test_mode", [True, False], ids=["test-mode-on", "test-mode-off"])
+async def test_the_sync_command_in_a_direct_message_keeps_the_global_commands(
+    tmp_path, test_mode
+):
+    """The bot the entry point builds, with test mode as the case gives, its league's server
+    carrying a left-over copy of one of the global commands. The owner sends `!sync` in a direct
+    message, where there is no server. No server's overrides are cleared, and the global commands
+    are not wiped: the global tree is synced carrying every command it carried before, `/driver`
+    as the flag calls for (none in test mode, the member group otherwise), and the server is
+    synced carrying the test-mode `/driver` in test mode and none otherwise, its left-over copy
+    still there."""
+    bot, guild = await _ready_bot(tmp_path, test_mode=test_mode)
+    test_group = bot.get_cog("DriverTestCog").driver
+    before = {command.name for command in bot.tree.get_commands()}
+    left_over = next(
+        command for command in sorted(bot.tree.get_commands(), key=lambda each: each.name)
+        if command.name != "driver"
+    )
+    bot.tree.add_command(left_over, guild=guild)
+    seen: list[tuple[object, set[str], object]] = []
+
+    async def sync(*, guild=None):
+        seen.append((
+            guild,
+            {command.name for command in bot.tree.get_commands(guild=guild)},
+            bot.tree.get_command("driver", guild=guild),
+        ))
+        return []
+
+    bot.tree.sync = AsyncMock(side_effect=sync)
+    ctx = MagicMock(guild=None, send=AsyncMock())
+    ctx.message.delete = AsyncMock()
+
+    await bot.get_command("sync").callback(ctx)
+
+    [(_, global_names, _)] = [each for each in seen if each[0] is None]
+    assert global_names == (before - {"driver"} if test_mode else before)
+    [(_, server_names, server_driver)] = [each for each in seen if each[0] is guild]
+    assert server_driver is (test_group if test_mode else None)
+    assert left_over.name in server_names
