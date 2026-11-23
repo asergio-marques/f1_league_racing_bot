@@ -1630,7 +1630,7 @@ Each driver's block carries their platform, driver type, lap total, **availabili
 #### `/signup unassigned export` — Export Unassigned drivers to CSV
 *Access: League manager*
 
-No parameters. Returns `unassigned_drivers.csv` in an ephemeral reply, holding the same drivers in the same order as the list — a driver still in review has a blank `Seed` — with the columns `Seed`, `Display Name`, `Discord User ID`, `Driver Type`, `Lap Total`, one column per configured availability slot (marked `X` where the driver selected it), `Preferred Team 1`–`3`, `Platform` and `Platform ID`.
+No parameters. Returns `unassigned_drivers.csv` in an ephemeral reply, holding the same drivers in the same order as the list — a driver still in review has a blank `Seed` — with the columns `Seed`, `Display Name`, `Discord User ID`, `Driver Type`, `Lap Total`, one column per configured availability slot (marked `X` where the driver selected it), `Preferred Team 1`–`3`, `Platform` and `Platform ID`. A fake driver left Unassigned is exported under its test name in `Display Name`, every answer it never gave left blank.
 
 > **The preferred teammate and the notes are not exported**, though `/signup unassigned list` displays both. Read them off the list where they bear on how you place someone.
 
