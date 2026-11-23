@@ -108,12 +108,13 @@ async def test_signup_start_asks_a_fake_driver_s_signup_with_the_admin_as_its_ac
     """Test mode is on, at Signups with the window open, and Mock Alpha a fake driver at Not
     Signed Up. Admin runs the test-mode `/signup start` naming Mock Alpha by its ID, and the queue
     runs. One `signup.start` was asked, for Mock Alpha's ID, recorded as asked by Admin, and ran
-    to its end; and the log channel's "Signup | Started" line names Admin as the one who acted
-    and Mock Alpha by its test name."""
+    to its end; the log channel's "Signup | Started" line names Admin as the one who acted and
+    Mock Alpha by its test name; and beside it one `SIGNUP_START` audit entry, by Admin, records
+    Mock Alpha moved from Not Signed Up to Pending Signup Completion."""
     import json
 
     from tests.support.change_queue import change_rows, run_queue
-    from tests.support.settings_league import log_lines
+    from tests.support.settings_league import audit_rows, log_lines
 
     league = await _league(tmp_path)
 
@@ -126,6 +127,11 @@ async def test_signup_start_asks_a_fake_driver_s_signup_with_the_admin_as_its_ac
     assert change["state"] == "DONE"
     [started] = [line for line in await log_lines(league) if "Signup | Started" in line]
     assert f"<@{ADMIN_ID}>" in started and MOCK_NAME in started
+    [entry] = [row for row in await audit_rows(league.db_path)
+               if row["change_type"] == "SIGNUP_START"]
+    assert entry["actor_id"] == ADMIN_ID
+    assert entry["old_value"] == {"state": "NOT_SIGNED_UP", "discord_user_id": str(MOCK)}
+    assert entry["new_value"] == {"new_state": "PENDING_SIGNUP_COMPLETION"}
 
 
 #: Each refusal of `/signup start`: how the league stands, the driver named, and words the reply
