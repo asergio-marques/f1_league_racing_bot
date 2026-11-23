@@ -875,6 +875,20 @@ async def _mock_withdrew(tmp_path: Any) -> SeasonLeague:
     return league
 
 
+async def _mock_cancelled(tmp_path: Any) -> SeasonLeague:
+    """Kimi, made Mock Alpha awaiting review; the league admin Admin (77) runs the test-mode
+    `/signup cancel` naming his ID and gives the reason "Signed up twice"."""
+    from tests.signup.test_signup_test_cog import _run_test_command
+    from tests.signup.test_wizard_changes import _submit_cancel
+
+    league = await _league(tmp_path)
+    await _as_mock(league)
+    asked = await _run_test_command(league, "signup cancel", str(SIGNING_UP))
+    await _submit_cancel(league, asked, "Signed up twice")
+    await run_queue(league.bot)
+    return league
+
+
 async def _mock_expired(tmp_path: Any) -> SeasonLeague:
     from datetime import timedelta
 
@@ -908,6 +922,8 @@ _FAKE_DRIVER_NAMED = [
     pytest.param(_mock_withdrew, "| Signup | Withdrawn", None,
                  marks=pytest.mark.xfail(strict=True, reason=_NAMED_BY_ITS_ID),
                  id="withdrawal"),
+    pytest.param(_mock_cancelled, "| Signup | Cancelled", "cancelled by",
+                 marks=pytest.mark.xfail(strict=True, reason=_NAMED_BY_ITS_ID), id="cancel"),
     pytest.param(_mock_expired, "lapsed unconfirmed", None,
                  marks=pytest.mark.xfail(strict=True, reason=_NAMED_BY_ITS_ID),
                  id="24-hour lapse"),
@@ -921,10 +937,11 @@ async def test_a_fake_driver_s_signup_is_named_by_its_test_name_and_never_by_its
     """The server is in test mode and Kimi is a fake driver called Mock Alpha, no member of the
     server holding his ID. His signup is rejected or sent back for changes by manager 77 (typing
     the reason), the field to correct is picked by 77, a league admin presses Cancel Signup on
-    his wizard, or it lapses after 24 hours idle; the queue runs. The log channel's line for it
+    his wizard, the league admin Admin (77) cancels it with the test-mode `/signup cancel` giving
+    a reason, or it lapses after 24 hours idle; the queue runs. The log channel's line for it
     names Mock Alpha, and nothing in the log channel or in his signup channel mentions his ID;
-    the rejection notice, the correction choices and the re-submit prompt posted in his channel
-    name Mock Alpha."""
+    the rejection notice, the correction choices, the re-submit prompt and the cancellation
+    notice posted in his channel name Mock Alpha."""
     league = await decide(tmp_path)
 
     log = league.log().replace("`", "")
