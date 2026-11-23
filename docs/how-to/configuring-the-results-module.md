@@ -206,13 +206,15 @@ You are not going to wait for a real race to find out whether your points table 
 /test-mode advance
 ```
 
+A fake driver is created unseated: sign it up with `/signup start`, approve it, and seat it with `/driver assign` before placements are confirmed — see [Test mode](test-mode.md#a-workable-order).
+
 `advance` fires the next thing due, and when that is a round's start it opens the submission channel there and then, in the real channel, with the real wizard. Nothing about it is a simulation except the drivers.
 
 Two things about test mode matter here specifically. **Enabling it attaches points configurations to your season** — on a server that holds no points configuration at all, it creates and attaches `Standard` and `Half Points`, so a season can acquire a points table as a side effect of flipping a flag. A server that holds any configuration, of any name, is left untouched: attach your own with `/results config append`. Enabling is the only time it does: detach them and the season needs a configuration attached again, with `/results config append`, before it can be approved. And `/test-mode roster list` gives you the mention strings for your fake drivers, which is the only practical way to type a classification for twenty of them.
 
 See [Test mode](test-mode.md) for the whole picture.
 
-> **Test mode is chosen for a season, in its configuration.** `/test-mode toggle` works only while a season is in configuration, and is refused while any real driver is signed up, unassigned or assigned — which, once a season has ended, nobody is. A season confirmed in test mode never opens a signup window, and while test mode is on no real driver may sign up or be placed. It stays on until that season is completed, cancelled or aborted, which switches it off and deletes the fake drivers — so test in a season of its own, and abort it with `/season abort` if you would rather not race it out. See [Setting up the bot for your league](configuring-the-core-bot.md) for the season's stages.
+> **Test mode is chosen for a season, in its configuration.** `/test-mode toggle` works only while a season is in configuration, and is refused while any real driver is signed up, unassigned or assigned — which, once a season has ended, nobody is. A season confirmed in test mode opens its signup windows as any other does, but only fake drivers sign up in it, and while test mode is on no real driver may sign up or be placed. It stays on until that season is completed, cancelled or aborted, which switches it off and deletes the fake drivers — so test in a season of its own, and abort it with `/season abort` if you would rather not race it out. See [Setting up the bot for your league](configuring-the-core-bot.md) for the season's stages.
 
 > **A round that has been submitted but not settled blocks `/test-mode advance`.** Finish the penalty and appeals stages first; the refusal tells you which round is waiting.
 
