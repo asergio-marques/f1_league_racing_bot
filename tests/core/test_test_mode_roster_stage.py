@@ -3,7 +3,7 @@
 Fake drivers are created at Not Signed Up and go through signup, approval and placement as any
 driver does, so the roster is no longer tied to Placements: `/test-mode roster add`, `add-bulk`,
 `remove` and `clear` run in Configuration, Waiting, Placements and Ongoing alike. Test mode itself
-is the one gate.
+is the one gate. Placements is left to each command's own tests, whose league stands there.
 """
 from __future__ import annotations
 
@@ -42,11 +42,11 @@ async def _a_fake_driver_in_am(league, user_id: str, name: str) -> None:
 @pytest.mark.xfail(strict=True, reason=_ANY_STAGE)
 @pytest.mark.parametrize(
     "stage",
-    [SeasonStage.CONFIGURATION, SeasonStage.WAITING, SeasonStage.PLACEMENTS, SeasonStage.ONGOING],
+    [SeasonStage.CONFIGURATION, SeasonStage.WAITING, SeasonStage.ONGOING],
 )
 async def test_the_roster_changes_in_every_stage_under_test_mode(tmp_path, stage):
-    """`season_league`'s season 3 under test mode, moved to Configuration, Waiting, Placements or
-    Ongoing, with Mock Bravo a fake driver in McLaren's second seat in Am, not yet committed. Admin
+    """`season_league`'s season 3 under test mode, moved to Configuration, Waiting or Ongoing,
+    with Mock Bravo a fake driver in McLaren's second seat in Am, not yet committed. Admin
     (77) runs `/test-mode roster add` naming Mock Alpha, and the queue runs it: Mock Alpha is a
     fake driver. Admin runs `/test-mode roster add-bulk`: the import form opens. Admin runs
     `/test-mode roster remove` with Mock Alpha's ID, and `/test-mode roster clear` of Am, and the
