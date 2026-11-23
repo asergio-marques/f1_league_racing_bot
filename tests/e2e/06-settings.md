@@ -841,3 +841,61 @@ time zone is free text, autocompleted, and checked.
       own day in UTC: `<weekday> 01 Mar <YEAR+1>` at `20:00 UTC`, `<weekday> 08 Mar <YEAR+1>` and
       `<weekday> 15 Mar <YEAR+1>`, each at `20:00 UTC`, `<weekday>` being the three-letter day the
       date falls on.
+
+---
+
+## Part H — The signup configuration and the league's roles while Season #1 runs
+
+Season #1's configuration is confirmed, so every signup setting and both league roles are fixed
+until it ends. The fixed refusal comes before every other check, so the value a command is given is
+never judged; and it is judged again as the change starts.
+
+66. **Do**, one after another: `/signup nationality`, `/signup time-type`, `/signup time-image`.
+
+    **Expect**, for each, `<command>` being its name (`/signup nationality` and so on):
+    - **Reply:** ``❌ The signup module's settings are fixed for Season 1 now that its configuration has been confirmed. `<command>` is available again once the season has ended, or while a new season is in configuration.``
+    - **Log:** ``⛔ `<command>` refused for <you> — The signup module's settings are fixed for Season 1 now that its configuration has been confirmed. `<command>` is available again once the season has ended, or while a new season is in configuration.``
+
+67. **A bad time, never reached.** **Do:** `/signup time-slot add day:Friday time:25:00`, then
+    `/signup time-slot remove slot_id:1`.
+
+    **Expect:** as step 66, with `` `/signup time-slot add` `` and `` `/signup time-slot remove` ``
+    for `<command>`. Neither the time nor the slot number is judged: the season's refusal comes
+    first.
+
+68. **Do:** `/signup open`, then `/signup open close_time:yesterday`
+
+    **Expect**, for each:
+    - **Reply:** ``⛔ Signups cannot be opened while test mode is active. Turn it off with `/test-mode toggle` first.``
+    - **Log:** ``⛔ `/signup open` refused for <you> — Signups cannot be opened while test mode is active. Turn it off with `/test-mode toggle` first.``
+    - Test mode is judged before the close time is read. Do **not** turn test mode off: that
+      deletes the saved backup.
+
+69. **Do:** `/signup close`
+
+    **Expect:**
+    - **Reply:** `❌ Signups are not currently open.`
+    - **Log:** ``⛔ `/signup close` refused for <you> — Signups are not currently open.``
+
+70. **Do**, one after another: `/signup close-time add close_time:<YEAR+1>-01-01T20:00:00`,
+    `/signup close-time add close_time:soon`, `/signup close-time modify close_time:<YEAR+1>-01-02T20:00:00`,
+    `/signup close-time cancel`.
+
+    **Expect**, for each, `<command>` being `/signup close-time add`, `modify` or `cancel`:
+    - **Reply:** ``❌ Signups are not currently open, so there is no auto-close time to manage. Set one when you open the window with `/signup open close_time:`.``
+    - **Log:** ``⛔ `<command>` refused for <you> — Signups are not currently open, so there is no auto-close time to manage. Set one when you open the window with `/signup open close_time:`.``
+    - `close_time:soon` is not a time, and is never judged: a window not open is refused first
+      (`close_time_settings.check_add`). The close-time commands are not fixed by the season.
+
+71. **Do:** `/bot base-role role:@Stand-in`, `/bot driver-role role:@Stand-in`, then
+    `/bot driver-role role:@everyone`.
+
+    **Expect**, for each, `<command>` being `/bot base-role` or `/bot driver-role`:
+    - **Reply:** ``❌ The league's roles are fixed for Season 1 now that its configuration has been confirmed. `<command>` is available again once the season has ended, or while a new season is in configuration — or at once, should the role be deleted from the server.``
+    - **Log:** ``⛔ `<command>` refused for <you> — The league's roles are fixed for Season 1 now that its configuration has been confirmed. `<command>` is available again once the season has ended, or while a new season is in configuration — or at once, should the role be deleted from the server.``
+    - `@everyone` is refused for the season, not for being `@everyone`: the season is judged first
+      (`BotCog._set_league_role`). Step 91 shows the other refusal.
+
+72. **Do:** `/signup config view`, `/signup time-slot list`
+
+    **Expect:** as steps 12 and 13: nothing changed. No log line.
