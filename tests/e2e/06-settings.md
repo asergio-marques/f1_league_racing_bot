@@ -670,3 +670,175 @@ neither held to the interaction channel nor recorded in the log channel.
     - **Log:** nothing.
     > UNVERIFIED: what the host's log shows. The bot has no `on_command_error` handler, so the
     > refusal falls to discord.py's own, which logs the `NotOwner` it raises.
+
+---
+
+## Part G — The time zone, the clock and the date
+
+The three are the image module's (`/images config`), and are what every picture writes a moment
+in: the calendar, the check-in call and the forecasts. A picture cannot carry a Discord timestamp,
+so it carries one zone for every reader and names it after the time
+(`date_formatting.format_date_and_time`). The calendar shows them without advancing the season, so
+`/division calendar-sync` is what shows each change here. They are not fixed by a running season.
+
+The clock and the date formats are chosen from a list, so no bad value can be typed for them; the
+time zone is free text, autocompleted, and checked.
+
+52. **A zone that is not one.** **Do:** `/images config time-zone zone:Mars/Olympus`, typed rather
+    than picked from the list.
+
+    **Expect:**
+    - **Reply:** ``❌ `Mars/Olympus` is not a recognised time zone. Use an IANA name such as `Europe/Lisbon` or `UTC`.``
+    - **Log:** ``⛔ `/images config time-zone` refused for <you> — `Mars/Olympus` is not a recognised time zone. Use an IANA name such as `Europe/Lisbon` or `UTC`.``
+
+53. **Do:** `/images config time-zone zone:Asia/Tokyo`
+
+    **Expect:**
+    - **Ack:** ``Setting the time zone to `Asia/Tokyo` ``
+    - **Then:**
+      ```
+      ✅ Time zone set to `Asia/Tokyo`.
+      Times are shown in the offset that zone carries **on the date displayed**, so a season spanning a daylight-saving change stays correct.
+      ```
+    - **Log:**
+      ```
+      <you> | /images config time-zone | Success
+        Time zone: Asia/Tokyo
+      ```
+
+54. **The same again.** **Do:** `/images config time-zone zone:Asia/Tokyo`
+
+    **Expect:**
+    - **Ack:** as step 53.
+    - **Then:** ``ℹ️ Nothing changed: the time zone is already **`Asia/Tokyo`**.``
+    - **Log:**
+      ```
+      <you> | /images config time-zone | Nothing changed
+        Time zone: Asia/Tokyo
+      ```
+
+55. **Do:** `/images config time-format clock:12-hour (2:30 PM)`
+
+    **Expect:**
+    - **Ack:** `Setting the clock format to **12-hour (2:30 PM)**`
+    - **Then:** `✅ Clock format set to **12-hour (2:30 PM)**.`
+    - **Log:**
+      ```
+      <you> | /images config time-format | Success
+        Clock format: 12-hour (2:30 PM) (12H)
+      ```
+
+56. **Do:** `/images config date-format style:2026-06-14`
+
+    **Expect:**
+    - **Ack:** `Setting the date format to **2026-06-14**`
+    - **Then:** `✅ Date format set to **2026-06-14**.`
+    - **Log:**
+      ```
+      <you> | /images config time-format | Success
+        Date format: 2026-06-14 (YYYY_MM_DD)
+      ```
+      with `/images config date-format` as the command: each of the three names its own.
+
+57. **The same again.** **Do:** `/images config date-format style:2026-06-14`
+
+    **Expect:**
+    - **Ack:** as step 56.
+    - **Then:** `ℹ️ Nothing changed: the date format is already **2026-06-14**.`
+    - **Log:**
+      ```
+      <you> | /images config date-format | Nothing changed
+        Date format: 2026-06-14 (YYYY_MM_DD)
+      ```
+
+58. **Do:** `/images config view`
+
+    **Expect:** as step 16, its presentation section now:
+    ```
+    **Presentation**
+      Time zone: `Asia/Tokyo`
+      Clock: `12H`
+      Date format: `YYYY_MM_DD`
+      Fastest-lap colour: `#A020F0`
+    ```
+    No log line.
+
+59. **Their effect.** **Do:** `/division calendar-sync name:Division 1`
+
+    **Expect:**
+    - **Ack**, **Then** and **Log:** as `03-calendar-changes.md` step 31:
+      `Posting the calendar of **Division 1** again`, then
+      `✅ Calendar for **Division 1** reposted as image.` and any notices section, and the line
+      `<you> | /division calendar-sync | Success` with `division: Division 1` and
+      `posted as: image` beneath.
+    - **Posts** (`#d1-calendar`): a new calendar, a picture with no text, then the calendar
+      `00-base.md` step 32 posted deleted. Look at it as a PNG: each round is drawn in Tokyo time,
+      nine hours ahead of UTC with no daylight saving, so every round falls on the next day:
+      round 1 Silverstone Circuit `<YEAR+1>-03-02` at `05:00 AM JST`, round 2 Hungaroring
+      `<YEAR+1>-03-09` at `05:00 AM JST`, round 3 the mystery round `<YEAR+1>-03-16` at
+      `05:00 AM JST`. Where the base drew `<weekday> 01 Mar <YEAR+1>` and `20:00 UTC`.
+      > UNVERIFIED: how the default template lays the date and the time out, and whether a long
+      > time such as `05:00 AM JST` fits its box. The values are `format_date_and_time`'s; the
+      > template draws each round's `round_<n>_date` and `round_<n>_time`.
+
+60. **Who may, and where.** **Do**, in `#d1-results`: `/images config time-zone zone:UTC`, then
+    `/bot hub-channel channel:#hub`. Then, back in `#bot-commands`, take `@League Admin` off
+    yourself, holding neither tier, and **do** the same two commands again.
+
+    **Expect:**
+    - **Reply**, for each in `#d1-results`: `⛔ This command can only be used in the configured interaction channel.`
+    - **Log**, for each: ``⛔ `/images config time-zone` refused for <you> — This command can only be used in the configured interaction channel.``,
+      and the same for `` `/bot hub-channel` ``.
+    - **Reply**, for each without a tier: `⛔ You don't have permission to use this command. You need **League Manager**, or **League Admin**.`
+    - **Log**, for each: ``⛔ `/images config time-zone` refused for <you> — You don't have permission to use this command. You need **League Manager**, or **League Admin**.``,
+      and the same for `` `/bot hub-channel` ``.
+    - Nothing changed: the time zone is still `Asia/Tokyo`, the hub still `#hub-2`.
+    - **Then:** give yourself `@League Admin` again.
+
+### Putting them back
+
+61. **Do:** `/images config time-zone zone:UTC`
+
+    **Expect:**
+    - **Ack:** ``Setting the time zone to `UTC` ``
+    - **Then:** as step 53, with `` `UTC` `` for `` `Asia/Tokyo` ``.
+    - **Log:**
+      ```
+      <you> | /images config time-zone | Success
+        Time zone: UTC
+      ```
+
+62. **Do:** `/images config time-format clock:24-hour (14:30)`
+
+    **Expect:**
+    - **Ack:** `Setting the clock format to **24-hour (14:30)**`
+    - **Then:** `✅ Clock format set to **24-hour (14:30)**.`
+    - **Log:**
+      ```
+      <you> | /images config time-format | Success
+        Clock format: 24-hour (14:30) (24H)
+      ```
+
+63. **Do:** `/images config date-format style:Sun 14 Jun 2026`
+
+    **Expect:**
+    - **Ack:** `Setting the date format to **Sun 14 Jun 2026**`
+    - **Then:** `✅ Date format set to **Sun 14 Jun 2026**.`
+    - **Log:**
+      ```
+      <you> | /images config date-format | Success
+        Date format: Sun 14 Jun 2026 (DDD_DD_MON_YYYY)
+      ```
+
+64. **Do:** `/images config view`
+
+    **Expect:** as step 16, the presentation section the packaged defaults again. No log line.
+
+65. **Do:** `/division calendar-sync name:Division 1`
+
+    **Expect:**
+    - **Ack**, **Then** and **Log:** as step 59.
+    - **Posts** (`#d1-calendar`): a new calendar, then step 59's deleted. Each round is back on its
+      own day in UTC: `<weekday> 01 Mar <YEAR+1>` at `20:00 UTC`, `<weekday> 08 Mar <YEAR+1>` and
+      `<weekday> 15 Mar <YEAR+1>`, each at `20:00 UTC`, `<weekday>` being the three-letter day the
+      date falls on.
