@@ -680,3 +680,30 @@ is named, and attendance's cascade is shown in Part J instead.
     **Expect:**
     - **Reply:** `❌ The Results & Standings module is not enabled on this server.`
     - **Log:** nothing: a view, refused, records nothing.
+
+---
+
+## Part H — Off, and staying off
+
+Four modules are off and signup is on. Switching one off again changes nothing, and switching one
+back on is refused for as long as the season runs.
+
+44. **Do** each command of the table, in its order.
+
+    | Do | Reply |
+    |---|---|
+    | `/module disable module_name:weather` | `⚠️ Weather module is already disabled.` |
+    | `/module disable module_name:attendance` | `⚠️ Attendance module is already disabled.` |
+    | `/module disable module_name:images` | `⚠️ Image module is already disabled.` |
+    | `/module disable module_name:results` | `⚠️ Results & Standings module is already disabled.` |
+
+    **Expect**, for each row: the **Reply** the table gives, with no acknowledgement and no
+    confirmation, and a **Log** line ``⛔ `/module disable` refused for <you> — <the reply without its ⚠️>``.
+    Nothing is queued. Results' is refused by the command before any confirmation is offered;
+    the other three by their change's check, at the ask.
+
+45. **Do** each command of step 18 again, in its order: `/module enable` of `weather`,
+    `results`, `attendance` and `images`.
+
+    **Expect**, for each row: the refusal of step 18, word for word. For attendance, the stage
+    is still judged before the dependency: results being off is not what the reply names.
