@@ -70,7 +70,7 @@ them.
 ## Part A — Preparing the server and restoring the base
 
 1. **Prepare the server by hand.** In Discord, outside the bot:
-   - create five text channels: `#bot-commands-2` and `#bot-log-2`, a spare interaction channel and
+   - create, where not already there, five text channels: `#bot-commands-2` and `#bot-log-2`, a spare interaction channel and
      a spare log channel; `#hub` and `#hub-2`, two channels for the hub; and `#bot-locked`, a
      channel the bot cannot fully use. Changing the interaction or the log channel needs a second
      channel ready before the command is run, as the bot refuses one it cannot use;
@@ -83,7 +83,7 @@ them.
      permissions, the bot's included (`hub_service.apply_hub_permissions`), so a permission held
      only there is gone after the first change;
    - in `#bot-locked`, allow the bot View Channel, and **deny** it Send Messages and Attach Files;
-   - create a role `@Stand-in`, below the bot's own role, held by nobody. It stands in for each of
+   - create, where not already there, a role `@Stand-in`, below the bot's own role, held by nobody. It stands in for each of
      the league's roles in turn.
 
    The bot's role must not hold Discord's Administrator permission: with it nothing is ever missing
@@ -266,7 +266,9 @@ Each view answers you alone and writes nothing to the log channel.
 16. **Do:** `/images config view`
 
     **Expect:**
-    - **Reply:** opening `**Image module configuration**`, then `**Templates**`,
+    - **Reply:** opening `**Image module configuration**`, then the line
+      `Rasteriser: ✅ Inkscape found` (a different line here means Inkscape was not found), then
+      `**Templates**`,
       `**Asset directories**`, `**Presentation**`, `**Per-tier colours**` and `**Output aspects**`.
       The presentation section reads, the packaged defaults:
       ```
