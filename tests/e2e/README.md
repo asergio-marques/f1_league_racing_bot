@@ -103,9 +103,10 @@ as the Fixture says, put the server right and run the step again.
 
 ## Not covered
 
-**Everything that needs a real driver.** The specs run in test mode, on fake drivers who have no
-Discord account, so every `/driver` command, each of which takes a server member, is left out, and
-so is the signup flow: test mode opens no signup window.
+**The `/driver` commands, and everything that needs a real driver.** The specs run in test mode, on
+fake drivers who have no Discord account. Under test mode every `/driver` command takes a fake
+driver by mention or ID, but no spec walks them yet. The signup flow is left out: test mode opens no
+signup window.
 
 ## Keeping them true
 
