@@ -926,15 +926,19 @@ def recollect_change(
     )
 
 
-async def ask_lapse(queue: "ChangeQueue", user_id: str, *, restart: bool = False) -> int | None:
+async def ask_lapse(
+    queue: "ChangeQueue", db_path: str, user_id: str, *, restart: bool = False,
+) -> int | None:
     """Ask the queue, as the bot, for the lapse of *user_id*'s correction request
     (`signup.correction.lapse`): the correction timer's ask once its five minutes ran out, and the
     restart's for every driver still awaiting a choice (*restart*, which only changes the notice's
-    wording). Gives the change's id, or None where the change is not due (its check judges that)."""
+    wording). The change's words name a fake driver by its test name, read from *db_path*. Gives
+    the change's id, or None where the change is not due (its check judges that)."""
     return await queue.ask(
         LAPSE,
         {"user_id": user_id, "restart": restart},
-        what=f"returning <@{user_id}> to the approval queue, no correction having been chosen",
+        what=f"returning {await mention_or_name(db_path, user_id)} to the approval queue, "
+        "no correction having been chosen",
         origin=ChangeOrigin.BOT,
     )
 

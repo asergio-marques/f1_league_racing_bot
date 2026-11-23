@@ -571,6 +571,7 @@ async def recover_gone_channels(bot: "LeagueBot", *, queue: "ChangeQueue") -> se
                 continue
             await ask_channel_gone(
                 queue,
+                bot.db_path,
                 user_id=user_id,
                 channel_id=channel_id,
                 named=await fake_name_of(bot.db_path, user_id) or await name_of_member(bot, int(user_id)),
@@ -618,7 +619,7 @@ async def recover_correction_timeouts(
         if row["discord_user_id"] in skip:
             continue
         try:
-            await ask_lapse(queue, row["discord_user_id"], restart=True)
+            await ask_lapse(queue, db_path, row["discord_user_id"], restart=True)
         except Exception:  # noqa: BLE001 - one driver's refused ask must not strand the rest
             log.exception(
                 "recover_correction_timeouts: could not ask the lapse of %s",

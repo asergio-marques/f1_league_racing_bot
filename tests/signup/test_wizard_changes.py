@@ -1265,8 +1265,8 @@ async def test_a_channel_gone_ending_is_not_due_once_the_driver_is_no_longer_sig
     wizard = await _wizard(league)
 
     asked = await ask_channel_gone(
-        league.bot.change_queue, user_id=str(SIGNING_UP), channel_id=KIMI_CHANNEL,
-        named=KIMI_NAMED_IN_PAYLOAD, found=DELETED,
+        league.bot.change_queue, league.bot.db_path, user_id=str(SIGNING_UP),
+        channel_id=KIMI_CHANNEL, named=KIMI_NAMED_IN_PAYLOAD, found=DELETED,
     )
     await run_queue(league.bot)
 

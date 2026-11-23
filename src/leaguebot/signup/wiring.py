@@ -380,7 +380,7 @@ def register_change_types(bot: "LeagueBot") -> None:
     # nobody chose within five minutes is lapsed by the change its timer asks of the queue, as the
     # bot.
     bot.scheduler_service.register_timer(
-        CORRECTION_TIMER, lambda key: ask_lapse(bot.change_queue, str(key))
+        CORRECTION_TIMER, lambda key: ask_lapse(bot.change_queue, bot.db_path, str(key))
     )
     # A signup left unanswered for a day is ended by the expiry its timer asks of the queue, as
     # the bot.

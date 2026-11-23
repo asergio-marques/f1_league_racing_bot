@@ -93,6 +93,7 @@ class SignupCog(commands.Cog):
             return
         await ask_channel_gone(
             self.bot.change_queue,
+            self.bot.db_path,
             user_id=wizard.discord_user_id,
             channel_id=channel.id,
             named=await fake_name_of(self.bot.db_path, wizard.discord_user_id)
