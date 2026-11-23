@@ -570,7 +570,7 @@ A missing division logo draws nothing and raises no notice.
 
     **Expect:** `✅ Lineup`. On the PNG, Alpha Racing's badge is a **green square**; the badge of
     every other team and of the reserve block is the packaged grey shield. Among the notices, one
-    `no `team` image is supplied for “<shorthand>”` for each of `BRV`, `CHL`, `DLT`, `ECH`, `FOX`,
+    ``no `team` image is supplied for “<shorthand>”`` for each of `BRV`, `CHL`, `DLT`, `ECH`, `FOX`,
     `GLF`, `HTL`, `IND`, `JLT`, `KLO` and the reserve team, and **none** for `ALP`.
 
 30. **A fallback of the league's own.** Make one by hand, in the shell of step 7:
