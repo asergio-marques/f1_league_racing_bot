@@ -284,6 +284,101 @@ async def test_a_driver_role_granted_adds_nothing_to_the_approval(tmp_path):
                for line in _lines(league)), league.log()
 
 
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#600: approving a fake driver names it by its account rather than its test name, "
+    "and notes that the driver role could not be granted",
+)
+async def test_a_fake_driver_is_approved_with_no_role_and_then_seated_by_driver_assign(tmp_path):
+    """The server is in test mode, at Signups with the window open, the driver role (820) set.
+    Mock Alpha, a fake driver with no member of the server behind it, has submitted its signup
+    and awaits approval in its own signup channel. Manager 77 presses Approve on its review
+    panel and the queue runs: Mock Alpha is Unassigned, its signup marked approved, the Approved
+    line written naming Mock Alpha by its test name, and no role granted to anyone, while neither the manager's reply nor the log
+    channel says a role could not be granted. The window then closes and the season moves to
+    Placements, and McLaren in Am is given a second, free seat; the league admin Admin (77) runs the test-mode `/driver assign` of Mock Alpha, by
+    ID, to McLaren in Am, and the queue runs it: Mock Alpha holds a placement at McLaren in Am,
+    sits in a McLaren seat, and is Assigned."""
+    from leaguebot.signup.services.signup_views import AdminReviewView
+    from tests.core.test_driver_test_cog import _run_variant
+    from tests.signup.test_wizard_changes import MOCK, MOCK_NAME
+    from tests.support.season_league import MCLAREN
+
+    mock_channel = SIGNUP_CHANNEL_BASE + 99
+    league = await _league(tmp_path)
+    await league.set_test_mode(True)
+    await league.write(
+        "INSERT INTO driver_profiles (discord_user_id, current_state, is_test_driver, "
+        "test_display_name) VALUES (?, 'PENDING_ADMIN_APPROVAL', 1, ?)",
+        str(MOCK), MOCK_NAME,
+    )
+    league.absent.add(MOCK)
+    await league.write(
+        "INSERT INTO signup_wizard_records (discord_user_id, wizard_state, signup_channel_id, "
+        "draft_answers_json, created_at, last_activity_at) VALUES (?, 'UNENGAGED', ?, '{}', ?, ?)",
+        str(MOCK), mock_channel, league.clock.now.isoformat(), league.clock.now.isoformat(),
+    )
+    await league.write(
+        "INSERT INTO signup_records (created_at, season_id, discord_user_id, discord_username, "
+        "server_display_name, nationality, platform, platform_id, driver_type, lap_times_json) "
+        "VALUES ('2026-01-01T00:00:00+00:00', ?, ?, ?, ?, 'British', 'Steam', 'alpha1', "
+        "'Full-Time Driver', ?)",
+        SEASON_ID, str(MOCK), MOCK_NAME, MOCK_NAME, json.dumps(LAP_TIMES),
+    )
+    made = league._recording(channel(mock_channel, league.events))
+    made.guild = league.guild
+    made.posted = []
+    made.set_permissions = AsyncMock()
+    league.channels[mock_channel] = made
+
+    press = member_interaction(league.bot, user=_manager(league), created_at=league.clock.now)
+    press.guild = league.guild
+    press.channel_id = mock_channel
+    press.channel = made
+    view = AdminReviewView(str(MOCK), change_queue=league.bot.change_queue,
+                           **review_services(league.bot))
+    await view.approve_button.callback(press)
+    await run_queue(league.bot)
+
+    [profile] = await league.rows(
+        "SELECT id, current_state FROM driver_profiles WHERE discord_user_id = ?", str(MOCK)
+    )
+    assert profile["current_state"] == "UNASSIGNED"
+    [record] = await league.rows(
+        "SELECT approved FROM signup_records WHERE discord_user_id = ?", str(MOCK)
+    )
+    assert record["approved"] == 1
+    assert any("| Signup | Approved" in line for line in _lines(league)), league.log()
+    assert any(line.startswith("  driver:") and MOCK_NAME in line
+               for line in _lines(league)), league.log()
+    assert league.granted == {}
+    assert "could not be granted" not in updated_reply(press).lower()
+    assert "could not be granted" not in league.log().lower()
+
+    await league.write("UPDATE signup_module_config SET signups_open = 0")
+    await league.write("UPDATE seasons SET stage = 'PLACEMENTS' WHERE id = ?", SEASON_ID)
+    await league.write(
+        "INSERT INTO team_seats (team_instance_id, seat_number) VALUES (?, 2)", MCLAREN
+    )
+    await _run_variant(league, "assign", user=str(MOCK), division="Am", team="McLaren")
+    await run_queue(league.bot)
+
+    placed = await league.rows(
+        "SELECT d.name AS division, ti.name AS team FROM driver_season_assignments dsa "
+        "JOIN divisions d ON d.id = dsa.division_id "
+        "JOIN team_seats ts ON ts.id = dsa.team_seat_id "
+        "JOIN team_instances ti ON ti.id = ts.team_instance_id "
+        "WHERE dsa.driver_profile_id = ?", profile["id"],
+    )
+    assert [(row["division"], row["team"]) for row in placed] == [("Am", "McLaren")]
+    [state] = await league.rows(
+        "SELECT current_state FROM driver_profiles WHERE discord_user_id = ?", str(MOCK)
+    )
+    assert state["current_state"] == "ASSIGNED"
+    assert league.granted == {}
+
+
 async def test_a_league_with_no_driver_role_configured_still_approves(tmp_path):
     """No driver role is set for the league: Kimi is approved and given no role."""
     league = await _league(tmp_path)
