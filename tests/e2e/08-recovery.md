@@ -310,7 +310,8 @@ change on from the first job not done. The weather and check-in posts themselves
 
     The last notice names every Division 1 racing driver but Adam Archer, who answered at step
     12. Phase 3 replaces Phase 2 in `#d1-weather`. The deadline takes the call's buttons down and
-    posts nothing else in `#d1-rsvp`: no reserve accepted, so nobody is placed.
+    posts, in `#d1-rsvp`, `✅ **Reserve Distribution** — No reserves were placed; all seats are filled.`
+    (`rsvp_service.NO_RESERVE_NOTICE`): no reserve accepted, so nobody is placed.
 
 15. **Do:** `/test-mode advance`
 
@@ -813,8 +814,8 @@ the base, which has nothing to catch up.
     cancellation and everything Parts B to G did are gone from the bot. No log line.
 
 Discord is not restored with the database. Left behind by this spec, for you to delete by hand if
-you wish: the forecast, check-in call and pictures of Division 1's round 1 (Parts C to G) in the
-Division 1 channels, and any accepted second copy; and the cancellation notices and cancelled
+you wish: the forecast, check-in call, last notice, reserve distribution notice and pictures of
+Division 1's round 1 (Parts C to G) in the Division 1 channels, and any accepted second copy; and the cancellation notices and cancelled
 calendars of step 41 in every division channel, as `02-roster-changes.md` leaves them. The
 calendars `00-base.md` step 32 posted, which the base still records, were deleted at step 41; a
 later spec that posts a calendar again finds the recorded one gone and carries on
