@@ -597,3 +597,91 @@ bot is down.
       ```
     - The round is as step 27 left it, Kevin Keller its winner. Part G shows it, posting the
       round's results again.
+
+---
+
+## Part G — An amendment of the season's points, staged
+
+What `/results amend` stages is saved in the database (the modification store), so a restart
+keeps it. The panel `/results amend review` shows is another matter: it is a reply only you see,
+with buttons the bot holds in memory for five minutes (`points_amend_commands.amend_review`), and
+a restart loses them. The panel is not one of the reviews the start-up takes down.
+
+34. **Do:** `/results amend toggle`
+
+    **Expect:**
+    - **Ack:** `Turning amendment mode on`
+    - **Then:** `✅ Amendment mode enabled. Modification store initialised.`
+    - **Log:**
+      ```
+      <you> | /results amend toggle | Success
+        amendment_mode: enabled
+      ```
+
+35. **Do:** `/results amend session name:Standard session:Feature Race position:1 points:35`
+
+    **Expect:** as `04-points-and-syncs.md` step 59:
+    - **Ack:** `Staging **Standard** Feature Race P1 → 35 pts`
+    - **Then:** `✅ Updated in modification store: **Standard** Feature Race P1 → 35 pts.`
+    - **Log:**
+      ```
+      <you> | /results amend session | Success
+        config: Standard
+        session: Feature Race, position: 1, points: 35
+      ```
+
+36. **Do:** **restart the bot**.
+
+    **Expect:** nothing in `#bot-log`, nothing posted. The staged change is not something the
+    catch-up takes up: it waits in the database for the review.
+
+37. **The staged change survived.** **Do:** `/results amend review`
+
+    **Expect:**
+    - **Reply**, seen by you alone, with **✅ Approve** and **❌ Reject**:
+      ```
+      **1 change staged:**
+      Standard/FEATURE_RACE/P1: 30 → 35
+
+      Approve or reject these changes?
+      ```
+    - **Log:** `<you> | /results amend review | Review posted`
+
+38. **The panel across a restart.** **Do:** with the panel of step 37 open, **restart the bot**.
+    Once it is back, press **✅ Approve** on that panel.
+
+    **Expect:**
+    - Discord itself says the interaction failed: no part of the bot holds the panel's buttons
+      any more, so the press reaches nothing.
+      > UNVERIFIED: Discord's exact wording, which is the client's and not the bot's.
+    - Nothing approved, nothing posted, and nothing in `#bot-log`, neither for the press nor for
+      the panel: its five minutes were counted in memory, so no
+      `↩️`/`⌛ `/results amend review` …` line records its end. Run the review again.
+
+39. **Do:** `/results amend review`, and within five minutes press **✅ Approve** on the panel.
+
+    **Expect:**
+    - **Reply** at the command: the panel of step 37. **Log:**
+      `<you> | /results amend review | Review posted`
+    - **Ack** at the press: `Approving season 1's points amendment`
+    - **Then:** `✅ Amendment approved. All standings recomputed and reposted.`
+    - **Posts**, each new message posted before the one it replaces is deleted:
+      - `#d1-results`: the two pictures of round 1 again, `Final Results`. **Kevin Keller first**,
+        with the fastest lap, on 37 (35, and the fastest lap's 2); Hiro Hayashi second; Rafael Rossi
+        fourth. Hiro Hayashi first would mean step 33 did not put the round back: a failure;
+      - `#d1-standings`: drivers and teams again, `Final Results`. Drivers: Kevin Keller **39**,
+        Hiro Hayashi 30, Emil Engel 24, Rafael Rossi 22, Bruno Bianchi 18, the rest as
+        `01-full-season.md` step 26. Teams: Foxtrot Motorsport **42**, Delta Racing 32, Charlie GP 24,
+        India Motorsport 23, Alpha Racing 22, Juliett GP 15, Hotel Racing 13, Echo Racing 11,
+        Golf GP 9, Bravo Motorsport 7, Kilo Racing 5;
+      - `#d1-attendance`: the attendance sheet again, unchanged: points move no attendance;
+      - nothing in any Division 2 channel.
+      > UNVERIFIED: whether Rafael Rossi's verdict is posted again in `#d1-verdicts`.
+    - **Log:**
+      ```
+      <you> | /results amend review | Success
+        season: 1
+        points changed: Standard, Feature Race, P1: 30 → 35
+        rounds rescored and reposted: 1 across 1 division(s)
+      ```
+      and any notice blocks. The approval switches amendment mode off.
