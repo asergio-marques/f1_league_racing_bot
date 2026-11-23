@@ -771,7 +771,8 @@ time zone is free text, autocompleted, and checked.
       `<you> | /division calendar-sync | Success` with `division: Division 1` and
       `posted as: image` beneath.
     - **Posts** (`#d1-calendar`): a new calendar, a picture with no text, then the calendar
-      `00-base.md` step 32 posted deleted. Look at it as a PNG: each round is drawn in Tokyo time,
+      `00-base.md` step 32 posted deleted, where an earlier spec has not already deleted it (a
+      calendar already gone is passed over, `standing_posts`). Look at it as a PNG: each round is drawn in Tokyo time,
       nine hours ahead of UTC with no daylight saving, so every round falls on the next day:
       round 1 Silverstone Circuit `<YEAR+1>-03-02` at `05:00 AM JST`, round 2 Hungaroring
       `<YEAR+1>-03-09` at `05:00 AM JST`, round 3 the mystery round `<YEAR+1>-03-16` at
@@ -1181,8 +1182,7 @@ and the cancellation back out of the database, so the next spec starts where `00
 
      **Expect:** as steps 2 to 5. The status still reads `Readable: yes` and locked: the
      cancellation of step 73 kept the backup. `bot.prerestore.db` and `scheduler.prerestore.db` now
-     hold Season #2 as this part found it, should it be wanted. The host's log shows no hub being
-     recovered: the restored database sets none.
+     hold Season #2 as this part found it, should it be wanted.
 
 102. **Do:** `/season status`, then `/team list`, then `/signup config view`, then
      `/images config view`.
@@ -1191,22 +1191,11 @@ and the cancellation back out of the database, so the next spec starts where `00
      Fixture's teams, the signup configuration and the image presentation as the base had them.
      No log line.
 
-103. **Do:** `/bot hub-channel channel:#hub-2`
-
-     **Expect:** the hub is unset again, so `#hub-2` is free, and this sets it afresh:
-     - **Ack** and **Then:** as step 20, with `#hub-2`.
-     - **Posts** (`#hub-2`): a second panel, beside the one step 23 posted, which the restored
-       database no longer knows of.
-
-     **Skip this step where you mean to keep the base exactly as it was**: it is here only to show
-     that the hub is unset. Where you run it, restore the base again (step 101) before the next
-     spec.
-
 Discord is not restored with the database. Left behind by this spec, for you to delete by hand
 if you wish: the spare channels and `@Stand-in` of step 1; the panel and its permissions in
-`#hub-2`, and the cleared permissions of `#hub`; the calendars steps 59 and 65 posted in
-`#d1-calendar`, and the cancellation notices and cancelled calendars of step 73 in every division
-channel, as `02-roster-changes.md` leaves them. A later spec that posts a calendar again finds the
+`#hub-2`, and the cleared permissions of `#hub`; and the cancellation notices and cancelled
+calendars of step 73 in every division channel, as `02-roster-changes.md` leaves them (step 73's
+calendar for Division 1 replaced the one step 65 posted, which replaced step 59's). A later spec that posts a calendar again finds the
 recorded one gone and carries on (`standing_posts` passes over a message already deleted).
 
 The base is as `00-base.md` left it, its backup still saved and locked.
