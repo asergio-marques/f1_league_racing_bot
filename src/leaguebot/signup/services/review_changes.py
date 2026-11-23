@@ -101,7 +101,7 @@ from leaguebot.framework.models.change import (
     Verdict,
 )
 from leaguebot.core.models.driver_profile import DriverState, InvalidDriverTransition
-from leaguebot.core.services.drivers.driver_service import state_of_account_on
+from leaguebot.core.services.drivers.driver_service import driver_test_names_on, state_of_account_on
 from leaguebot.core.services.rounds import track_service
 from leaguebot.framework.services.posting import standing_posts
 from leaguebot.framework.db.database import get_connection
@@ -197,6 +197,13 @@ __all__ = [
 ]
 
 
+def _named_in_progress(payload: dict[str, Any]) -> str:
+    """How a change's in-progress text names its driver: by the ``fake_name`` its payload carries
+    where they are a fake driver, as that text is built from the payload alone, and by a mention
+    of their account otherwise."""
+    return payload.get("fake_name") or f"<@{payload['user_id']}>"
+
+
 def _instant(text: str) -> datetime:
     """An ISO time as text, read as UTC where it carries no zone."""
     at = datetime.fromisoformat(text)
@@ -273,10 +280,12 @@ def approve_change(
         await signup().mark_approved_on(db, user_id)
         follow_ons: tuple[FollowOn, ...] = ()
         if wizard is not None and wizard.signup_channel_id is not None:
+            fake = (await driver_test_names_on(db, [int(user_id)])).get(int(user_id))
             follow_ons = (FollowOn(
                 CLOSING,
                 {
                     "user_id": user_id, "channel_id": int(wizard.signup_channel_id),
+                    "fake_name": fake,
                     "notice": APPROVED_NOTICE.format(manager=ctx.step_payload["actor_name"]),
                 },
                 "Closing an approved signup",
@@ -422,8 +431,8 @@ def request_changes_change(
                 PlannedStep(REQUEST_JOB, shared))
 
     async def name_driver(ctx: StepContext) -> StepResult:
-        named, _ = await name_of_driver(ctx.bot, drivers(), ctx.step_payload["user_id"])
-        return StepResult(result={"named": named})
+        named, fake = await name_of_driver(ctx.bot, drivers(), ctx.step_payload["user_id"])
+        return StepResult(result={"named": named, "fake": fake})
 
     async def request(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         payload = ctx.step_payload
@@ -444,6 +453,10 @@ def request_changes_change(
              if view.name == NAME_DRIVER and view.done),
             f"<@{user_id}>",
         )
+        fake = any(
+            bool((view.result or {}).get("fake")) for view in ctx.steps
+            if view.name == NAME_DRIVER and view.done
+        )
         line = f"{ctx.named} | Signup | Correction requested\n  driver: {named}"
         if payload["text"]:
             line += f"\n  reason: {payload['text']}"
@@ -455,6 +468,7 @@ def request_changes_change(
                     "user_id": user_id, "channel_id": int(wizard.signup_channel_id),
                     "actor_name": str(payload["actor_name"]),
                     "reason_message_id": int(payload["reason_message_id"]),
+                    "fake_name": named if fake else None,
                 },
                 "Offering a signup's correction choices",
             ),)
@@ -526,8 +540,9 @@ def choices_change(
     """The `signup.choices` change type, for the builder to register, on the driver's lane
     (``channel:<signup channel>``): the league asked it back once a manager's request for changes
     was saved. The payload is ``user_id``, ``channel_id``, ``actor_name`` (the manager) and
-    ``reason_message_id``. *queue_of* gives the change queue the choices are handed, and *signup* and *config* the services
-    they read. *now* and
+    ``reason_message_id``, with ``fake_name`` (the driver's test name where they are a fake driver,
+    which the in-progress text names them by). *queue_of* gives the change queue the choices are
+    handed, and *signup* and *config* the services they read. *now* and
     *arm_once* are the queue's clock and the scheduler service's one-off timer."""
 
     def plan(payload: dict[str, Any]) -> tuple[PlannedStep, ...]:
@@ -635,7 +650,9 @@ def choices_change(
         },
         check=standing,
         key=lambda payload: f"{CHOICES}:{payload['user_id']}",
-        doing=lambda payload: f"Offering the correction choices of <@{payload['user_id']}>",
+        doing=lambda payload: (
+            f"Offering the correction choices of {_named_in_progress(payload)}"
+        ),
         outcome=lambda _ctx: "",
         lane=lambda payload: f"channel:{int(payload['channel_id'])}",
         conversation_open=open_,
@@ -697,7 +714,7 @@ def choose_change(
         user_id = str(ctx.step_payload["user_id"])
         fake_name = await drivers().fake_driver_name(user_id)
         if fake_name is not None:
-            return StepResult(result={"owner": f"{fake_name}'s"})
+            return StepResult(result={"owner": f"{fake_name}'s", "fake_name": fake_name})
         guild = await league_guild(ctx.bot)
         return StepResult(result={"owner": _owner_of(guild, user_id)})
 
@@ -731,6 +748,11 @@ def choose_change(
              if view.name == NAME_DRIVER and view.done),
             "a",
         )
+        fake_name = next(
+            ((view.result or {}).get("fake_name") for view in ctx.steps
+             if view.name == NAME_DRIVER and view.done),
+            None,
+        )
         label = pl["label"]
         line = (
             f"{ctx.named} | the “{label}” button of {owner} signup review | "
@@ -742,7 +764,7 @@ def choose_change(
                 RECOLLECT,
                 {
                     "user_id": user_id, "channel_id": int(wizard.signup_channel_id),
-                    "parameter": pl["parameter"], "reason": reason,
+                    "parameter": pl["parameter"], "reason": reason, "fake_name": fake_name,
                 },
                 "Asking a driver to re-submit an answer",
             ),)
@@ -832,7 +854,8 @@ def recollect_change(
     (``channel:<signup channel>``): the league asked it back once a manager's choice was saved.
 
     The payload is ``user_id``, ``channel_id``, ``parameter`` (the answer to re-submit) and
-    ``reason`` (the manager's, which the prompt gives). Its one job `post_recollect` sets the
+    ``reason`` (the manager's, which the prompt gives), with ``fake_name`` (the driver's test name
+    where they are a fake driver, which the in-progress text names them by). Its one job `post_recollect` sets the
     driver's typing for the step they return to (taken away for a button step, given back for a
     typed one: a driver returned to a typed question with typing revoked could not answer) and
     posts the prompt. *config* and *drivers* are handed to the step's buttons, with which they
@@ -918,7 +941,7 @@ def recollect_change(
         },
         check=standing,
         key=lambda payload: f"{RECOLLECT}:{payload['user_id']}",
-        doing=lambda payload: f"Asking <@{payload['user_id']}> to re-submit an answer",
+        doing=lambda payload: f"Asking {_named_in_progress(payload)} to re-submit an answer",
         outcome=lambda _ctx: "",
         lane=lambda payload: f"channel:{int(payload['channel_id'])}",
         conversation_open=open_,

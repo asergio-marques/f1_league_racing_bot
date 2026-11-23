@@ -857,6 +857,7 @@ def end_change(
                     CLOSING,
                     {
                         "user_id": user_id, "channel_id": int(wizard_row["signup_channel_id"]),
+                        "fake_name": named if fake else None,
                         "notice": (
                             f"{who} ❌ Your signup has been rejected by "
                             f"**{payload['actor_name']}**.\n**Reason:** {payload['text']}\n"
@@ -890,6 +891,7 @@ def end_change(
                     CLOSING,
                     {
                         "user_id": user_id, "channel_id": int(wizard_row["signup_channel_id"]),
+                        "fake_name": named if fake else None,
                         "notice": f"{notice}\nThis channel will be automatically deleted in 24 hours.",
                     },
                     "Closing a cancelled signup",
@@ -910,6 +912,7 @@ def end_change(
                 CLOSING,
                 {
                     "user_id": user_id, "channel_id": int(wizard_row["signup_channel_id"]),
+                    "fake_name": named if fake else None,
                     "notice": WITHDRAWN_NOTICE,
                 },
                 "Closing a withdrawn signup",

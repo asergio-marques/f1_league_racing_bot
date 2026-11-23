@@ -728,7 +728,9 @@ def closing_change(
     (``channel:<signup channel>``): the notice, the lock and the deletion's arming of a signup
     that has ended. The payload is ``user_id``, ``channel_id`` and ``notice``, and
     ``reason_message_id`` where a manager's typed reason (after Reject) is to come down first: the
-    notice gives the reason, so the message is deleted ahead of it."""
+    notice gives the reason, so the message is deleted ahead of it. ``fake_name`` is the driver's
+    test name where they are a fake driver and None otherwise: the change's in-progress text names
+    them by it, as that text is built from the payload alone."""
 
     def plan(payload: dict[str, Any]) -> tuple[PlannedStep, ...]:
         shared = {"user_id": str(payload["user_id"]), "channel_id": int(payload["channel_id"])}
@@ -758,7 +760,9 @@ def closing_change(
         steps=closing_steps(now=now, arm_once=arm_once),
         check=standing,
         key=lambda payload: f"{KIND}:{payload['user_id']}",
-        doing=lambda payload: f"Closing the signup of <@{payload['user_id']}>",
+        doing=lambda payload: (
+            f"Closing the signup of {payload.get('fake_name') or '<@' + str(payload['user_id']) + '>'}"
+        ),
         outcome=outcome,
         lane=lambda payload: f"channel:{int(payload['channel_id'])}",
         writes=("signup_wizard_records",),

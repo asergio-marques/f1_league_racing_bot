@@ -1047,29 +1047,16 @@ async def _mock_switch_off_discarding(tmp_path: Any) -> SeasonLeague:
     return league
 
 
-#: Why a case still fails: the in-progress text of a fake driver's closing, correction choices
-#: or re-collect mentions it by its ID.
-_DOING_BY_ID = (
-    "#600: the in-progress text of a fake driver's closing, correction choices or re-collect "
-    "mentions it by <@id>, not its test name"
-)
-
-
 #: How a fake driver's signup is ended, sent back or refused; the words of each log entry it
 #: writes that must name it, one or several; and the words of the post its channel is sent naming
 #: it (None where the post names nobody).
 _FAKE_DRIVER_NAMED = [
-    pytest.param(_mock_rejected, "| Signup | Rejected", "rejected by", id="reject",
-                 marks=pytest.mark.xfail(strict=True, reason=_DOING_BY_ID)),
+    pytest.param(_mock_rejected, "| Signup | Rejected", "rejected by", id="reject"),
     pytest.param(_mock_changes_requested, "| Signup | Correction requested",
-                 "requested a correction", id="request-changes",
-                 marks=pytest.mark.xfail(strict=True, reason=_DOING_BY_ID)),
-    pytest.param(_mock_field_chosen, "Correction requested: ", "re-submit", id="field-choice",
-                 marks=pytest.mark.xfail(strict=True, reason=_DOING_BY_ID)),
-    pytest.param(_mock_withdrew, "| Signup | Withdrawn", None, id="withdrawal",
-                 marks=pytest.mark.xfail(strict=True, reason=_DOING_BY_ID)),
-    pytest.param(_mock_cancelled, "| Signup | Cancelled", "cancelled by", id="cancel",
-                 marks=pytest.mark.xfail(strict=True, reason=_DOING_BY_ID)),
+                 "requested a correction", id="request-changes"),
+    pytest.param(_mock_field_chosen, "Correction requested: ", "re-submit", id="field-choice"),
+    pytest.param(_mock_withdrew, "| Signup | Withdrawn", None, id="withdrawal"),
+    pytest.param(_mock_cancelled, "| Signup | Cancelled", "cancelled by", id="cancel"),
     pytest.param(_mock_expired, "lapsed unconfirmed", None, id="24-hour lapse"),
     pytest.param(_mock_cancel_refused_on_the_queue, "signup has already been approved", None,
                  id="cancel refused on the queue"),
