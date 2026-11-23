@@ -229,7 +229,9 @@ change on from the first job not done. The weather and check-in posts themselves
        phase, so it is never written twice.
    - Two Phase 1 forecasts in `#d1-weather` are the accepted second copy only where they carry
      the same rain probability: the draw was saved once, and the post ran again. Two different
-     probabilities, or two calculation lines, are a phase drawn twice: a failure.
+     probabilities, or two calculation lines, are a phase drawn twice: a failure. Of an
+     accepted pair, the bot records the **later** copy, the one its post made again after the
+     start; the earlier is not recorded (step 13 says what becomes of each).
 
 10. **Do:** `/test-mode review`
 
@@ -292,8 +294,10 @@ change on from the first job not done. The weather and check-in posts themselves
       - **Log:** the advance's line, as step 9 with `phase: 2`, once; **one**
         `📋 **Phase 2 Calculation Log** | Round 1 in **Division 1** | Silverstone Circuit`.
     - The Phase 1 forecast still standing once the bot has gone quiet is the deletion lost in the
-      restart: a failure. A second copy of Phase 2 is the accepted second copy (step 9); it is not
-      recorded, so it is never deleted by the bot: delete it by hand.
+      restart: a failure. Unless step 9 left an accepted second copy: the earlier of the two
+      Phase 1 messages is not recorded and stays; delete it by hand. A pair of Phase 2 forecasts
+      is the accepted second copy (step 9): delete the **earlier** copy by hand: the bot recorded
+      the later one, and step 14 deletes that.
 
 ### To the result submission
 
