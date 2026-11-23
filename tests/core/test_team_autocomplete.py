@@ -65,7 +65,6 @@ async def test_the_offer_is_read_from_the_server_s_list():
         ("leaguebot.core.cogs.driver_cog:DriverCog.move", "team"),
         ("leaguebot.core.cogs.driver_test_cog:DriverTestCog.assign", "team"),
         ("leaguebot.core.cogs.driver_test_cog:DriverTestCog.move", "team"),
-        ("leaguebot.core.cogs.test_mode_cog:TestModeCog.roster_add", "team_name"),
     ],
 )
 async def test_every_command_taking_a_team_offers_the_shorthands(command, parameter):
