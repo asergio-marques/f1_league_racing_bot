@@ -30,9 +30,12 @@ fails:
    `season_standing_read`), the driver pass, test mode switched off and the season marked
    completed, **last**, with its audit record. A fault leaves the season as it was, Pending
    completion, for the queue to retry.
-5. Then the Discord side of the driver pass (`signup_notice` and `close_signup` for each signup
-   closed, `take_driver_role` for each approved driver), `discard_portraits` where the pass deleted
-   a driver, and `discard_backup` where test mode was on.
+5. Then, where test mode was on, the `/driver` swap (`swap_driver_commands`), which ends on a
+   fault where Discord refuses it, so that the lane carries on and the reply and the line name a
+   restart as the remedy (architecture.md, "A job that fails stops its lane"); the Discord side of
+   the driver pass (`signup_notice` and `close_signup` for each signup closed, `take_driver_role`
+   for each approved driver), `discard_portraits` where the pass deleted a driver, and
+   `discard_backup` where test mode was on.
 6. `close` (a save) writes the one line: Success, or Incomplete with what a league admin discarded.
 
 A job a league admin discards is dropped and the rest run on; the reply and the line say what was
@@ -45,8 +48,8 @@ asks the queue. The change is checked when asked and again when it runs, in the 
 used: no season set up or active, or one past the confirmation of its placements. Its jobs:
 `close_window` (the signup close timer cancelled, the window closed), `flush_forecasts` where
 test mode is on, then `end`, one save that runs the driver pass (no history is written, the season
-having none), switches test mode off and deletes the season, **last**. After that save each driver
-the pass reaches has their signup channel's notice and lock or their driver role as jobs of their
+having none), switches test mode off and deletes the season, **last**. After that save, where test mode
+was on, the `/driver` swap runs (as in the completion's fifth step), then each driver the pass reaches has their signup channel's notice and lock or their driver role as jobs of their
 own, and the portraits of the drivers deleted are discarded. The saved test-mode state is kept,
 a season aborted being one abandoned. The signup records are keyed by account and outlive the season, so a channel is still
 held after the save.
@@ -116,6 +119,11 @@ from leaguebot.core.services.seasons.season_service import (
     complete_season_on,
     completion_refusal_on,
     refresh_division_status_on,
+)
+from leaguebot.core.services.test_mode.driver_commands import (
+    SWAP_DRIVER_COMMANDS,
+    swap_not_done_line,
+    swap_not_done_reply,
 )
 from leaguebot.core.services.test_mode.test_mode_service import (
     switch_test_mode_off_on,
@@ -472,6 +480,7 @@ def season_complete_change(
     test_mode_flushed: AwaitedHook,
     drivers_deleted: AwaitedHook,
     profiles_deleted: AwaitedHook,
+    swap_driver: Step,
     now: Callable[[], datetime],
 ) -> ChangeType:
     """The change that completes the confirmed season; see the module.
@@ -482,8 +491,9 @@ def season_complete_change(
     the modules sign up to (*final_round_read*, *season_standing_read*, *season_completed*,
     *season_completed_steps*, *season_end_refused*, *season_end_closes*, *drivers_returned*,
     *driver_turned_down*, *driver_returned_jobs*, *season_end_steps*, *test_mode_flushed*,
-    *drivers_deleted*), the hook each driver deleted calls (*profiles_deleted*) and the queue's
-    clock *now*, which stamps the audit entries of the turn-down and the driver pass.
+    *drivers_deleted*), the hook each driver deleted calls (*profiles_deleted*), the job that swaps
+    `/driver` back where test mode was on (*swap_driver*) and the queue's clock *now*, which
+    stamps the audit entries of the turn-down and the driver pass.
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -628,6 +638,8 @@ def season_complete_change(
                 driver_returned_jobs=driver_returned_jobs,
             )
         )
+        if test_mode:
+            planned.insert(0, PlannedStep(SWAP_DRIVER_COMMANDS))
         if driver_pass.accounts:
             planned.append(PlannedStep(DISCARD_PORTRAITS, {"accounts": driver_pass.accounts}))
         if test_mode:
@@ -697,6 +709,7 @@ def season_complete_change(
         line = (
             f"{ctx.named} | /season complete | {status}\n"
             f"  season: Season #{number}" + "".join(f"\n  not done: {each}" for each in left)
+            + swap_not_done_line(ctx.steps)
         )
         return StepResult(result=result, lines=(line,))
 
@@ -711,8 +724,12 @@ def season_complete_change(
             return WIND_DOWN_DISCARDED
         if not _completed(ctx):
             return END_DISCARDED.format(number=number)
-        return COMPLETED + not_done_reply(
-            _not_done(ctx, steps, classification_names), discarded=anything_discarded(ctx)
+        return (
+            COMPLETED
+            + not_done_reply(
+                _not_done(ctx, steps, classification_names), discarded=anything_discarded(ctx)
+            )
+            + swap_not_done_reply(ctx.steps)
         )
 
     # ── How each job is named, in the lines that say it stopped the queue ──────
@@ -756,6 +773,7 @@ def season_complete_change(
         **classification_steps,
         END: Step(END, StepKind.SAVE, end, describe=describe_end),
         CLOSE: Step(CLOSE, StepKind.SAVE, close, describe=describe_close),
+        SWAP_DRIVER_COMMANDS: swap_driver,
         **winding,
         TURN_DOWN_STEP: replace(turn_down, run=turn_down_then_settle),
         **shared_steps(
@@ -789,6 +807,7 @@ def season_abort_change(
     divisions_deleted: AwaitedHook,
     season_deleted: AwaitedHook,
     profiles_deleted: AwaitedHook,
+    swap_driver: Step,
     now: Callable[[], datetime],
 ) -> ChangeType:
     """The change that aborts the season being set up; see the module.
@@ -800,7 +819,8 @@ def season_abort_change(
     (*season_end_closes*, *drivers_returned*, *driver_returned_jobs*, *season_end_steps*,
     *test_mode_flushed*, *drivers_deleted*), the hooks the season's deletion calls
     (*rounds_deleted*, *divisions_deleted*, *season_deleted*), the hook each driver deleted calls
-    (*profiles_deleted*) and the queue's clock *now*, which stamps the driver pass's audit entry.
+    (*profiles_deleted*), the job that swaps `/driver` back where test mode was on (*swap_driver*)
+    and the queue's clock *now*, which stamps the driver pass's audit entry.
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -860,6 +880,8 @@ def season_abort_change(
                 driver_returned_jobs=driver_returned_jobs,
             )
         )
+        if test_mode:
+            planned.insert(0, PlannedStep(SWAP_DRIVER_COMMANDS))
         if driver_pass.accounts:
             planned.append(PlannedStep(DISCARD_PORTRAITS, {"accounts": driver_pass.accounts}))
         return StepResult(
@@ -901,6 +923,7 @@ def season_abort_change(
             f"  drivers returned to Not Signed Up: {counts.get('drivers_returned', 0)}\n"
             f"  drivers deleted: {counts.get('drivers_deleted', 0)}"
             + "".join(f"\n  not done: {each}" for each in shared_not_done(ctx, steps))
+            + swap_not_done_line(ctx.steps)
         )
         return StepResult(result=result, lines=(line,))
 
@@ -910,8 +933,10 @@ def season_abort_change(
             return refused
         if not _aborted(ctx):
             return ABORT_END_DISCARDED
-        return ABORTED + not_done_reply(
-            shared_not_done(ctx, steps), discarded=anything_discarded(ctx)
+        return (
+            ABORTED
+            + not_done_reply(shared_not_done(ctx, steps), discarded=anything_discarded(ctx))
+            + swap_not_done_reply(ctx.steps)
         )
 
     async def describe_end(_ctx: StepContext) -> str:
@@ -936,6 +961,7 @@ def season_abort_change(
     )
     steps: dict[str, Step] = {
         **shared,
+        SWAP_DRIVER_COMMANDS: swap_driver,
         END: Step(END, StepKind.SAVE, end, describe=describe_end),
         CLOSE: Step(CLOSE, StepKind.SAVE, close, describe=describe_close),
     }

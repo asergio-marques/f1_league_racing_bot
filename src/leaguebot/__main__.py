@@ -777,6 +777,7 @@ def register_change_types(bot: LeagueBot) -> None:
             test_mode_flushed=bot.test_mode_flushed,
             drivers_deleted=bot.drivers_deleted,
             profiles_deleted=bot.profiles_deleted,
+            swap_driver=swap_driver_commands_step(bot.driver_swap),
             now=lambda: bot.change_queue.now(),
         )
     )
@@ -801,6 +802,7 @@ def register_change_types(bot: LeagueBot) -> None:
             test_mode_flushed=bot.test_mode_flushed,
             drivers_deleted=bot.drivers_deleted,
             profiles_deleted=bot.profiles_deleted,
+            swap_driver=swap_driver_commands_step(bot.driver_swap),
             now=lambda: bot.change_queue.now(),
         )
     )
@@ -819,6 +821,7 @@ def register_change_types(bot: LeagueBot) -> None:
             divisions_deleted=bot.divisions_deleted,
             season_deleted=bot.season_deleted,
             profiles_deleted=bot.profiles_deleted,
+            swap_driver=swap_driver_commands_step(bot.driver_swap),
             now=lambda: bot.change_queue.now(),
         )
     )

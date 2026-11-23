@@ -97,7 +97,19 @@ def swap_problem(views: Sequence[StepView]) -> str | None:
     return None
 
 
+def swap_not_done_line(views: Sequence[StepView]) -> str:
+    """The line a change's log entry carries for a swap Discord refused, none where it did not."""
+    problem = swap_problem(views)
+    return f"\n  not done: {problem}" if problem else ""
+
+
+def swap_not_done_reply(views: Sequence[StepView]) -> str:
+    """The part of a change's reply naming a swap Discord refused, none where it did not."""
+    problem = swap_problem(views)
+    return f"\n⚠️ Done, but on Discord:\n• {problem}" if problem else ""
+
+
 __all__ = [
     "SWAP_DRIVER_COMMANDS", "SWAP_PROBLEM", "swap_driver_commands", "swap_driver_commands_step",
-    "swap_problem",
+    "swap_not_done_line", "swap_not_done_reply", "swap_problem",
 ]

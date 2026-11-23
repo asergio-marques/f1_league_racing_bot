@@ -89,7 +89,8 @@ from leaguebot.core.services.seasons.season_lifecycle_service import (
 )
 from leaguebot.core.services.test_mode.driver_commands import (
     SWAP_DRIVER_COMMANDS,
-    swap_problem,
+    swap_not_done_line,
+    swap_not_done_reply,
 )
 from leaguebot.core.services.test_mode.test_mode_service import (
     count_live_real_drivers,
@@ -206,18 +207,6 @@ def _backup_deleted(ctx: OutcomeContext) -> bool:
     return view is not None and bool((view.result or {}).get("deleted"))
 
 
-def _swap_not_done(ctx: OutcomeContext) -> str:
-    """The line the log carries for a `/driver` swap Discord refused, none where it did not."""
-    problem = swap_problem(ctx.steps)
-    return f"\n  not done: {problem}" if problem else ""
-
-
-def _swap_not_done_reply(ctx: OutcomeContext) -> str:
-    """The part of the reply naming a `/driver` swap Discord refused, none where it did not."""
-    problem = swap_problem(ctx.steps)
-    return f"\n⚠️ Done, but on Discord:\n• {problem}" if problem else ""
-
-
 def _finished_lines(ctx: OutcomeContext) -> tuple[str, ...]:
     """The one line of the change, once it is done: Success, or Nothing changed where the flag
     already stood; none where the save never finished. A `/driver` swap Discord refused is a
@@ -231,14 +220,14 @@ def _finished_lines(ctx: OutcomeContext) -> tuple[str, ...]:
         return (
             f"{ctx.named} | {COMMAND} | Success\n  test_mode: enabled"
             + (f"\n  seeded_configs: {', '.join(seeded)}" if seeded else "")
-            + _swap_not_done(ctx),
+            + swap_not_done_line(ctx.steps),
         )
     if found == OFF:
         return (
             f"{ctx.named} | {COMMAND} | Success\n  test_mode: disabled"
             + (f"\n  removed_fake_drivers: {saved['removed']}" if saved["removed"] else "")
             + ("\n  backup: deleted" if _backup_deleted(ctx) else "")
-            + _swap_not_done(ctx),
+            + swap_not_done_line(ctx.steps),
         )
     return ()
 
@@ -284,7 +273,7 @@ def test_mode_toggle_change(
             return (
                 ENABLED
                 + (f"\n📌 Added default point configs: **{', '.join(seeded)}**" if seeded else "")
-                + _swap_not_done_reply(ctx)
+                + swap_not_done_reply(ctx.steps)
             )
         if found != OFF:
             return NOT_CHANGED.format(state=_words(not on))
@@ -297,7 +286,7 @@ def test_mode_toggle_change(
         if discarded(view_of(ctx, DISCARD_BACKUP)):
             not_done.append(BACKUP_KEPT)
         reply += not_done_reply(not_done, discarded=anything_discarded(ctx))
-        return reply + _swap_not_done_reply(ctx)
+        return reply + swap_not_done_reply(ctx.steps)
 
     return ChangeType(
         kind=TEST_MODE_TOGGLE,
