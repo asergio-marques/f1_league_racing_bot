@@ -85,10 +85,11 @@ def swap_driver_commands_step(swap: Callable[[LeagueBot], Awaitable[object]]) ->
     """The job that runs *swap*, the bot's `swap_driver_commands` with its two groups handed it
     (the entry point's), after the save of a change that switches test mode on or off,
     ended by a fault, not stopping the lane (architecture.md, "A job that fails stops its lane"):
-    the seat, the season and the flag are the league's record, and a `/driver` Discord would not
-    change is put right by the next start-up, so nothing waits on it and a Retry could change
-    nothing a league sees. A refusal ends the job with `{"problem": SWAP_PROBLEM}`, for the change's
-    reply and line to carry (`swap_problem`)."""
+    the seat, the season and the flag are the league's record, and the swap is Discord work the
+    save does not need, so nothing waits on it. The remedy it names is a restart, not the change
+    run again, which would flip test mode or, after a season's end, be refused. A refusal ends the
+    job with `{"problem": SWAP_PROBLEM}`, for the change's reply and line to carry
+    (`swap_problem`)."""
 
     async def run(ctx: StepContext) -> StepResult:
         await swap(ctx.bot)
