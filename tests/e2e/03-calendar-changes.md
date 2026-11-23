@@ -238,3 +238,259 @@ are never judged.
 16. **Give the role back.** In Discord, give yourself `@League Admin` again.
 
     **Expect:** nothing from the bot. Every later step needs the role.
+
+---
+
+## Part C — Amending a round before its work begins
+
+Nothing has run yet: no forecast is drawn and no check-in call posted, so an amendment costs no
+round anything it has already been given. The refusals come first, then the confirmation's two
+ways out, then three amendments that go through.
+
+### What the command refuses
+
+17. **Do:** `/round amend division_name:Division 1 round_number:1`
+
+    **Expect:**
+    - **Reply:** ``❌ Provide at least one field to amend: `track`, `scheduled_at`, or `format`.``
+    - **Log:** ``⛔ `/round amend` refused for <you> — Provide at least one field to amend: `track`, `scheduled_at`, or `format`.``
+
+18. **Do** each command of the table, in its order. Each names something the bot does not hold,
+    or a value it cannot read.
+
+    | Do | Reply |
+    |---|---|
+    | `/round amend division_name:Division 9 round_number:1 format:SPRINT` | ``❌ Division `Division 9` not found.`` |
+    | `/round amend division_name:Division 1 round_number:7 format:SPRINT` | ``❌ Round 7 not found in division `Division 1`.`` |
+    | `/round amend division_name:Division 1 round_number:1 track:Nowhere Ring` | ``❌ Unknown track `Nowhere Ring`. Use autocomplete to pick a valid track.`` |
+    | `/round amend division_name:Division 1 round_number:1 scheduled_at:next Sunday` | ``❌ Invalid datetime. Use `YYYY-MM-DDTHH:MM:SS`.`` |
+    | `/round amend division_name:Division 1 round_number:1 format:RALLY` | ``❌ Invalid format `RALLY`. Use NORMAL, SPRINT, MYSTERY, or ENDURANCE.`` |
+
+    Type `Nowhere Ring` rather than pick from the track list: the option takes free text. The
+    fields are read track, then moment, then format, and the first that fails is the one named.
+
+    **Expect**, for each row: the **Reply** the table gives, and a **Log** line
+    ``⛔ `/round amend` refused for <you> — <the reply without its ❌>``.
+
+19. **Into the past.** **Do:** `/round amend division_name:Division 1 round_number:1 scheduled_at:2020-03-01T20:00:00`
+
+    **Expect:**
+    - **Reply:**
+      ```
+      ⛔ **Round 1** in **Division 1** cannot be amended:
+      • A round cannot be moved into the past. Its result submission would open late, at once, and not at the round's moment. Give it a moment still to come.
+      • The check-in deadline for that moment has already passed, so the round would have no check-in at all. Move it further out, or shorten the deadline.
+
+      **Nothing has been changed.**
+      ```
+      Core's rule first, then attendance's: every refusal is listed, not only the first
+      (`amendment_rules_service.judge_amendment`).
+    - **Log:**
+      ```
+      ⛔ `/round amend` of round 1 in Division 1 refused for <you> — A round cannot be moved into the past. Its result submission would open late, at once, and not at the round's moment. Give it a moment still to come.
+      The check-in deadline for that moment has already passed, so the round would have no check-in at all. Move it further out, or shorten the deadline.
+      ```
+
+20. **Inside the check-in deadline.** The deadline is two hours before the race, so a race an
+    hour from now has had its check-in close already. **Do:**
+    `/round amend division_name:Division 1 round_number:1 scheduled_at:<now + 1 hour, in UTC, as YYYY-MM-DDTHH:MM:00>`
+
+    **Expect:**
+    - **Reply:**
+      ```
+      ⛔ **Round 1** in **Division 1** cannot be amended:
+      • The check-in deadline for that moment has already passed, so the round would have no check-in at all. Move it further out, or shorten the deadline.
+
+      **Nothing has been changed.**
+      ```
+    - **Log:** ``⛔ `/round amend` of round 1 in Division 1 refused for <you> — The check-in deadline for that moment has already passed, so the round would have no check-in at all. Move it further out, or shorten the deadline.``
+
+21. **A mystery round given a track alone.** **Do:** `/round amend division_name:Division 1 round_number:3 track:14`
+
+    **Expect:**
+    - **Reply:**
+      ```
+      ⛔ **Round 3** in **Division 1** cannot be amended:
+      • A mystery round names no circuit. Change its format as well to give it one.
+
+      **Nothing has been changed.**
+      ```
+    - **Log:** ``⛔ `/round amend` of round 3 in Division 1 refused for <you> — A mystery round names no circuit. Change its format as well to give it one.``
+
+22. **The values it already holds.** **Do:**
+    `/round amend division_name:Division 1 round_number:1 track:12 scheduled_at:<YEAR+1>-03-01T20:00:00 format:NORMAL`
+
+    **Expect:**
+    - **Reply:** `ℹ️ Round 1 in **Division 1** already holds those values. Nothing was changed.`
+      No confirmation is offered.
+    - **Log:**
+      ```
+      <you> | /round amend | Nothing changed
+        division: Division 1
+        round: 1
+        reason: the values given are the ones it holds
+      ```
+
+### A warning, and the two ways out of the confirmation
+
+23. **A moment past the call but before the deadline.** The call goes out five days before the
+    race and the deadline is two hours before it, so a race three hours from now has its call
+    already due. **Do:**
+    `/round amend division_name:Division 1 round_number:1 scheduled_at:<now + 3 hours, in UTC, as YYYY-MM-DDTHH:MM:00>`
+
+    **Expect:**
+    - **Reply**, with **✅ Confirm** and **❌ Cancel**:
+      ```
+      **Amend Round 1** in division **Division 1**:
+        • `scheduled_at` → `<the moment given, as YYYY-MM-DD HH:MM:SS>`
+      ⚠️ The check-in call for that moment is already due, so no fresh call will go out — the one already posted stands.
+      ```
+      No call has been posted for this round, so the warning's last clause is wrong, and so is
+      its first: confirmed, the amendment would post the call at once
+      (`check_in_amendment.amendment_posts`, `_call_fell_due`), and draw Phases 1 and 2 at once
+      too. Believed a bot defect in the warning (`check_in_amendment_rules.judge_check_in`):
+      record it.
+    - **Log:** nothing yet.
+
+24. **Do:** press **❌ Cancel**.
+
+    **Expect:**
+    - **Reply:** `Amendment cancelled.`
+    - **Log:**
+      ```
+      ↩️ `/round amend` of round 1 cancelled by <you>
+        Nothing was changed. Run `/round amend` again to start over.
+      ```
+    - Nothing posted; round 1 stands on `<YEAR+1>-03-01`.
+
+25. **Do:** `/round amend division_name:Division 1 round_number:2 scheduled_at:<YEAR+1>-03-22T20:00:00`
+
+    **Expect:**
+    - **Reply**, with **✅ Confirm** and **❌ Cancel**:
+      ```
+      **Amend Round 2** in division **Division 1**:
+        • `scheduled_at` → `<YEAR+1>-03-22 20:00:00`
+      ```
+      Nothing beneath it: no forecast is drawn, so weather notes nothing, and every check-in
+      window falls in the future, so attendance warns of nothing.
+
+    Then press neither button, and wait **more than two minutes**.
+
+    **Expect:**
+    - **Log**, once the two minutes are up:
+      ```
+      ⌛ `/round amend` of round 2 lapsed unconfirmed (started by <you>)
+        Nothing was changed. Run `/round amend` again to start over.
+      ```
+    - Nothing changed.
+
+### Three amendments that go through
+
+26. **The date.** **Do** step 25's command again, and within two minutes press **✅ Confirm**.
+
+    **Expect:**
+    - **Reply:** the confirmation of step 25.
+    - **Ack** (a new message, on Confirm): `Amending round 2 in **Division 1**`
+    - **Then:**
+      ```
+      ✅ Round amended successfully.
+
+      **Rounds:**
+        Round 1: NORMAL @ Silverstone Circuit — <t:<unix time: <YEAR+1>-03-01 20:00 UTC>:F>
+        Round 2: MYSTERY @ TBD — <t:<unix time: <YEAR+1>-03-15 20:00 UTC>:F>
+        Round 3: SPRINT @ Hungaroring — <t:<unix time: <YEAR+1>-03-22 20:00 UTC>:F>
+      ```
+      Moving the date renumbered the division: Hungaroring is round 3 now, and the mystery round
+      round 2.
+    - **Log:**
+      ```
+      <you> | /round amend | Success
+        round 2 (round_id: <id: Division 1's Hungaroring round>)
+        scheduled_at: <YEAR+1>-03-08T20:00:00 → <YEAR+1>-03-22T20:00:00
+      ```
+      The line names the round by the number it bore when the amendment was asked.
+    - **Posts:** none. No forecast was drawn and no call posted, so nothing is withdrawn or
+      reposted, and the calendar in `#d1-calendar` does not update itself (step 30 reposts it).
+
+27. **A moment another round holds.** **Do:**
+    `/round amend division_name:Division 1 round_number:3 scheduled_at:<YEAR+1>-03-15T20:00:00`,
+    the moment of the mystery round, now round 2.
+
+    **Expect:** by the core specification, *"Two rounds of one division shall not be scheduled at
+    the same moment. This shall be refused by every command that would create one"*, a refusal
+    naming round 2, as `/round add` and the amendment of a round being set up give it:
+    ``❌ **Division 1** already holds round 2 at <t:<…>:F>. Two rounds of one division cannot share a moment …``.
+    The running season's amendment has no such check (`amendment_rules_service.judge_amendment`,
+    `round_cog.round_amend`), and offers the confirmation instead:
+    ```
+    **Amend Round 3** in division **Division 1**:
+      • `scheduled_at` → `<YEAR+1>-03-15 20:00:00`
+    ```
+    Believed a bot defect: record it, press **❌ Cancel**, and carry on.
+
+28. **The format.** **Do:** `/round amend division_name:Division 2 round_number:1 format:SPRINT`
+
+    **Expect:**
+    - **Reply**, with **✅ Confirm** and **❌ Cancel**:
+      ```
+      **Amend Round 1** in division **Division 2**:
+        • `format` → `RoundFormat.SPRINT`
+      ```
+      The format is shown by its enum's name, `RoundFormat.SPRINT`, where `SPRINT` or `Sprint`
+      is meant: `round_cog.round_amend` interpolates the `RoundFormat` itself, which Python 3.12
+      and later format by name (`RoundFormat.label` warns of exactly this). Believed a bot
+      defect: record it, and carry on.
+
+29. **Do:** within two minutes, press **✅ Confirm**.
+
+    **Expect:**
+    - **Ack:** `Amending round 1 in **Division 2**`
+    - **Then:**
+      ```
+      ✅ Round amended successfully.
+
+      **Rounds:**
+        Round 1: SPRINT @ Autodromo Nazionale Monza — <t:<…>:F>
+        Round 2: SPRINT @ Circuit de Spa-Francorchamps — <t:<…>:F>
+        Round 3: NORMAL @ Circuit Zandvoort — <t:<…>:F>
+      ```
+    - **Log:**
+      ```
+      <you> | /round amend | Success
+        round 1 (round_id: <id: Division 2's Monza round>)
+        format: NORMAL → SPRINT
+      ```
+    - **Posts:** none.
+
+### What it did to the scheduled work
+
+30. **Do:** `/test-mode review`
+
+    **Expect:**
+    - **Reply:** as step 5, but Division 1 now reads:
+      ```
+      **Division 1**
+        Round 1 · Silverstone Circuit · <YEAR+1>-03-01  P1: ⏳  P2: ⏳  P3: ⏳  Cleanup: ⏳  |  Results: ⏳  |  RSVP: ⏳  Last: ⏳  Deadline: ⏳  Cleared: ⏳
+        Round 2 · TBA             · <YEAR+1>-03-15  Notice: ⏳  |  Results: ⏳  |  RSVP: ⏳  Last: ⏳  Deadline: ⏳  Cleared: ⏳
+        Round 3 · Hungaroring     · <YEAR+1>-03-22  P1: ⏳  P2: ⏳  P3: ⏳  Cleanup: ⏳  |  Results: ⏳  |  RSVP: ⏳  Last: ⏳  Deadline: ⏳  Cleared: ⏳
+      ```
+      Every mark of the moved round ⏳, not ⚠️: the amendment took its timed work down and armed
+      it again for `<YEAR+1>-03-22`. Division 2 is as in step 5; a format leaves the moment alone.
+    - **Log:** nothing; it is a view.
+
+31. **Do:** `/division calendar-sync name:Division 1`
+
+    **Expect:**
+    - **Ack:** `Posting the calendar of **Division 1** again`
+    - **Then:** `✅ Calendar for **Division 1** reposted as image.`, and any notices section.
+    - **Posts** (`#d1-calendar`): the new calendar, a picture with no text: round 1 Silverstone
+      Circuit on 1 March, round 2 the mystery round on 15 March, round 3 Hungaroring on 22 March.
+      Then the calendar posted at approval is deleted: the new one is posted first, the old one
+      deleted after it.
+    - **Log:**
+      ```
+      <you> | /division calendar-sync | Success
+        division: Division 1
+        posted as: image
+      ```
+      and any notice block for the calendar.
