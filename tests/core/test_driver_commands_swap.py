@@ -35,8 +35,6 @@ from tests.support.change_queue import (
     stopped_job,
 )
 
-PENDING = "#600: no `/driver` swap follows test mode"
-
 #: The queue's "now", and the league admin who runs the toggle.
 NOW = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
 ACTOR_ID = 77
@@ -271,8 +269,7 @@ _ENDS = {"complete": _completed, "abort": _aborted, "cancel": _cancelled}
 @pytest.mark.parametrize(
     ("end", "test_mode"),
     [
-        *(pytest.param(end, True, marks=pytest.mark.xfail(strict=True, reason=PENDING),
-                       id=f"{end}-test-season") for end in sorted(_ENDS)),
+        *(pytest.param(end, True, id=f"{end}-test-season") for end in sorted(_ENDS)),
         *(pytest.param(end, False, id=f"{end}-real-season") for end in sorted(_ENDS)),
     ],
 )
@@ -304,7 +301,6 @@ async def test_a_test_seasons_end_swaps_driver_back_and_a_real_ones_does_not(
 _ENDED = {"complete": [{"status": "COMPLETED"}], "cancel": [{"status": "CANCELLED"}], "abort": []}
 
 
-@pytest.mark.xfail(strict=True, reason=PENDING)
 @pytest.mark.parametrize("end", sorted(_ENDS))
 async def test_a_swap_discord_refuses_at_a_test_seasons_end_ends_on_a_fault_and_the_season_ends(
     tmp_path, end
