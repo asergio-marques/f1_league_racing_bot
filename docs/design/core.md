@@ -320,12 +320,36 @@ declares every attribute the builder attaches (`framework.md`, "How the code is 
 | `/season` | `season_cog` | `setup`, `placements-review`, `config-review`, `status`, `cancel`, `abort`, `complete` |
 | `/division` | `division_cog` | `add`, `duplicate`, `delete`, `rename`, `amend`, `cancel`, `lineup-channel`, `calendar-channel`, `calendar-sync` |
 | `/round` | `round_cog` | `add`, `add-bulk`, `add-xml`, `amend`, `delete`, `cancel` |
-| `/driver` | `driver_cog` | `reassign`, `assign`, `unassign`, `move`, `release`, `reject`, `sack` |
+| `/driver` | `driver_cog` (the member's), `driver_test_cog` (test mode's) | `reassign`, `assign`, `unassign`, `move`, `release`, `reject`, `sack`, in each |
 | `/team` | `team_cog` | `add`, `modify`, `remove`, `list`, `lineup`, `reserve-role` |
 | `/module` | `module_cog` | `enable`, `disable` |
 | `/test-mode` | `test_mode_cog` | `toggle`, `nationality`, `advance`, `review`, `set-former-driver`; `backup` (`save`, `lock`, `status`, `restore`); `roster` (`add`, `add-bulk`, `remove`, `list`, `clear`) |
 | `/track` | `track_cog` | `list` |
 | — | `clean_cog` | `/clean-bot`, a top-level command |
+
+Test mode needs a `/driver` whose fields take text, since Discord's member field cannot carry a
+fake driver, so the group exists twice, each in a cog of its own (a cog holds one group). The
+member's is global; the test-mode one is kept off the global tree as its cog loads (the cog's list
+of commands is cleared in place) and sits on the league's server only while test mode is on. Both
+cogs call the one body of each command (`core/cogs/driver_commands.py`, module-level functions
+taking a resolved driver, no base class), and differ in how the driver is named: the member's
+through `_current_member`, the test-mode one through `driver_reference`, which resolves a mention
+or an ID through any account the driver has held and offers drivers by name. The test-mode group
+re-reads the flag as it is given and refuses while it is off. *Rejected:* one group whose fields
+switch type, which Discord's command definition cannot do; and a text field always, which would
+take the member's autocomplete picker from a league that has no test mode.
+
+**The swap that shows the right one** is `swap_driver_commands`
+(`core/services/test_mode/driver_commands.py`): it reads the flag off the database, takes the one group off the global tree
+and puts the other where the flag calls for, and syncs both trees. It is handed the two cogs' bound
+groups by the entry point, the cogs being made before the change types that carry it, so that a
+service imports no cog and finds none on the bot. It runs as the step after the save of the toggle
+and of a test season's completion, abort and cancellation (`Step.on_fault`, a fifth exception to
+the lane stop, `architecture.md`), at start-up before the global sync, and in `!sync`; a refusal
+off the queue is caught as `discord.HTTPException` and posted through `start_up_failure_line`. A
+factory reset and `/bot init` run none: their replies name the restart that does. A swap that
+failed may leave the wrong form in place until the next one, which is accepted, the remedy being a
+restart.
 
 No module's command sits under one of these groups. The retry loop for log lines runs in the
 framework's cog (`framework/cogs/retry_cog.py`), which holds no command.
