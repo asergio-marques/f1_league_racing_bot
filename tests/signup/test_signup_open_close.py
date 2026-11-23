@@ -705,12 +705,29 @@ async def test_every_in_progress_state_forces_a_confirmation(tmp_path, state):
     )
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#600: the close confirmation names a fake driver by its numeric ID"
+)
 async def test_the_confirmation_counts_and_names_the_drivers(tmp_path):
+    """Under test mode, Lewis (7000) is filling the wizard in and Max (7001) awaits approval, both
+    members of the server, and the fake driver Mock Alpha (7002), no member holding its ID, is
+    filling its wizard in. The manager runs `/signup close`. The confirmation says the close will
+    return 2 drivers to Not Signed Up, naming Lewis and Mock Alpha by its test name and never by
+    its ID, and that Max keeps his place."""
     db_path = await _seed(
         tmp_path,
         signups_open=True,
-        in_progress=("PENDING_SIGNUP_COMPLETION", "PENDING_ADMIN_APPROVAL"),
+        test_mode=True,
+        in_progress=(
+            "PENDING_SIGNUP_COMPLETION", "PENDING_ADMIN_APPROVAL", "PENDING_SIGNUP_COMPLETION",
+        ),
     )
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "UPDATE driver_profiles SET is_test_driver = 1, test_display_name = 'Mock Alpha' "
+            "WHERE discord_user_id = '7002'"
+        )
+        await db.commit()
     lewis, max_ = MagicMock(), MagicMock()
     lewis.display_name = "Lewis"
     max_.display_name = "Max"
@@ -719,8 +736,10 @@ async def test_the_confirmation_counts_and_names_the_drivers(tmp_path):
     await _close(await _cog(db_path), interaction)
 
     returned, kept = _replied(interaction).split("keep their place")
-    assert "return 1 driver(s) to Not Signed Up" in returned
+    assert "return 2 driver(s) to Not Signed Up" in returned
     assert "Lewis" in returned
+    assert "Mock Alpha" in returned
+    assert "7002" not in returned
     assert "Max" in kept
 
 
