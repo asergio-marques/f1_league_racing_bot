@@ -1047,10 +1047,37 @@ async def _mock_switch_off_discarding(tmp_path: Any) -> SeasonLeague:
     return league
 
 
+async def _mock_approved(tmp_path: Any) -> SeasonLeague:
+    """Kimi, made Mock Alpha awaiting review; manager 77 approves it and the queue runs, closing
+    his signup channel."""
+    league = await _league(tmp_path)
+    await _as_mock(league)
+    await _approve(league)
+    return league
+
+
+async def _mock_approval_role_discarded(tmp_path: Any) -> SeasonLeague:
+    """Kimi, made Mock Alpha awaiting review; manager 77 approves it, and the save of the job
+    granting the driver role (which grants a fake driver nothing) fails, so that the queue stops
+    at it. A league admin presses Discard."""
+    from leaguebot.signup.services.review_changes import APPROVE, GRANT_ROLE
+    from tests.support.change_queue import refuse_the_job
+
+    league = await _league(tmp_path)
+    await _as_mock(league)
+    await refuse_the_job(league.db_path, APPROVE, GRANT_ROLE, True)
+    league.approval = await _approve(league)
+    await discard_job(league.bot, lane="league")
+    return league
+
+
 #: How a fake driver's signup is ended, sent back or refused; the words of each log entry it
 #: writes that must name it, one or several; and the words of the post its channel is sent naming
 #: it (None where the post names nobody).
 _FAKE_DRIVER_NAMED = [
+    pytest.param(_mock_approved, "| Signup | Approved", None, id="approve"),
+    pytest.param(_mock_approval_role_discarded, "| Signup | Approved", None,
+                 id="approval, its role job discarded"),
     pytest.param(_mock_rejected, "| Signup | Rejected", "rejected by", id="reject"),
     pytest.param(_mock_changes_requested, "| Signup | Correction requested",
                  "requested a correction", id="request-changes"),
@@ -1135,3 +1162,19 @@ async def test_a_fake_driver_s_signup_is_named_by_its_test_name_and_never_by_its
         assert f"<@{SIGNING_UP}>" not in doing, (change["kind"], doing)
         if change["kind"] in _DOING_NAMES_THE_DRIVER:
             assert MOCK_KIMI in doing, (change["kind"], doing)
+
+
+async def test_a_fake_driver_s_approval_with_its_role_job_discarded_notes_no_role(tmp_path):
+    """The server is in test mode and Kimi is a fake driver called Mock Alpha. Manager 77 approves
+    his signup, the save of the job granting the driver role fails and stops the queue, and a
+    league admin presses Discard. A fake driver is never granted a role, so neither the
+    "Approved" line nor the reply to 77 says the driver role could not be granted: the line names
+    Mock Alpha alone, and the reply is "✅ Signup approved."."""
+    league = await _mock_approval_role_discarded(tmp_path)
+
+    [approved] = [entry for entry in league.bot.log_channel.sent if "| Signup | Approved" in entry]
+    assert approved.replace("`", "").startswith(
+        "Admin (<@77>) | Signup | Approved\n  driver: Mock Alpha\n―"
+    ), approved
+    assert "could not be granted" not in league.log()
+    assert "could not be granted" not in updated_reply(league.approval)

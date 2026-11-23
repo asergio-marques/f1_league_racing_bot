@@ -279,8 +279,8 @@ def approve_change(
         await drivers().transition_on(db, user_id, DriverState.UNASSIGNED)
         await signup().mark_approved_on(db, user_id)
         follow_ons: tuple[FollowOn, ...] = ()
+        fake = (await driver_test_names_on(db, [int(user_id)])).get(int(user_id))
         if wizard is not None and wizard.signup_channel_id is not None:
-            fake = (await driver_test_names_on(db, [int(user_id)])).get(int(user_id))
             follow_ons = (FollowOn(
                 CLOSING,
                 {
@@ -291,7 +291,9 @@ def approve_change(
                 "Closing an approved signup",
             ),)
         return StepResult(
-            result={},
+            # The approval's closing lines are written from its steps' results alone, so a fake
+            # driver's test name is kept here for them, read on this save's own connection.
+            result={"fake_name": fake} if fake is not None else {},
             audits=(AuditRecord(
                 "SIGNUP_APPROVE",
                 {"state": prior, "discord_user_id": user_id},
@@ -359,6 +361,10 @@ def approve_change(
             or granted is None or "discarded" not in (granted.result or {})
         ):
             return ()
+        # A fake driver is never granted a role, so no note is made of the role it was not given.
+        fake_name = (approved_job.result or {}).get("fake_name")
+        if fake_name is not None:
+            return (f"{ctx.named} | Signup | Approved\n  driver: {fake_name}",)
         return (
             f"{ctx.named} | Signup | Approved\n  driver: <@{ctx.payload['user_id']}>\n"
             "  The driver role could not be granted: the job was discarded.",
@@ -370,6 +376,8 @@ def approve_change(
         if approved_job is not None and "discarded" in (approved_job.result or {}):
             return "⚠️ The signup was not approved: the job was discarded."
         text = "✅ Signup approved."
+        if approved_job is not None and (approved_job.result or {}).get("fake_name") is not None:
+            return text
         granted = views.get(GRANT_ROLE)
         if granted is not None and "discarded" in (granted.result or {}):
             return text + "\n⚠️ The driver role could not be granted: the job was discarded."
