@@ -50,7 +50,8 @@ step 1). This spec never overwrites or deletes any of it: what it adds goes into
 its own, `resources/league/e2e/`, which Part G removes whole, and the one file step 46 drops into
 `resources/league/teams/` to show the ordinary way is set aside first where the league has one
 of that name, and put back in Part G. Every file it adds is solid green
-(`#00C853`), so where it is drawn is plain on the PNG.
+(`#00C853`), so where it is drawn is plain on the PNG, but for step 30's fallback, which is
+magenta (`#FF00FF`).
 
 ---
 
@@ -169,7 +170,7 @@ of that name, and put back in Part G. Every file it adds is solid green
    **Expect:** title `Calendar`, one picture, `✅ Calendar`. On the PNG: the heading underlined by
    a thin **red** rule across the full width; Division 1's three rounds, round 1 Silverstone
    Circuit dated `<weekday> 01 Mar <YEAR+1>` at `20:00 UTC`, round 2 Hungaroring on 08 Mar, round
-   3 the mystery round on 15 Mar; nothing at the top right beside `Race Calendar`. Save it as the
+   3 the mystery round on 15 Mar; nothing at the right-hand end of the band holding `Race Calendar`, below the heading rule. Save it as the
    picture the later steps compare against.
 
 ### The files a league puts in place
@@ -335,7 +336,7 @@ command checks the file it names. A filename is always a file **inside** the con
 
     **Expect:** step 5's picture with the heading rule drawn **green**. The page background is
     unchanged, `#0B0D10`: per-tier colours are off, so the `accent` slot marked on it takes no
-    colour. The 88 × 88 logo box at the top right, beside `Race Calendar`, draws nothing and no
+    colour. The 88 × 88 logo box at the right-hand end of the band holding `Race Calendar`, below the heading rule, draws nothing and no
     notice names it: `resources/league/division-logos` holds no `division_1.svg` (unless the
     league's own artwork put one there, in which case it is drawn).
 
@@ -670,7 +671,7 @@ nothing and raises no notice.
     `/images test calendar division:Division 2`
 
     **Expect:**
-    - Division 1: a **green square** in the box at the top right, beside `Race Calendar`;
+    - Division 1: a **green square** in the logo box, at the right-hand end of the band holding `Race Calendar`;
     - Division 2: nothing in that box, and no notice of any kind about a division logo —
       `division_2.svg` is missing, and a missing logo is silent by design.
 
@@ -747,7 +748,8 @@ nothing and raises no notice.
     `/images test calendar division:Division 1`
 
     **Expect:** no `⚠️ **Asset directories**` section. The lineup as it drew before step 29 —
-    Alpha Racing's badge the packaged grey one, not magenta: the league's fallback sits in the
+    Alpha Racing's badge the packaged grey one (unless the league's own artwork supplies one),
+    not magenta: the league's fallback sits in the
     `e2e` folder, which is no longer read. The calendar as step 14 (green rule, empty logo box).
 
 46. **What a league ordinarily does: drop a file in.** By hand, with no command:
@@ -762,7 +764,8 @@ nothing and raises no notice.
     **Do:** `/images test lineup division:Division 1`
 
     **Expect:** Alpha Racing's badge a **green square**, no `team` notice for `ALP`; every
-    other badge the packaged grey shield. Nothing had to be configured.
+    other badge the packaged grey shield, unless the league's own artwork supplies one. Nothing
+    had to be configured.
 
 47. **Do:** `/images config view`
 
@@ -1305,6 +1308,7 @@ per-tier colours are off and no template marks the slot. The next spec's restore
 89. **Do:** `/images config fastest-lap-colour colour:#00E676`
 
     **Expect:**
+    - **Ack:** ``Setting the fastest-lap colour to `#00E676` ``
     - **Then:**
       ```
       ✅ Fastest-lap colour set to `#00E676`.
@@ -1389,8 +1393,8 @@ their refusals and their record. No view shows them while the season is under wa
 
 95. **Do:** `/images test lineup division:Division 1`
 
-    **Expect:** the lineup as step 46 drew it, every portrait the packaged grey one, each with a
-    `driver` notice; `ls <checkout>/resources/league/drivers` shows nothing new.
+    **Expect:** the lineup as step 46 drew it, every portrait the packaged grey one (unless the
+    league's own artwork supplies one), each without one with a `driver` notice; `ls <checkout>/resources/league/drivers` shows nothing new.
 
 96. **A refusal: switching off the only trigger.** **Do:** `/images use-pfp prerender-toggle`
 
@@ -1610,7 +1614,8 @@ spec put in `resources/league/`.
      `/images test lineup division:Division 1`
 
      **Expect:** the calendar identical to step 5's; the lineup as the base draws it, Alpha
-     Racing's badge no longer green.
+     Racing's badge no longer green but the packaged grey one, unless the league's own artwork
+     supplies one.
 
 Every image setting is now as the base had it, the stored tier colours apart. The next spec
 restores the base's backup, which clears them.
