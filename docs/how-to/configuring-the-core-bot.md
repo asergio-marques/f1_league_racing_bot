@@ -218,7 +218,7 @@ Each module then has its own configuration, which is not covered here. Start fro
 
 | | What it is for |
 |---|---|
-| **Shorthand** — `RBR` | What you **type**: commands, the team column of a results submission, a test roster. It is also the filename of the team's badge. At most 16 characters, and no comma. |
+| **Shorthand** — `RBR` | What you **type**: commands and the team column of a results submission. It is also the filename of the team's badge. At most 16 characters, and no comma. |
 | **Full name** — `Oracle Red Bull Racing` | What is **shown**: every post, every graphic, every reply. At most 32 characters, and no two teams may share one. |
 | **Role** — `@Red Bull` | Granted to a driver when you seat them, taken away when you do not. |
 

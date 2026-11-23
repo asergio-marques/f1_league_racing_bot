@@ -1335,7 +1335,7 @@ Every team carries three, and each has one job:
 | | What it is for |
 |---|---|
 | **Full name** | What is **shown**: every results and standings post, every graphic, the lineup, the attendance sheet, verdicts, the check-in, the reviews and the replies to your commands. |
-| **Shorthand** | What is **typed**: commands, the team column of a results submission, and a test roster. It is also the filename the team's artwork is looked for under. |
+| **Shorthand** | What is **typed**: commands and the team column of a results submission. It is also the filename the team's artwork is looked for under. |
 | **Role** | What the team's **drivers are granted**, and what you mention the team by. It never names a team where one is typed. |
 
 > **A role does not name a team.** Typing a role mention where a team is asked for is refused, saying to use the team's shorthand — and so are `@everyone`, `@here`, a mention of a member and a Discord ID typed out. A command that takes a team suggests the shorthands as you type, showing the full name beside each one and matching either.

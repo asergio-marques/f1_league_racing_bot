@@ -546,7 +546,7 @@ Decided 2026-09-22 (#381). Each name has one job, and no name does another's.
 
 - A team shall carry a **full name**, a **shorthand** and a **role**.
 - The **full name** shall be what is shown wherever a team is named to a league: every results and standings posting, every graphic, the lineup, the attendance sheet, a verdict, the check-in, the placements and season reviews, the team list, and the reply and log line of every command that acts on a team.
-- The **shorthand** shall be the only way a team is typed: in a command, in the team column of a results submission, and in a test roster. A command taking a team shall offer the shorthands as the manager types, each suggestion showing the full name beside the shorthand and matching either, and shall send the shorthand.
+- The **shorthand** shall be the only way a team is typed: in a command and in the team column of a results submission. A command taking a team shall offer the shorthands as the manager types, each suggestion showing the full name beside the shorthand and matching either, and shall send the shorthand.
 - The shorthand shall also name the team's artwork, being the datum every graphic seeks the team's badge under.
 - The **role** shall be what the team's drivers are granted, and what the team is mentioned by. It shall never name a team where one is typed.
 - Where a team is typed, anything that is not a shorthand shall be refused saying what it is: a role mention, "@everyone", "@here", a mention of a member, and a Discord ID typed out.
@@ -554,7 +554,7 @@ Decided 2026-09-22 (#381). Each name has one job, and no name does another's.
 ### The rules each name is held to
 - Both names shall hold no role mention, "@everyone" or "@here", in any case, no emoji, no Discord markup and no mention of a member, as a division's name shall not. Decided 2026-09-21 (#362) and 2026-09-22 (#381).
 - A **full name** shall not be empty, shall be at most 32 characters, and shall be unique across the server's list ignoring case, so that two teams cannot be shown alike. The templates carry a team column sized for exactly this much, a longer name being set down until it could not be read.
-- A **shorthand** shall be at most 16 characters and shall hold no comma, being typed into the comma-separated rows of a results submission and a test roster.
+- A **shorthand** shall be at most 16 characters and shall hold no comma, being typed into the comma-separated rows of a results submission.
 - A shorthand shall reduce to a usable filename:
     - It shall not be empty and shall hold at least one letter or digit.
     - It shall not reduce to `reserve`.
