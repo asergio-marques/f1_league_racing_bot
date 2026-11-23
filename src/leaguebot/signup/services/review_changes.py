@@ -119,7 +119,9 @@ from leaguebot.framework.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.input_validator import parse_time
 from leaguebot.framework.utils.league_server import league_guild
 from leaguebot.framework.utils.log_lines import name_of_member
-from leaguebot.signup.services.driver_naming import fake_name_of, mention_or_name, name_of_driver
+from leaguebot.signup.services.driver_naming import (
+    fake_name_of, mention_or_name, name_of_driver, named_in_progress,
+)
 from leaguebot.signup.models.signup_module import WizardState
 from leaguebot.signup.services.closing_steps import (
     DELETE_REASON,
@@ -195,13 +197,6 @@ __all__ = [
     "ask_lapse", "choices_change", "choose_change", "lapse_change", "recollect_change",
     "request_changes_change", "total_lap_ms",
 ]
-
-
-def _named_in_progress(payload: dict[str, Any]) -> str:
-    """How a change's in-progress text names its driver: by the ``fake_name`` its payload carries
-    where they are a fake driver, as that text is built from the payload alone, and by a mention
-    of their account otherwise."""
-    return payload.get("fake_name") or f"<@{payload['user_id']}>"
 
 
 def _instant(text: str) -> datetime:
@@ -659,7 +654,7 @@ def choices_change(
         check=standing,
         key=lambda payload: f"{CHOICES}:{payload['user_id']}",
         doing=lambda payload: (
-            f"Offering the correction choices of {_named_in_progress(payload)}"
+            f"Offering the correction choices of {named_in_progress(payload)}"
         ),
         outcome=lambda _ctx: "",
         lane=lambda payload: f"channel:{int(payload['channel_id'])}",
@@ -949,7 +944,7 @@ def recollect_change(
         },
         check=standing,
         key=lambda payload: f"{RECOLLECT}:{payload['user_id']}",
-        doing=lambda payload: f"Asking {_named_in_progress(payload)} to re-submit an answer",
+        doing=lambda payload: f"Asking {named_in_progress(payload)} to re-submit an answer",
         outcome=lambda _ctx: "",
         lane=lambda payload: f"channel:{int(payload['channel_id'])}",
         conversation_open=open_,

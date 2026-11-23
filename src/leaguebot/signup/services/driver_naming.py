@@ -9,7 +9,7 @@ league admin who answered for it is the actor of every line, never the driver.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from leaguebot.core.services.drivers.driver_reference import resolve_driver
 from leaguebot.framework.utils.log_lines import name_of_member
@@ -17,6 +17,13 @@ from leaguebot.framework.utils.log_lines import name_of_member
 if TYPE_CHECKING:
     from leaguebot.core.services.drivers.driver_service import DriverService
     from leaguebot.framework.utils.league_bot import LeagueBot
+
+
+def named_in_progress(payload: dict[str, Any]) -> str:
+    """How a change's in-progress text names its driver: by the ``fake_name`` its payload carries
+    where they are a fake driver, as that text is built from the payload alone, and by a mention
+    of their account otherwise."""
+    return payload.get("fake_name") or f"<@{payload['user_id']}>"
 
 
 async def fake_name_of(db_path: str, user_id: int | str) -> str | None:

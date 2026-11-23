@@ -56,7 +56,7 @@ from leaguebot.framework.services.queue.change_types import (
     StepContext,
 )
 from leaguebot.framework.utils.league_server import league_guild
-from leaguebot.signup.services.driver_naming import fake_name_of, mention_or_name
+from leaguebot.signup.services.driver_naming import fake_name_of, mention_or_name, named_in_progress
 from leaguebot.signup.services.signup_posting import post, post_standing_message
 
 if TYPE_CHECKING:
@@ -760,9 +760,7 @@ def closing_change(
         steps=closing_steps(now=now, arm_once=arm_once),
         check=standing,
         key=lambda payload: f"{KIND}:{payload['user_id']}",
-        doing=lambda payload: (
-            f"Closing the signup of {payload.get('fake_name') or '<@' + str(payload['user_id']) + '>'}"
-        ),
+        doing=lambda payload: f"Closing the signup of {named_in_progress(payload)}",
         outcome=outcome,
         lane=lambda payload: f"channel:{int(payload['channel_id'])}",
         writes=("signup_wizard_records",),
