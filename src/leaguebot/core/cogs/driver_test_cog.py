@@ -307,7 +307,7 @@ class DriverTestCog(commands.Cog):
 
     @driver.command(
         name="sack",
-        description="Sack a driver: revoke all roles, clear assignments, revert to Not Signed Up.",
+        description="Sack a driver: revoke any roles held, clear assignments, revert to Not Signed Up.",
     )
     @app_commands.describe(user="The driver to sack: a mention or an ID.")
     @league_admin_only
