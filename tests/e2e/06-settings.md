@@ -920,6 +920,10 @@ sets up Season #2 with test mode on, leaving it in configuration.
     backup is kept**: `bot.bkup.db`, `scheduler.bkup.db` and `backup.lock` are still in the bot
     host folder.
 
+    To abandon the spec from here until step 76, a restore is refused: test mode is off and the
+    backup commands run in test mode alone. Run steps 75 and 76, then Part J. The backup is kept
+    throughout.
+
 74. **Do:** `/season status`
 
     **Expect:**
