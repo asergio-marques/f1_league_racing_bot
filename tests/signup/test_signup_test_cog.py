@@ -135,12 +135,15 @@ async def test_signup_start_asks_a_fake_driver_s_signup_with_the_admin_as_its_ac
 
 
 #: Each refusal of `/signup start`: how the league stands, the driver named, and words the reply
-#: carries (None where the plan fixes none).
+#: carries. A fake driver's signup under way or approved is named by its test name, not addressed
+#: as "you" as a member's own Sign Up is.
 _START_REFUSALS = [
     pytest.param("real", str(LEWIS), "only a fake driver is signed up this way", id="a real driver"),
     pytest.param("closed", str(MOCK), "Signups are closed.", id="signups closed"),
-    pytest.param("PENDING_SIGNUP_COMPLETION", str(MOCK), None, id="its signup under way"),
-    pytest.param("UNASSIGNED", str(MOCK), None, id="its signup approved"),
+    pytest.param("PENDING_SIGNUP_COMPLETION", str(MOCK),
+                 f"**{MOCK_NAME}** already has a signup in progress.", id="its signup under way"),
+    pytest.param("UNASSIGNED", str(MOCK),
+                 f"**{MOCK_NAME}**'s signup has already been approved.", id="its signup approved"),
 ]
 
 
@@ -149,7 +152,7 @@ _START_REFUSALS = [
 async def test_signup_start_is_refused(tmp_path, standing, named, words):
     """Test mode is on. Admin runs the test-mode `/signup start` naming *named*, where: it is
     Lewis, a real driver; the signup window is closed; or Mock Alpha's own signup is under way, or
-    already approved. The reply refuses it (with *words*, where given); after the queue runs no
+    already approved. The reply refuses it with *words*; after the queue runs no
     signup channel was created and the driver's state is as it was; and the log channel takes the
     refusal as a line. Its refusal with test mode off is pinned beside every other subcommand's,
     below."""
@@ -172,8 +175,7 @@ async def test_signup_start_is_refused(tmp_path, standing, named, words):
 
     reply = last_said(asked)
     assert reply.startswith("⛔")
-    if words is not None:
-        assert words.casefold() in reply.casefold()
+    assert words.casefold() in reply.casefold()
     assert league.created == []
     assert await _driver_state(league, int(named)) == before
     assert [line for line in await log_lines(league)
