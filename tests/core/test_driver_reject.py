@@ -432,3 +432,32 @@ async def test_the_driver_role_goes_after_the_rejection_is_saved_and_a_refusal_i
     assert await stopped_job(league.db_path) is None
     assert league.revoked[SIGNING_UP] == [DRIVER_ROLE]
     assert last_said(kimi) == _turned_down("Kimi")
+
+
+@pytest.mark.xfail(strict=True, reason="#600: /driver reject still takes the driver role from a fake driver")
+async def test_a_fake_driver_rejection_takes_no_role(tmp_path):
+    """The core specification's fake driver, never granted or revoked a Discord role. Test mode is
+    on and the season in Placements, the league's driver role set; Ghost, a fake driver, is
+    Unassigned, and the server double would hand back a member for its ID holding the driver role.
+    The league admin Admin (77) runs `/driver reject` of Ghost and the queue runs the change: Ghost
+    is Not Signed Up, and no role is taken from or given to anyone."""
+    from tests.support.change_queue import run_queue
+    from tests.support.season_league import DRIVER_ROLE
+
+    league = await _with_valtteri(await _in_placements(tmp_path))
+    await league.set_test_mode(True)
+    await league.write(
+        "INSERT INTO driver_profiles (id, discord_user_id, current_state, is_test_driver, "
+        "test_display_name) VALUES (90, ?, 'UNASSIGNED', 1, 'Ghost')", str(_GHOST),
+    )
+    league.roles_held.setdefault(_GHOST, set()).add(DRIVER_ROLE)
+
+    await _ask_reject(league, _GHOST)
+    await run_queue(league.bot)
+
+    [state] = await league.rows("SELECT current_state FROM driver_profiles WHERE id = 90")
+    assert state["current_state"] == "NOT_SIGNED_UP"
+    assert league.revoked == {} and league.granted == {}
+
+
+_GHOST = 9000000000000000001
