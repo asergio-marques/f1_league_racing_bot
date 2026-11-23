@@ -22,8 +22,6 @@ SERVER_ID = 7700
 
 HEADER = "ID,Driver name"
 
-_CREATED = "#600: the roster import still seats its drivers from five columns"
-
 
 @pytest.fixture
 async def season(tmp_path):
@@ -103,7 +101,6 @@ async def _created(path) -> list[tuple[str, str]]:
 # ── The happy path ────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=_CREATED)
 async def test_a_roster_is_created_at_not_signed_up_and_unseated(season):
     """The core specification's fake drivers, created at Not Signed Up: a roster of Quicksilver
     and Badger is imported into a season holding free seats in both divisions. Both are fake
@@ -127,7 +124,6 @@ async def test_a_roster_is_created_at_not_signed_up_and_unseated(season):
 
 @pytest.mark.parametrize("first, second", [(7, 9), (40, 41)],
                          ids=["7 and 9", "40 and 41, not consecutive with 1"])
-@pytest.mark.xfail(strict=True, reason=_CREATED)
 async def test_the_ids_written_are_the_ids_the_file_named(season, first, second):
     """The rule every sibling generator script depends on. The ids are kept even when they are
     not consecutive from 1: `MAX + 1` allocation would have renumbered 40 and 41 to 1 and 2."""
@@ -139,7 +135,6 @@ async def test_the_ids_written_are_the_ids_the_file_named(season, first, second)
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=_CREATED)
 async def test_every_fault_is_reported_at_once(season):
     """Which is what importing the same file twice looks like. Quicksilver and Badger are imported, then the same two IDs again under other names: the
     second import creates nobody and names both IDs as already on this server."""
@@ -155,7 +150,6 @@ async def test_every_fault_is_reported_at_once(season):
     assert [name for _uid, name in await _created(season)] == ["Quicksilver", "Badger"]
 
 
-@pytest.mark.xfail(strict=True, reason=_CREATED)
 async def test_no_season_is_reported(tmp_path):
     path = str(tmp_path / "empty.db")
     await run_migrations(path)
@@ -170,7 +164,6 @@ async def test_no_season_is_reported(tmp_path):
 # ── The real file ─────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=_CREATED)
 async def test_the_import_is_what_roster_add_would_have_produced(season):
     """Created drivers must be indistinguishable from ones added one at a time, or the
     rest of test mode — listing, signup, placement — would treat them differently: a fake driver

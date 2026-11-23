@@ -934,12 +934,8 @@ def register_change_types(bot: LeagueBot) -> None:
         )
     )
     bot.change_queue.register(test_mode_former_driver_change())
-    bot.change_queue.register(
-        test_roster_add_change(capacity=lambda: bot.template_capacity_service)
-    )
-    bot.change_queue.register(
-        test_roster_add_bulk_change(capacity=lambda: bot.template_capacity_service)
-    )
+    bot.change_queue.register(test_roster_add_change())
+    bot.change_queue.register(test_roster_add_bulk_change())
     bot.change_queue.register(
         test_roster_remove_change(profiles_deleted=bot.profiles_deleted)
     )

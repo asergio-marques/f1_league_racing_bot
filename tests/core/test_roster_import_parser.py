@@ -15,8 +15,6 @@ from leaguebot.core.utils.roster_import import SYNTHETIC_ID_BASE, parse_roster_c
 #: `/driver assign` after its signup is approved, and its nationality by its signup.
 HEADER = "ID,Driver name"
 
-_TWO_COLUMNS = "#600: the roster import still reads five columns"
-
 
 def _row(offset: int = 1, name="Quicksilver"):
     return f"{SYNTHETIC_ID_BASE + offset},{name}"
@@ -29,7 +27,6 @@ def _csv(*rows: str) -> str:
 # ── The happy path ────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=_TWO_COLUMNS)
 def test_a_row_is_read_whole():
     drivers, errors = parse_roster_csv(_csv(_row()))
 
@@ -40,7 +37,6 @@ def test_a_row_is_read_whole():
     assert driver.driver_name == "Quicksilver"
 
 
-@pytest.mark.xfail(strict=True, reason=_TWO_COLUMNS)
 def test_the_lowest_id_of_the_range_may_be_imported():
     """The range reserved for test drivers begins at its base, which is itself within it."""
     drivers, errors = parse_roster_csv(_csv(_row(offset=0)))
@@ -49,7 +45,6 @@ def test_the_lowest_id_of_the_range_may_be_imported():
     assert [driver.discord_user_id for driver in drivers] == [SYNTHETIC_ID_BASE]
 
 
-@pytest.mark.xfail(strict=True, reason=_TWO_COLUMNS)
 def test_the_header_is_skipped():
     drivers, errors = parse_roster_csv(_csv(_row(), _row(2, name="Badger")))
 
@@ -57,7 +52,6 @@ def test_the_header_is_skipped():
     assert [d.driver_name for d in drivers] == ["Quicksilver", "Badger"]
 
 
-@pytest.mark.xfail(strict=True, reason=_TWO_COLUMNS)
 def test_a_file_without_a_header_is_read_from_its_first_line():
     drivers, errors = parse_roster_csv(_row())
 
@@ -65,7 +59,6 @@ def test_a_file_without_a_header_is_read_from_its_first_line():
     assert len(drivers) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=_TWO_COLUMNS)
 def test_surrounding_spaces_are_trimmed():
     drivers, _ = parse_roster_csv(_csv(f"  {SYNTHETIC_ID_BASE + 1} , Quicksilver "))
 
@@ -81,7 +74,6 @@ def test_surrounding_spaces_are_trimmed():
     [123456789012345678, SYNTHETIC_ID_BASE - 1],
     ids=["a real snowflake", "one below the base"],
 )
-@pytest.mark.xfail(strict=True, reason=_TWO_COLUMNS)
 def test_an_id_below_the_synthetic_range_is_refused(driver_id):
     """The one mistake this import must not make quietly: below the base is a real
     Discord snowflake, and seating a real account as a mock driver is not recoverable by
@@ -94,7 +86,6 @@ def test_an_id_below_the_synthetic_range_is_refused(driver_id):
     assert "below the range" in errors[0]
 
 
-@pytest.mark.xfail(strict=True, reason=_TWO_COLUMNS)
 def test_something_that_is_not_a_number_is_refused():
     drivers, errors = parse_roster_csv(_csv("not-an-id,Quicksilver"))
 
@@ -102,7 +93,6 @@ def test_something_that_is_not_a_number_is_refused():
     assert "is not a driver ID" in errors[0]
 
 
-@pytest.mark.xfail(strict=True, reason=_TWO_COLUMNS)
 def test_two_rows_sharing_an_id_are_refused():
     """The sibling scripts key on the ID; two drivers behind one is unresolvable."""
     drivers, errors = parse_roster_csv(_csv(_row(), _row(1, name="Badger")))
@@ -123,7 +113,6 @@ def test_two_rows_sharing_an_id_are_refused():
     ],
     ids=["the ID alone", "three columns", "the five columns rosters once took"],
 )
-@pytest.mark.xfail(strict=True, reason=_TWO_COLUMNS)
 def test_a_row_of_the_wrong_width_is_refused(row):
     """A malformed paste must fail loudly rather than read part of it as a name. A row in the
     five columns a roster once took is refused like any other width."""
@@ -133,7 +122,6 @@ def test_a_row_of_the_wrong_width_is_refused(row):
     assert "expected 2 columns" in errors[0]
 
 
-@pytest.mark.xfail(strict=True, reason=_TWO_COLUMNS)
 def test_a_missing_name_is_named():
     drivers, errors = parse_roster_csv(_csv(f"{SYNTHETIC_ID_BASE + 1},"))
 
@@ -143,7 +131,6 @@ def test_a_missing_name_is_named():
 
 @pytest.mark.parametrize("second", ["Quicksilver", "QUICKSILVER"],
                          ids=["the same name", "the name in another case"])
-@pytest.mark.xfail(strict=True, reason=_TWO_COLUMNS)
 def test_two_drivers_of_one_name_are_refused(second):
     """Indistinguishable in every listing the bot prints, and in the results files the
     sibling scripts write against this roster. The clash ignores case."""
@@ -188,7 +175,6 @@ def test_an_empty_paste_is_reported_rather_than_silently_accepted(text):
     assert errors == ["There were no drivers in what you pasted."]
 
 
-@pytest.mark.xfail(strict=True, reason=_TWO_COLUMNS)
 def test_a_roster_line_naming_a_driver_with_markup_is_refused():
     """Held to the rules every typed name is (#362); the line is named, as for any fault."""
     drivers, errors = parse_roster_csv(_csv(_row(name="**Quicksilver**")))
@@ -197,7 +183,6 @@ def test_a_roster_line_naming_a_driver_with_markup_is_refused():
     assert any(e.startswith("Line 2:") and "driver name" in e for e in errors)
 
 
-@pytest.mark.xfail(strict=True, reason=_TWO_COLUMNS)
 def test_a_roster_line_naming_a_driver_with_a_member_mention_is_refused():
     """A mock driver's name is held to every rule `roster add` holds it to (#388)."""
     drivers, errors = parse_roster_csv(_csv(_row(name="<@123456789012345678>")))

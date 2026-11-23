@@ -16,8 +16,6 @@ from tests.support.delete_hooks import DRIVER_HOOKS, delete_hooks
 SERVER_ID = 7373
 DIVISION = "Division 1"
 
-_CREATE_ONLY = "#600: a fake driver is still created seated, from a team and a division"
-
 
 @pytest.fixture
 async def db_path(tmp_path):
@@ -90,7 +88,6 @@ async def _remove(db_path, discord_user_id: int):
 # ── A fake driver is created, and nothing more ───────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=_CREATE_ONLY)
 async def test_each_driver_takes_the_next_synthetic_id_and_no_seat(db_path):
     """Mock Alpha and then Mock Bravo are created in a season whose team has two free seats. Each
     takes the next synthetic ID, Mock Bravo's one past Mock Alpha's; both are at Not Signed Up,
@@ -112,7 +109,6 @@ async def test_each_driver_takes_the_next_synthetic_id_and_no_seat(db_path):
 
 
 class TestTheNameIsChecked:
-    @pytest.mark.xfail(strict=True, reason=_CREATE_ONLY)
     async def test_a_test_driver_named_with_a_role_mention_is_refused(self, db_path):
         """A mock driver's name is drawn on graphics as a real driver's is."""
         result = await _add(db_path, name="<@&987654321098765432> Alpha")
@@ -120,14 +116,12 @@ class TestTheNameIsChecked:
         assert isinstance(result, str)
         assert "driver name" in result
 
-    @pytest.mark.xfail(strict=True, reason=_CREATE_ONLY)
     async def test_a_test_driver_named_with_an_emoji_is_refused(self, db_path):
         result = await _add(db_path, name="Alpha \U0001F3CE\uFE0F")
 
         assert isinstance(result, str)
 
 
-    @pytest.mark.xfail(strict=True, reason=_CREATE_ONLY)
     async def test_a_test_driver_named_with_a_member_mention_is_refused(self, db_path):
         """The name is printed wherever the driver is, so the member would be notified each
         time (#388)."""
@@ -144,7 +138,6 @@ class TestTheNameIsChecked:
 class TestRemovingOneDriver:
     """`roster remove` deletes by the route `roster clear` and switching test mode off take."""
 
-    @pytest.mark.xfail(strict=True, reason=_CREATE_ONLY)
     async def test_a_driver_holding_attendance_and_standings_rows_is_deleted(self, db_path):
         """A fake driver holding an attendance row and a standings snapshot is removed: its profile
         and attendance row go and the snapshot is kept by its ID, unlinked. The deletion `remove`
@@ -185,7 +178,6 @@ class TestRemovingOneDriver:
             )
             assert [tuple(r) for r in await cursor.fetchall()] == [(uid, None)]
 
-    @pytest.mark.xfail(strict=True, reason=_CREATE_ONLY)
     async def test_their_history_is_kept_by_identifier(self, db_path):
         """As switching test mode off keeps it: a driver created again under the same
         identifier holds it as their own (#220)."""
@@ -212,7 +204,6 @@ class TestRemovingOneDriver:
 # ── A profile that cannot be written (#442) ───────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=_CREATE_ONLY)
 async def test_a_test_driver_profile_that_cannot_be_written_raises(db_path):
     """A fault in the database is the bot's, not a refusal the manager can act on: it is
     raised, so the command's failure path reports it, and nothing is written."""

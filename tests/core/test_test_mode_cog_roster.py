@@ -515,13 +515,6 @@ class TestTheNationalityCommand:
 # ── /test-mode roster list ────────────────────────────────────────────────
 
 
-#: What is not yet true of the listing: fake drivers are created with an ID and a name alone, and
-#: listed with their state, their signup's nationality and their seats, the division optional.
-_LISTED = (
-    "#600: a fake driver is still created seated, and the listing still shows only a division's "
-    "seated drivers with their own nationality"
-)
-
 
 def _line_of(rendered: str, name: str) -> str:
     """The listing's one line naming *name*."""
@@ -537,7 +530,6 @@ class TestRosterListShowsIt:
         await _unwrap(test_mode_cog.TestModeCog.roster_list)(cog, interaction, division)
         return "\n".join(interaction.sent)
 
-    @pytest.mark.xfail(strict=True, reason=_LISTED)
     async def test_the_column_is_headed(self, cog):
         """Mock Alpha is created; the listing, no division named, is headed with a state and a
         nationality column."""
@@ -548,7 +540,6 @@ class TestRosterListShowsIt:
         assert "State" in rendered
         assert "Nationality" in rendered
 
-    @pytest.mark.xfail(strict=True, reason=_LISTED)
     async def test_an_unseated_driver_is_listed_with_its_id_and_state(self, cog):
         """Mock Alpha is created and nothing more: no seat, no signup. The listing, no division
         named, shows Mock Alpha on a line of its own with the mention its ID makes, its state Not
@@ -561,7 +552,6 @@ class TestRosterListShowsIt:
         assert "Not Signed Up" in line
         assert "none" in line.lower()
 
-    @pytest.mark.xfail(strict=True, reason=_LISTED)
     async def test_a_drivers_own_is_printed(self, cog):
         """Mock Alpha's approved signup to the season gave Brazilian: Mock Alpha's line shows
         Brazilian."""
@@ -572,7 +562,6 @@ class TestRosterListShowsIt:
 
         assert "Brazilian" in line
 
-    @pytest.mark.xfail(strict=True, reason=_LISTED)
     async def test_a_driver_without_one_prints_a_dash(self, cog):
         """Mock Alpha has no signup, so no nationality: its line marks the nationality with a
         dash."""
@@ -582,7 +571,6 @@ class TestRosterListShowsIt:
 
         assert "—" in line
 
-    @pytest.mark.xfail(strict=True, reason=_LISTED)
     async def test_a_seated_driver_shows_its_team_and_division(self, cog):
         """Mock Alpha is seated at Redline in Division 1, as `/driver assign` and the placements'
         commit leave a driver: its line shows Redline and Division 1, and its state Assigned."""
@@ -595,7 +583,6 @@ class TestRosterListShowsIt:
         assert "Division 1" in line
         assert "Assigned" in line
 
-    @pytest.mark.xfail(strict=True, reason=_LISTED)
     async def test_a_division_named_lists_only_the_drivers_seated_in_it(self, cog):
         """Mock Alpha is seated at Redline in Division 1 and Mock Bravo is not seated. The
         listing for Division 1 shows Mock Alpha and not Mock Bravo; the listing with no division
@@ -612,7 +599,6 @@ class TestRosterListShowsIt:
         assert "Mock Alpha" in everyone
         assert "Mock Bravo" in everyone
 
-    @pytest.mark.xfail(strict=True, reason=_LISTED)
     async def test_a_roster_too_large_for_one_message_is_sent_as_several(self, cog):
         """The bug: past about twenty drivers Discord refused the whole listing.
 

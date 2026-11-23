@@ -13,9 +13,12 @@ depend on, and they depend on it entirely: a results file naming driver
 So the import writes the IDs the file states, and the CSV is authoritative rather than
 hopeful.
 
-Pure and synchronous — no `discord`, no database. The division, the team and the
-nationality are carried through as written and resolved by the caller, which is what lets
-these tests run without a fixture.
+A roster is two columns, `ID,Driver name`: a fake driver is created at Not Signed Up with no seat,
+its division, team and seat decided as any driver's by `/driver assign` once its signup is
+approved, and its nationality the one its signup gave.
+
+Pure and synchronous — no `discord`, no database, which is what lets these tests run without a
+fixture.
 """
 
 from __future__ import annotations
@@ -36,9 +39,8 @@ SYNTHETIC_ID_BASE = 9_000_000_000_000_000_000
 #: the first row is a header; a file without one is read from its first line.
 HEADER_FIRST_FIELD = "id"
 
-#: What every row must hold. Nationality is the only one a driver may lack — the signup
-#: wizard drops the question when the switch is off, so a roster without it is legitimate.
-EXPECTED_COLUMNS = 5
+#: What every row must hold: the driver's ID and its name.
+EXPECTED_COLUMNS = 2
 
 
 @dataclass(frozen=True)
@@ -48,9 +50,6 @@ class ParsedDriver:
     line: int                   # 1-based, counting the header, so it matches the box
     discord_user_id: int
     driver_name: str
-    team_name: str
-    division_name: str
-    nationality: str | None
 
 
 def parse_roster_csv(text: str) -> tuple[list[ParsedDriver], list[str]]:
@@ -76,11 +75,11 @@ def parse_roster_csv(text: str) -> tuple[list[ParsedDriver], list[str]]:
         if len(row) != EXPECTED_COLUMNS:
             errors.append(
                 f"Line {number}: expected {EXPECTED_COLUMNS} columns "
-                f"(ID, driver, team, division, nationality) but found {len(row)}."
+                f"(ID, driver name) but found {len(row)}."
             )
             continue
 
-        raw_id, name, team, division, nationality = (field.strip() for field in row)
+        raw_id, name = (field.strip() for field in row)
 
         driver_id = parse_user_id(raw_id)
         if driver_id is None:
@@ -117,21 +116,11 @@ def parse_roster_csv(text: str) -> tuple[list[ParsedDriver], list[str]]:
             continue
         seen_names[key] = number
 
-        if not team:
-            errors.append(f"Line {number}: `{name}` names no team.")
-            continue
-        if not division:
-            errors.append(f"Line {number}: `{name}` names no division.")
-            continue
-
         drivers.append(
             ParsedDriver(
                 line=number,
                 discord_user_id=driver_id,
                 driver_name=name,
-                team_name=team,
-                division_name=division,
-                nationality=nationality or None,
             )
         )
 
@@ -139,19 +128,6 @@ def parse_roster_csv(text: str) -> tuple[list[ParsedDriver], list[str]]:
         errors.append("There were no drivers in what you pasted.")
 
     return drivers, errors
-
-
-def divisions_named(drivers: list[ParsedDriver]) -> list[str]:
-    """The divisions the roster touches, in the order they first appear.
-
-    Ordered by appearance rather than sorted: the reply names them back in the order the
-    manager wrote them, and a roster's divisions are written top-tier first by convention.
-    """
-    ordered: list[str] = []
-    for driver in drivers:
-        if driver.division_name not in ordered:
-            ordered.append(driver.division_name)
-    return ordered
 
 
 def format_roster_errors(errors: list[str]) -> str:

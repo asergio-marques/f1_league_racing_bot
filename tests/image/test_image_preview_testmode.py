@@ -181,8 +181,6 @@ async def _signed_up(db, discord_user_id: int, season_id: int, nationality: str 
     )
 
 
-#: What is not yet true of every test here: a fake driver is created with an ID and a name alone.
-_NAME_ONLY = "#600: a fake driver is still created seated, from a team and a division"
 #: And, of those reading a fake driver's nationality, that it is its signup's.
 _SIGNUP_NATIONALITY = (
     "#600: a fake driver is still created seated, and its nationality is still its own "
@@ -196,7 +194,6 @@ _SIGNUP_NATIONALITY = (
 class TestMockDriversAreDrawnByTheirMockName:
     """FR-026."""
 
-    @pytest.mark.xfail(strict=True, reason=_NAME_ONLY)
     @pytest.mark.parametrize("status", ["SETUP", "ACTIVE"])
     async def test_every_mock_name_is_drawn(self, bot, db_path, status):
         await _seed_test_season(db_path, status=status)
@@ -205,7 +202,6 @@ class TestMockDriversAreDrawnByTheirMockName:
 
         assert sorted(d.display_name for d in context.drivers) == sorted(MOCK_NAMES)
 
-    @pytest.mark.xfail(strict=True, reason=_NAME_ONLY)
     async def test_the_seats_carry_the_mock_names_too(self, bot, db_path):
         """The lineup draws the seats, not the flat list, so both must be right."""
         await _seed_test_season(db_path)
@@ -219,7 +215,6 @@ class TestMockDriversAreDrawnByTheirMockName:
         ]
         assert sorted(n for n in seated if n) == sorted(MOCK_NAMES)
 
-    @pytest.mark.xfail(strict=True, reason=_NAME_ONLY)
     @pytest.mark.parametrize(
         "kind", ["results", "standings", "attendance", "verdict"]
     )
@@ -232,7 +227,6 @@ class TestMockDriversAreDrawnByTheirMockName:
 
         assert sorted(d.display_name for d in context.drivers) == sorted(MOCK_NAMES)
 
-    @pytest.mark.xfail(strict=True, reason=_NAME_ONLY)
     async def test_a_mock_driver_is_never_invented_over(self, bot, db_path):
         """FR-027 — a mock driver is a seated driver, not an empty seat."""
         await _seed_test_season(db_path)
@@ -249,7 +243,6 @@ class TestMockDriversAreDrawnByTheirMockName:
 class TestTheNationalityTally:
     """FR-028. A mock driver is drawn under the nationality its signup gave, or none."""
 
-    @pytest.mark.xfail(strict=True, reason=_NAME_ONLY)
     async def test_mock_drivers_are_counted(self, bot, db_path):
         await _seed_test_season(db_path)
 
@@ -258,7 +251,6 @@ class TestTheNationalityTally:
         assert context.nationality_collected is True
         assert context.drivers_without_nationality == len(MOCK_NAMES)
 
-    @pytest.mark.xfail(strict=True, reason=_NAME_ONLY)
     async def test_they_are_drawn_without_a_flag_rather_than_given_one(
         self, bot, db_path
     ):
@@ -268,7 +260,6 @@ class TestTheNationalityTally:
 
         assert all(d.nationality in (None, "") for d in context.drivers)
 
-    @pytest.mark.xfail(strict=True, reason=_NAME_ONLY)
     async def test_nothing_is_counted_where_the_league_collects_no_nationality(
         self, bot, db_path
     ):
@@ -323,7 +314,6 @@ class TestTheNationalityTally:
             "Dutch",
         ]
 
-    @pytest.mark.xfail(strict=True, reason=_SIGNUP_NATIONALITY)
     async def test_the_test_mode_switch_stands_in_while_test_mode_is_on(
         self, bot, db_path
     ):

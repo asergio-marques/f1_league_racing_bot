@@ -35,8 +35,6 @@ _AUDIT_TYPE = "TEST_DRIVER_ADDED"
 _DOING = "Adding fake driver **Mock Alpha**"
 _NOT_IN_TEST_MODE = "⛔ This command is only available when test mode is enabled."
 
-_NAME_ONLY = "#600: roster add still takes a team and a division and seats the driver"
-
 
 @pytest.fixture
 async def league(tmp_path):
@@ -79,7 +77,6 @@ def _lines(league) -> list[str]:
     return [unruled(str(line)) for line in league.bot.log_channel.sent]
 
 
-@pytest.mark.xfail(strict=True, reason=_NAME_ONLY)
 async def test_a_fake_driver_and_its_audit_entry_and_line_are_one_save(league):
     """The core specification's test roster, changed by hand under test mode, and its record of
     what changed. The season is in Placements under test mode. Admin (77) runs `/test-mode roster
@@ -126,7 +123,6 @@ async def test_a_fake_driver_and_its_audit_entry_and_line_are_one_save(league):
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=_NAME_ONLY)
 async def test_it_is_judged_again_as_it_starts(league):
     """The season is in Placements under test mode. Admin (77) runs `/test-mode roster add` naming
     Mock Alpha and is acknowledged; before the queue runs it, test mode is switched off. The
@@ -149,7 +145,6 @@ async def test_it_is_judged_again_as_it_starts(league):
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=_NAME_ONLY)
 async def test_a_fault_in_the_save_adds_nobody(league):
     """The season is in Placements under test mode. Admin (77) runs `/test-mode roster add`
     naming Mock Alpha, and the audit entry's write fails on the database as the queue runs the
@@ -182,7 +177,6 @@ async def test_a_fault_in_the_save_adds_nobody(league):
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=_NAME_ONLY)
 async def test_the_same_ask_while_the_first_waits_is_refused_as_a_repeat(league):
     """The core specification's "How a change is carried out": a request repeating a change that
     has not started, with nothing else asked for since on its lane, is refused, saying so. The

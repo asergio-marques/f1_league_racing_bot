@@ -50,8 +50,6 @@ _ALPHA_TAKEN = (
     f"• Line 2: a driver with ID {ALPHA} is already on this server."
 )
 
-_NAMES_ONLY = "#600: roster add-bulk still reads five columns and seats its drivers"
-
 
 @pytest.fixture
 async def league(tmp_path):
@@ -117,7 +115,6 @@ def _created(uid: str, name: str) -> dict:
             "team_instance_id": None, "seat_number": None, "division_id": None}
 
 
-@pytest.mark.xfail(strict=True, reason=_NAMES_ONLY)
 async def test_a_roster_and_its_audit_entries_and_line_are_one_save(league):
     """The core specification's test roster, changed by hand under test mode, and its record of
     what changed. The season is in Placements under test mode. Admin (77) submits `/test-mode
@@ -175,7 +172,6 @@ async def test_a_roster_and_its_audit_entries_and_line_are_one_save(league):
         pytest.param(_alpha_taken, ROSTER, _ALPHA_TAKEN, id="a fault the database must answer"),
     ],
 )
-@pytest.mark.xfail(strict=True, reason=_NAMES_ONLY)
 async def test_a_roster_it_cannot_create_is_refused_at_the_ask(league, setup, text, refusal):
     """The season is in Placements under test mode. Admin (77) submits `/test-mode roster
     add-bulk`'s form with a roster that cannot be created: a line whose ID is not one, which the
@@ -209,7 +205,6 @@ async def _test_mode_off(league) -> None:
         pytest.param(_alpha_taken, _ALPHA_TAKEN, id="Mock Alpha's ID taken"),
     ],
 )
-@pytest.mark.xfail(strict=True, reason=_NAMES_ONLY)
 async def test_it_is_judged_again_as_it_starts(league, meanwhile, refusal):
     """The season is in Placements under test mode. Admin (77) submits `/test-mode roster
     add-bulk`'s form naming Mock Alpha and Mock Beta and is acknowledged; before the queue runs
@@ -234,7 +229,6 @@ async def test_it_is_judged_again_as_it_starts(league, meanwhile, refusal):
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=_NAMES_ONLY)
 async def test_a_fault_in_the_save_creates_nobody(league):
     """The season is in Placements under test mode. Admin (77) submits `/test-mode roster
     add-bulk`'s form naming Mock Alpha and Mock Beta, and an audit entry's write fails on the
@@ -268,7 +262,6 @@ async def test_a_fault_in_the_save_creates_nobody(league):
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=_NAMES_ONLY)
 async def test_the_same_roster_while_the_first_waits_is_refused_as_a_repeat(league):
     """The core specification's "How a change is carried out": a request repeating a change that
     has not started, with nothing else asked for since on its lane, is refused, saying so. The

@@ -114,11 +114,9 @@ async def _test_mode_off(league) -> None:
 #: `test_test_mode_roster_remove.py` and `test_test_mode_roster_clear.py`.
 ROSTER_REFUSALS = [
     pytest.param("roster_add", ("Mock",), _test_mode_off,
-                 "only available when test mode is enabled", id="add-outside-test-mode",
-                 marks=pytest.mark.xfail(strict=True, reason=_ANY_STAGE)),
+                 "only available when test mode is enabled", id="add-outside-test-mode"),
     pytest.param("roster_add", ("<@&987654321098765432> Mock",), None, "⛔",
-                 id="add-refused-by-the-roster",
-                 marks=pytest.mark.xfail(strict=True, reason=_ANY_STAGE)),
+                 id="add-refused-by-the-roster"),
 ]
 
 

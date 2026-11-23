@@ -85,7 +85,6 @@ async def test_the_command_is_refused_outside_test_mode():
 # ── The box ───────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason="#600: the box still names five columns")
 async def test_the_box_stays_within_discord_s_limits():
     """Every one of these is a 400 from Discord rather than a validation message, and the
     placeholder limit in particular has caught this project before. The placeholder names the
