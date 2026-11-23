@@ -271,6 +271,12 @@ def _lines(league) -> list[str]:
     return [unruled(str(line)) for line in league.bot.log_channel.sent]
 
 
+#: Why the switch's replies do not yet say what it now decides: whether the wizard asks.
+_SAYS_THE_WIZARD_ASKS = (
+    "#600: /test-mode nationality's replies still speak of giving mock drivers a nationality"
+)
+
+
 class TestTheNationalityCommand:
     """`/test-mode nationality` is a core `Setting` on the change queue (#283): the command
     answers with the queue's acknowledgement, and the queue flips the switch and writes its audit
@@ -288,6 +294,7 @@ class TestTheNationalityCommand:
 
         assert config.test_mode_nationality_required is True
 
+    @pytest.mark.xfail(strict=True, reason=_SAYS_THE_WIZARD_ASKS)
     async def test_it_toggles_off_and_back_on(self, league):
         """The server is in test mode with nationality on. Admin (77) runs the command, and runs
         it again before the queue has run the first: the first is acknowledged as turning it off,
@@ -296,8 +303,9 @@ class TestTheNationalityCommand:
         queued. The queue runs it: the switch is saved off, with one audit entry recording
         on → off. Admin runs the command once more: it is acknowledged as turning it back on, and
         once the queue has run it the switch is on again, a second audit entry recording
-        off → on; the replies read "OFF" and then "ON", and the lines "disabled" and then
-        "enabled", word for word."""
+        off → on; the replies read "OFF", saying the signup wizard does not ask it and graphics
+        draw no flag at all, and then "ON", saying the signup wizard asks a fake driver's
+        nationality, and the lines "disabled" and then "enabled", word for word."""
         first, repeat, again = _asks(league), _asks(league), _asks(league)
 
         await _ask_nationality(league, first)
@@ -328,11 +336,11 @@ class TestTheNationalityCommand:
         assert await _flags(league.db_path) == {_FLAG: 1, "test_mode_active": 1}
         assert last_said(first) == (
             "✅ Test-mode nationality: **OFF**.\n"
-            "Mock drivers already holding one keep it, and graphics draw no flag at all."
+            "The signup wizard does not ask it, and graphics draw no flag at all."
         )
         assert last_said(again) == (
             "✅ Test-mode nationality: **ON**.\n"
-            "Mock drivers may be given one with `/test-mode roster add`."
+            "The signup wizard asks a fake driver's nationality."
         )
         assert _lines(league) == [
             f"⛔ `/test-mode nationality` refused for {_NAMED} — Turning test-mode nationality "
@@ -386,11 +394,13 @@ class TestTheNationalityCommand:
             for row in rows
         ] == [(_AUDIT_TYPE, {_FLAG: True}, {_FLAG: False}, ACTOR_ID, None, NOW.isoformat())]
 
+    @pytest.mark.xfail(strict=True, reason=_SAYS_THE_WIZARD_ASKS)
     async def test_it_is_logged(self, league):
         """The server is in test mode with nationality on. Admin (77) runs the command: they are
         answered at once with the queue's acknowledgement, naming the change's first job, and
         nothing is written until the queue runs it. Once it has, the acknowledgement reads the
-        reply word for word, and the log channel takes the one line, word for word."""
+        reply, "OFF", saying the signup wizard does not ask it and graphics draw no flag at all,
+        word for word, and the log channel takes the one line, word for word."""
         interaction = _asks(league)
 
         await _ask_nationality(league, interaction)
@@ -408,7 +418,7 @@ class TestTheNationalityCommand:
 
         assert last_said(interaction) == (
             "✅ Test-mode nationality: **OFF**.\n"
-            "Mock drivers already holding one keep it, and graphics draw no flag at all."
+            "The signup wizard does not ask it, and graphics draw no flag at all."
         )
         assert _lines(league) == [
             f"{_NAMED} | /test-mode nationality | Success\n  test_mode_nationality: disabled"
