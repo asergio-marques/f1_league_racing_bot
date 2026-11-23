@@ -301,7 +301,7 @@ test-mode group do one thing in each command and differ only in how the driver i
 test-mode group is the member group's commands at the same tiers, with `cancel` taking its driver as
 text through core's `driver_reference`, as the test-mode `/driver` does, and `start`, which the member
 group has not, asking `signup.start` for a fake driver as the press does for a member (the core
-specification, "Fake drivers and rosters"). Both groups' commands parse, refuse and ask through those bodies. The signup module owns
+specification, "Fake drivers and rosters"). Both groups' commands parse, refuse and ask through those bodies, `start` excepted: the member group has no command for it to share, so its refusal of a real driver and its ask sit in the test-mode cog. The signup module owns
 the group, so core's swap names neither: it is handed the member and test-mode groups as a pair.
 *Rejected:* the test-mode group subclassing `SignupCog`, which would inherit the member group into
 its own app commands, as the same rejection for `/driver` puts it (`core.md`); and `start` as a
