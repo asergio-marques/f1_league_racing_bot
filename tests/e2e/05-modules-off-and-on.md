@@ -936,3 +936,91 @@ while it was off is then read back against Part B.
 69. **Do:** `/signup config view`
 
     **Expect:** as step 65: `Nationality Required` still `OFF`, `Channel` <#<signup id>>.
+
+---
+
+## Part K — Restoring the base
+
+Test mode is off, and the backup commands run only in test mode, which may be switched on only
+while a season is in configuration. A Season #2 is set up for that alone, as
+`02-roster-changes.md` steps 43 and 45 do, and the base restored over it.
+
+70. **Do:** `/season setup game_edition:25`
+
+    **Expect:**
+    - **Ack:** `Starting the season setup`
+    - **Then:**
+      ```
+      ✅ Season setup started. **Season #2 (F1 25)** is being configured.
+
+      Use `/division add` for each division, then `/round add` for each round.
+      When done, run `/season placements-review` to review and approve.
+      ```
+    - **Log:**
+      ```
+      <you> | /season setup | Success
+        season: Season #2 (F1 25)
+      ```
+
+71. **Do:** `/test-mode toggle`
+
+    **Expect:**
+    - **Ack:** `Turning test mode on`
+    - **Then:** ``✅ Test mode **enabled**. Use `/test-mode advance` to step through phases, or `/test-mode review` to inspect season status.``
+      No `📌 Added default point configs` line: the server still holds `Standard` and
+      `Half Points` (step 50).
+    - **Log:**
+      ```
+      <you> | /test-mode toggle | Success
+        test_mode: enabled
+      ```
+
+72. **Do:** steps 1 to 4 again: `/test-mode backup status`, `/test-mode backup restore`, press
+    **♻️ Restore**, and restart the bot.
+
+    **Expect:** as steps 1 to 4: the backup taken at `00-base.md` step 33, readable and locked,
+    survived the cancellation. `bot.prerestore.db` and `scheduler.prerestore.db` now hold the
+    server as this part found it, should it be wanted.
+
+73. **Do:** `/test-mode review`
+
+    **Expect:** as step 5: every module's cells back, every mark ⏳. The module switches are in the
+    database the backup holds, so the restore brought each back on with its jobs.
+
+74. **Do:** `/attendance config show`
+
+    **Expect:**
+    - **Reply:** the packaged values the base left, before step 6:
+      ```
+      **Attendance Configuration**
+
+      **Timing**
+        RSVP notice: **5** day(s) before race
+        Last reminder: **24** hr(s) before race
+        RSVP deadline: **2** hr(s) before race
+
+      **Penalties**
+        No-RSVP: **1** pt(s)
+        Absent penalty: **1** pt(s)
+        No-show (ACCEPTED + absent): **1** pt(s)
+
+      **Auto-actions**
+        Auto-reserve threshold: **disabled**
+        Auto-sack threshold: **disabled**
+      ```
+    - **Log:** nothing; it is a view.
+
+75. **Do:** `/signup config view`
+
+    **Expect:** as step 11: `Nationality Required` `ON` again.
+
+Discord is not restored with the database. What this spec posted stays: the Phase 1 forecast in
+`#d1-weather` (unless step 46 took it down), the check-in call in `#d1-rsvp`, and the text
+calendars in `#d1-calendar` and `#d2-calendar`. What it deleted stays deleted: the calendar
+pictures and the opening classifications the base's approval posted, which the base still
+records. A later spec that posts one of them again finds the recorded message gone and carries
+on (`standing_posts` passes over a message already deleted); clear the channels by hand for
+tidiness if you wish. `#signup` holds the overwrites step 68 put back, which are the ones the base
+set.
+
+The base is as `00-base.md` left it, its backup still saved and locked.
