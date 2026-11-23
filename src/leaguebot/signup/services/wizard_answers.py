@@ -76,7 +76,7 @@ from leaguebot.framework.utils.league_server import league_guild
 from leaguebot.framework.utils.log_lines import abandoned_line, refusal_line
 from leaguebot.utils.messages import chunk_message
 from leaguebot.framework.utils.member_names import member_named
-from leaguebot.signup.services.driver_naming import name_of_driver
+from leaguebot.signup.services.driver_naming import mention_or_name, name_of_driver
 from leaguebot.signup.models.signup_module import SignupRecord, SignupWizardRecord, WizardState
 from leaguebot.signup.services.closing_steps import CHANNEL_GONE, END, INACTIVITY_TIMER
 from leaguebot.signup.services.signup_posting import post
@@ -536,13 +536,13 @@ async def channel_gone_ending(
     """The result of a job that found the driver's signup channel gone, or found that the wizard
     names none (*channel_id* None): nothing is posted, and `signup.end` is asked of the league's
     queue in the job's own save (#439, slice 8)."""
-    named, _ = await name_of_driver(ctx.bot, drivers, user_id)
+    named, fake = await name_of_driver(ctx.bot, drivers, user_id)
     return StepResult(
         result={"no_channel": True, "ended": True},
         follow_ons=(FollowOn(
             END,
             {"user_id": user_id, "reason": CHANNEL_GONE, "channel_id": channel_id, "named": named},
-            f"ending <@{user_id}>'s signup, their signup channel being gone",
+            f"ending {named if fake else f'<@{user_id}>'}'s signup, their signup channel being gone",
         ),),
     )
 
@@ -736,8 +736,9 @@ def answer_change(
         return "arming the signup's 24 hours again"
 
     async def would_never_time_out(ctx: StepContext) -> str:
+        who = await mention_or_name(ctx.db_path, ctx.step_payload["user_id"])
         return (
-            f"<@{ctx.step_payload['user_id']}>'s signup would never time out if they stopped "
+            f"{who}'s signup would never time out if they stopped "
             "answering, and while they correct it the season's placements could not be "
             "confirmed until the bot restarts"
         )
@@ -909,8 +910,9 @@ def submit_change(
         return "taking the signup's 24 hours away"
 
     async def would_never_be_submitted(ctx: StepContext) -> str:
+        who = await mention_or_name(ctx.db_path, ctx.payload["user_id"])
         return (
-            f"<@{ctx.payload['user_id']}>'s signup would never be submitted, and while they "
+            f"{who}'s signup would never be submitted, and while they "
             "correct it the season's placements could not be confirmed until the bot restarts"
         )
 
@@ -1086,8 +1088,9 @@ def panel_change(
             try:
                 await standing_posts.remove_kept(ctx.bot, ctx.kept)
             except StepFailedOnDiscord as refused:
+                who = await mention_or_name(ctx.db_path, user_id)
                 noted.append(
-                    f"  {refused}: the earlier parts of <@{user_id}>'s review panel in "
+                    f"  {refused}: the earlier parts of {who}'s review panel in "
                     f"<#{ctx.step_payload['channel_id']}> need removing by hand."
                 )
             if lapse is not None:
@@ -1119,8 +1122,9 @@ def panel_change(
         return f"posting the review panel in <#{ctx.step_payload['channel_id']}>"
 
     async def would_wait_unreviewed(ctx: StepContext) -> str:
+        who = await mention_or_name(ctx.db_path, ctx.step_payload["user_id"])
         return (
-            f"<@{ctx.step_payload['user_id']}> would wait for approval with no review panel, "
+            f"{who} would wait for approval with no review panel, "
             "and the season's placements could not be confirmed"
         )
 

@@ -25,6 +25,14 @@ async def fake_name_of(db_path: str, user_id: int | str) -> str | None:
     return reference.test_name if reference is not None and reference.is_test_driver else None
 
 
+async def mention_or_name(db_path: str, user_id: int | str) -> str:
+    """How a job's description or a refusal names the driver holding *user_id*: a mention of the
+    account for a real driver, the test name for a fake driver, whose account is no member's and
+    a mention of it reaches nobody."""
+    fake = await fake_name_of(db_path, user_id)
+    return f"<@{user_id}>" if fake is None else fake
+
+
 async def name_of_driver(
     bot: "LeagueBot", drivers: "DriverService", user_id: int | str
 ) -> tuple[str, bool]:

@@ -119,7 +119,7 @@ from leaguebot.framework.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.input_validator import parse_time
 from leaguebot.framework.utils.league_server import league_guild
 from leaguebot.framework.utils.log_lines import name_of_member
-from leaguebot.signup.services.driver_naming import fake_name_of, name_of_driver
+from leaguebot.signup.services.driver_naming import fake_name_of, mention_or_name, name_of_driver
 from leaguebot.signup.models.signup_module import WizardState
 from leaguebot.signup.services.closing_steps import (
     DELETE_REASON,
@@ -331,10 +331,12 @@ def approve_change(
         return None
 
     async def describe_approve(ctx: StepContext) -> str:
-        return f"approving the signup of <@{ctx.step_payload['user_id']}>"
+        who = await mention_or_name(ctx.db_path, ctx.step_payload["user_id"])
+        return f"approving the signup of {who}"
 
     async def describe_grant(ctx: StepContext) -> str:
-        return f"giving <@{ctx.step_payload['user_id']}> the driver role"
+        who = await mention_or_name(ctx.db_path, ctx.step_payload["user_id"])
+        return f"giving {who} the driver role"
 
     def finished_lines(ctx: OutcomeContext) -> tuple[str, ...]:
         # The "Approved" line is `grant_role`'s; a role job an admin discarded wrote none, and the
@@ -471,10 +473,12 @@ def request_changes_change(
         )
 
     async def describe_name(ctx: StepContext) -> str:
-        return f"finding the name of <@{ctx.step_payload['user_id']}> for the record"
+        who = await mention_or_name(ctx.db_path, ctx.step_payload["user_id"])
+        return f"finding the name of {who} for the record"
 
     async def describe_request(ctx: StepContext) -> str:
-        return f"asking for changes to the signup of <@{ctx.step_payload['user_id']}>"
+        who = await mention_or_name(ctx.db_path, ctx.step_payload["user_id"])
+        return f"asking for changes to the signup of {who}"
 
     def outcome(ctx: OutcomeContext) -> str:
         requested = {view.name: view for view in ctx.steps}.get(REQUEST_JOB)
@@ -599,14 +603,16 @@ def choices_change(
         return f"offering the correction choices in <#{ctx.step_payload['channel_id']}>"
 
     async def describe_arm(ctx: StepContext) -> str:
-        return f"arming the five minutes to choose for <@{ctx.step_payload['user_id']}>"
+        who = await mention_or_name(ctx.db_path, ctx.step_payload["user_id"])
+        return f"arming the five minutes to choose for {who}"
 
     async def describe_reason(ctx: StepContext) -> str:
         return f"deleting the reason typed in <#{ctx.step_payload['channel_id']}>"
 
     async def would_never_lapse(ctx: StepContext) -> str:
+        who = await mention_or_name(ctx.db_path, ctx.step_payload["user_id"])
         return (
-            f"nothing would end <@{ctx.step_payload['user_id']}>'s correction request once its "
+            f"nothing would end {who}'s correction request once its "
             "five minutes ran out, and the season's placements could not be confirmed until the "
             "bot restarts"
         )
@@ -767,17 +773,21 @@ def choose_change(
         return StepResult(result={})
 
     async def describe_name(ctx: StepContext) -> str:
-        return f"finding the name of <@{ctx.step_payload['user_id']}> for the record"
+        who = await mention_or_name(ctx.db_path, ctx.step_payload["user_id"])
+        return f"finding the name of {who} for the record"
 
     async def describe_choose(ctx: StepContext) -> str:
-        return f"sending <@{ctx.step_payload['user_id']}> back to one answer of their signup"
+        who = await mention_or_name(ctx.db_path, ctx.step_payload["user_id"])
+        return f"sending {who} back to one answer of their signup"
 
     async def describe_arm(ctx: StepContext) -> str:
-        return f"arming the 24 hours of <@{ctx.step_payload['user_id']}>'s correction"
+        who = await mention_or_name(ctx.db_path, ctx.step_payload["user_id"])
+        return f"arming the 24 hours of {who}'s correction"
 
     async def would_never_time_out(ctx: StepContext) -> str:
+        who = await mention_or_name(ctx.db_path, ctx.step_payload["user_id"])
         return (
-            f"<@{ctx.step_payload['user_id']}>'s signup would never time out if they stopped "
+            f"{who}'s signup would never time out if they stopped "
             "answering, and while they correct it the season's placements could not be "
             "confirmed until the bot restarts"
         )
@@ -932,8 +942,9 @@ async def ask_lapse(queue: "ChangeQueue", user_id: str, *, restart: bool = False
 async def would_await_a_choice_nobody_can_make(ctx: StepContext) -> str:
     """What a Discard of a job that moves a driver out of Awaiting Correction Parameter would
     leave: the driver stuck there, an unsettled signup that refuses the season's placements."""
+    who = await mention_or_name(ctx.db_path, ctx.step_payload["user_id"])
     return (
-        f"<@{ctx.step_payload['user_id']}> would be left awaiting a correction nobody can "
+        f"{who} would be left awaiting a correction nobody can "
         "choose, and the season's placements could not be confirmed until the bot restarts"
     )
 
@@ -1086,25 +1097,30 @@ def lapse_change(
             follow_ons=(FollowOn(
                 PANEL,
                 {"user_id": user_id, "channel_id": int(channel_id), "lapse": lapse_record(ctx)},
-                f"posting <@{user_id}>'s review panel again",
+                f"posting {await mention_or_name(ctx.db_path, user_id)}'s review panel again",
             ),),
         )
 
     async def describe_names(ctx: StepContext) -> str:
-        return f"finding the names of <@{ctx.step_payload['user_id']}> and their manager for the record"
+        who = await mention_or_name(ctx.db_path, ctx.step_payload["user_id"])
+        return f"finding the names of {who} and their manager for the record"
 
     async def describe_lapse(ctx: StepContext) -> str:
-        return f"returning <@{ctx.step_payload['user_id']}> to the approval queue"
+        who = await mention_or_name(ctx.db_path, ctx.step_payload["user_id"])
+        return f"returning {who} to the approval queue"
 
     async def describe_post_lapse(ctx: StepContext) -> str:
-        return f"telling <@{ctx.step_payload['user_id']}>'s channel the correction lapsed"
+        who = await mention_or_name(ctx.db_path, ctx.step_payload["user_id"])
+        return f"telling {who}'s channel the correction lapsed"
 
     async def describe_panel(ctx: StepContext) -> str:
-        return f"handing <@{ctx.step_payload['user_id']}>'s review panel to their own lane"
+        who = await mention_or_name(ctx.db_path, ctx.step_payload["user_id"])
+        return f"handing {who}'s review panel to their own lane"
 
     async def would_wait_unreviewed(ctx: StepContext) -> str:
+        who = await mention_or_name(ctx.db_path, ctx.step_payload["user_id"])
         return (
-            f"<@{ctx.step_payload['user_id']}> would wait for approval with no review panel, "
+            f"{who} would wait for approval with no review panel, "
             "and the season's placements could not be confirmed"
         )
 

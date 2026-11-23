@@ -27,6 +27,7 @@ from leaguebot.core.utils.channel_guard import is_league_admin, is_league_manage
 from leaguebot.framework.utils.background import start_background
 from leaguebot.framework.utils.interaction_errors import report_failure
 from leaguebot.framework.utils.league_bot import LeagueBot, bot_of
+from leaguebot.signup.services.driver_naming import fake_name_of
 from leaguebot.framework.utils.league_server import (
     CallbackButton,
     Handler,
@@ -136,28 +137,32 @@ async def _lapse_pending_reason(key: tuple[int, int], entry: dict, drivers: "Dri
     await record_abandoned(
         bot_of(interaction),
         entry["actor"],
-        what=f"the “{label}” button of {_review_owner(interaction, entry['discord_user_id'])} signup review",
+        what=f"the “{label}” button of {await _review_owner(interaction, entry['discord_user_id'])} signup review",
         lapsed=True,
         detail=detail,
     )
 
 
-def _review_owner(interaction: discord.Interaction, owner_id: str | None) -> str:
+async def _review_owner(interaction: discord.Interaction, owner_id: str | None) -> str:
     """Whose signup review a button sits on, as the log channel names it: "Alex's", by the display
-    name the league's server gives them, or their mention where the name is not to be had. Nobody
-    (a panel whose driver cannot be found) is "a"."""
+    name the league's server gives them, or their mention where the name is not to be had; a fake
+    driver's test name, whose account is no member's. Nobody (a panel whose driver cannot be
+    found) is "a"."""
     if owner_id is None:
         return "a"
+    fake = await fake_name_of(bot_of(interaction).db_path, owner_id)
+    if fake is not None:
+        return f"{fake}'s"
     guild = interaction.guild
     member = guild.get_member(int(owner_id)) if guild is not None else None
     name = getattr(member, "display_name", None)
     return f"{name if isinstance(name, str) else f'<@{owner_id}>'}'s"
 
 
-def _review_button(interaction: discord.Interaction, owner_id: str | None, label: str) -> str:
+async def _review_button(interaction: discord.Interaction, owner_id: str | None, label: str) -> str:
     """A button of a signup review, as the log channel names it: "the “Approve” button of Alex's
     signup review"."""
-    return f"the “{label}” button of {_review_owner(interaction, owner_id)} signup review"
+    return f"the “{label}” button of {await _review_owner(interaction, owner_id)} signup review"
 
 
 async def take_reason(
@@ -197,7 +202,7 @@ async def take_reason(
 
     action = pending["action"]
     interaction: discord.Interaction = pending["interaction"]
-    what = _review_button(interaction, pending["discord_user_id"], _BUTTON_OF[action])
+    what = await _review_button(interaction, pending["discord_user_id"], _BUTTON_OF[action])
     actor = pending["actor"]
     if action == "reject":
         kind = END
@@ -242,7 +247,7 @@ async def _refuse_review_button(
     await refuse(
         interaction,
         reply,
-        what=_review_button(interaction, owner_id, label),
+        what=await _review_button(interaction, owner_id, label),
     )
 
 
@@ -351,7 +356,7 @@ class AdminReviewView(LeagueView):
             "signup.approve",
             {"user_id": _user_id, "actor_name": interaction.user.display_name},
             interaction=interaction,
-            what=_review_button(interaction, _user_id, "Approve"),
+            what=await _review_button(interaction, _user_id, "Approve"),
         )
 
     async def _ask_for_reason(
@@ -383,7 +388,7 @@ class AdminReviewView(LeagueView):
         await interaction.followup.send(prompt, ephemeral=True)
         await self._router.post_log(
             f"{interaction_member(interaction)} | "
-            f"the “{label}” button of {_review_owner(interaction, user_id)} signup review | "
+            f"the “{label}” button of {await _review_owner(interaction, user_id)} signup review | "
             "Asked for a reason"
         )
         # Started last, so the lapse's line can never come before the press's own.
@@ -490,7 +495,7 @@ class CorrectionParameterView(LeagueView):
                             "pressed_at": inter.created_at.isoformat(),
                         },
                         interaction=inter,
-                        what=_review_button(inter, _user_id, label),
+                        what=await _review_button(inter, _user_id, label),
                     )
                 return callback
 

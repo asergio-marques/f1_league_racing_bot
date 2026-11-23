@@ -937,11 +937,6 @@ async def _mock_rejection_stops_the_lane(tmp_path: Any) -> SeasonLeague:
     return league
 
 
-#: Not yet true of a fake driver's signup on the queue (B2-T2).
-_QUEUE_NOT_YET_NAMED = (
-    "#600: the queue's refusal and stop lines still name a fake driver by a <@id> mention"
-)
-
 #: How a fake driver's signup is ended or sent back, the words of the log line it writes, and the
 #: words of the post its channel is sent naming it (None where the post names nobody).
 _FAKE_DRIVER_NAMED = [
@@ -953,11 +948,9 @@ _FAKE_DRIVER_NAMED = [
     pytest.param(_mock_cancelled, "| Signup | Cancelled", "cancelled by", id="cancel"),
     pytest.param(_mock_expired, "lapsed unconfirmed", None, id="24-hour lapse"),
     pytest.param(_mock_cancel_refused_on_the_queue, "signup has already been approved", None,
-                 id="cancel refused on the queue",
-                 marks=pytest.mark.xfail(strict=True, reason=_QUEUE_NOT_YET_NAMED)),
+                 id="cancel refused on the queue"),
     pytest.param(_mock_rejection_stops_the_lane, "The queue is stopped at job #", None,
-                 id="rejection stopping the lane",
-                 marks=pytest.mark.xfail(strict=True, reason=_QUEUE_NOT_YET_NAMED)),
+                 id="rejection stopping the lane"),
 ]
 
 

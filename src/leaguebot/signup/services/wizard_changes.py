@@ -54,6 +54,7 @@ import aiosqlite
 import discord
 
 from leaguebot.signup.models.switch import SWITCH_KEY
+from leaguebot.signup.services.driver_naming import mention_or_name
 from leaguebot.framework.models.change import (
     AuditRecord,
     ChangeOrigin,
@@ -757,7 +758,8 @@ def end_change(
             # Judged on the database alone: a reason a manager is typing lives in memory, and
             # is refused at the ask (#502).
             refusal = cancellation_refusal(
-                None if profile is None else profile.current_state, f"<@{user_id}>"
+                None if profile is None else profile.current_state,
+                await mention_or_name(ctx.db_path, user_id),
             )
             if refusal is not None:
                 return Verdict.refuse(f"⛔ {refusal}", refusal)
@@ -933,22 +935,25 @@ def end_change(
         return StepResult(result={"named": named, "fake": fake_name is not None})
 
     async def describe_name(ctx: StepContext) -> str:
-        return f"finding the name of <@{ctx.step_payload['user_id']}> for the record"
+        who = await mention_or_name(ctx.db_path, ctx.step_payload["user_id"])
+        return f"finding the name of {who} for the record"
 
     async def describe_end(ctx: StepContext) -> str:
-        return f"ending the signup of <@{ctx.step_payload['user_id']}>"
+        who = await mention_or_name(ctx.db_path, ctx.step_payload["user_id"])
+        return f"ending the signup of {who}"
 
     async def would_never_end(ctx: StepContext) -> str:
+        who = await mention_or_name(ctx.db_path, ctx.step_payload["user_id"])
         if ctx.step_payload["reason"] == CHANNEL_GONE:
             if ctx.step_payload.get("found", PANEL) != PANEL:
                 return (
-                    f"<@{ctx.step_payload['user_id']}>'s signup would stay under way with no "
+                    f"{who}'s signup would stay under way with no "
                     "signup channel, so they could neither finish it nor sign up again, and "
                     "while they await review or a correction the season's placements could not "
                     "be confirmed"
                 )
             return (
-                f"<@{ctx.step_payload['user_id']}> would be left awaiting approval with no "
+                f"{who} would be left awaiting approval with no "
                 "signup channel and no review panel, and the season's placements could not be "
                 "confirmed"
             )
@@ -957,11 +962,11 @@ def end_change(
         # the plain text below, which is true of them all, serves them.
         if ctx.step_payload["reason"] == REJECTED:
             return (
-                f"<@{ctx.step_payload['user_id']}> would stay awaiting review, and the "
+                f"{who} would stay awaiting review, and the "
                 "season's placements could not be confirmed"
             )
         return (
-            f"<@{ctx.step_payload['user_id']}>'s signup would never end, and the season's "
+            f"{who}'s signup would never end, and the season's "
             "placements could not be confirmed"
         )
 
