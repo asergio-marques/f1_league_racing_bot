@@ -175,7 +175,6 @@ def _log_lines(bot) -> list[str]:
     return [unruled(str(line)) for line in bot.log_channel.sent]
 
 
-@pytest.mark.xfail(strict=True, reason=PENDING)
 @pytest.mark.parametrize("on", [True, False], ids=["on", "off"])
 async def test_the_toggle_swaps_driver_after_its_save(toggling, on):
     """Admin turns test mode on, and then, for the second case, off again. Once the queue has run
@@ -215,7 +214,6 @@ async def test_a_refused_toggle_swaps_nothing(toggling):
     bot.tree.sync.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=PENDING)
 async def test_a_swap_discord_refuses_ends_on_a_fault_and_the_toggle_stands(toggling):
     """Discord refuses every sync. Admin turns test mode on: test mode is on all the same, the
     queue is not stopped, and both Admin's reply and a line in the log channel say the `/driver`

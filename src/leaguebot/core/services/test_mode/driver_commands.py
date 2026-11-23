@@ -18,24 +18,37 @@ wrong `/driver` in place until the next one, which is accepted: the remedy is a 
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable, Sequence
+
 from discord import app_commands
 
 from leaguebot.framework.db.database import get_connection
-from leaguebot.framework.models.change import GuildUnavailable
+from leaguebot.framework.models.change import GuildUnavailable, StepKind, StepResult
+from leaguebot.framework.services.queue.change_types import Step, StepContext, StepView
 from leaguebot.framework.utils.league_bot import LeagueBot
 from leaguebot.framework.utils.league_server import league_guild
 
 #: The name both groups go by.
 DRIVER_GROUP = "driver"
 
+#: The name of the step that swaps them, as the changes that plan it and their outcomes know it.
+SWAP_DRIVER_COMMANDS = "swap_driver_commands"
+
+#: What a swap Discord refused leaves undone, as a change's reply and line say it: the remedy is a
+#: restart, never the change run again.
+SWAP_PROBLEM = (
+    "the `/driver` commands could not be changed; they will be put right when the bot next restarts"
+)
+
 
 async def swap_driver_commands(
     bot: LeagueBot, *, member: app_commands.Group, variant: app_commands.Group
-) -> None:
+) -> list[app_commands.AppCommand]:
     """Show the `/driver` the flag calls for and sync both trees: with test mode on, no `/driver`
     on the global tree and the *variant* on the league's server; off, the *member* group on the
-    global tree and none on the server. Raises `GuildUnavailable` where the league's server is not
-    in the cache, and Discord's refusal of a sync as it came."""
+    global tree and none on the server. Returns the global commands synced. Raises
+    `GuildUnavailable` where the league's server is not in the cache, and Discord's refusal of a
+    sync as it came."""
     async with get_connection(bot.db_path) as db:
         cursor = await db.execute("SELECT test_mode_active FROM server_configs")
         row = await cursor.fetchone()
@@ -49,5 +62,42 @@ async def swap_driver_commands(
     else:
         bot.tree.add_command(member, override=True)
         bot.tree.remove_command(DRIVER_GROUP, guild=guild)
-    await bot.tree.sync()
+    synced = await bot.tree.sync()
     await bot.tree.sync(guild=guild)
+    return synced
+
+
+def swap_driver_commands_step(swap: Callable[[LeagueBot], Awaitable[object]]) -> Step:
+    """The job that runs *swap*, the bot's `swap_driver_commands` with its two groups handed it
+    (the entry point's), after the save of a change that switches test mode on or off,
+    ended by a fault, not stopping the lane (architecture.md, "A job that fails stops its lane"):
+    the seat, the season and the flag are the league's record, and a `/driver` Discord would not
+    change is put right by the next start-up, so nothing waits on it and a Retry could change
+    nothing a league sees. A refusal ends the job with `{"problem": SWAP_PROBLEM}`, for the change's
+    reply and line to carry (`swap_problem`)."""
+
+    async def run(ctx: StepContext) -> StepResult:
+        await swap(ctx.bot)
+        return StepResult(result={})
+
+    def on_fault(_ctx: StepContext, _error: BaseException) -> StepResult:
+        return StepResult(result={"problem": SWAP_PROBLEM})
+
+    async def describe(_ctx: StepContext) -> str:
+        return "swapping the `/driver` commands"
+
+    return Step(SWAP_DRIVER_COMMANDS, StepKind.ACT, run, describe=describe, on_fault=on_fault)
+
+
+def swap_problem(views: Sequence[StepView]) -> str | None:
+    """What the swap among *views* left undone, or None where it ran well or ran not at all."""
+    for view in views:
+        if view.name == SWAP_DRIVER_COMMANDS and (view.result or {}).get("problem"):
+            return SWAP_PROBLEM
+    return None
+
+
+__all__ = [
+    "SWAP_DRIVER_COMMANDS", "SWAP_PROBLEM", "swap_driver_commands", "swap_driver_commands_step",
+    "swap_problem",
+]

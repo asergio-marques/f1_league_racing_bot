@@ -27,6 +27,12 @@ flag reads off) and the deletion of the saved test-mode backup, which the backup
 in test mode alone, could no longer restore (`discard_backup`). A job a league admin discards is
 dropped, and the reply says what was not done and what to do by hand, in the season end's words.
 
+**The `/driver` swap follows the save**, as the first job after it, whichever way the flag went
+(`swap_driver_commands`, `driver_commands.py`). It ends on a fault where Discord refuses it, as role
+moves do: the change stands, the lane carries on, and the reply and the line say the commands
+could not be changed and will be put right when the bot next restarts, never asking for the toggle
+again, which a refused swap could only meet again.
+
 **A fault in the save stops the lane**, as a failed job does, for the reason `/season setup`'s does
 (`season_setup_change.py`): a league admin exists to discard the job and clear the stop, and the
 save is rolled back whole, so test mode is left as it was, with nothing seeded or deleted. A
@@ -80,6 +86,10 @@ from leaguebot.core.services.seasons.season_lifecycle_service import (
     live_season_stage,
     live_season_stage_on,
     steps_of_the_modules,
+)
+from leaguebot.core.services.test_mode.driver_commands import (
+    SWAP_DRIVER_COMMANDS,
+    swap_problem,
 )
 from leaguebot.core.services.test_mode.test_mode_service import (
     count_live_real_drivers,
@@ -168,7 +178,7 @@ def _save(
                         AUDIT_TYPE, {"test_mode_active": True}, {"test_mode_active": False}
                     ),
                 ),
-                then=(*flush, PlannedStep(DISCARD_BACKUP)),
+                then=(PlannedStep(SWAP_DRIVER_COMMANDS), *flush, PlannedStep(DISCARD_BACKUP)),
             )
         await db.execute("UPDATE server_configs SET test_mode_active = 1")
         live = await live_season_stage_on(db)
@@ -177,6 +187,7 @@ def _save(
         )
         return StepResult(
             result={"outcome": ON, "seeded": [name for part in parts for name in part.seeded]},
+            then=(PlannedStep(SWAP_DRIVER_COMMANDS),),
             audits=(
                 AuditRecord(AUDIT_TYPE, {"test_mode_active": False}, {"test_mode_active": True}),
                 *(audit for part in parts for audit in part.audits),
@@ -195,9 +206,22 @@ def _backup_deleted(ctx: OutcomeContext) -> bool:
     return view is not None and bool((view.result or {}).get("deleted"))
 
 
+def _swap_not_done(ctx: OutcomeContext) -> str:
+    """The line the log carries for a `/driver` swap Discord refused, none where it did not."""
+    problem = swap_problem(ctx.steps)
+    return f"\n  not done: {problem}" if problem else ""
+
+
+def _swap_not_done_reply(ctx: OutcomeContext) -> str:
+    """The part of the reply naming a `/driver` swap Discord refused, none where it did not."""
+    problem = swap_problem(ctx.steps)
+    return f"\n⚠️ Done, but on Discord:\n• {problem}" if problem else ""
+
+
 def _finished_lines(ctx: OutcomeContext) -> tuple[str, ...]:
     """The one line of the change, once it is done: Success, or Nothing changed where the flag
-    already stood; none where the save never finished."""
+    already stood; none where the save never finished. A `/driver` swap Discord refused is a
+    `not done` line of it."""
     saved = saved_result(ctx)
     found = saved.get("outcome")
     if found == UNCHANGED:
@@ -206,13 +230,15 @@ def _finished_lines(ctx: OutcomeContext) -> tuple[str, ...]:
         seeded = saved["seeded"]
         return (
             f"{ctx.named} | {COMMAND} | Success\n  test_mode: enabled"
-            + (f"\n  seeded_configs: {', '.join(seeded)}" if seeded else ""),
+            + (f"\n  seeded_configs: {', '.join(seeded)}" if seeded else "")
+            + _swap_not_done(ctx),
         )
     if found == OFF:
         return (
             f"{ctx.named} | {COMMAND} | Success\n  test_mode: disabled"
             + (f"\n  removed_fake_drivers: {saved['removed']}" if saved["removed"] else "")
-            + ("\n  backup: deleted" if _backup_deleted(ctx) else ""),
+            + ("\n  backup: deleted" if _backup_deleted(ctx) else "")
+            + _swap_not_done(ctx),
         )
     return ()
 
@@ -224,13 +250,16 @@ def test_mode_toggle_change(
     test_mode_flushed: AwaitedHook,
     season_end_steps: Hook,
     scheduler: "SchedulerService",
+    swap_driver: Step,
 ) -> ChangeType:
     """The `core.test_mode_toggle` change type, for the builder to register: *test_mode_turned_on*
     is the hook each module's part of turning test mode on is signed up to, *profiles_deleted* the
     hook each module's rows of a fake driver are deleted through, *test_mode_flushed* the hook the
     modules hand back the jobs that clear what test mode posted through, *season_end_steps* the
-    hook they define those jobs' steps through, and *scheduler* holds the job store the saved
-    backup sits beside."""
+    hook they define those jobs' steps through, *scheduler* holds the job store the saved
+    backup sits beside, and *swap_driver* is the job that swaps `/driver` after the save (see
+    `driver_commands`): ended by a fault when Discord refuses it, the reply and the line saying
+    the commands will be put right when the bot next restarts."""
 
     async def describe(ctx: StepContext) -> str:
         return _doing(ctx.payload).lower()
@@ -239,6 +268,7 @@ def test_mode_toggle_change(
         SAVE: Step(
             SAVE, StepKind.SAVE, _save(test_mode_turned_on, profiles_deleted, test_mode_flushed), describe=describe
         ),
+        SWAP_DRIVER_COMMANDS: swap_driver,
         DISCARD_BACKUP: discard_backup_step(scheduler),
         **steps_of_the_modules(season_end_steps, line_prefix=None),
     }
@@ -251,8 +281,10 @@ def test_mode_toggle_change(
             return NOTHING_CHANGED.format(state=_words(on))
         if found == ON:
             seeded = saved["seeded"]
-            return ENABLED + (
-                f"\n📌 Added default point configs: **{', '.join(seeded)}**" if seeded else ""
+            return (
+                ENABLED
+                + (f"\n📌 Added default point configs: **{', '.join(seeded)}**" if seeded else "")
+                + _swap_not_done_reply(ctx)
             )
         if found != OFF:
             return NOT_CHANGED.format(state=_words(not on))
@@ -264,7 +296,8 @@ def test_mode_toggle_change(
         not_done = shared_not_done(ctx, steps)
         if discarded(view_of(ctx, DISCARD_BACKUP)):
             not_done.append(BACKUP_KEPT)
-        return reply + not_done_reply(not_done, discarded=anything_discarded(ctx))
+        reply += not_done_reply(not_done, discarded=anything_discarded(ctx))
+        return reply + _swap_not_done_reply(ctx)
 
     return ChangeType(
         kind=TEST_MODE_TOGGLE,

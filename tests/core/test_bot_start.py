@@ -190,7 +190,6 @@ async def test_a_server_sync_refused_at_start_up_is_one_failure_line(tmp_path, m
     bot.output_router.post_log.assert_awaited_once_with(made(step, refused))
 
 
-@pytest.mark.xfail(strict=True, reason=PENDING)
 @pytest.mark.parametrize("test_mode", [True, False], ids=["test-mode-on", "test-mode-off"])
 async def test_the_sync_command_leaves_the_driver_the_flag_calls_for(tmp_path, test_mode):
     """The bot the entry point builds, with test mode as the case gives, its league's server
