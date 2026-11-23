@@ -608,6 +608,21 @@ async def _mock_alpha_at(league: SeasonLeague, state: str,
     league.channels[MOCK_CHANNEL] = made
 
 
+#: What is not yet true of the log lines a league admin's answers on a fake driver's wizard write.
+_NOT_YET_NAMED = (
+    "#600: a fake driver's answer and Submitted lines name only the admin, or its ID by mention"
+)
+
+
+def _signup_entries(league: SeasonLeague) -> list[str]:
+    """The log channel's entries written under "Signup", each whole as a reader sees it, the
+    backticks that keep a mention from notifying taken out."""
+    import re
+
+    log = league.log().replace("`", "")
+    return [entry for entry in re.split(r"\n?―+\n?", log) if "| Signup |" in entry]
+
+
 async def _typed_by(league: SeasonLeague, author: Any, channel_id: int, content: str) -> Any:
     """*author* types *content* in the signup channel *channel_id*, and the signup cog hears it.
     Gives the message."""
@@ -700,15 +715,17 @@ async def test_a_league_admin_typing_in_a_wizard_not_theirs_to_answer_is_ignored
     assert (await _wizard(league), await _wizard_of(league, MOCK)) == before
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_NAMED)
 async def test_a_league_admin_s_press_on_a_fake_driver_s_wizard_is_saved_as_its_answer(tmp_path):
     """The server is in test mode. Mock Alpha, a fake driver, has given its nationality and is at
     the platform question. The league admin Admin (77) presses Steam on it, the view built for
     Mock Alpha and handed the change queue, the signup service, the configuration service and the
     driver service. At once the admin is answered privately that it is under way. When the queue
     runs Mock Alpha's platform is saved as Steam and its wizard asks the platform ID, posted in
-    its channel."""
+    its channel. The answer's log line, "Platform: Steam", names Admin, who answered, and Mock
+    Alpha by its test name, and nothing in the log channel mentions Mock Alpha's ID."""
     from leaguebot.signup.services.signup_views import PlatformButtonView
-    from tests.signup.test_wizard_changes import MOCK
+    from tests.signup.test_wizard_changes import MOCK, MOCK_NAME
     from tests.support.change_queue import tier_member
     from tests.support.season_league import ADMIN_ID
 
@@ -735,15 +752,22 @@ async def test_a_league_admin_s_press_on_a_fake_driver_s_wizard_is_saved_as_its_
     assert mock["draft"]["platform"] == "Steam"
     assert mock["wizard_state"] == "COLLECTING_PLATFORM_ID"
     assert any("Step 3 — Platform ID" in text for text in league.channel(MOCK_CHANNEL).texts)
+    [answered] = _signup_entries(league)
+    assert "Platform: Steam" in answered, answered
+    assert f"<@{ADMIN_ID}>" in answered and MOCK_NAME in answered, answered
+    assert f"<@{MOCK}>" not in league.log().replace("`", ""), league.log()
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_NAMED)
 async def test_a_league_admin_s_last_answer_submits_the_fake_driver_s_signup_for_review(tmp_path):
     """The server is in test mode. Mock Alpha, a fake driver, has answered every question but its
     notes, its draft naming it "Mock Alpha". The league admin Admin (77) types "Happy to race
     anywhere" in Mock Alpha's signup channel, and the queue runs. Mock Alpha's signup is saved
     under its ID with its test name and those notes, it is Pending Admin Approval, and one review
     panel is posted in its channel, naming it "Mock Alpha" and mentioning no account by its ID;
-    no signup is saved for the admin."""
+    no signup is saved for the admin. The log channel's Submitted line, and every other line
+    under "Signup", names Admin, who answered, and Mock Alpha by its test name, and nothing in the
+    log channel mentions Mock Alpha's ID."""
     from tests.signup.test_wizard_changes import MOCK, MOCK_NAME
     from tests.support.change_queue import tier_member
     from tests.support.season_league import ADMIN_ID
@@ -776,6 +800,11 @@ async def test_a_league_admin_s_last_answer_submits_the_fake_driver_s_signup_for
     assert await league.rows(
         "SELECT * FROM signup_records WHERE discord_user_id = ?", str(ADMIN_ID)
     ) == []
+    entries = _signup_entries(league)
+    assert [entry for entry in entries if "| Signup | Submitted" in entry], entries
+    for entry in entries:
+        assert f"<@{ADMIN_ID}>" in entry and MOCK_NAME in entry, entry
+    assert f"<@{MOCK}>" not in league.log().replace("`", ""), league.log()
 
 
 #: For each step, what Kimi types, and the refusal and step name the wizard gives him today.

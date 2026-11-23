@@ -800,3 +800,139 @@ async def test_each_signup_decision_writes_an_audit_entry(tmp_path, decide, afte
     assert entry["old_value"]["state"] == before
     assert entry["old_value"]["discord_user_id"] == str(SIGNING_UP)
     assert entry["new_value"]["new_state"] == after
+
+
+# ---------------------------------------------------------------------------
+# A fake driver's signup is named by its test name (#600)
+# ---------------------------------------------------------------------------
+
+#: Kimi's test name, where a case makes him a fake driver.
+MOCK_KIMI = "Mock Alpha"
+
+#: What is not yet true of a fake driver's signup.
+_NAMED_BY_ITS_ID = "#600: a fake driver's signup is still named by a mention of its ID"
+
+
+async def _as_mock(league: SeasonLeague) -> None:
+    """Kimi made a fake driver called Mock Alpha, no member of the server holding his ID, and the
+    server put in test mode."""
+    await league.write(
+        "UPDATE driver_profiles SET is_test_driver = 1, test_display_name = ? "
+        "WHERE discord_user_id = ?", MOCK_KIMI, str(SIGNING_UP),
+    )
+    league.absent.add(SIGNING_UP)
+    await league.set_test_mode(True)
+
+
+async def _mock_rejected(tmp_path: Any) -> SeasonLeague:
+    league = await _league(tmp_path)
+    await _as_mock(league)
+    await _type_reason(league, "reject", "Lap time unverified")
+    return league
+
+
+async def _mock_changes_requested(tmp_path: Any) -> SeasonLeague:
+    league = await _league(tmp_path)
+    await _as_mock(league)
+    await _type_reason(league, "request_changes", "Lap times look mistyped")
+    return league
+
+
+async def _mock_field_chosen(tmp_path: Any) -> SeasonLeague:
+    from datetime import timedelta
+
+    from tests.signup.test_review_changes import _league as offered_league
+    from tests.signup.test_review_changes import _press_choice
+
+    league = await offered_league(tmp_path, state="AWAITING_CORRECTION_PARAMETER",
+                                  offered_ago=timedelta(minutes=1))
+    await _as_mock(league)
+    await _press_choice(league)
+    await run_queue(league.bot)
+    return league
+
+
+async def _mock_withdrew(tmp_path: Any) -> SeasonLeague:
+    """Kimi, made Mock Alpha part-way through signing up; the league admin Admin (77) presses
+    Cancel Signup on his wizard, the view handed the services that judge who may answer it."""
+    from leaguebot.signup.services.signup_views import WithdrawButtonView
+    from tests.signup.test_wizard_changes import _mid_signup
+    from tests.support.change_queue import tier_member
+    from tests.support.season_league import ADMIN_ID
+
+    league = await _mid_signup(tmp_path)
+    await _as_mock(league)
+    press = member_interaction(league.bot, user=tier_member("admin", member_id=ADMIN_ID))
+    press.guild = league.guild
+    press.channel_id = KIMI_CHANNEL
+    press.channel = league.channel(KIMI_CHANNEL)
+    view = WithdrawButtonView(
+        str(SIGNING_UP), league.bot.change_queue, league.bot.signup_module_service,
+        config=league.bot.config_service, drivers=league.bot.driver_service,
+    )
+    await view.withdraw_button.callback(press)
+    await run_queue(league.bot)
+    return league
+
+
+async def _mock_expired(tmp_path: Any) -> SeasonLeague:
+    from datetime import timedelta
+
+    from tests.signup.test_wizard_changes import (
+        INACTIVITY_TIMER as INACTIVITY,
+        _idle,
+        _league as wizard_league,
+        _timer_callback,
+    )
+
+    league = await wizard_league(tmp_path)
+    await _idle(league, SIGNING_UP, league.clock.now - timedelta(hours=24, minutes=1))
+    await _as_mock(league)
+    await _timer_callback(league, INACTIVITY)(str(SIGNING_UP))
+    await run_queue(league.bot)
+    return league
+
+
+#: How a fake driver's signup is ended or sent back, the words of the log line it writes, and the
+#: words of the post its channel is sent naming it (None where the post names nobody).
+_FAKE_DRIVER_NAMED = [
+    pytest.param(_mock_rejected, "| Signup | Rejected", "rejected by",
+                 marks=pytest.mark.xfail(strict=True, reason=_NAMED_BY_ITS_ID), id="reject"),
+    pytest.param(_mock_changes_requested, "| Signup | Correction requested",
+                 "requested a correction",
+                 marks=pytest.mark.xfail(strict=True, reason=_NAMED_BY_ITS_ID),
+                 id="request-changes"),
+    pytest.param(_mock_field_chosen, "Correction requested: ", "re-submit",
+                 marks=pytest.mark.xfail(strict=True, reason=_NAMED_BY_ITS_ID),
+                 id="field-choice"),
+    pytest.param(_mock_withdrew, "| Signup | Withdrawn", None,
+                 marks=pytest.mark.xfail(strict=True, reason=_NAMED_BY_ITS_ID),
+                 id="withdrawal"),
+    pytest.param(_mock_expired, "lapsed unconfirmed", None,
+                 marks=pytest.mark.xfail(strict=True, reason=_NAMED_BY_ITS_ID),
+                 id="24-hour lapse"),
+]
+
+
+@pytest.mark.parametrize(("decide", "logged", "posted"), _FAKE_DRIVER_NAMED)
+async def test_a_fake_driver_s_signup_is_named_by_its_test_name_and_never_by_its_id(
+    tmp_path, decide, logged, posted
+):
+    """The server is in test mode and Kimi is a fake driver called Mock Alpha, no member of the
+    server holding his ID. His signup is rejected or sent back for changes by manager 77 (typing
+    the reason), the field to correct is picked by 77, a league admin presses Cancel Signup on
+    his wizard, or it lapses after 24 hours idle; the queue runs. The log channel's line for it
+    names Mock Alpha, and nothing in the log channel or in his signup channel mentions his ID;
+    the rejection notice, the correction choices and the re-submit prompt posted in his channel
+    name Mock Alpha."""
+    league = await decide(tmp_path)
+
+    log = league.log().replace("`", "")
+    assert logged in log, log
+    assert MOCK_KIMI in log, log
+    assert f"<@{SIGNING_UP}>" not in log, log
+    texts = _texts(league)
+    assert not [text for text in texts if f"<@{SIGNING_UP}>" in text], texts
+    if posted is not None:
+        [post] = [text for text in texts if posted in text]
+        assert MOCK_KIMI in post, post
