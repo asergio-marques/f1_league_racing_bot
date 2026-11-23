@@ -1004,6 +1004,49 @@ async def _mock_stale_press(tmp_path: Any) -> SeasonLeague:
     return league
 
 
+async def _mock_close_discarding(tmp_path: Any, job: str) -> SeasonLeague:
+    """Kimi, made Mock Alpha part-way through signing up, his signup channel standing; manager 77
+    runs `/signup close` and presses Confirm Close, and the save of Mock Alpha's *job* (telling
+    his channel signups have closed, locking it, or arming its deletion a day on) fails, so that
+    the queue stops at it. A league admin presses Discard."""
+    from tests.signup.test_window_changes import CLOSE_KIND, _close_league, _confirm_close
+    from tests.support.change_queue import refuse_the_job
+
+    league = await _close_league(tmp_path, SIGNING_UP)
+    await _as_mock(league)
+    await refuse_the_job(league.db_path, CLOSE_KIND, job, True)
+    await _confirm_close(league)
+    await run_queue(league.bot)
+    await discard_job(league.bot)
+    return league
+
+
+async def _mock_switch_off_discarding(tmp_path: Any) -> SeasonLeague:
+    """Kimi, made Mock Alpha part-way through signing up, his signup channel standing, the window
+    open and the season in Configuration; manager 77 runs `/module disable signup`, and the save
+    of the job telling Mock Alpha's channel signups have closed fails, so that the queue stops at
+    it. A league admin presses Discard."""
+    from unittest.mock import MagicMock
+
+    from leaguebot.core.cogs.module_cog import ModuleCog
+    from leaguebot.signup.services.closing_steps import SIGNUP_NOTICE
+    from tests.signup.test_window_changes import MODULE_OFF_KIND, _close_league
+    from tests.signup.test_window_changes import _manager as closing_manager
+    from tests.support.change_queue import refuse_the_job
+
+    league = await _close_league(tmp_path, SIGNING_UP, stage="CONFIGURATION")
+    await _as_mock(league)
+    await refuse_the_job(league.db_path, MODULE_OFF_KIND, SIGNUP_NOTICE, True)
+    cog = ModuleCog.__new__(ModuleCog)
+    cog.bot = league.bot
+    interaction = closing_manager(league)
+    interaction.command = MagicMock(qualified_name="module disable")
+    await cog._disable_signup(interaction)
+    await run_queue(league.bot)
+    await discard_job(league.bot)
+    return league
+
+
 #: How a fake driver's signup is ended, sent back or refused; the words of each log entry it
 #: writes that must name it, one or several; and the words of the post its channel is sent naming
 #: it (None where the post names nobody).
@@ -1027,6 +1070,18 @@ _FAKE_DRIVER_NAMED = [
                  id="correction lapse stopping the lane, discarded"),
     pytest.param(_mock_stale_press, "button of Mock Alpha's signup wizard refused", None,
                  id="stale button pressed by a league admin"),
+    pytest.param(lambda tmp_path: _mock_close_discarding(tmp_path, "signup_notice"),
+                 "failed_step: Mock Alpha was not told signups had closed.", None,
+                 id="close, telling the channel discarded"),
+    pytest.param(lambda tmp_path: _mock_close_discarding(tmp_path, "close_signup"),
+                 "failed_step: Mock Alpha's signup channel could not be locked", None,
+                 id="close, locking the channel discarded"),
+    pytest.param(lambda tmp_path: _mock_close_discarding(tmp_path, "arm_deletion"),
+                 "failed_step: Mock Alpha's signup channel will not delete itself", None,
+                 id="close, arming the channel's deletion discarded"),
+    pytest.param(_mock_switch_off_discarding,
+                 "failed_step: Mock Alpha was not told signups had closed.", None,
+                 id="signup switched off, telling the channel discarded"),
 ]
 
 
@@ -1043,9 +1098,12 @@ async def test_a_fake_driver_s_signup_is_named_by_its_test_name_and_never_by_its
     ending his signup failing; or his signup channel is deleted and the save of the ending fails,
     a league manager pressing Retry once the fault is lifted; or his correction lapses and its job
     telling his channel fails to be saved, a league admin pressing Discard; or Admin presses Steam
-    on his wizard's platform question after it has been answered; the queue runs. Each log entry
-    the case names (the refusal, the notice of the stopped queue naming the job, and the Retry
-    and Discard lines included) names Mock Alpha, and nothing in the log channel or in his signup
+    on his wizard's platform question after it has been answered; or, Kimi part-way through
+    signing up, manager 77 closes signups or switches the signup module off, and the job telling
+    his channel signups have closed, locking it or arming its deletion fails to be saved, a league
+    admin pressing Discard; the queue runs. Each log entry the case names (the refusal, the notice
+    of the stopped queue naming the job, the Retry and Discard lines, and the close's report of
+    each discarded job included) names Mock Alpha, and nothing in the log channel or in his signup
     channel mentions his ID;
     the rejection notice, the correction choices, the re-submit prompt and the cancellation
     notice posted in his channel name Mock Alpha."""
