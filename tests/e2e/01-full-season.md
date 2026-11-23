@@ -2666,11 +2666,10 @@ paste of step 136 ready before step 135.
          are recalculated, not judged;
          > UNVERIFIED: that an amendment's recalculation judges no threshold. Were it to judge the
          > auto-sack of 6, Pim Prasert is in Reserve and nobody else in Division 1 stands at 6.
-       - `#d1-verdicts`: Rafael Rossi's verdict, posted again. Round 2's verdicts (Bruno Bianchi's
-         penalty and its correction) and Round 3's sanction card are not Round 1's, and stand.
-         > UNVERIFIED: whether the kept penalty's verdict (and its banner) is posted again and the
-         > earlier one deleted (`_remember_superseded_announcements_on`). Record what
-         > `#d1-verdicts` holds after the rebuild.
+       - `#d1-verdicts`: Round 1's and then Round 2's verdicts posted again, each under a new
+         banner — Rafael Rossi's +5s; Bruno Bianchi's `5 seconds added` and `5 seconds removed` —
+         and the earlier banners and verdicts of both rounds deleted once their replacements are
+         up. Round 3's sanction card and its heading stand;
        - the amendment channel is deleted.
      - **Log:** any notice blocks, and last:
        ```
