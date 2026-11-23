@@ -647,7 +647,7 @@ would make the file's write wait on a record of it.
   stopped; one that overtakes a stop says it runs past it, the stop standing (`held_behind_text`).
 
 **Five exceptions: a league's settings, `/bot init`, roles moved after a driver's or team's change,
-the settings a league repairs itself with, and the `/driver` swap after a test-mode change.** A
+the settings a league repairs itself with, and the `/driver` and `/signup` swap after a test-mode change.** A
 change to one of a league's settings is one atomic save of its value and its audit record (its line
 with them, or in the save of the step after it that carries the line — the arming of the daily
 portrait job, a role's grant to every driver where it replaces one gone from the server while the
@@ -755,10 +755,10 @@ stop nobody yet holds the role to clear.
   the one a later reader could tune away: a change that can stop its lane and claims a channel
   would need the save to re-check, or would need to be barred from being overtaken.
 
-  **A fifth exception: the swap of the `/driver` commands after a change of test mode.** Switching
+  **A fifth exception: the swap of the `/driver` and `/signup` commands after a change of test mode.** Switching
   test mode on or off, a test season's completion, abort and cancellation each end with the server
-  showing the `/driver` the flag calls for, the member group or the test-mode group
-  (`swap_driver_commands`, `core/services/test_mode/driver_commands.py`). The swap is an ACT step
+  showing the `/driver` and `/signup` the flag calls for, the member groups or the test-mode groups
+  (`swap_test_mode_commands`, `core/services/test_mode/driver_commands.py`). The swap is an ACT step
   after the commit, and carries `Step.on_fault` as role moves do: where Discord refuses it, or the
   league's server is missing from the cache, the queue does not stop the lane but marks the job
   done, for the reply and log line to say so. The change it follows stands, and nothing behind it on
@@ -971,7 +971,7 @@ update or delete on any table but those. The queue's own tables are always allow
 the job's mark, its audit records, its log lines and the changes it asks for), so the mark, the
 lines and a follow-on pass, and an empty `writes` allows those alone. A write the authoriser refuses
 raises in the step, rolls its save back whole and stops the lane at that job, so it never lands; in
-a league's setting, `/bot init`'s save, a role move or the `/driver` swap, whose steps end on a
+a league's setting, `/bot init`'s save, a role move or the `/driver` and `/signup` swap, whose steps end on a
 fault (see "A job that fails stops its lane"), it ends the job instead and the lane goes on. A change
 type whose `writes` is `None`, the default, is not restricted; most league change types leave it so,
 and a league change type may declare the tables it writes and be confined to them likewise, as
@@ -1546,7 +1546,7 @@ stated exceptions below them:
    check that raises as the change starts (`ChangeQueue._start`), and of a hook that raises in
    either (`ChangeQueue._step_failed`, `_end_on_check_fault` and `_refuse`, each leading to the
    lane's stop) are failure paths as well: the catches of a step and of a check each stop the lane,
-   or, for a step of a league's setting, `/bot init`'s save, a role move or the `/driver` swap that
+   or, for a step of a league's setting, `/bot init`'s save, a role move or the `/driver` and `/signup` swap that
    gives `Step.on_fault`, end the job instead, or, for a member's change of a type that gives
    `ChangeType.on_check_fault`, end the change, and the lane goes on (see "A job that fails stops
    its lane"), and a hook's catch always leads to the stop. Either way the fault is logged on the
