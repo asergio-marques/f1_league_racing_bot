@@ -195,3 +195,133 @@ set here are the values `01-full-season.md` steps 6 and 7 set.
      ```
      Both penalties stand, whichever outcome steps 6 and 7 took.
    - **Log:** nothing; it is a view.
+
+---
+
+## Part C — Division 1's round 1, restarted between its steps
+
+`/test-mode advance` asks the change queue for one step and answers at once; the step's work
+follows as the queue reaches it. A forecast is three jobs of one change
+(`weather/services/forecast_changes.py`): the draw, saved with its calculation line; the post; and,
+from Phase 2 on, the deletion of the forecast it replaces. A restart between them carries the
+change on from the first job not done. The weather and check-in posts themselves are
+`01-full-season.md`'s to check; here only what a restart does to them is.
+
+### A forecast cut off
+
+9. **Do:** `/test-mode advance`, and **restart the bot** the moment its reply appears.
+
+   **Expect:**
+   - **Reply:** ``⏩ **Phase 1** for **Division 1** — **Silverstone Circuit** is on the change queue: its forecast goes to the forecast channel and its calculation to the log channel as soon as the queue reaches it.``
+   - Once the bot is back and has gone quiet, whichever moment the stop fell at:
+     - **Posts** (`#d1-weather`): **one** Phase 1 forecast, as `01-full-season.md` step 12.
+       It went out before the stop, or after the start, as the change was carried on.
+     - **Log:** the advance's line, once:
+       ```
+       <you> | /test-mode advance | Success
+         phase: 1
+         division: Division 1
+         track: Silverstone Circuit
+         round: 1
+       ```
+       and **one** `📋 **Phase 1 Calculation Log** | Round 1 in **Division 1** | Silverstone Circuit`
+       with its JSON, and any notice block. The calculation is written in the save that draws the
+       phase, so it is never written twice.
+   - Two Phase 1 forecasts in `#d1-weather` are the accepted second copy only where they carry
+     the same rain probability: the draw was saved once, and the post ran again. Two different
+     probabilities, or two calculation lines, are a phase drawn twice: a failure.
+
+10. **Do:** `/test-mode review`
+
+    **Expect:**
+    - **Reply:** as step 4, but under `**Division 1**` the `Round 1` line reads `P1: ✅`, every
+      other mark still `⏳`. The restart kept every job the advance did not take.
+    - **Log:** nothing; it is a view.
+
+### The check-in call, after a restart
+
+11. **Do:** `/test-mode advance`. Wait for the call to appear in `#d1-rsvp`, then **restart the
+    bot**.
+
+    **Expect:**
+    - **Reply:** `📨 The **RSVP notice** for **Division 1** — **Round 1** (**Silverstone Circuit**) is on the change queue: it goes to the RSVP channel as soon as the queue reaches it.`
+    - **Posts** (`#d1-rsvp`): the call, as `01-full-season.md` step 13, every driver `()`.
+    - **Log:** the advance's line, `phase: rsvp_notice`, as `01-full-season.md` step 13.
+    - After the restart: nothing more posted, and no line in `#bot-log`. The start-up routes the
+      call's buttons again (`recover_rsvp_views_and_deadlines`) and posts no late call: its round
+      is a year ahead and its call is already up.
+
+12. **The call is still the bot's after the restart.** **Do:**
+    `/attendance test rsvp division:Division 1`. In the form **Bulk Set RSVP Statuses**, paste
+    into **ID, status — one entry per line**, and submit:
+
+    ```
+    9000000000000000001, accept
+    ```
+
+    **Expect:**
+    - **Ack:** `setting 1 test RSVP answer(s) on the check-in call of **Division 1**`
+    - **Then:**
+      ```
+      ✅ Applied 1 update(s) in **Division 1**:
+        `9000000000000000001` → accepted
+      🔄 The check-in call is redrawn on the change queue.
+      ```
+    - **Posts** (`#d1-rsvp`): the call of step 11 **edited in place**, `(✅)` beside Adam Archer and
+      `()` beside every other driver. A new call posted instead means the bot lost the call's
+      record in the restart: a failure.
+    - **Log:**
+      ```
+      <you> | /attendance test rsvp | Success
+        division: Division 1
+        round_id: <id: Division 1's round 1>
+        updates: 1
+        changes: `9000000000000000001` → accepted
+      ```
+
+### A forecast that replaces another, cut off
+
+13. **Do:** `/test-mode advance`, and **restart the bot** the moment its reply appears.
+
+    **Expect:**
+    - **Reply:** ``⏩ **Phase 2** for **Division 1** — **Silverstone Circuit** is on the change queue: its forecast goes to the forecast channel and its calculation to the log channel as soon as the queue reaches it.``
+    - Once the bot is back and has gone quiet, whichever of the three jobs the stop fell after:
+      - **Posts** (`#d1-weather`): **one** message, the Phase 2 forecast, as `01-full-season.md`
+        step 15. **The Phase 1 forecast of step 9 is deleted**, whether before the stop or after
+        the start.
+      - **Log:** the advance's line, as step 9 with `phase: 2`, once; **one**
+        `📋 **Phase 2 Calculation Log** | Round 1 in **Division 1** | Silverstone Circuit`.
+    - The Phase 1 forecast still standing once the bot has gone quiet is the deletion lost in the
+      restart: a failure. A second copy of Phase 2 is the accepted second copy (step 9); it is not
+      recorded, so it is never deleted by the bot: delete it by hand.
+
+### To the result submission
+
+14. **Do:** `/test-mode advance`, three times, waiting for each reply before the next. No restart.
+
+    **Expect**, in this order, each **Reply** as `01-full-season.md` gives it, and each with its
+    `<you> | /test-mode advance | Success` line in `#bot-log`:
+
+    | Advance | Reply | 01's step |
+    |---|---|---|
+    | 1 | `⏰ The **RSVP last-notice** for **Division 1** — **Round 1** (**Silverstone Circuit**) is on the change queue: …` | 16 |
+    | 2 | ``⏩ **Phase 3** for **Division 1** — **Silverstone Circuit** is on the change queue: …`` | 18 |
+    | 3 | `🏁 The **RSVP deadline** for **Division 1** — **Round 1** (**Silverstone Circuit**) is on the change queue: …` | 19 |
+
+    The last notice names every Division 1 racing driver but Adam Archer, who answered at step
+    12. Phase 3 replaces Phase 2 in `#d1-weather`. The deadline takes the call's buttons down and
+    posts nothing else in `#d1-rsvp`: no reserve accepted, so nobody is placed.
+
+15. **Do:** `/test-mode advance`
+
+    **Expect:**
+    - **Reply:** `⏩ The result submission of **Division 1** — **Round 1** (**Silverstone Circuit**) is on the change queue: its submission channel appears as soon as the queue reaches it.`
+    - **Posts:** the channel **`s1-division-1-r1-results`**, with its opening pinging
+      `@League Manager` and the **Qualifying** prompt, as `01-full-season.md` step 20.
+    - **Log:**
+      ```
+      <you> | /test-mode advance | Success
+        phase: result submission (on the change queue)
+        division: Division 1
+        round: Round 1
+      ```
