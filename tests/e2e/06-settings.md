@@ -938,7 +938,7 @@ sets up Season #2 with test mode on, leaving it in configuration.
 ### The three toggles
 
 A toggle flips its setting, so a repeat flips it back rather than changing nothing: putting each
-back is running it again (steps 96 to 98).
+back is running it again (step 99).
 
 77. **Do:** `/signup nationality`
 
@@ -1167,3 +1167,46 @@ back is running it again (steps 96 to 98).
 100. **Do:** `/signup config view`
 
      **Expect:** as step 12, every field as the base had it. No log line.
+
+---
+
+## Part J — Restoring the base
+
+Season #2 is left in configuration, test mode on, and every setting this spec changed is back as
+the base had it, the hub apart: no command unsets it. Restoring the base takes the hub, Season #2
+and the cancellation back out of the database, so the next spec starts where `00-base.md` left off.
+
+101. **Do:** steps 2 to 5 again: `/test-mode backup status`, `/test-mode backup restore`, press
+     **♻️ Restore**, and restart the bot.
+
+     **Expect:** as steps 2 to 5. The status still reads `Readable: yes` and locked: the
+     cancellation of step 73 kept the backup. `bot.prerestore.db` and `scheduler.prerestore.db` now
+     hold Season #2 as this part found it, should it be wanted. The host's log shows no hub being
+     recovered: the restored database sets none.
+
+102. **Do:** `/season status`, then `/team list`, then `/signup config view`, then
+     `/images config view`.
+
+     **Expect:** as steps 6, 8, 12 and 16: Season #1 ongoing again with its next rounds, the
+     Fixture's teams, the signup configuration and the image presentation as the base had them.
+     No log line.
+
+103. **Do:** `/bot hub-channel channel:#hub-2`
+
+     **Expect:** the hub is unset again, so `#hub-2` is free, and this sets it afresh:
+     - **Ack** and **Then:** as step 20, with `#hub-2`.
+     - **Posts** (`#hub-2`): a second panel, beside the one step 23 posted, which the restored
+       database no longer knows of.
+
+     **Skip this step where you mean to keep the base exactly as it was**: it is here only to show
+     that the hub is unset. Where you run it, restore the base again (step 101) before the next
+     spec.
+
+Discord is not restored with the database. Left behind by this spec, for you to delete by hand
+if you wish: the spare channels and `@Stand-in` of step 1; the panel and its permissions in
+`#hub-2`, and the cleared permissions of `#hub`; the calendars steps 59 and 65 posted in
+`#d1-calendar`, and the cancellation notices and cancelled calendars of step 73 in every division
+channel, as `02-roster-changes.md` leaves them. A later spec that posts a calendar again finds the
+recorded one gone and carries on (`standing_posts` passes over a message already deleted).
+
+The base is as `00-base.md` left it, its backup still saved and locked.
