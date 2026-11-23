@@ -266,3 +266,79 @@ the check-in timings may not, so they are read as they stand.
       2 configurations.
       ```
     - **Log:** nothing; it is a view.
+
+---
+
+## Part C — What a running season refuses
+
+`/module enable` and `/module disable` are a league admin's, given in the interaction channel.
+Before either reaches its module, the season's stage is judged: no module but signup is switched
+on once placements are confirmed, and signup neither on nor off once the configuration is
+(`ModuleCog._refuse_module_change`). Nothing is changed by any step of this part.
+
+### The wrong channel and the wrong role
+
+13. **Do**, in `#d1-weather` rather than `#bot-commands`: `/module disable module_name:weather`
+
+    **Expect:**
+    - **Reply:** `⛔ This command can only be used in the configured interaction channel.`
+    - **Log:** ``⛔ `/module disable` refused for <you> — This command can only be used in the configured interaction channel.``
+    - Nothing posted in `#d1-weather`: the reply is seen by you alone.
+
+14. **Make yourself a league manager, and no more.** In Discord, outside the bot, give yourself
+    `@League Manager` and remove `@League Admin`.
+
+    **Do:** `/module disable module_name:weather`
+
+    **Expect:**
+    - **Reply:** `⛔ This command is a league admin's. You need **League Admin**.`
+    - **Log:** ``⛔ `/module disable` refused for <you> — This command is a league admin's. You need **League Admin**.``
+
+15. **A league manager's command still answers.** **Do:** `/weather config view`
+
+    **Expect:** as step 9. The module commands are a league admin's; the module's own
+    configuration is a league manager's.
+
+16. **Do:** `/module enable module_name:images`
+
+    **Expect:**
+    - **Reply:** `⛔ This command is a league admin's. You need **League Admin**.`
+    - **Log:** ``⛔ `/module enable` refused for <you> — This command is a league admin's. You need **League Admin**.``
+      The tier is judged before the season: the stage refusal of step 17 is not reached.
+
+17. **Give the roles back.** In Discord, give yourself `@League Admin` again and remove
+    `@League Manager`, as the Fixture has it.
+
+    **Expect:** nothing from the bot. Every later step needs the role.
+
+### No module is switched on mid-season
+
+18. **Do** each command of the table, in its order. Every module is on: the base switched each on.
+
+    | Do |
+    |---|
+    | `/module enable module_name:weather` |
+    | `/module enable module_name:results` |
+    | `/module enable module_name:attendance` |
+    | `/module enable module_name:images` |
+
+    **Expect**, for each row, the same refusal:
+    - **Reply:** `❌ A module cannot be enabled once the season's placements have been confirmed. Enable it before then, or once the season has ended.`
+    - **Log:** ``⛔ `/module enable` refused for <you> — A module cannot be enabled once the season's placements have been confirmed. Enable it before then, or once the season has ended.``
+
+    The stage is judged first, so neither the module being on already (`⚠️ … module is already
+    enabled.`) nor, for attendance, the dependency on results is reached.
+
+### The signup module is fixed
+
+19. **Do** each command of the table, in its order.
+
+    | Do | Reply |
+    |---|---|
+    | `/module disable module_name:signup` | `❌ The signup module is fixed for Season 1 now that its configuration has been confirmed. It can be disabled again once the season has ended, or while a new season is in configuration.` |
+    | `/module enable module_name:signup` | `❌ The signup module is fixed for Season 1 now that its configuration has been confirmed. It can be enabled again once the season has ended, or while a new season is in configuration.` |
+
+    **Expect**, for each row: the **Reply** the table gives, and a **Log** line
+    ``⛔ `<the command, /module disable or /module enable>` refused for <you> — <the reply without its ❌>``.
+    The enable's reply says "enabled again" of a module that is on: it names the action refused,
+    read from the command (`configuration_fixed_refusal`).
