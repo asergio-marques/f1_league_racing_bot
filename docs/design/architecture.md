@@ -836,14 +836,16 @@ stop nobody yet holds the role to clear.
   league's server is missing from the cache, the queue does not stop the lane but marks the job
   done with the reply and log line saying the `/driver` commands could not be changed and will be
   put right when the bot next restarts. The change it follows stands, and nothing behind it on the
-  lane waits on it, so a stopped lane would hold every change for a lost command definition.
-  Discord's refusal of the swap's sync is its own failure, never a rule broken by the league, so
-  its remedy is a restart rather than the change run again. Off the queue, start-up and `!sync` sync
+  lane waits on it: the swap is Discord work the save does not need, as a role move is, so a
+  stopped lane would hold every change for a lost command definition. The remedy it names is a
+  restart, never the change run again, which would flip test mode (and, turning it off, delete
+  every fake driver) or, after a season's end, be refused. Off the queue, start-up and `!sync` sync
   the same trees and catch the refusal as `discord.HTTPException` by name, posting it through
   `start_up_failure_line`. A factory reset and `/bot init` run no swap; their replies name the
   restart. *Rejected:* stopping the lane on a refused swap, as other jobs do, which would hold the
-  lane for a fault that only a restart cures and that no Retry could cure; and a swap in a step
-  before the save, which would show the wrong `/driver` where the save then failed.
+  lane for work nothing waits on; and the swap run off the queue after the outcome, which would
+  need an exception of its own stated here and machinery of its own (a catch-all reporting through
+  `post_log`), and leave the swap unrecorded on the change's job.
 - **A failure that cannot be recorded is logged, and the job tried again.** Where the stop's own
   save raises, nothing is marked stopped: the lane's catch-all (`ChangeQueue._work_lane`, one for each lane) puts the
   error in the host's log, that lane's worker pauses and looks again, and the job runs again, so that its
