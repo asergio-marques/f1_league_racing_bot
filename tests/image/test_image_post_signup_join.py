@@ -157,6 +157,55 @@ class TestSignupRecordsJoin:
         assert await _driver_nationality(db_path, _hook(db_path), USER_ID) == "Dutch"
         assert await _driver_nationality(db_path, _hook(db_path), TEST_USER_ID) == "Italian"
 
+    @pytest.mark.xfail(strict=True, reason=_FROM_ITS_SIGNUP)
+    async def test_a_mock_driver_with_no_signup_to_the_season_is_read_from_its_latest(
+        self, db_path
+    ):
+        """D17. Season 1 is completed and season 2 is under way, with division D1. Mock Alpha, a
+        mock driver, signed up to season 1 alone, as "Mock Alpha", giving Brazilian. Read for D1,
+        in season 2, to which it made no signup, it is named "Mock Alpha" and its nationality is
+        Brazilian, from its latest signup, as any driver's is."""
+        from leaguebot.core.services.drivers.driver_names import (
+            read_driver_names,
+            read_driver_nationalities,
+        )
+
+        async with get_connection(db_path) as db:
+            earlier = (await db.execute(
+                "INSERT INTO seasons (start_date, status, season_number) "
+                "VALUES ('2025-03-01', 'COMPLETED', 1)"
+            )).lastrowid
+            current = (await db.execute(
+                "INSERT INTO seasons (start_date, status, season_number) "
+                "VALUES ('2026-03-01', 'ACTIVE', 2)"
+            )).lastrowid
+            division_id = (await db.execute(
+                "INSERT INTO divisions (season_id, name, mention_role_id, status, tier) "
+                "VALUES (?, 'D1', 1, 'ACTIVE', 1)",
+                (current,),
+            )).lastrowid
+            await db.execute(
+                "INSERT INTO driver_profiles (discord_user_id, current_state, "
+                "is_test_driver, test_display_name) VALUES (?, 'UNASSIGNED', 1, 'Mock Alpha')",
+                (str(TEST_USER_ID),),
+            )
+            await db.execute(
+                "INSERT INTO signup_records (created_at, season_id, discord_user_id, "
+                "server_display_name, discord_username, nationality) "
+                "VALUES ('2025-02-01T00:00:00+00:00', ?, ?, 'Mock Alpha', 'Mock Alpha', "
+                "'Brazilian')",
+                (earlier, str(TEST_USER_ID)),
+            )
+            await db.commit()
+
+        hook = _hook(db_path)
+        assert await read_driver_nationalities(
+            db_path, hook, [TEST_USER_ID], division_id=division_id
+        ) == {TEST_USER_ID: "Brazilian"}
+        assert await read_driver_names(
+            db_path, hook, None, [TEST_USER_ID], division_id=division_id
+        ) == {TEST_USER_ID: "Mock Alpha"}
+
     async def test_the_verdict_lookup_yields_none_for_an_unknown_driver(self, db_path):
         from leaguebot.image.services.aspects.image_verdict_post import _driver_nationality
 
