@@ -17,8 +17,6 @@ from unittest.mock import AsyncMock, MagicMock, call
 import discord
 import pytest
 
-PENDING = "#600: start-up and `!sync` show no `/driver` by the test-mode flag"
-
 
 async def _ready_bot(tmp_path, *, test_mode: bool):
     """The bot the entry point builds, on the league's server, found by id, with test mode as
@@ -68,7 +66,6 @@ def test_the_start_up_runs_no_step_for_an_off_queue_close():
         assert not hasattr(bot_module, gone), gone
 
 
-@pytest.mark.xfail(strict=True, reason=PENDING)
 async def test_a_second_ready_runs_no_start_up_step_and_syncs_nothing(tmp_path):
     """discord.py reports the bot ready a second time in one run, as after a network drop it could
     not resume (#446). The bot the entry point builds is in test mode. The first ready runs the
@@ -128,7 +125,6 @@ async def test_a_second_ready_runs_no_start_up_step_and_syncs_nothing(tmp_path):
     bot.output_router.post_log.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=PENDING)
 @pytest.mark.parametrize("test_mode", [True, False], ids=["test-mode-on", "test-mode-off"])
 async def test_start_up_shows_the_driver_the_flag_calls_for(tmp_path, monkeypatch, test_mode):
     """The bot the entry point builds is reported ready. In test mode, the global tree no longer
@@ -155,7 +151,6 @@ async def test_start_up_shows_the_driver_the_flag_calls_for(tmp_path, monkeypatc
     bot.output_router.post_log.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=PENDING)
 async def test_a_server_sync_refused_at_start_up_is_one_failure_line(tmp_path, monkeypatch):
     """The bot the entry point builds is in test mode, and Discord refuses the sync of the
     league's server as the bot is reported ready. The global sync is made all the same, and the

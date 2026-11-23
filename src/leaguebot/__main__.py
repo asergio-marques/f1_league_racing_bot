@@ -19,6 +19,7 @@ from leaguebot.attendance.services.hooks.preview_sources import AttendancePrevie
 from leaguebot.core.services.seasons.season_review_changes import recover_expired_review_prompts
 from leaguebot.framework.services.jobs.start_up import start_up
 from leaguebot.framework.utils.hooks import AwaitedHook, Hook, StartingHook
+from leaguebot.framework.models.change import GuildUnavailable
 from leaguebot.framework.utils.interaction_errors import start_up_failure_line
 from leaguebot.framework.utils.league_bot import LeagueBot
 from leaguebot.framework.utils.league_server import (
@@ -1351,7 +1352,16 @@ async def build(settings: Settings) -> LeagueBot:
         # swap then puts the test-mode `/driver` back on the server if test mode is on, and syncs
         # the server's tree and the global one, so that Discord has the latest command schema.
         bot.tree.clear_commands(guild=ctx.guild)
-        synced = await bot.driver_swap(bot)
+        try:
+            synced = await bot.driver_swap(bot)
+        except (discord.HTTPException, GuildUnavailable) as exc:
+            log.error("Failed to sync slash commands: %s", exc)
+            await bot.output_router.post_log(start_up_failure_line("slash command sync", exc))
+            await ctx.send(
+                "⚠️ The commands could not be synced; the failure is in the log channel.",
+                delete_after=15,
+            )
+            return
         try:
             await ctx.message.delete()
         except discord.HTTPException:
@@ -1402,7 +1412,8 @@ def _sign_up_to_starting(bot: LeagueBot) -> None:
 
 
 async def _when_ready(bot: LeagueBot) -> None:
-    """What the bot does each time discord.py reports it ready: start up, then sync its commands.
+    """What the bot does each time discord.py reports it ready: start up, then sync its commands,
+    with the `/driver` the test-mode flag calls for (`swap_driver_commands`).
 
     discord.py reports the bot ready again after a network drop it could not resume, with no
     restart. So this runs every step of the start-up through `start_up` alone, whose guard runs them
@@ -1424,11 +1435,14 @@ async def _when_ready(bot: LeagueBot) -> None:
     ):
         return
 
-    # Sync slash commands globally (may take up to 1 hour to propagate)
+    # Swap `/driver` as the test-mode flag calls for, then sync the global tree (may take up to 1
+    # hour to propagate) and the league's server's: a refusal off the queue, or a server missing
+    # from the cache, is one line in the log channel, and the bot goes on. The remedy is the next
+    # restart.
     try:
-        synced = await bot.tree.sync()
+        synced = await bot.driver_swap(bot)
         log.info("Synced %d slash command(s)", len(synced))
-    except discord.HTTPException as exc:
+    except (discord.HTTPException, GuildUnavailable) as exc:
         log.error("Failed to sync slash commands: %s", exc)
         await bot.output_router.post_log(start_up_failure_line("slash command sync", exc))
 
