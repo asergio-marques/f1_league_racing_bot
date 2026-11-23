@@ -65,6 +65,7 @@ from leaguebot.framework.models.change import (
     Verdict,
 )
 from leaguebot.core.models.driver_profile import DriverState, InvalidDriverTransition
+from leaguebot.core.services.drivers.driver_reference import DriverReference, resolve_driver
 from leaguebot.framework.services.queue.queue_records import (
     unfinished,
 )
@@ -176,6 +177,14 @@ REASON_PENDING = (
 )
 
 
+async def fake_driver_of(db_path: str, user_id: str) -> DriverReference | None:
+    """The fake driver the account *user_id* belongs to, or None for a real driver or an account
+    no driver holds. Asked of core's `driver_reference`: signup reads no `driver_profiles` of its
+    own, and a fake driver's name is its test name."""
+    reference = await resolve_driver(db_path, user_id)
+    return reference if reference is not None and reference.is_test_driver else None
+
+
 def cancellation_refusal(
     state: DriverState | None, name: str, pending_button: str | None = None
 ) -> str | None:
@@ -257,9 +266,11 @@ def start_change(
     async def check(ctx: CheckContext) -> Verdict:
         user_id = str(ctx.payload["user_id"])
         server_cfg = await config.get_server_config()
+        fake = await fake_driver_of(ctx.db_path, user_id)
         # A real driver never joins a server that is under test: test mode and a real league may
-        # not share one, and leaving test mode deletes every fake driver.
-        if server_cfg is not None and server_cfg.test_mode_active:
+        # not share one, and leaving test mode deletes every fake driver. A fake driver's signup
+        # is started for it, with no member behind it, so it is the one thing test mode admits.
+        if server_cfg is not None and server_cfg.test_mode_active and fake is None:
             return Verdict.refuse(
                 "⛔ Signups are closed while this server is in test mode. "
                 "Ask an admin to turn it off."
@@ -274,12 +285,16 @@ def start_change(
         profile = await drivers().get_profile(user_id)
         if profile is not None and profile.current_state != DriverState.NOT_SIGNED_UP:
             if profile.current_state in IN_PROGRESS_STATES:
+                if fake is not None:
+                    return Verdict.refuse(f"⛔ **{fake.test_name}** already has a signup in progress.")
                 return Verdict.refuse(
                     "⛔ You already have a signup in progress — check your private wizard channel."
                 )
             # Every remaining state is an approved one (`APPROVED_STATES` and
             # `IN_PROGRESS_STATES` cover the six): a new state gets a wrong message rather than a
             # wrong signup.
+            if fake is not None:
+                return Verdict.refuse(f"⛔ **{fake.test_name}**'s signup has already been approved.")
             return Verdict.refuse(
                 "⛔ Your signup has already been approved. You cannot sign up again."
             )
@@ -294,7 +309,7 @@ def start_change(
                 "⛔ Signups are being closed, so a new signup cannot start."
             )
         guild = await league_guild(ctx.bot)
-        if guild is not None and guild.get_member(int(user_id)) is None:
+        if fake is None and guild is not None and guild.get_member(int(user_id)) is None:
             # Leaving the server cancels a signup (signup :107): there is no one to sign up.
             return Verdict.not_due("the member left the server before their signup channel was made")
         beside = None if guild is None or cfg.signup_channel_id is None else guild.get_channel(
@@ -372,9 +387,13 @@ def start_change(
                         result=dict(ctx.kept or {}),
                     ) from error
         user_id = str(ctx.step_payload["user_id"])
-        member = guild.get_member(int(user_id))
-        if member is None:
+        fake = await fake_driver_of(ctx.db_path, user_id)
+        member = None if fake is not None else guild.get_member(int(user_id))
+        if fake is None and member is None:
             raise StepFailedOnDiscord("the member signing up could not be found on the server")
+        # A fake driver has no member: it is named by its test name and the staff roles alone see
+        # its channel.
+        named = fake.test_name if fake is not None else None
         cfg = await signup().get_config()
         server_cfg = await config.get_server_config()
         try:
@@ -382,6 +401,7 @@ def start_change(
                 guild, member, cfg.signup_channel_id if cfg else None,
                 server_cfg.interaction_role_id if server_cfg else None,
                 server_cfg.league_admin_role_id if server_cfg else None,
+                name=named,
             )
         except discord.HTTPException as error:
             raise StepFailedOnDiscord(
@@ -405,8 +425,8 @@ def start_change(
             "state": first_state.value,
             "snapshot": json.dumps(signup()._snapshot_to_dict(snapshot)),
             "draft": {
-                "discord_username": member.name,
-                "server_display_name": member.display_name,
+                "discord_username": named if member is None else member.name,
+                "server_display_name": named if member is None else member.display_name,
             },
             "at": now().isoformat(),
         })
@@ -449,7 +469,8 @@ def start_change(
         record = await signup().get_wizard(user_id)
         if record is None or record.config_snapshot is None:
             raise StepFailedOnDiscord("the signup's record could not be found")
-        member = guild.get_member(int(user_id))
+        fake = await fake_driver_of(ctx.db_path, user_id)
+        member = None if fake is not None else guild.get_member(int(user_id))
         if record.wizard_state in WizardService._BUTTON_ONLY_STATES and member is not None:
             try:
                 await WizardService._revoke_driver_write(found, member)
@@ -459,9 +480,10 @@ def start_change(
                 ) from error
         async with get_connection(ctx.db_path) as db:
             track_map = await track_service.get_track_name_map(db)
+        greeted = f"**{fake.test_name}**" if fake is not None else f"<@{user_id}>"
         await post(
             found,
-            f"Welcome to the signup wizard, <@{user_id}>!\n"
+            f"Welcome to the signup wizard, {greeted}!\n"
             + WizardService._prompt_for_state(
                 record.wizard_state, record.config_snapshot, track_name_map=track_map
             ),
@@ -470,11 +492,15 @@ def start_change(
                 signup=signup(),
             ),
             mentions=discord.AllowedMentions(
-                everyone=False, roles=False, users=[discord.Object(id=int(user_id))]
+                everyone=False, roles=False,
+                users=[] if fake is not None else [discord.Object(id=int(user_id))],
             ),
             refused=f"the welcome could not be posted in channel {found.id}",
         )
-        return StepResult(result={}, lines=(f"{ctx.named} | Signup | Started",))
+        started = f"{ctx.named} | Signup | Started"
+        if fake is not None:
+            started += f"\n  driver: {fake.test_name}"
+        return StepResult(result={}, lines=(started,))
 
     async def describe_delete(_ctx: StepContext) -> str:
         return "deleting the channel of the driver's earlier signup"

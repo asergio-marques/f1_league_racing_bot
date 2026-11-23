@@ -563,11 +563,6 @@ async def _start_mock(league: SeasonLeague) -> None:
     await run_queue(league.bot)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#600: signup.start does not yet start a fake driver's signup with no member behind "
-    "it, nor welcome it by its test name",
-)
 async def test_a_fake_driver_s_signup_starts_with_no_member_behind_it(tmp_path):
     """The server is in test mode, at Signups with the window open. Mock Alpha is a fake driver
     at Not Signed Up, its ID in the synthetic range, no member of the server holding it. The

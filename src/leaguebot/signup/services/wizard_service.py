@@ -167,26 +167,33 @@ class WizardService:
     @posts_in_a_job
     async def _create_wizard_channel(
         guild: discord.Guild,
-        member: discord.Member,
+        member: discord.Member | None,
         signup_channel_id: int | None,
         interaction_role_id: int | None,
         league_admin_role_id: int | None = None,
+        *,
+        name: str | None = None,
     ) -> discord.TextChannel:
         """Create a private ``<username>-signup`` channel for the driver.
+
+        A fake driver has no *member*: it is given its test name as *name*, the channel is named
+        from it, and no overwrite is made for it, the staff roles alone seeing the channel.
 
         Visible to the driver, the bot, and both tiers of the league. The admin review panel
         is posted into this channel, so a league admin who does not also hold the interaction
         role would otherwise be unable to see the signup they are entitled to approve
         (issue #116).
         """
-        safe_name = re.sub(r"[^a-z0-9_-]", "-", member.name.lower())
+        called = name if member is None else member.name
+        safe_name = re.sub(r"[^a-z0-9_-]", "-", (called or "").lower())
         channel_name = f"{safe_name}-signup"
 
         overwrites: dict[Any, discord.PermissionOverwrite] = {
             guild.default_role: discord.PermissionOverwrite(view_channel=False),
-            member: discord.PermissionOverwrite(view_channel=True, send_messages=True),
-            guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True),
         }
+        if member is not None:
+            overwrites[member] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
+        overwrites[guild.me] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
         for role_id in (interaction_role_id, league_admin_role_id):
             if not role_id:
                 continue
@@ -206,7 +213,7 @@ class WizardService:
             channel_name,
             overwrites=overwrites,
             category=category,
-            reason=f"Signup wizard for {member}",
+            reason=f"Signup wizard for {member if member is not None else called}",
         )
         return channel
 
