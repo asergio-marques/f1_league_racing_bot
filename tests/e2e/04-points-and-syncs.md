@@ -627,3 +627,138 @@ starts from. `Test Ladder` is built here and removed at the end of the part.
 45. **Put your roles back:** give yourself `@League Admin` again and take `@League Manager` off.
 
     **Expect:** nothing from the bot. Every later step needs `@League Admin`.
+
+---
+
+## Part C — One round raced: Division 1, round 1
+
+An amendment of the season's points rescores the rounds already raced, so one round is raced
+first. This part takes Division 1's round 1 through `/test-mode advance` to its result submission
+and pastes the results of `01-full-season.md` steps 23 and 25 unchanged, scored by **Standard**,
+with no penalty and no appeal. The weather and check-in posts along the way are
+`01-full-season.md`'s to check; here nobody answers the check-in call, which changes nothing in the
+points: with no reserve having accepted, the deadline places nobody and posts no reserve
+announcement, and a reserve may still race for any team.
+
+46. **Do:** `/test-mode advance`, six times, waiting for each reply before the next.
+
+    **Expect**, in this order, each **Reply** as `01-full-season.md` gives it, and each with its
+    `<you> | /test-mode advance | Success` line in `#bot-log`:
+
+    | Advance | Reply | 01's step |
+    |---|---|---|
+    | 1 | ``⏩ **Phase 1** for **Division 1** — **Silverstone Circuit** is on the change queue: …`` | 12 |
+    | 2 | `📨 The **RSVP notice** for **Division 1** — **Round 1** (**Silverstone Circuit**) is on the change queue: …` | 13 |
+    | 3 | ``⏩ **Phase 2** for **Division 1** — **Silverstone Circuit** is on the change queue: …`` | 15 |
+    | 4 | `⏰ The **RSVP last-notice** for **Division 1** — **Round 1** (**Silverstone Circuit**) is on the change queue: …` | 16 |
+    | 5 | ``⏩ **Phase 3** for **Division 1** — **Silverstone Circuit** is on the change queue: …`` | 18 |
+    | 6 | `🏁 The **RSVP deadline** for **Division 1** — **Round 1** (**Silverstone Circuit**) is on the change queue: …` | 19 |
+
+    The last notice (advance 4) names every one of Division 1's 22 racing drivers, nobody having
+    answered; the deadline (advance 6) takes the call's buttons down and posts nothing else in
+    `#d1-rsvp`: no reserve accepted, so there is nothing to announce.
+
+47. **Do:** `/test-mode advance`
+
+    **Expect:**
+    - **Reply:** `⏩ The result submission of **Division 1** — **Round 1** (**Silverstone Circuit**) is on the change queue: its submission channel appears as soon as the queue reaches it.`
+    - **Posts:** the channel **`s1-division-1-r1-results`**, with its opening and the
+      **Qualifying** prompt, as `01-full-season.md` step 20.
+    - **Log:**
+      ```
+      <you> | /test-mode advance | Success
+        phase: result submission (on the change queue)
+        division: Division 1
+        round: Round 1
+      ```
+
+48. **Do:** in `#s1-division-1-r1-results`, send the qualifying paste of `01-full-season.md`
+    step 23, as it stands (22 lines, `1, <@9000000000000000008>, DLT, Soft, 1:27.100, N/A` first).
+
+    **Expect:**
+    - **Posts** (submission channel): your message marked ⏳, then the choice, with two buttons,
+      **Half Points** and **Standard**, in the order the season holds them:
+      `🔧 Select the points configuration for this session:`. **Half Points** is offered though step
+      37 removed it from the server: the season keeps its attachment and its own copy.
+      > UNVERIFIED: the order of the two buttons. The season's attachments are read in name
+      > order (`get_attached_config_names`); `01-full-season.md` step 23 names them the other way
+      > round.
+    - **Log:** nothing yet.
+
+49. **Do:** press **Standard**.
+
+    **Expect:**
+    - The choice is edited to `🔧 Config selected: **Standard**`, its buttons gone.
+    - **Ack:** `Saving the Qualifying of round 1 with the Standard configuration`
+    - **Then:** `✅ The Qualifying of round 1 is saved, scored by **Standard**.`
+    - **Posts** (submission channel): `✅ **Qualifying** results saved.`, then the **Race** prompt.
+    - **Log:** the `RESULT_SUBMISSION_ACCEPTED` line and the
+      `<you> | the “Standard” button of the points-configuration choice for the Qualifying of round 1 (Division 1) | Success`
+      line, as `01-full-season.md` step 24.
+
+50. **Do:** in the submission channel, send the race paste of `01-full-season.md` step 25, as it
+    stands (22 lines, `1, <@9000000000000000011>, FOX, 1:25:12.345, 1:29.100, N/A` first).
+
+    **Expect:** your message marked ⏳, then the choice as in step 48.
+
+51. **Do:** press **Standard**.
+
+    **Expect:**
+    - The choice edited to `🔧 Config selected: **Standard**`.
+    - **Ack:** `Saving the Race of round 1 with the Standard configuration`
+    - **Then:** `✅ The Race of round 1 is saved, scored by **Standard**.`
+    - **Posts**, in this order:
+      - submission channel: `✅ **Race** results saved.`, then
+        `⏳ The penalty review is being opened (job #<n: the review's first job>).`;
+      - `#d1-results`: the two pictures, `**Season 1 Division 1 Round 1 — Qualifying**` and
+        `**Season 1 Division 1 Round 1 — Race**`, each `Provisional Results`;
+      - `#d1-standings`: drivers and teams, `Provisional Results`, as `01-full-season.md` step 26
+        gives them. Drivers: Kevin Keller 34 (qualifying 2, race 30, fastest lap 2), Hiro Hayashi
+        30 (3 and 27), Rafael Rossi 25, Emil Engel 21, Bruno Bianchi 18, Samuel Shaw 15, Olivier
+        Orsini 13, Ian Irwin 11, Mateo Morales 9, Carlos Cortes 7, Ugo Ulivi 5, Willem Wouters 4,
+        Liam Lavoie 3, Gabriel Gomes 2, Quinn Quayle 1, then the eight on 0 in the order step 26
+        gives. Teams: Foxtrot Motorsport 37, Delta Racing 32, India Motorsport 26, Alpha Racing 22,
+        Charlie GP 21, Juliett GP 15, Hotel Racing 13, Echo Racing 11, Golf GP 9, Bravo Motorsport
+        7, Kilo Racing 5;
+      - submission channel: the penalty review, `🏁 **Penalty Review — Round 1 | Division 1**`,
+        with `**Preliminary Attendees (22):**`.
+    - **Log:** the `RESULT_SUBMISSION_ACCEPTED` line with `session: FEATURE_RACE`, the button's
+      line, any notice blocks, and `<you> | Penalty review opened | Success` with
+      `  round 1 (Division 1)`.
+
+52. **Do:** press **No Penalties / Confirm** on the review.
+
+    **Expect:**
+    - **Ack:** `Posting the approval question in the penalty review`
+    - **Then:** `✅ The approval question is posted in <#<s1-division-1-r1-results id>>.`
+    - **Posts** (submission channel), with **✏️ Make Changes** and **✅ Approve**:
+      `✅ **No penalties staged.** Approve to move on to the appeals with no penalty applied.`
+    - **Log:**
+      ```
+      <you> | the “No Penalties / Confirm” button of the penalty review of round 1 (Division 1) | Success
+        posted the approval question: no penalties staged
+      ```
+
+53. **Do:** press **✅ Approve** on the question.
+
+    **Expect:**
+    - **Ack:** `Approving round 1's reports (Division 1)`
+    - **Then:** `✅ Round 1's reports are approved (Division 1): nothing was staged. Its appeals review is posted below.`
+    - **Posts:** the results and standings again, `Post-Race Penalty Results`, the totals of step
+      51 unchanged; nothing in `#d1-verdicts`; the attendance sheet after Round 1 in
+      `#d1-attendance`, which this spec does not check (nobody answered the call); and the
+      appeals review `⚖️ **Appeals Review — Round 1 | Division 1**`.
+    - **Log:** `<you> | PENALTY_REVIEW_APPROVED | Success` with `round: 1 (Division 1)` and
+      `penalties: none`.
+
+54. **Do:** press **No Changes / Confirm** on the appeals review.
+
+    **Expect:**
+    - **Ack:** `Approving round 1's appeals (Division 1)`
+    - **Then:** `✅ Round 1's appeals are approved (Division 1): no corrections were staged. The round is final.`
+    - **Posts:** the two results pictures and the standings again, `Final Results`, the totals of
+      step 51; the channel `#s1-division-1-r1-results` deleted.
+    - **Log:** `<you> | APPEALS_REVIEW_APPROVED | Success` with `round: 1 (Division 1)` and
+      `corrections: none`.
+
+    Division 1's round 1 is final. Division 2 has no results, and keeps none in this spec.
