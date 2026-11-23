@@ -468,7 +468,7 @@ A driver may hold one seat per division. A team runs out of seats; the Reserve t
 
 **Each of the three answers at once** — "Assigning **Alice** to **Ferrari** in **Pro**", "Unassigning …", "Turning down **Bob**" — and updates that reply once it has run, judged again as it starts: a seat filled, a season moved on or a driver no longer Unassigned meanwhile refuses it then. `/driver reject` takes the driver role back once the driver is turned down; where Discord refuses that, the reply says so under **⚠️ Done, but on Discord:**, for you to take it by hand, and the rejection stands. With the signup module on, a rejection also withdraws the approval of the driver's signup. If a save fails it stops the queue (see [When a job stops the queue](#when-a-job-stops-the-queue)); if a league admin discards it, nothing was changed, and the reply says so and to run the command again.
 
-With test mode on, fake drivers are placed by `/test-mode roster add` instead, and `/driver assign` is refused for real ones — see [Testing with test mode](test-mode.md).
+With test mode on, fake drivers are placed by `/test-mode roster add` instead, and `/driver assign` is refused for real ones. Every `/driver` command then names its driver by mention or ID, and acts on a fake driver as on a real one — see [Testing with test mode](test-mode.md).
 
 ---
 
@@ -888,6 +888,7 @@ A button pressed by someone who may not use it, or on a notice whose job no long
 |---|---|
 | A command refuses with a short message only you can see | You are not in the command channel, or you hold neither the interaction role nor the league admin role. Check the channel first — it is almost always the channel |
 | A command does not appear in Discord's menu at all | The command list has not reached your server yet. Whoever hosts the bot can push it through immediately with `!sync` |
+| `/driver` takes a member, though test mode is on (or a text field, though it is off) | The bot could not change the `/driver` commands when test mode last changed, and the reply said so. `!sync` shows the right one at once; a restart does the same |
 | "This command is a league admin's" | It asks for the league admin role, which you do not hold. The table at the top of this guide lists which commands those are; someone holding that role has to run them |
 | "No league admin role is configured" | Your league was set up before the bot had one. A server administrator can put that right from any channel with `/bot admin-role`, and every league admin command works again |
 | The bot placed a driver but the role did not appear | The bot's own role sits below the role it is trying to grant. Move it up |

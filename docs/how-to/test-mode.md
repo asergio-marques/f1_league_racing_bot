@@ -25,6 +25,8 @@ There is no on/off parameter: the command reads the flag once, at the ask, and a
 
 **A server holding real drivers cannot enter test mode.** Enabling is refused, naming the count, while any real driver profile stands at anything other than Not Signed Up — mid-signup, unassigned or assigned. A profile retained at Not Signed Up is a former driver who has left, and does not stand in the way. Every driver returns to Not Signed Up when a season ends, so a league can test in the next season's configuration before its real window opens.
 
+**Turning test mode on changes the form of `/driver`.** While it is on, each `/driver` command names its driver as text, a mention or an ID, in place of Discord's member field, offering the server's drivers by name as you type; turning it off, or the season ending, puts the member form back. The swap follows the toggle's save as a job of its own, so a moment passes before the server shows the new one. If Discord refuses it, test mode is still switched, the reply says the `/driver` commands will be put right when the bot next restarts, and a restart is all that is needed.
+
 **And while test mode is on, no real driver may join.** The Sign Up button and `/signup open` both refuse, and `/driver assign` refuses any driver that is not a fake one (`PlacementService.guard_assign`, asked at the ask and again as the change starts). The two rules together keep a real roster and a test roster from ever mixing, which matters because leaving test mode deletes the fake half without asking.
 
 **Enabling attaches two points configurations**, to get to a testable season quickly. **Standard** and **Half Points** are created and attached to the season in Configuration, but only on a server that holds no points configuration of any name and none attached to the season. If the server holds any, attached or not, enabling creates, changes and attaches nothing — your own "Standard" keeps every value — and you attach your own with `/results config append`. Seeding runs whether results is on or off. Seeded, they are ordinary server configurations, written in the same place `/results config add` puts one and recorded in the audit trail as `/results config` records them, so `/results config view` shows their full ladder while the season is still in setup and approval copies them into the season by the ordinary route.
@@ -130,6 +132,15 @@ Real drivers are the awkward part of testing placement, results and attendance: 
 The team must already exist in that division and have a free seat. The roster seats its drivers itself rather than through `/driver assign`, but it holds them to the same checks a real placement meets, so seat-count and team-existence failures surface here as they would in production.
 
 **So do the template capacities.** A fake driver is refused wherever a real one would be for outgrowing a configured image template — the lineup's reserve slots, the attendance sheet's rows, the driver standings' rows — each only while that image output is on. A roster that seats cleanly has verified the templates hold it, rather than leaving the overflow to show at the first posting.
+
+**Changing a fake driver's seat once it is placed.** The roster commands seat a fake driver, and `/driver` changes it afterwards, as it does a real one: name the driver by ID (the one `roster list` prints) or pick it by its test name from the list the field offers.
+
+```
+/driver move user:900000000000000001 division:Pro team:Ferrari
+/driver assign user:900000000000000001 division:Academy team:Mercedes
+```
+
+The second seats the same fake driver in a second division, which a real driver may hold as well. `/driver unassign`, `release`, `reject` and `sack` work the same way, mid-season included, and no Discord role is given or taken. `/driver assign` still refuses a real driver, and `/driver reassign` refuses a fake one on either side. Text that names no driver is refused, naming what was typed. A `/driver` command of this form given while test mode is off is refused, saying a restart puts `/driver` right.
 
 No Discord account sits behind a synthetic driver, so `/images use-pfp` never obtains a
 portrait for one: their lineup seat draws whatever is in the driver image folder under their
