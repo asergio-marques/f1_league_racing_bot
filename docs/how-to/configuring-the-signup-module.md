@@ -43,7 +43,8 @@ A driver's status lives on the driver, not on their signup form. "Reserve" is an
 |---|---|
 | `/module enable signup` and `/module disable signup` | The **league admin role** |
 | `/driver sack` | The **league admin role** |
-| Everything under `/signup`, including `/signup channel` | The **interaction role** |
+| Everything else under `/signup`, including `/signup channel` | The **interaction role** |
+| `/signup start` (test mode only) | The **league admin role** |
 | `/driver assign`, `/driver unassign`, `/driver reject`, `/driver move`, `/driver release`, `/driver reassign` | The **interaction role** |
 
 > **Both tiers are roles, and Discord's permissions are not one of them.** Someone holding Administrator but neither role is refused every command here, and so is anyone running one outside the interaction channel. Being the server owner does not get you past it — give yourself one of the two roles instead.
