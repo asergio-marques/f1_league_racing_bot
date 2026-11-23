@@ -640,3 +640,33 @@ interaction channel for those and, with a lineup or calendar picture on, Attach 
 
     **Expect:** the first as `00-base.md` step 17; the second refused as in step 46. No log line.
     Every later step is run in `#bot-commands` again.
+
+---
+
+## Part F — `!sync`
+
+`!sync` is a prefix command, not a slash command: typed as a message, hidden from the slash menu,
+and for the owner of the bot's Discord application alone (`commands.is_owner`, in
+`leaguebot.__main__`), whatever their roles on the server. It reads no configuration, so it is
+neither held to the interaction channel nor recorded in the log channel.
+
+50. **Needs the application's owner; skip it where you are not.** **Do**, in `#bot-commands`, as
+    the owner of the bot's application in the Discord Developer Portal (or a member of the team
+    that owns it), send the message `!sync`.
+
+    **Expect:**
+    - Your `!sync` message is deleted.
+    - **Posts** (`#bot-commands`, public): `✅ Cleared guild overrides and synced <n: the number of top-level slash commands> global command(s).`,
+      deleted by itself after 15 seconds. `<n>` is the number the host's log gave at start-up
+      (`Synced <n> slash command(s)`).
+    - **Log:** nothing.
+    - Every slash command is still offered in the menu, none of them twice.
+
+51. **Not the owner.** **Do**, as an account that does not own the application (the helper of
+    step 35, or yourself where you do not), send `!sync` in `#bot-commands`.
+
+    **Expect:**
+    - Nothing from the bot: no reply, and the message is not deleted.
+    - **Log:** nothing.
+    > UNVERIFIED: what the host's log shows. The bot has no `on_command_error` handler, so the
+    > refusal falls to discord.py's own, which logs the `NotOwner` it raises.
