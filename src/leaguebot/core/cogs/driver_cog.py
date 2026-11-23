@@ -128,7 +128,12 @@ class DriverCog(commands.Cog):
             )
             return
 
-        await driver_commands.reassign(self.bot, interaction, resolved_old_id, new_user)
+        await driver_commands.reassign(
+            self.bot,
+            interaction,
+            resolved_old_id,
+            ResolvedDriver(str(new_user.id), new_user.display_name, new_user),
+        )
 
     # ------------------------------------------------------------------
     # /driver assign

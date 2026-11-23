@@ -17,8 +17,6 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-PENDING = "#600: no test-mode /driver group takes a driver named as text"
-
 GHOST = 9000000000000000001
 GHOST_PROFILE = 90
 TESTER = 104
@@ -83,7 +81,6 @@ _COMMANDS = {
 _FAKE = {GHOST: (GHOST_PROFILE, "Ghost"), TESTER: (TESTER - 60, "Tester")}
 
 
-@pytest.mark.xfail(strict=True, reason=PENDING)
 @pytest.mark.parametrize("name", sorted(_COMMANDS))
 async def test_a_fake_driver_named_by_id_is_asked_for_as_a_real_driver_is(
     tmp_path, monkeypatch, name
@@ -118,7 +115,6 @@ async def test_a_fake_driver_named_by_id_is_asked_for_as_a_real_driver_is(
     }
 
 
-@pytest.mark.xfail(strict=True, reason=PENDING)
 async def test_a_seated_fake_driver_is_given_a_seat_in_a_second_division(tmp_path):
     """Test mode is on and the season in Placements. Ghost sits at McLaren in Am, and Ferrari in
     Pro has a third seat free. Admin runs the test-mode `/driver assign` of Ghost, by ID, to
@@ -161,7 +157,6 @@ async def test_a_seated_fake_driver_is_given_a_seat_in_a_second_division(tmp_pat
     assert league.granted == {}
 
 
-@pytest.mark.xfail(strict=True, reason=PENDING)
 async def test_a_real_driver_named_by_id_is_still_refused_an_assignment(tmp_path):
     """Test mode is on and the season in Placements. Admin runs the test-mode `/driver assign` of
     Valtteri (a real driver, approved and never placed) by his ID to McLaren in Am. He is refused,
@@ -181,7 +176,6 @@ async def test_a_real_driver_named_by_id_is_still_refused_an_assignment(tmp_path
     assert await change_rows(league.db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason=PENDING)
 @pytest.mark.parametrize("text", ["nobody", "555"])
 async def test_text_naming_no_driver_is_refused_naming_the_text(tmp_path, text):
     """Test mode is on. Admin runs the test-mode `/driver assign` naming *text*, which is neither a
@@ -201,7 +195,6 @@ async def test_text_naming_no_driver_is_refused_naming_the_text(tmp_path, text):
     assert await change_rows(league.db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason=PENDING)
 async def test_a_test_mode_command_given_while_test_mode_is_off_is_refused(tmp_path):
     """Test mode is off (a swap having failed, the test-mode group still shows). Admin runs its
     `/driver assign` of Ghost by ID to McLaren in Am. The reply refuses it, saying test mode is off
@@ -222,7 +215,6 @@ async def test_a_test_mode_command_given_while_test_mode_is_off_is_refused(tmp_p
     assert await change_rows(league.db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason=PENDING)
 @pytest.mark.parametrize(
     "old_user, new_user", [(str(TESTER), "555"), ("103", str(TESTER))], ids=["old", "new"]
 )
@@ -245,7 +237,6 @@ async def test_reassign_refuses_a_fake_driver_on_either_side(tmp_path, old_user,
     assert await change_rows(league.db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason=PENDING)
 async def test_reassign_makes_a_server_member_with_no_profile_current(tmp_path):
     """Test mode is on and the season in Placements. Admin runs the test-mode `/driver reassign`
     of Charles (103), by mention, to the server member 555, who has no driver profile: the queue
@@ -264,7 +255,6 @@ async def test_reassign_makes_a_server_member_with_no_profile_current(tmp_path):
     assert (payload["old_user_id"], payload["new_user_id"]) == ("103", "555")
 
 
-@pytest.mark.xfail(strict=True, reason=PENDING)
 async def test_reassign_refuses_an_id_that_is_not_a_member(tmp_path):
     """Test mode is on and the season in Placements. Admin runs the test-mode `/driver reassign`
     of Charles by ID to 555, who is not a member of the server. The reply refuses it, naming 555,
@@ -284,7 +274,6 @@ async def test_reassign_refuses_an_id_that_is_not_a_member(tmp_path):
     assert await change_rows(league.db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason=PENDING)
 @pytest.mark.parametrize(
     ("name", "field"),
     [*((name, "user") for name in sorted(_COMMANDS)), ("reassign", "old_user")],
@@ -322,7 +311,6 @@ async def test_each_driver_field_offers_drivers_by_name(tmp_path, name, field):
             assert [(c.name, c.value) for c in offered] == [("Ghost", str(GHOST))]
 
 
-@pytest.mark.xfail(strict=True, reason=PENDING)
 async def test_both_groups_load_and_the_global_tree_carries_the_member_group(tmp_path):
     """Both `/driver` cogs are added to one bot, the member group's first: neither clashes with the
     other, and the global command tree carries `/driver` once, the member group's."""

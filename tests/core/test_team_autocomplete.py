@@ -63,14 +63,8 @@ async def test_the_offer_is_read_from_the_server_s_list():
     [
         ("leaguebot.core.cogs.driver_cog:DriverCog.assign", "team"),
         ("leaguebot.core.cogs.driver_cog:DriverCog.move", "team"),
-        pytest.param(
-            "leaguebot.core.cogs.driver_test_cog:DriverTestCog.assign", "team",
-            marks=pytest.mark.xfail(strict=True, reason="#600: no test-mode /driver assign exists"),
-        ),
-        pytest.param(
-            "leaguebot.core.cogs.driver_test_cog:DriverTestCog.move", "team",
-            marks=pytest.mark.xfail(strict=True, reason="#600: no test-mode /driver move exists"),
-        ),
+        ("leaguebot.core.cogs.driver_test_cog:DriverTestCog.assign", "team"),
+        ("leaguebot.core.cogs.driver_test_cog:DriverTestCog.move", "team"),
         ("leaguebot.core.cogs.test_mode_cog:TestModeCog.roster_add", "team_name"),
     ],
 )

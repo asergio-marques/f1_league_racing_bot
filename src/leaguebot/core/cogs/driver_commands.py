@@ -83,9 +83,9 @@ async def reassign(
     bot: LeagueBot,
     interaction: discord.Interaction,
     old_account: str,
-    new_user: discord.Member,
+    new: ResolvedDriver,
 ) -> None:
-    """Make *new_user* the current account of the driver *old_account* names.
+    """Make *new*'s account the current account of the driver *old_account* names.
 
     The account it replaces joins the driver's past accounts, and every account the driver
     has held goes on identifying them. Nothing the league holds is rewritten.
@@ -98,8 +98,8 @@ async def reassign(
         DRIVER_REASSIGN,
         {
             "old_user_id": old_account,
-            "new_user_id": str(new_user.id),
-            "new_name": new_user.display_name,
+            "new_user_id": new.account,
+            "new_name": new.name,
         },
         interaction=interaction, what=describe(interaction),
     )
