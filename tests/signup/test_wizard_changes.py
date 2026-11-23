@@ -742,6 +742,27 @@ async def test_sign_up_welcomes_the_driver_by_name_and_writes_its_started_line(t
     assert len(started) == 1 and f"<@{SIGNING_UP}>" in started[0]
 
 
+@pytest.mark.xfail(strict=True, reason="#600: a member's own Sign Up press writes no audit entry")
+async def test_a_member_s_sign_up_is_audited_as_its_start(tmp_path):
+    """Kimi, signed up to nothing, presses Sign Up while signups are open and test mode is off,
+    and the queue runs. One `SIGNUP_START` audit entry is written beside the "Signup | Started"
+    line, Kimi its actor, recording him moved from Not Signed Up to Pending Signup Completion: the
+    entry the test-mode `/signup start` writes for a fake driver, with the league admin its
+    actor."""
+    from tests.support.settings_league import audit_rows
+
+    league = await _league(tmp_path)
+
+    await _press_sign_up(league)
+    await run_queue(league.bot)
+
+    [entry] = [row for row in await audit_rows(league.db_path)
+               if row["change_type"] == "SIGNUP_START"]
+    assert entry["actor_id"] == SIGNING_UP
+    assert entry["old_value"] == {"state": "NOT_SIGNED_UP", "discord_user_id": str(SIGNING_UP)}
+    assert entry["new_value"] == {"new_state": "PENDING_SIGNUP_COMPLETION"}
+
+
 @pytest.mark.parametrize(
     "case",
     [
