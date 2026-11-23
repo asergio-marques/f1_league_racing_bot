@@ -823,6 +823,7 @@ Each is stated where it lives and pinned by the test named. The framework's are 
 | A season starts on the UTC date of the queue's clock | `season_setup_change`'s docstring | `test_the_start_date_is_the_utc_date` |
 | Every store of league state in memory is cleared by pack and factory reset, or named as holding none | `core/services/upkeep/in_memory_state.py` | `tests/core/test_in_memory_state.py` |
 | `/bot init` judges its two channels again as it claims the server, though the ask judged them | `bot_init_change`'s docstring | `test_bot_init_is_refused_as_it_claims_where_a_channel_can_no_longer_be_used` |
+| The test-mode `/driver` group is kept off the global tree, by clearing the cog's list in place as it loads, so that the two groups never clash there | `DriverTestCog.cog_load` | `test_both_groups_load_and_the_global_tree_carries_the_member_group` |
 
 ---
 
