@@ -1234,9 +1234,9 @@ Name the driver by any of their accounts: `old_user` where it is still in the se
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `new_user` | Member | ✅ | The account to make current — a new one, or one of the driver's own past accounts. Must be in the server. |
-| `old_user` | Member | — | Any account of the driver's, current or past |
-| `old_user_id` | String | — | Raw Discord snowflake ID of any account of the driver's, for one no longer in the server. Digits only; anything else is refused |
+| `new_user` | Member (text under test mode) | ✅ | The account to make current — a new one, or one of the driver's own past accounts. Must be in the server. Under test mode, a mention or an ID |
+| `old_user` | Member (text under test mode) | — | Any account of the driver's, current or past. Under test mode, a mention or an ID of any account, offered by name as you type |
+| `old_user_id` | String | — | Raw Discord snowflake ID of any account of the driver's, for one no longer in the server. Digits only; anything else is refused. Absent under test mode, `old_user` taking any account |
 
 > **Switching back is allowed.** Naming one of the driver's own past accounts as `new_user` makes it current again.
 
