@@ -467,8 +467,14 @@ review has no timer: it does not expire.
       are not posted again.
     - **Log:** nothing. The bot puts the review back as its own change, which writes no line, and
       nothing says the staged penalty was lost.
-      > UNVERIFIED: what a press on the old review does in the moment between the start and its
-      > deletion. Its buttons are routed again, and it is no longer the round's prompt.
+    - A press on the old review in the moment before its deletion acts on nothing. Its fixed
+      buttons reach a view that holds no review since the restart, and refuse:
+      - **Reply:** `⚠️ The bot was restarted. Please wait for the penalty prompt to refresh.`
+      - **Log**, for **➕ Add Penalty** (each fixed button by its own label):
+        ``⛔ the “➕ Add Penalty” button refused for <you> — The bot was restarted. Please wait for the penalty prompt to refresh.``
+
+      Its **Remove #1** button is not routed at all after a restart: Discord itself says the
+      interaction failed, and nothing reaches `#bot-log`.
 
 24. **The new review answers.** **Do:** step 22 again, on the new review.
 
@@ -501,6 +507,9 @@ review has no timer: it does not expire.
     - **Posts** (submission channel): a **new** appeals review at the foot of the channel, as in
       step 25, with **➕ Add Correction**, **No Changes / Confirm** and **✅ Approve**; then the
       appeals review of step 25 **deleted**.
+    - A press on the old appeals review before its deletion is refused as in step 23, the reply
+      reading `⚠️ The bot was restarted. Please wait for the appeals prompt to refresh.` and its
+      log line naming the button pressed, `the “➕ Add Correction” button` for one.
     - Nothing posted again in `#d1-results`, `#d1-standings` or `#d1-verdicts`: the penalty stands
       applied, and is applied once (results specification: "corrections shall be applied once,
       even where the appeals review is asked for again after a restart").
@@ -662,8 +671,7 @@ a restart loses them. The panel is not one of the reviews the start-up takes dow
 
     **Expect:**
     - Discord itself says the interaction failed: no part of the bot holds the panel's buttons
-      any more, so the press reaches nothing.
-      > UNVERIFIED: Discord's exact wording, which is the client's and not the bot's.
+      any more, so the press reaches nothing. The wording is Discord's, not the bot's.
     - Nothing approved, nothing posted, and nothing in `#bot-log`, neither for the press nor for
       the panel: its five minutes were counted in memory, so no line records its end, as one
       does when the panel lapses with the bot running. Run the review again.
@@ -685,8 +693,9 @@ a restart loses them. The panel is not one of the reviews the start-up takes dow
         India Motorsport 23, Alpha Racing 22, Juliett GP 15, Hotel Racing 13, Echo Racing 11,
         Golf GP 9, Bravo Motorsport 7, Kilo Racing 5;
       - `#d1-attendance`: the attendance sheet again, unchanged: points move no attendance;
-      - nothing in any Division 2 channel.
-      > UNVERIFIED: whether Rafael Rossi's verdict is posted again in `#d1-verdicts`.
+      - nothing in any Division 2 channel;
+      - nothing in `#d1-verdicts`: the verdict is not posted again
+        (`points_amendment_change` plans the results, standings and attendance alone).
     - **Log:**
       ```
       <you> | /results amend review | Success
@@ -783,10 +792,10 @@ spec gives it.
         the review is posted twice, but for the accepted second copy. Nothing is taken down:
         the question was not up when the bot stopped. Its five minutes run from when it appears.
     - A press on **✅ Confirm configuration** in (a), between the start and the question's
-      deletion, confirms nothing: the button is routed again only to refuse.
-      > UNVERIFIED: which refusal it shows; `season_review_views` has three, and the take-down
-      > being in hand makes it `⛔ This review is already being answered by another press. **Nothing has been confirmed by this one.**`
-      > as `src/` reads.
+      deletion, confirms nothing: the button is routed again only to refuse, the take-down
+      having marked the review first.
+      - **Reply:** `⛔ This review is already being answered by another press. **Nothing has been confirmed by this one.**`
+      - **Log:** ``⛔ the ✅ Confirm configuration button of `/season config-review` refused for <you> — another press of the review was being worked``
 
 46. **Only in (b): the button answers after the restart.** **Do:** within five minutes of the
     question, press **✅ Confirm configuration**.
