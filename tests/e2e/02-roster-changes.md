@@ -273,7 +273,8 @@ are seated in placements. The team list is fixed too, but a team's role is not.
 
 **No command in this spec reposts a lineup.** The bot posts a division's lineup at the season's
 approval, at a mid-season confirmation of placements, on `/driver move`, `release` and `sack`,
-and after the attendance sanctions a penalty review applies (`lineup_posting`), every one of which needs a
+and after the attendance sanctions a penalty review applies or a penalty recalculation
+makes, among others (`lineup_posting`, `penalty_recalculation`), every one of which needs a
 real driver or belongs to another spec. A change of a team's role plans role moves only, a test
 roster change posts nothing, and in placements no lineup is posted until approval. `/team lineup`
 draws the lineup on demand, which is what this section checks.
