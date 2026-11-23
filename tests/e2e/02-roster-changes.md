@@ -552,3 +552,127 @@ the toggle is refused; the team list is open.
 42. **Do:** `/team list`
 
     **Expect:** as step 34: the Fixture's eleven teams and `Reserve`, and no `Lima Motorsport`.
+
+---
+
+## Part E — Season #2, up to its placements
+
+A season set up now is numbered one above the highest the league has committed: Season #1 is
+cancelled, so this is Season #2.
+
+43. **Do:** `/season setup game_edition:25`
+
+    **Expect:**
+    - **Ack:** `Starting the season setup`
+    - **Then:**
+      ```
+      ✅ Season setup started. **Season #2 (F1 25)** is being configured.
+
+      Use `/division add` for each division, then `/round add` for each round.
+      When done, run `/season placements-review` to review and approve.
+      ```
+    - **Log:**
+      ```
+      <you> | /season setup | Success
+        season: Season #2 (F1 25)
+      ```
+
+44. **Do:** `/team list`
+
+    **Expect:**
+    - **Reply:**
+      ```
+      ⚠️ Season 2 divisions differ from the server list.
+
+      **Server list:**
+        Alpha Racing — `ALP` → <@&<Alpha Racing role id>>
+        …one line per team, as in step 34, Reserve last…
+        Reserve — `Reserve` → <@&<Reserve role id>>
+
+      **Season 2 effective teams:**
+        *(empty)*
+      ```
+      Season #2 has no division yet, so it holds no team, and the list reads as differing from
+      the server's (`TeamCog.team_list`). Step 54 shows it agreeing once the divisions exist.
+    - **Log:** nothing.
+
+45. **Do:** `/test-mode toggle`
+
+    **Expect:**
+    - **Ack:** `Turning test mode on`
+    - **Then:** ``✅ Test mode **enabled**. Use `/test-mode advance` to step through phases, or `/test-mode review` to inspect season status.``
+      No `📌 Added default point configs` line: the server already holds `Standard` and
+      `Half Points` from Season #1, and test mode seeds them only on a server holding none
+      (`seed_test_configs_on`). Nor are they attached to Season #2: step 49 attaches one.
+    - **Log:**
+      ```
+      <you> | /test-mode toggle | Success
+        test_mode: enabled
+      ```
+
+46. **The backup survived the cancellation.** **Do:** `/test-mode backup status`
+
+    **Expect:** as step 1: taken at `00-base.md` step 33, readable, locked. No log line.
+
+47. **Configuration is not placements.** **Do:** `/test-mode roster add-bulk`
+
+    **Expect:**
+    - **Reply:** `⛔ The test roster can only be changed while the season is in placements.` No
+      form opens.
+    - **Log:** ``⛔ `/test-mode roster add-bulk` refused for <you> — The test roster can only be changed while the season is in placements.``
+
+48. **Do:** `/results config append name:Half Pionts`
+
+    **Expect:**
+    - **Reply:** ``❌ Config **Half Pionts** does not exist on this server, so nothing was attached. Check the spelling, or create it with `/results config add`.``
+    - **Log:** ``⛔ `/results config append` refused for <you> — Config **Half Pionts** does not exist on this server, so nothing was attached. Check the spelling, or create it with `/results config add`.``
+
+49. **Do:** `/results config append name:Standard`
+
+    **Expect:**
+    - **Ack:** `Attaching config **Standard** to the current season`
+    - **Then:** `✅ Config **Standard** attached to the current season.`
+    - **Log:**
+      ```
+      <you> | /results config append | Success
+        config: Standard
+      ```
+
+50. **Do:** `/season config-review`
+
+    **Expect:** as `00-base.md` step 20, with `Season #2 — F1 25` in the first message's heading
+    and with the same remark on the acknowledgement left standing. In particular no message
+    opening `⛔ **The configuration cannot be confirmed yet.**`: without step 49 it would carry
+    ``No points configuration is attached to this season — `/results config append`.``
+    > UNVERIFIED: how the results section of the report lists `Standard` alone, where `00-base.md`
+    > had both configurations attached.
+
+51. **Do:** within five minutes, press **✅ Confirm configuration** on the question.
+
+    **Expect:**
+    - **Ack:** `Confirming season 2's configuration`
+    - **Then:** ``✅ Season #2's configuration is confirmed. The season is now in placements — build its divisions and calendar, place its drivers, then run `/season placements-review`.``
+      Placements, not the signup window: test mode skips it.
+    - **Posts:** every message step 50 posted in `#bot-commands` is deleted.
+    - **Log:**
+      ```
+      <you> | /season config-review | Confirmed
+        season: Season #2
+        stage: PLACEMENTS
+      ```
+
+52. **Do:** `/division add name:Division 1 role:@Division 1 tier:1`
+
+    **Expect:** as `00-base.md` step 22.
+
+53. **Do:** `/division add name:Division 2 role:@Division 2 tier:2`
+
+    **Expect:** as `00-base.md` step 23.
+
+    Season #2 needs no calendar and no division channels here: nothing in this spec reviews or
+    approves it.
+
+54. **Do:** `/team list`
+
+    **Expect:** headed `**Server team list (Season 2 will use this list):**`, then the lines of
+    step 34. No log line.
