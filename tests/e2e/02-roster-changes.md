@@ -21,7 +21,7 @@ To reach placements again the spec ends Season #1 and builds a second season up 
 placements, which `src/` allows only one way from the base:
 
 - **`/season abort`** is refused: it abandons only a season whose placements were never
-  confirmed (`ABORT_ONLY_BEFORE`), and step 22 shows the refusal.
+  confirmed (`ABORT_ONLY_BEFORE`), and step 26 shows the refusal.
 - **`/season complete`** is refused while rounds are still to be run, and would delete the saved
   backup if it went through: completing a test season discards it.
 - **`/season cancel`** ends an ongoing season, switches test mode off and deletes the fake
@@ -1088,6 +1088,12 @@ start where `00-base.md` left off.
 
     **Expect:** as `00-base.md` step 17: the Fixture's eleven teams and `Reserve`, `ALP` back on
     `@Alpha Racing`.
+
+Discord is not restored with the database: the cancellation notices of step 27 stay in their
+channels, and the calendars `00-base.md` step 32 posted, which the base still records, were
+deleted then. A later spec that posts a calendar again finds the recorded one gone and carries
+on (`standing_posts` passes over a message already deleted); clear the channels by hand for
+tidiness if you wish.
 
 The base is as `00-base.md` left it, its backup still saved and locked. `@Lima Racing` stays on
 the server: it was made by hand, and the restore does not reach Discord. Delete it if you wish.
