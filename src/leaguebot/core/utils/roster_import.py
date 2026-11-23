@@ -88,7 +88,7 @@ def parse_roster_csv(text: str) -> tuple[list[ParsedDriver], list[str]]:
         if driver_id < SYNTHETIC_ID_BASE:
             errors.append(
                 f"Line {number}: {driver_id} is below the range test drivers use. "
-                f"A real Discord account cannot be seated as a mock driver."
+                f"A real Discord account cannot be created as a fake driver."
             )
             continue
         if driver_id in seen_ids:

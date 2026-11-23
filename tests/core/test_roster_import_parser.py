@@ -83,7 +83,10 @@ def test_an_id_below_the_synthetic_range_is_refused(driver_id):
     drivers, errors = parse_roster_csv(_csv(f"{driver_id},Quicksilver"))
 
     assert drivers == []
-    assert "below the range" in errors[0]
+    assert errors[0] == (
+        f"Line 2: {driver_id} is below the range test drivers use. "
+        "A real Discord account cannot be created as a fake driver."
+    )
 
 
 def test_something_that_is_not_a_number_is_refused():
