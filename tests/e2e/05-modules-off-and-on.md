@@ -342,3 +342,84 @@ on once placements are confirmed, and signup neither on nor off once the configu
     ``⛔ `<the command, /module disable or /module enable>` refused for <you> — <the reply without its ❌>``.
     The enable's reply says "enabled again" of a module that is on: it names the action refused,
     read from the command (`configuration_fixed_refusal`).
+
+---
+
+## Part D — Weather off
+
+Switching weather off lowers its flag, then removes the season's four kinds of weather job —
+the three phases (a mystery round's notice among them) and the clean-up — and no other: the
+round's start and the check-in's jobs belong to modules still on
+(`weather/services/module_switch_settings.cancel_all_weather`). It deletes nothing already posted.
+
+20. **A forecast first.** **Do:** `/test-mode advance`
+
+    **Expect:** as `01-full-season.md` step 12: the reply
+    ``⏩ **Phase 1** for **Division 1** — **Silverstone Circuit** is on the change queue: its forecast goes to the forecast channel and its calculation to the log channel as soon as the queue reaches it.``,
+    the Phase 1 picture in `#d1-weather` with the text `<@&<Division 1 role id>>`, and in
+    `#bot-log` the advance's line with `phase: 1`, the calculation and any notice block.
+
+21. **Do:** `/module disable module_name:weather`
+
+    **Expect:**
+    - **Ack:** `Turning the weather module off`
+    - **Then:** `✅ Weather module disabled. All scheduled weather jobs have been cancelled.`
+    - **Log:** `<you> | /module disable weather | Success`
+    - **Posts:** none. The Phase 1 forecast of step 20 stays in `#d1-weather`: its clean-up was
+      one of the jobs removed, and nothing else takes it down while the season runs.
+
+22. **Do:** `/test-mode review`
+
+    **Expect:**
+    - **Reply:** as step 5, with every weather cell gone: weather hands the review nothing while
+      it is off. Division 1 reads:
+      ```
+      **Division 1**
+        Round 1 · Silverstone Circuit · <YEAR+1>-03-01  Results: ⏳  |  RSVP: ⏳  Last: ⏳  Deadline: ⏳  Cleared: ⏳
+        Round 2 · Hungaroring     · <YEAR+1>-03-08  Results: ⏳  |  RSVP: ⏳  Last: ⏳  Deadline: ⏳  Cleared: ⏳
+        Round 3 · TBA             · <YEAR+1>-03-15  Results: ⏳  |  RSVP: ⏳  Last: ⏳  Deadline: ⏳  Cleared: ⏳
+      ```
+      and Division 2's three rounds likewise, each `Results: ⏳  |  RSVP: ⏳  Last: ⏳  Deadline: ⏳  Cleared: ⏳`.
+      No `P1`, `P2`, `P3`, `Cleanup` or `Notice` cell anywhere, Round 1's Phase 1 of step 20 included.
+    - **Log:** nothing; it is a view.
+
+23. **Do:** `/weather config view`
+
+    **Expect:**
+    - **Reply:** `❌ The Weather module is not enabled.`
+    - **Log:** nothing: a view, refused, records nothing.
+
+24. **Do:** `/weather channel name:Division 1 channel:#d1-weather`
+
+    **Expect:**
+    - **Reply:** `❌ The Weather module is not enabled.`
+    - **Log:** ``⛔ `/weather channel` refused for <you> — The Weather module is not enabled.``
+      A command that would change something records its refusal.
+
+25. **The advance passes weather by.** **Do:** `/test-mode advance`
+
+    **Expect:** as `01-full-season.md` step 13: the check-in call of Division 1's Round 1, not
+    its Phase 2, which is no longer anyone's to post.
+    - **Reply:** `📨 The **RSVP notice** for **Division 1** — **Round 1** (**Silverstone Circuit**) is on the change queue: it goes to the RSVP channel as soon as the queue reaches it.`
+    - **Log:**
+      ```
+      <you> | /test-mode advance | Success
+        phase: rsvp_notice
+        division: Division 1
+        round: 1
+      ```
+    - **Posts** (`#d1-rsvp`): the call, as `01-full-season.md` step 13 describes it — the role
+      mention, the check-in picture, the embed with every driver `()`, and the three buttons.
+      Nothing in `#d1-weather`.
+
+26. **Do:** `/images config view`
+
+    **Expect:**
+    - **Reply:** as step 10, but the weather output is now flagged, the module behind it being off:
+      ```
+        ⚠️ Weather forecasts
+            ↳ the weather module is switched off, so there'd be nothing to draw. Switch it on with `/module enable module_name:weather`
+      ```
+      Every other output still `✅`. The output itself is left on: switching a module off
+      changes none of the image settings.
+    - **Log:** nothing; it is a view.
