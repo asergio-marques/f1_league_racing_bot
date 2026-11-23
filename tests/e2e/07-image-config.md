@@ -1343,3 +1343,173 @@ per-tier colours are off and no template marks the slot. The next spec's restore
       division_2: `accent` = `#3B0D4F`
       _Stored, but not drawn while this is off._
     ```
+
+---
+
+## Part F — Driver portraits from Discord
+
+The bot can take each driver's portrait from the profile picture they show on the server,
+writing it into the driver portrait folder under their Discord user id. It is off in the base.
+Two triggers keep the portraits current — just before each picture is drawn (on by default),
+and once a day at a time in UTC (off by default) — and while portraits are taken at all, one of
+the two must stay on.
+
+**Test mode cannot show a portrait being fetched.** The fake drivers have no Discord account, so
+there is no profile picture to take: every lineup preview below draws the same portraits as
+before, and nothing is written into `resources/league/drivers`. This part checks the settings,
+their refusals and their record. No view shows them while the season is under way:
+`/images config view` leaves them out, and the season reviews that list them are closed.
+
+93. **A refusal: a trigger while portraits are off.** **Do:** `/images use-pfp prerender-toggle`
+
+    **Expect:**
+    - **Reply**, no acknowledgement:
+      ``❌ Driver portraits are not being obtained from Discord. Use `/images use-pfp toggle` first.``
+    - **Log:** ``⛔ `/images use-pfp prerender-toggle` refused for <you> — Driver portraits are not being obtained from Discord. Use `/images use-pfp toggle` first.``
+
+    The same for `/images use-pfp daily-toggle`, named in the line as
+    `` `/images use-pfp daily-toggle` ``.
+
+94. **Do:** `/images use-pfp toggle`
+
+    **Expect:**
+    - **Ack:** `Turning **Discord profile pictures** on`
+    - **Then:** `✅ **Discord profile pictures** enabled.`
+    - **Log:**
+      ```
+      <you> | /images use-pfp toggle | Success
+        Discord profile pictures: enabled
+      ```
+
+95. **Do:** `/images test lineup division:Division 1`
+
+    **Expect:** the lineup as step 46 drew it, every portrait the packaged grey one, each with a
+    `driver` notice; `ls <checkout>/resources/league/drivers` shows nothing new.
+
+96. **A refusal: switching off the only trigger.** **Do:** `/images use-pfp prerender-toggle`
+
+    **Expect:**
+    - **Reply**, no acknowledgement:
+      ``❌ Cannot disable pre-render updates: daily updates are off, so this is the only way profile pictures would ever be fetched. Enable daily updates first, or turn off `/images use-pfp toggle` entirely.``
+    - **Log:** ``⛔ `/images use-pfp prerender-toggle` refused for <you> — Cannot disable pre-render updates: daily updates are off, so this is the only way profile pictures would ever be fetched. Enable daily updates first, or turn off `/images use-pfp toggle` entirely.``
+
+### The daily update
+
+97. **A refusal: a time the bot cannot read.** **Do:** `/images use-pfp daily-toggle`
+
+    **Expect:** a form **Daily portrait updates**, its one field **Time of day in UTC** already
+    holding `03:00`.
+
+    **Do:** replace it with `tea time` and submit.
+
+    **Expect:**
+    - **Reply:** ``❌ Could not read `tea time` as a time of day. Try `03:00`, `3am` or `1530`. Nothing was changed.``
+    - **Log:** ``⛔ the “Daily portrait updates” form refused for <you> — Could not read `tea time` as a time of day. Try `03:00`, `3am` or `1530`. Nothing was changed.``
+
+98. **Cancelled.** **Do:** `/images use-pfp daily-toggle`, enter `1530`, submit.
+
+    **Expect:** a reply, seen by you alone, with the buttons **Confirm** and **Cancel**:
+    ```
+    Daily driver-portrait updates will run at **15:30 UTC**.
+    The bot runs on UTC, so this is not your local time unless you are on it.
+    Confirm to enable them.
+    ```
+
+    **Do:** press **Cancel**.
+
+    **Expect:**
+    - the buttons taken off the message, and a reply: `❌ Cancelled. Daily driver-portrait updates are unchanged.`
+    - **Log:**
+      ```
+      ↩️ `/images use-pfp daily-toggle` cancelled by <you>
+        Daily driver-portrait updates are unchanged.
+        Run `/images use-pfp daily-toggle` again to enable them.
+      ```
+
+99. **Lapsed.** **Do:** `/images use-pfp daily-toggle`, leave `03:00`, submit, and press
+    nothing for two minutes.
+
+    **Expect:**
+    - step 98's question with `**03:00 UTC**`; after two minutes, its buttons taken off and
+      nothing else said to you;
+    - **Log:**
+      ```
+      ⌛ `/images use-pfp daily-toggle` lapsed unconfirmed (started by <you>)
+        Daily driver-portrait updates are unchanged.
+        Run `/images use-pfp daily-toggle` again to enable them.
+      ```
+
+100. **Confirmed.** **Do:** `/images use-pfp daily-toggle`, enter `3am`, submit, and press
+     **Confirm**. (`3am` is read as `03:00`, the time the base holds, so Part G need not put the
+     time back.)
+
+     **Expect:**
+     - the buttons taken off the question;
+     - **Ack:** `Enabling daily driver-portrait updates at **03:00 UTC**`
+     - **Then:** `✅ **Daily driver-portrait updates** enabled, running at **03:00 UTC** each day.`
+     - **Log**, written once the daily job is scheduled:
+       ```
+       <you> | /images use-pfp daily-toggle | Success
+         Time of day: 03:00 UTC
+       ```
+     > UNVERIFIED: where the acknowledgement appears — a new message beneath the question, the
+     > press having already been answered by taking its buttons down. Record it.
+
+101. **Do:** `/images use-pfp prerender-toggle`
+
+     **Expect:**
+     - **Ack:** `Turning **Pre-render portrait updates** off`
+     - **Then:** `❌ **Pre-render portrait updates** disabled.`
+     - **Log:**
+       ```
+       <you> | /images use-pfp prerender-toggle | Success
+         Pre-render portrait updates: disabled
+       ```
+
+102. **A refusal: now the daily update is the only trigger.** **Do:** `/images use-pfp daily-toggle`
+
+     **Expect:** no form — the daily update is on, so the command turns it off — and:
+     - **Reply**, no acknowledgement:
+       ``❌ Cannot disable daily updates: pre-render updates are off, so this is the only way profile pictures would ever be fetched. Enable pre-render updates first, or turn off `/images use-pfp toggle` entirely.``
+     - **Log:** ``⛔ `/images use-pfp daily-toggle` refused for <you> — Cannot disable daily updates: pre-render updates are off, so this is the only way profile pictures would ever be fetched. Enable pre-render updates first, or turn off `/images use-pfp toggle` entirely.``
+
+103. **Do:** `/images test lineup division:Division 1`
+
+     **Expect:** as step 95: daily updates only, and none fetched for a fake driver.
+
+### Back to the base
+
+104. **Do:** `/images use-pfp prerender-toggle`
+
+     **Expect:**
+     - **Ack:** `Turning **Pre-render portrait updates** on`
+     - **Then:** `✅ **Pre-render portrait updates** enabled.`
+     - **Log:** the success line with `Pre-render portrait updates: enabled` beneath it.
+
+105. **Do:** `/images use-pfp daily-toggle`
+
+     **Expect:** no form, and:
+     - **Ack:** `Turning **Daily driver-portrait updates** off`
+     - **Then:** `❌ **Daily driver-portrait updates** disabled.`
+     - **Log:**
+       ```
+       <you> | /images use-pfp daily-toggle | Success
+         Daily driver-portrait updates: disabled
+       ```
+
+106. **Do:** `/images use-pfp toggle`
+
+     **Expect:**
+     - **Ack:** `Turning **Discord profile pictures** off`
+     - **Then:** `❌ **Discord profile pictures** disabled.`
+     - **Log:**
+       ```
+       <you> | /images use-pfp toggle | Success
+         Discord profile pictures: disabled
+       ```
+
+     Portraits are off, pre-render updates on, daily updates off at `03:00`: as the base had them.
+
+107. **Do:** `/images use-pfp daily-toggle`
+
+     **Expect:** step 93's refusal, naming `` `/images use-pfp daily-toggle` ``.
