@@ -473,7 +473,8 @@ def _stub_discord(bot: Any, *, real_config: bool = False) -> None:
     bot.get_partial_messageable = MagicMock()
     bot.add_view = MagicMock()
     # The command tree's syncs, which would reach Discord: recorded, answering that nothing was
-    # synced, so that the `/driver` swap after a toggle or a season's end succeeds (#600).
+    # synced (#600). The `/driver` swap after a toggle or a season's end succeeds only where a
+    # test gives the bot the league's server; with none found, as here, it ends on a fault.
     bot.tree.sync = AsyncMock(return_value=[])
     if real_config:
         return

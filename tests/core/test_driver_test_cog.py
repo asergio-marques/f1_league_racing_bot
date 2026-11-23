@@ -244,15 +244,20 @@ async def test_reassign_refuses_a_fake_driver_on_either_side(tmp_path, old_user,
 @pytest.mark.xfail(strict=True, reason=PENDING)
 async def test_reassign_makes_a_server_member_with_no_profile_current(tmp_path):
     """Test mode is on and the season in Placements. Admin runs the test-mode `/driver reassign`
-    of Charles (103) by ID to the server member 555, who has no driver profile: the queue is asked
-    for the reassignment of Charles onto 555."""
+    of Charles (103), by mention, to the server member 555, who has no driver profile: the queue
+    is asked for one reassignment, of Charles's account 103 onto 555."""
+    import json
+
     from tests.support.change_queue import change_rows
 
     league = await _league(tmp_path)
 
     await _run_variant(league, "reassign", old_user="<@103>", new_user="555")
 
-    assert [row["kind"] for row in await change_rows(league.db_path)] == ["core.driver_reassign"]
+    [row] = await change_rows(league.db_path)
+    payload = json.loads(row["payload"])
+    assert row["kind"] == "core.driver_reassign"
+    assert (payload["old_user_id"], payload["new_user_id"]) == ("103", "555")
 
 
 @pytest.mark.xfail(strict=True, reason=PENDING)
