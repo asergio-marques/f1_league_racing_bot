@@ -1131,13 +1131,15 @@ async def ask_member_left(
 
 
 async def ask_channel_gone(
-    queue: "ChangeQueue", db_path: str, *, user_id: str, channel_id: int, named: str, found: str,
+    queue: "ChangeQueue", *, user_id: str, channel_id: int, named: str, found: str,
+    fake: str | None = None,
 ) -> int | None:
     """Ask the queue, as the bot, to end the signup of *user_id* whose signup channel *channel_id*
     is gone (`signup.end`, reason `CHANNEL_GONE`): *found* is `DELETED` where the bot saw the
     channel deleted and `RESTART` where a restart found it gone, and *named* is the driver's name
-    for the log, found by the asker. The change's own words name a fake driver by its test name
-    (`mention_or_name`, read from *db_path*), as the queue repeats them in a stopped lane's line.
+    for the log, found by the asker. *fake* is the driver's test name where they are a fake
+    driver, found by the asker too: the change's own words then name them by it and never by
+    their ID, as the queue repeats them in a stopped lane's line.
     The change's own check drops the ask where the driver is no longer signing up or their wizard
     names another channel. Gives the change's id, or None where it was dropped."""
     return await queue.ask(
@@ -1146,8 +1148,7 @@ async def ask_channel_gone(
             "user_id": user_id, "reason": CHANNEL_GONE, "channel_id": int(channel_id),
             "named": named, "found": found,
         },
-        what=f"ending the signup of {await mention_or_name(db_path, user_id)}, "
-        "their signup channel deleted",
+        what=f"ending the signup of {fake or f'<@{user_id}>'}, their signup channel deleted",
         origin=ChangeOrigin.BOT,
     )
 

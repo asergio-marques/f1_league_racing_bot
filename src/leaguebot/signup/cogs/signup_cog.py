@@ -91,14 +91,14 @@ class SignupCog(commands.Cog):
         wizard = await self.bot.signup_module_service.get_wizard_by_channel(channel.id)
         if wizard is None:
             return
+        fake = await fake_name_of(self.bot.db_path, wizard.discord_user_id)
         await ask_channel_gone(
             self.bot.change_queue,
-            self.bot.db_path,
             user_id=wizard.discord_user_id,
             channel_id=channel.id,
-            named=await fake_name_of(self.bot.db_path, wizard.discord_user_id)
-            or await name_of_member(self.bot, int(wizard.discord_user_id)),
+            named=fake or await name_of_member(self.bot, int(wizard.discord_user_id)),
             found=DELETED,
+            fake=fake,
         )
 
     @commands.Cog.listener()

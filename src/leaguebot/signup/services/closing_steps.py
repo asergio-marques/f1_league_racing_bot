@@ -569,13 +569,14 @@ async def recover_gone_channels(bot: "LeagueBot", *, queue: "ChangeQueue") -> se
                 fetched = None
             if isinstance(fetched, discord.TextChannel):
                 continue
+            fake = await fake_name_of(bot.db_path, user_id)
             await ask_channel_gone(
                 queue,
-                bot.db_path,
                 user_id=user_id,
                 channel_id=channel_id,
-                named=await fake_name_of(bot.db_path, user_id) or await name_of_member(bot, int(user_id)),
+                named=fake or await name_of_member(bot, int(user_id)),
                 found=RESTART,
+                fake=fake,
             )
             asked.add(user_id)
         except discord.HTTPException:
