@@ -85,9 +85,6 @@ _INIT_SAVED = (
 #: on: the `/driver` commands are swapped at a restart alone after either (#600, D9).
 _DRIVER_RESTART = "The `/driver` commands will show correctly once the bot is restarted."
 
-#: Why a test of that notice fails until #600 is built.
-_NO_DRIVER_RESTART = "#600: the reply does not yet name the restart the /driver commands need"
-
 #: `/bot init` refused on a server already configured, word for word.
 _ALREADY_CONFIGURED = (
     "⚠️ This server is already configured, and `/bot init` runs once.\n"
@@ -631,7 +628,6 @@ async def test_bot_init_on_a_second_server_is_refused_and_writes_nothing(tmp_pat
     assert await _audit_rows(db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_DRIVER_RESTART)
 async def test_a_pack_frees_the_server_for_another(tmp_path):
     """The claim is the configuration row's `server_id`, and `/bot pack` clears it (#247).
 
@@ -768,7 +764,7 @@ async def test_a_second_bot_init_queued_behind_the_first_is_refused_as_it_starts
 @pytest.mark.parametrize("where", ["save", "check"])
 @pytest.mark.parametrize(
     "before",
-    ["fresh", pytest.param("packed", marks=pytest.mark.xfail(strict=True, reason=_NO_DRIVER_RESTART))],
+    ["fresh", "packed"],
 )
 async def test_bot_init_ends_on_a_fault_without_stopping_the_queue(
     tmp_path, monkeypatch, caplog, before, where
@@ -2131,8 +2127,7 @@ async def test_bot_factory_reset_backs_up_then_wipes_then_reports_by_dm(tmp_path
 
 @pytest.mark.parametrize(
     "test_mode",
-    [pytest.param(1, marks=pytest.mark.xfail(strict=True, reason=_NO_DRIVER_RESTART), id="on"),
-     pytest.param(0, id="off")],
+    [pytest.param(1, id="on"), pytest.param(0, id="off")],
 )
 async def test_the_factory_reset_reply_names_the_restart_for_driver_under_test_mode(
     tmp_path, test_mode

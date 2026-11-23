@@ -42,6 +42,7 @@ from discord.ext import commands
 from leaguebot.framework.models.change import LEAGUE_LANE
 from leaguebot.core.services.upkeep import backup_service, factory_reset_service, pack_service
 from leaguebot.core.services.settings.bot_init_change import ANOTHER_SERVER as _ANOTHER_SERVER
+from leaguebot.core.services.settings.bot_init_change import DRIVER_RESTART as _DRIVER_RESTART
 from leaguebot.core.services.settings.bot_init_change import KIND as BOT_INIT
 from leaguebot.core.services.settings.bot_settings import init_channel_refusals
 from leaguebot.framework.utils.background import start_background
@@ -582,6 +583,9 @@ class BotCog(commands.Cog):
         Only the server the command is given in is cleaned. A bot that was packed and not
         yet claimed may still hold the ids of another server's channels, and the owner of
         this one has no say over that one.
+
+        No `/driver` swap follows: where test mode is on, the reply says the commands show
+        correctly once the bot is restarted.
         """
         if confirm != _CONFIRM_WORD:
             await self._refuse_factory_reset(
@@ -617,6 +621,10 @@ class BotCog(commands.Cog):
             )
             return
 
+        # Read before the wipe takes the configuration: the reply names the restart `/driver` needs
+        # where test mode is on, no swap following a reset.
+        config = await self.bot.config_service.get_server_config()
+        test_mode_on = config is not None and config.test_mode_active
         targets = await factory_reset_service.gather_targets(
             db_path, setting_channels_read=self.bot.setting_channels_read
         )
@@ -639,7 +647,8 @@ class BotCog(commands.Cog):
             + (f" and `{backup.jobstore.name}`" if backup.jobstore is not None else "")
             + ", beside the live database on the host; restoring it is the host's job.\n"
             f"The bot's channels and messages on this server are being deleted now. That "
-            f"can take a long while, and progress is reported {where}.",
+            f"can take a long while, and progress is reported {where}."
+            + (f"\n{_DRIVER_RESTART}" if test_mode_on else ""),
             ephemeral=True,
         )
 
