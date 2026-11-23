@@ -573,7 +573,9 @@ async def test_the_off_queue_commands_wait_for_the_catch_up(monkeypatch):
 
         return run
 
-    signup._ask_setting = acts("signup nationality")
+    from leaguebot.signup.cogs import signup_commands
+
+    monkeypatch.setattr(signup_commands, "ask_setting", acts("signup nationality"))
     attendance._ask_setting = acts("attendance config no-rsvp-penalty")
     test_mode._refuse_outside_test_mode = acts("test-mode backup lock", True)
     monkeypatch.setattr(bot_cog, "refuse", acts("bot pack"))

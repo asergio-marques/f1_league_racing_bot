@@ -47,7 +47,8 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
-from leaguebot.signup.cogs.signup_cog import ConfirmCloseView, SignupCog
+from leaguebot.signup.cogs.signup_cog import SignupCog
+from leaguebot.signup.cogs.signup_commands import ConfirmCloseView
 from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.signup.services.signup_module_service import SignupModuleService
 from tests.support.change_queue import (
