@@ -523,6 +523,12 @@ async def _resolve_view_context(
     return wizard.discord_user_id if wizard else None
 
 
+async def may_answer(actor: discord.User | discord.Member, owner_id: str) -> bool:
+    """Whether *actor* may answer the wizard whose driver is the account *owner_id*: every button
+    of the wizard and every message typed in its channel is judged here. Only the driver may."""
+    return str(actor.id) == owner_id
+
+
 def _signup_of(signup: "SignupModuleService | None") -> "SignupModuleService":
     """The signup service a step view was handed, or a failure naming the view built without it:
     every view the bot posts or registers is handed it, so none is a refusal to the driver."""
@@ -731,7 +737,7 @@ class WithdrawButtonView(LeagueView):
         """Cancel Signup: check the presser is the driver, then ask `signup.end` through
         `_withdraw`."""
         _user_id = await _resolve_view_context(interaction, self._discord_user_id, self._signup)
-        if _user_id is None or str(interaction.user.id) != _user_id:
+        if _user_id is None or not await may_answer(interaction.user, _user_id):
             await _not_for_you(interaction, _user_id, "Cancel Signup")
             return
         await _withdraw(interaction, self._queue, _user_id)
@@ -760,7 +766,7 @@ class NoNotesButtonView(LeagueView):
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         _user_id = await _resolve_view_context(interaction, self._discord_user_id, self._signup)
-        if _user_id is None or str(interaction.user.id) != _user_id:
+        if _user_id is None or not await may_answer(interaction.user, _user_id):
             await _not_for_you(interaction, _user_id, "No Notes")
             return
         await _answer(interaction, self._queue, _user_id, "No Notes", "notes", None)
@@ -774,7 +780,7 @@ class NoNotesButtonView(LeagueView):
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         _user_id = await _resolve_view_context(interaction, self._discord_user_id, self._signup)
-        if _user_id is None or str(interaction.user.id) != _user_id:
+        if _user_id is None or not await may_answer(interaction.user, _user_id):
             await _not_for_you(interaction, _user_id, "Cancel Signup")
             return
         await _withdraw(interaction, self._queue, _user_id)
@@ -796,7 +802,7 @@ class PlatformButtonView(LeagueView):
 
     async def _pick(self, interaction: discord.Interaction, platform: str) -> None:
         _user_id = await _resolve_view_context(interaction, self._discord_user_id, self._signup)
-        if _user_id is None or str(interaction.user.id) != _user_id:
+        if _user_id is None or not await may_answer(interaction.user, _user_id):
             await _not_for_you(interaction, _user_id, platform)
             return
         await _answer(interaction, self._queue, _user_id, platform, "platform", platform)
@@ -820,7 +826,7 @@ class PlatformButtonView(LeagueView):
     @discord.ui.button(label="Cancel Signup", style=discord.ButtonStyle.danger, custom_id="plat_cancel")
     async def cancel(self, interaction: discord.Interaction, b: discord.ui.Button) -> None:
         _user_id = await _resolve_view_context(interaction, self._discord_user_id, self._signup)
-        if _user_id is None or str(interaction.user.id) != _user_id:
+        if _user_id is None or not await may_answer(interaction.user, _user_id):
             await _not_for_you(interaction, _user_id, "Cancel Signup")
             return
         await _withdraw(interaction, self._queue, _user_id)
@@ -842,7 +848,7 @@ class DriverTypeButtonView(LeagueView):
 
     async def _pick(self, interaction: discord.Interaction, driver_type: str) -> None:
         _user_id = await _resolve_view_context(interaction, self._discord_user_id, self._signup)
-        if _user_id is None or str(interaction.user.id) != _user_id:
+        if _user_id is None or not await may_answer(interaction.user, _user_id):
             await _not_for_you(interaction, _user_id, driver_type)
             return
         await _answer(interaction, self._queue, _user_id, driver_type, "driver_type", driver_type)
@@ -858,7 +864,7 @@ class DriverTypeButtonView(LeagueView):
     @discord.ui.button(label="Cancel Signup", style=discord.ButtonStyle.danger, custom_id="dtype_cancel")
     async def cancel(self, interaction: discord.Interaction, b: discord.ui.Button) -> None:
         _user_id = await _resolve_view_context(interaction, self._discord_user_id, self._signup)
-        if _user_id is None or str(interaction.user.id) != _user_id:
+        if _user_id is None or not await may_answer(interaction.user, _user_id):
             await _not_for_you(interaction, _user_id, "Cancel Signup")
             return
         await _withdraw(interaction, self._queue, _user_id)
@@ -931,7 +937,7 @@ class PreferredTeamsButtonView(LeagueView):
             _user_id = await _resolve_view_context(interaction, self._discord_user_id, self._signup)
             named = _pressed_label(interaction, "")
             label = named or f"Team {i + 1}"
-            if _user_id is None or str(interaction.user.id) != _user_id:
+            if _user_id is None or not await may_answer(interaction.user, _user_id):
                 await _not_for_you(interaction, _user_id, label)
                 return
             wizard = await _signup_of(self._signup).get_wizard_by_channel(
@@ -952,14 +958,14 @@ class PreferredTeamsButtonView(LeagueView):
 
     async def _no_preference_callback(self, interaction: discord.Interaction) -> None:
         _user_id = await _resolve_view_context(interaction, self._discord_user_id, self._signup)
-        if _user_id is None or str(interaction.user.id) != _user_id:
+        if _user_id is None or not await may_answer(interaction.user, _user_id):
             await _not_for_you(interaction, _user_id, "No Preference")
             return
         await _answer(interaction, self._queue, _user_id, "No Preference", "team", None)
 
     async def _cancel_callback(self, interaction: discord.Interaction) -> None:
         _user_id = await _resolve_view_context(interaction, self._discord_user_id, self._signup)
-        if _user_id is None or str(interaction.user.id) != _user_id:
+        if _user_id is None or not await may_answer(interaction.user, _user_id):
             await _not_for_you(interaction, _user_id, "Cancel Signup")
             return
         await _withdraw(interaction, self._queue, _user_id)
@@ -982,7 +988,7 @@ class NoPreferenceTeammateView(LeagueView):
     @discord.ui.button(label="No Preference", style=discord.ButtonStyle.secondary, custom_id="tmmate_nopref")
     async def no_preference(self, interaction: discord.Interaction, b: discord.ui.Button) -> None:
         _user_id = await _resolve_view_context(interaction, self._discord_user_id, self._signup)
-        if _user_id is None or str(interaction.user.id) != _user_id:
+        if _user_id is None or not await may_answer(interaction.user, _user_id):
             await _not_for_you(interaction, _user_id, "No Preference")
             return
         await _answer(interaction, self._queue, _user_id, "No Preference", "teammate", None)
@@ -990,7 +996,7 @@ class NoPreferenceTeammateView(LeagueView):
     @discord.ui.button(label="Cancel Signup", style=discord.ButtonStyle.danger, custom_id="tmmate_cancel")
     async def cancel(self, interaction: discord.Interaction, b: discord.ui.Button) -> None:
         _user_id = await _resolve_view_context(interaction, self._discord_user_id, self._signup)
-        if _user_id is None or str(interaction.user.id) != _user_id:
+        if _user_id is None or not await may_answer(interaction.user, _user_id):
             await _not_for_you(interaction, _user_id, "Cancel Signup")
             return
         await _withdraw(interaction, self._queue, _user_id)

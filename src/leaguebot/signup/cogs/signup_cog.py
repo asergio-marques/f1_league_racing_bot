@@ -34,7 +34,7 @@ from discord.ext import commands
 from leaguebot.signup.models.switch import SWITCH_KEY
 from leaguebot.signup.services.window_close import RETURNED_BY_CLOSE
 from leaguebot.signup.services.signup_views import (
-    IN_PROGRESS_STATES, SignupButtonView, reason_pending_for,
+    IN_PROGRESS_STATES, SignupButtonView, may_answer, reason_pending_for,
 )
 from leaguebot.signup.services.channel_setting import KIND as SIGNUP_CHANNEL_KIND
 from leaguebot.signup.services.close_time_settings import kind_of as close_time_kind
@@ -352,7 +352,7 @@ class SignupCog(commands.Cog):
         wizard = await self.bot.wizard_service.get_wizard_by_channel(
             message.channel.id
         )
-        if wizard is None or wizard.discord_user_id != str(message.author.id):
+        if wizard is None or not await may_answer(message.author, wizard.discord_user_id):
             return
         await take_typed_answer(
             self.bot, message, wizard, queue=self.bot.change_queue,
