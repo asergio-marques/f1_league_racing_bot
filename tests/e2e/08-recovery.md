@@ -107,3 +107,91 @@ step, unless the step says otherwise.
 
    **Expect:** as `01-full-season.md` step 5: every mark of every round `⏳`. The restore brought
    the scheduler's job store back with the database, and the restart kept it. No log line.
+
+---
+
+## Part B — Asking while the bot is down, and as it comes back
+
+No round has had its reports approved yet, so an attendance penalty changed here is saved alone
+and nothing is recalculated (`01-full-season.md`, "The attendance settings"). The two penalties
+set here are the values `01-full-season.md` steps 6 and 7 set.
+
+5. **A command while the bot is down.** **Stop the bot.** Once the host log shows it has stopped,
+   **Do:** `/test-mode review`
+
+   **Expect:**
+   - Discord itself answers, after about three seconds, that the application did not respond.
+     The bot never sees the command.
+     > UNVERIFIED: Discord's exact wording, which is the client's and not the bot's.
+   - Nothing in `#bot-log`.
+
+6. **A command as the bot comes back.** **Start the bot**, and watch the host log. The moment
+   `Logged in as <bot user> (id=<bot id>)` appears, **Do:**
+   `/attendance config no-rsvp-penalty points:2`
+
+   The catch-up runs between `Logged in as` and `Synced <n> slash command(s)`. With nothing to catch
+   up it lasts a moment, so which outcome you see is down to your timing. Both are a pass.
+
+   **Expect**, either:
+   - **(a) asked during the catch-up:** Discord shows `<bot> is thinking…` for as long as the
+     catch-up takes, and then the acknowledgement takes its place, as in (b). The command waits
+     before it does anything (`after_the_catch_up`), and its change is queued behind every change
+     the catch-up asked;
+   - **(b) asked after it:** the acknowledgement at once;
+
+   and, in both:
+   - **Ack:** `Setting the no-RSVP penalty to 2 point(s)`
+   - **Then:** `✅ No-RSVP penalty set to **2** point(s).`
+   - **Log:**
+     ```
+     <you> | /attendance config no-rsvp-penalty | Success
+       no-RSVP penalty: 2 point(s) (was 1 point(s))
+     ```
+
+   Neither outcome is a refusal: a request made during the catch-up is held, never turned away
+   (`change_queue`, "After a restart the queue is held until the start-up sweep has asked its
+   own"). Step 5's command is not replayed: it never reached the bot.
+
+7. **A change cut off by a restart.** **Do:** `/attendance config absent-penalty points:3`, and
+   **restart the bot** the moment the acknowledgement appears, without waiting for it to be
+   updated.
+
+   **Expect:**
+   - **Ack:** `Setting the absent penalty to 3 point(s)`
+   - Then, either:
+     - **(a) the change finished before the stop:** the acknowledgement is updated to
+       `✅ Absent penalty set to **3** point(s).`, and the log line below is written before the
+       restart;
+     - **(b) the stop cut it off:** the acknowledgement stays as it is, `⏳ …`, for good. The change
+       is carried on when the bot starts, after the catch-up, and the log line below is written
+       then. The reply is not updated: the bot holds it in memory, which the restart lost.
+   - **Log**, once, whichever happened:
+     ```
+     <you> | /attendance config absent-penalty | Success
+       absent penalty: 3 point(s) (was 1 point(s))
+     ```
+     Two such lines would be the change done twice: a failure.
+
+8. **Do:** `/attendance config show`
+
+   **Expect:**
+   - **Reply:**
+     ```
+     **Attendance Configuration**
+
+     **Timing**
+       RSVP notice: **5** day(s) before race
+       Last reminder: **24** hr(s) before race
+       RSVP deadline: **2** hr(s) before race
+
+     **Penalties**
+       No-RSVP: **2** pt(s)
+       Absent penalty: **3** pt(s)
+       No-show (ACCEPTED + absent): **1** pt(s)
+
+     **Auto-actions**
+       Auto-reserve threshold: **disabled**
+       Auto-sack threshold: **disabled**
+     ```
+     Both penalties stand, whichever outcome steps 6 and 7 took.
+   - **Log:** nothing; it is a view.
