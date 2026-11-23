@@ -402,7 +402,7 @@ Every paste below is typed **as a message in the round's submission channel**, n
 
 21. **Do:** send the race paste of step 18 again, and press **Standard** on the choice.
 
-    **Expect:** as `01-full-season.md` step 26, but for the check-in:
+    **Expect:** as `01-full-season.md` step 26:
     - the choice edited to `🔧 Config selected: **Standard**`;
     - **Ack:** `Saving the Race of round 1 with the Standard configuration`
     - **Then:** `✅ The Race of round 1 is saved, scored by **Standard**.`
@@ -419,3 +419,98 @@ Every paste below is typed **as a message in the round's submission channel**, n
       <you> | Penalty review opened | Success
         round 1 (Division 1)
       ```
+
+---
+
+## Part E — A penalty review and an appeals review, standing
+
+A review is the bot's record, not its memory: the round's place in it is saved, and its buttons
+are routed by fixed ids that a restart routes again. What is staged on a review is memory, and a
+restart loses it (results specification: "a restart losing staged items as it always has"). At a
+restart the review is posted afresh and the old prompt deleted once the new one stands
+(`review_recovery`, `results.review.open` and `results.appeals.open`, asked as the bot's own). A
+review has no timer: it does not expire.
+
+22. **Stage a penalty.** **Do:** press **➕ Add Penalty** on the review, then **Feature Race**, and
+    fill the form **Add Penalty — Feature Race** as `01-full-season.md` step 29: **Driver**
+    `9000000000000000018`, **Penalty value** `+5s`, **Penalty description**
+    `Gained an advantage leaving the track at Copse`, **Justification** `Track limits, lap 12`.
+    Submit.
+
+    **Expect:** as `01-full-season.md` steps 28 and 29:
+    - **Ack:** `Staging a penalty in the penalty review`
+    - **Then:** `✅ Staged Penalty: <@9000000000000000018> | Feature Race | **+5s**`
+    - **Posts:** the review edited, its last line
+      `  1. <@9000000000000000018> (Rafael Rossi) | Feature Race | **+5s**  ← Remove #1 below`
+      beneath `**Staged Penalties (1):**`, a **Remove #1** button added and **✅ Approve** live.
+    - **Log:** the `<you> | the “Add Penalty — Feature Race” form | Success` line, with
+      `review: penalty review of round 1 (Division 1)` and
+      `staged: Penalty +5s for <@9000000000000000018> in Feature Race` beneath.
+
+23. **Do:** with the staged penalty showing, **restart the bot**.
+
+    **Expect**, once the bot is back:
+    - **Host log:** `Recovery: asked the queue to put back the report of round <round id>`.
+    - **Posts** (submission channel), in this order:
+      - a **new** penalty review at the foot of the channel, as step 21 left it:
+        `🏁 **Penalty Review — Round 1 | Division 1**`, `**Preliminary Attendees (22):**`, and
+        `**Staged Penalties:** *(none — click Add Penalty to stage one)*`, with **➕ Add Penalty**,
+        **No Penalties / Confirm**, **✅ Approve** (greyed out), **🔄 Resubmit Initial Results** and
+        **🏳️ Attendance Pardon**. **Rafael Rossi's +5s is gone**: it was staged, not saved;
+      - then the review of step 22 **deleted**.
+    - Nothing in `#d1-results` or `#d1-standings`: the interim results stand from step 21 and
+      are not posted again.
+    - **Log:** nothing. The bot puts the review back as its own change, which writes no line, and
+      nothing says the staged penalty was lost.
+      > UNVERIFIED: what a press on the old review does in the moment between the start and its
+      > deletion. Its buttons are routed again, and it is no longer the round's prompt.
+
+24. **The new review answers.** **Do:** step 22 again, on the new review.
+
+    **Expect:** as step 22.
+
+25. **Do:** press **✅ Approve** on the review.
+
+    **Expect:** as `01-full-season.md` step 30, but for the attendance sheet:
+    - **Ack:** `Approving round 1's reports (Division 1)`
+    - **Then:** `✅ Round 1's reports are approved (Division 1): 1 penalty applied. Its appeals review is posted below.`
+    - **Posts:** the results and standings again, `Post-Race Penalty Results`, Rafael Rossi fourth
+      on his five seconds (drivers: Kevin Keller 34, Hiro Hayashi 30, Emil Engel 24, Rafael Rossi
+      22, …); the verdict banner and Rafael Rossi's verdict in `#d1-verdicts`; an attendance sheet
+      in `#d1-attendance`, which this spec does not check (the check-in was not answered as
+      `01-full-season.md`'s was); the review deleted, and the appeals review posted:
+      ```
+      ⚖️ **Appeals Review — Round 1 | Division 1**
+
+      Post-Race Penalty Results have been posted. Review and add any appeal corrections before approving to finalise.
+
+      **Staged Corrections:** *(none — click Add Correction to stage one)*
+      ```
+    - **Log:** `<you> | PENALTY_REVIEW_APPROVED | Success` with `round: 1 (Division 1)` and
+      `penalties: 1` beneath, and any notice blocks.
+
+26. **Do:** with the appeals review standing, **restart the bot**.
+
+    **Expect**, once the bot is back:
+    - **Host log:** `Recovery: asked the queue to put back the appeals of round <round id>`.
+    - **Posts** (submission channel): a **new** appeals review at the foot of the channel, as in
+      step 25, with **➕ Add Correction**, **No Changes / Confirm** and **✅ Approve**; then the
+      appeals review of step 25 **deleted**.
+    - Nothing posted again in `#d1-results`, `#d1-standings` or `#d1-verdicts`: the penalty stands
+      applied, and is applied once (results specification: "corrections shall be applied once,
+      even where the appeals review is asked for again after a restart").
+    - **Log:** nothing.
+
+27. **Do:** press **No Changes / Confirm** on the new appeals review.
+
+    **Expect:** as `01-full-season.md` step 31:
+    - **Ack:** `Approving round 1's appeals (Division 1)`
+    - **Then:** `✅ Round 1's appeals are approved (Division 1): no corrections were staged. The round is final.`
+    - **Posts:** the results and standings again, `Final Results`; nothing in `#d1-verdicts`; the
+      channel `#s1-division-1-r1-results` **deleted**.
+    - **Log:** `<you> | APPEALS_REVIEW_APPROVED | Success` with `round: 1 (Division 1)` and
+      `corrections: none` beneath.
+
+28. **Do:** `/test-mode review`
+
+    **Expect:** Division 1's `Round 1` line reads `Results: ✅ finalized`. No log line.
