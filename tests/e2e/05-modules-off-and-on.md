@@ -899,10 +899,12 @@ while it was off is then read back against Part B.
     - **`#signup`:** the permission overwrites `/signup channel` set (`00-base.md` step 13) are
       gone: those of `@everyone`, the bot, `@Members`, `@League Manager` and `@League Admin`.
       Look at the channel's permissions in Discord.
-      > UNVERIFIED: the bot's own overwrite is among those removed, so the bot keeps Manage
-      > Permissions on `#signup` only through a server-wide or category grant (`00-base.md` step 1).
-      > Where a `⚠️ Permissions the bot set on the signup channel <#<signup id>> could not be removed: remove them by hand.`
-      > line follows the reply, the bot lacked it; note which overwrites remain.
+      Every overwrite is cleared, the bot's own included: the bot holds Manage Roles on the
+      server (`00-base.md` step 1). Where it does not, the reply carries a second line,
+      ``⚠️ Permissions the bot set on the signup channel <#<signup id>> could not be removed: remove them by hand.``,
+      the log a second line, `<you> | /module disable signup | Permissions left on the signup channel <#<signup id>>: remove them by hand.`,
+      and step 68 fails to put them back: give the bot the grant on the server, and run steps 64
+      and 68 again.
 
 65. **Do:** `/signup config view`
 
@@ -931,7 +933,9 @@ while it was off is then read back against Part B.
     - **Then:** `✅ Signup module enabled.` alone. No `Next steps` list, unlike `00-base.md`
       step 11: the channel was kept, and the base and driver roles are set.
     - **Log:** `<you> | /module enable signup | Success`
-    - **`#signup`:** the overwrites of step 64 are back as `/signup channel` set them.
+    - **`#signup`:** the overwrites of step 64 are back as `/signup channel` set them. This
+      needs the server-wide grant of step 64; without it the switch-on fails, the module stays
+      off, and the reply says to run it again.
 
 69. **Do:** `/signup config view`
 
