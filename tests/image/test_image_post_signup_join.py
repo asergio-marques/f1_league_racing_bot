@@ -222,7 +222,12 @@ class TestSignupRecordsJoin:
         assert names.get(USER_ID) == "Ada Lovelace"
 
     async def test_the_lineup_seat_query_runs_and_finds_its_driver(self, db_path):
-        """The third corrected site. Issued verbatim as `build_drawing` issues it."""
+        """The lineup's seat query, run as the lineup picture runs it: through core's
+        `division_seating`, against the migrated schema. Season 1 is active, with division D1
+        holding Redline, a one-seat team; Ada (USER_ID) is Active and holds its seat, her
+        placement confirmed. The seating of D1 is Redline alone, its one seat held by Ada."""
+        from leaguebot.core.services.drivers.division_seating import division_seating
+
         async with get_connection(db_path) as db:
             cursor = await db.execute(
                 "INSERT INTO seasons (start_date, status, season_number) "
@@ -253,37 +258,22 @@ class TestSignupRecordsJoin:
             )
             profile_id = cursor.lastrowid
             await db.execute(
-                "INSERT INTO signup_records (created_at, discord_user_id, "
-                "server_display_name, discord_username, nationality) "
-                "VALUES ('2026-01-01T00:00:00+00:00', ?, 'Ada Lovelace', 'ada', 'British')",
-                (str(USER_ID),),
-            )
-            await db.execute(
                 "INSERT INTO driver_season_assignments (driver_profile_id, season_id, "
-                "division_id, team_seat_id) VALUES (?, ?, ?, ?)",
+                "division_id, team_seat_id, committed) VALUES (?, ?, ?, ?, 1)",
                 (profile_id, season_id, division_id, seat_id),
             )
             await db.commit()
 
-            rows = await (
-                await db.execute(
-                    "SELECT ts.seat_number, dp.discord_user_id, dp.is_test_driver, "
-                    "       dp.test_display_name, sr.server_display_name, "
-                    "       sr.discord_username, sr.nationality "
-                    "FROM team_seats ts "
-                    "LEFT JOIN driver_season_assignments dsa "
-                    "       ON dsa.team_seat_id = ts.id AND dsa.division_id = ? "
-                    "LEFT JOIN driver_profiles dp ON dp.id = dsa.driver_profile_id "
-                    "LEFT JOIN signup_records sr "
-                    "       ON sr.discord_user_id = CAST(dp.discord_user_id AS TEXT) "
-                    "WHERE ts.team_instance_id = ? ORDER BY ts.seat_number",
-                    (division_id, team_id),
-                )
-            ).fetchall()
+        assert division_id is not None
+        [team] = await division_seating(db_path, division_id)
 
-        assert len(rows) == 1
-        assert rows[0]["server_display_name"] == "Ada Lovelace"
-        assert rows[0]["nationality"] == "British"
+        assert team.team_instance_id == team_id
+        [seat] = team.seats
+        assert seat.seat_number == 1
+        assert seat.occupant is not None
+        assert seat.occupant.profile_id == profile_id
+        assert seat.occupant.discord_user_id == str(USER_ID)
+        assert seat.occupant.is_test_driver is False
 
 
 # ── The suppression switch ────────────────────────────────────────────────
