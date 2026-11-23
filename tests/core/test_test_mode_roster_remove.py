@@ -11,7 +11,7 @@ admin discards the stopped job, the reply says nothing was removed and to run th
 
 These run on `season_league`'s league: season 3 in Placements, test mode on, McLaren (full name
 "McLaren F1 Team") in Am holding Charles, a real driver, in its first seat and the fake driver
-Mock Alpha (British) in its second.
+Mock Alpha in its second.
 """
 from __future__ import annotations
 
@@ -54,12 +54,12 @@ _NOT_YET_REFUSED = (
 
 @pytest.fixture
 async def league(tmp_path):
-    """`season_league`'s season in Placements under test mode, Mock Alpha (British) a fake driver
+    """`season_league`'s season in Placements under test mode, Mock Alpha a fake driver
     in McLaren's second seat in Am; `cog` is the test-mode cog on its bot."""
     built = await season_league(tmp_path, test_mode=True)
     await built.write(
         "INSERT INTO driver_profiles (discord_user_id, current_state, is_test_driver, "
-        "test_display_name, test_nationality) VALUES (?, 'ASSIGNED', 1, 'Mock Alpha', 'British')",
+        "test_display_name) VALUES (?, 'ASSIGNED', 1, 'Mock Alpha')",
         MOCK_ID,
     )
     await built.write(
@@ -144,16 +144,20 @@ def _refused(refusal: str) -> str:
     return f"⛔ `/test-mode roster remove` refused for {_NAMED} — {refusal[2:]}"
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#600: the removal's audit entry still records a nationality"
+)
 async def test_a_removal_and_its_audit_entry_and_line_are_one_save(league):
     """The core specification's test roster, changed by hand under test mode, and its record of
-    what changed. The season is in Placements under test mode, Mock Alpha (British) a fake driver
+    what changed. The season is in Placements under test mode, Mock Alpha a fake driver
     in McLaren's second seat in Am beside Charles, a real driver, in its first. Admin (77) runs
     `/test-mode roster remove` with Mock Alpha's synthetic ID. They are answered at once with the
     queue's acknowledgement, "Removing fake driver **Mock Alpha**", naming its first job, and
     nothing is written until the queue runs the change, of kind `core.test_roster_remove`. Once
     it has, Mock Alpha's profile is gone and McLaren's second seat free, Charles untouched in the
     first; one audit entry, `TEST_DRIVER_REMOVED`, by Admin, on Am, stamped with the queue's
-    clock, records the driver, id, team's full name, division and nationality, each unset after;
+    clock, records the driver, id, team's full name and division, each unset after, and no
+    nationality, a fake driver's being its signup's alone;
     the bot's own delete hook, which each module signs up to so that it deletes its own rows of
     the driver, is called once, with Mock Alpha's profile; the acknowledgement reads today's
     reply, naming the driver and the team's full name; and the log channel holds today's success
@@ -183,7 +187,7 @@ async def test_a_removal_and_its_audit_entry_and_line_are_one_save(league):
         MCLAREN,
     )
     old = {"driver": "Mock Alpha", "user_id": MOCK_ID, "team": "McLaren F1 Team",
-           "division": "Am", "nationality": "British"}
+           "division": "Am"}
     assert [
         (row["change_type"], row["old_value"], row["new_value"],
          row["actor_id"], row["division_id"], row["timestamp"])

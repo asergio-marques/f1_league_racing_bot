@@ -16,9 +16,8 @@ A fourth site, ``image_verdict_post._driver_nationality``, carried the same phan
 and was corrected in 2026-08 alongside test-driver nationality; it is covered here too,
 for the same reason — only a real query against a real schema catches it.
 
-The same tests now also pin where a **mock driver's** nationality comes from. It has no
-signup record, so it carries its own on ``driver_profiles.test_nationality``, and every
-site must prefer that over the NULL its join yields.
+The same tests now also pin where a **mock driver's** nationality comes from: its signup, keyed
+by its synthetic id, as any driver's is. A mock driver that has not signed up has none.
 """
 from __future__ import annotations
 
@@ -79,15 +78,28 @@ async def _seed_driver(db_path, *, name: str = "Ada Lovelace", nationality: str 
 
 
 async def _seed_test_driver(db_path, *, name: str = "Mock Alpha", nationality=None):
-    """A mock driver as `/test-mode roster add` makes one: no signup record at all."""
+    """A mock driver as `/test-mode roster add` makes one, and, where *nationality* is given, its
+    signup naming it by its test name and recording *nationality*; with none, no signup at all."""
     async with get_connection(db_path) as db:
         await db.execute(
             "INSERT INTO driver_profiles (discord_user_id, current_state, "
-            "is_test_driver, test_display_name, test_nationality) "
-            "VALUES (?, 'ASSIGNED', 1, ?, ?)",
-            (str(TEST_USER_ID), name, nationality),
+            "is_test_driver, test_display_name) "
+            "VALUES (?, 'ASSIGNED', 1, ?)",
+            (str(TEST_USER_ID), name),
         )
+        if nationality is not None:
+            await db.execute(
+                "INSERT INTO signup_records (created_at, discord_user_id, server_display_name, "
+                "discord_username, nationality) VALUES ('2026-01-01T00:00:00+00:00', ?, ?, ?, ?)",
+                (str(TEST_USER_ID), name, name, nationality),
+            )
         await db.commit()
+
+
+#: The reason a mock driver's nationality is not yet read from its signup.
+_FROM_ITS_SIGNUP = (
+    "#600: a mock driver's nationality is still read from its profile, not its signup"
+)
 
 
 # ── The join ──────────────────────────────────────────────────────────────
@@ -111,19 +123,21 @@ class TestSignupRecordsJoin:
     @pytest.mark.parametrize(
         ("seed", "user_id", "nationality"),
         [
-            (_seed_driver, USER_ID, "Dutch"),
-            (_seed_driver, USER_ID, None),
-            (_seed_test_driver, TEST_USER_ID, "Brazilian"),
-            (_seed_test_driver, TEST_USER_ID, None),
+            pytest.param(_seed_driver, USER_ID, "Dutch", id="seeded"),
+            pytest.param(_seed_driver, USER_ID, None, id="seeded-none-stated"),
+            pytest.param(
+                _seed_test_driver, TEST_USER_ID, "Brazilian", id="mock",
+                marks=pytest.mark.xfail(strict=True, reason=_FROM_ITS_SIGNUP),
+            ),
+            pytest.param(_seed_test_driver, TEST_USER_ID, None, id="mock-none-given"),
         ],
-        ids=["seeded", "seeded-none-stated", "mock", "mock-none-given"],
     )
     async def test_nationalities_reads_each_drivers_own(
         self, bot, db_path, seed, user_id, nationality
     ):
         """`_nationalities` is imported by the attendance and verdict paths too.
 
-        A mock driver has no signup record; its nationality is on its profile.
+        A mock driver's nationality is its signup's, and none where it has not signed up.
         """
         from leaguebot.core.services.drivers.driver_names import read_driver_nationalities
 
@@ -131,8 +145,10 @@ class TestSignupRecordsJoin:
 
         assert await read_driver_nationalities(db_path, _hook(db_path), [user_id]) == {user_id: nationality}
 
+    @pytest.mark.xfail(strict=True, reason=_FROM_ITS_SIGNUP)
     async def test_the_verdict_lookup_reads_both_kinds_of_driver(self, db_path):
-        """The fourth site, which joined the phantom column until this was written."""
+        """The fourth site, which joined the phantom column until this was written. A real
+        driver's nationality and a mock driver's are each their signup's."""
         from leaguebot.image.services.aspects.image_verdict_post import _driver_nationality
 
         await _seed_driver(db_path, nationality="Dutch")
@@ -204,9 +220,7 @@ class TestSignupRecordsJoin:
                 await db.execute(
                     "SELECT ts.seat_number, dp.discord_user_id, dp.is_test_driver, "
                     "       dp.test_display_name, sr.server_display_name, "
-                    "       sr.discord_username, "
-                    "       CASE WHEN dp.is_test_driver = 1 THEN dp.test_nationality "
-                    "            ELSE sr.nationality END AS nationality "
+                    "       sr.discord_username, sr.nationality "
                     "FROM team_seats ts "
                     "LEFT JOIN driver_season_assignments dsa "
                     "       ON dsa.team_seat_id = ts.id AND dsa.division_id = ? "

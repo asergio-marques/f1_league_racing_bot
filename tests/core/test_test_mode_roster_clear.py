@@ -39,11 +39,11 @@ _NAMED = f"Admin (`<@{ACTOR_ID}>`)"
 
 ALPHA, BETA, GAMMA = "9000000000000000001", "9000000000000000002", "9000000000000000003"
 
-#: Each fake driver's id, name, nationality, team, seat and division.
+#: Each fake driver's id, name, team, seat and division.
 _FAKES = [
-    (ALPHA, "Mock Alpha", "British", MCLAREN, 2, AM),
-    (BETA, "Mock Beta", None, MCLAREN, 3, AM),
-    (GAMMA, "Mock Gamma", None, FERRARI, 3, PRO),
+    (ALPHA, "Mock Alpha", MCLAREN, 2, AM),
+    (BETA, "Mock Beta", MCLAREN, 3, AM),
+    (GAMMA, "Mock Gamma", FERRARI, 3, PRO),
 ]
 
 _AUDIT_TYPE = "TEST_DRIVER_REMOVED"
@@ -67,11 +67,11 @@ _NOT_YET_REFUSED = (
 )
 
 
-async def _seat_fake(league, user_id, name, nationality, team, seat, division) -> None:
+async def _seat_fake(league, user_id, name, team, seat, division) -> None:
     await league.write(
         "INSERT INTO driver_profiles (discord_user_id, current_state, is_test_driver, "
-        "test_display_name, test_nationality) VALUES (?, 'ASSIGNED', 1, ?, ?)",
-        user_id, name, nationality,
+        "test_display_name) VALUES (?, 'ASSIGNED', 1, ?)",
+        user_id, name,
     )
     await league.write(
         "INSERT INTO team_seats (team_instance_id, seat_number, driver_profile_id) "
@@ -169,9 +169,12 @@ def _refused(refusal: str) -> str:
     return f"⛔ `/test-mode roster clear` refused for {_NAMED} — {refusal[2:]}"
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#600: the clear's audit entries still record a nationality"
+)
 async def test_a_clear_and_its_audit_entries_and_line_are_one_save(league):
     """The core specification's test roster, changed by hand under test mode, and its record of
-    what changed. The season is in Placements under test mode, Mock Alpha (British) and Mock Beta
+    what changed. The season is in Placements under test mode, Mock Alpha and Mock Beta
     fake drivers at McLaren in Am beside Charles, a real driver, and Mock Gamma a fake driver at
     Ferrari in Pro. Admin (77) runs `/test-mode roster clear` of Am. They are answered at once
     with the queue's acknowledgement, "Clearing the fake drivers from **Am**", naming its first
@@ -179,7 +182,8 @@ async def test_a_clear_and_its_audit_entries_and_line_are_one_save(league):
     Once it has, Mock Alpha and Mock Beta are gone, and Charles, Lewis, Max and Mock Gamma, in
     another division, stand; one `TEST_DRIVER_REMOVED` audit entry for each driver removed, in
     the order they were added, by Admin, on Am, stamped with the queue's clock, records the
-    driver, id, team's full name, division and nationality, each unset after; the bot's own
+    driver, id, team's full name and division, each unset after, and no nationality, a fake
+    driver's being its signup's alone; the bot's own
     delete hook, which each module signs up to so that it deletes its own rows of the drivers, is
     called once, with Mock Alpha's and Mock Beta's profiles; the acknowledgement reads today's
     reply, "Removed **2** fake driver(s) from **Am**."; and the
@@ -201,10 +205,8 @@ async def test_a_clear_and_its_audit_entries_and_line_are_one_save(league):
     assert await _drivers(league) == [str(LEWIS), str(MAX), str(CHARLES), GAMMA]
     assert handed == [removed]
     entries = [
-        {"driver": "Mock Alpha", "user_id": ALPHA, "team": "McLaren F1 Team", "division": "Am",
-         "nationality": "British"},
-        {"driver": "Mock Beta", "user_id": BETA, "team": "McLaren F1 Team", "division": "Am",
-         "nationality": None},
+        {"driver": "Mock Alpha", "user_id": ALPHA, "team": "McLaren F1 Team", "division": "Am"},
+        {"driver": "Mock Beta", "user_id": BETA, "team": "McLaren F1 Team", "division": "Am"},
     ]
     assert [
         (row["change_type"], row["old_value"], row["new_value"],
