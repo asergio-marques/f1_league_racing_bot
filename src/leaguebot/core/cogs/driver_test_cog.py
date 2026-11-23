@@ -16,8 +16,6 @@ group down; a restart puts `/driver` right.
 """
 from __future__ import annotations
 
-import logging
-
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -25,7 +23,11 @@ from discord.ext import commands
 from leaguebot.core.cogs import driver_commands
 from leaguebot.core.cogs.driver_commands import ResolvedDriver
 from leaguebot.core.services.drivers.driver_names import read_driver_names
-from leaguebot.core.services.drivers.driver_reference import driver_choices, resolve_driver
+from leaguebot.core.services.drivers.driver_reference import (
+    DriverReference,
+    driver_choices,
+    resolve_driver,
+)
 from leaguebot.core.utils.channel_guard import league_admin_only, league_manager_only
 from leaguebot.core.utils.input_validator import parse_user
 from leaguebot.core.utils.team_autocomplete import team_autocomplete
@@ -33,8 +35,6 @@ from leaguebot.framework.utils.autocomplete import bounded_autocomplete
 from leaguebot.framework.utils.interaction_errors import describe
 from leaguebot.framework.utils.league_bot import LeagueBot
 from leaguebot.framework.utils.log_lines import refuse
-
-log = logging.getLogger(__name__)
 
 #: What a command is refused with while test mode is off.
 TEST_MODE_OFF_REFUSAL = (
@@ -72,14 +72,17 @@ class DriverTestCog(commands.Cog):
         return False
 
     async def _name_of(
-        self, interaction: discord.Interaction, account: str, *, is_test_driver: bool
+        self, interaction: discord.Interaction, reference: DriverReference
     ) -> str:
-        """The name a driver is called by: as `driver_names` names them. A fake driver has no member
-        to look up, so none is."""
+        """The name a driver is called by: a fake driver's test name, otherwise as `driver_names`
+        names them."""
+        if reference.test_name is not None:
+            return reference.test_name
+        account = reference.discord_user_id
         names = await read_driver_names(
             self.bot.db_path,
             self.bot.driver_names_read,
-            None if is_test_driver else interaction.guild,
+            None if reference.is_test_driver else interaction.guild,
             [int(account)],
         )
         return names[int(account)]
@@ -90,15 +93,7 @@ class DriverTestCog(commands.Cog):
         if reference is None:
             await _refuse_unknown(interaction, text)
             return None
-        account = reference.discord_user_id
-        guild = interaction.guild
-        member = (
-            None
-            if reference.is_test_driver or guild is None
-            else guild.get_member(int(account))
-        )
-        name = await self._name_of(interaction, account, is_test_driver=reference.is_test_driver)
-        return ResolvedDriver(account, name, member)
+        return ResolvedDriver(reference.discord_user_id, await self._name_of(interaction, reference))
 
     async def _the_member_to_make_current(
         self, interaction: discord.Interaction, text: str
@@ -109,8 +104,9 @@ class DriverTestCog(commands.Cog):
         *text* is no account or no member of the server holds it."""
         reference = await resolve_driver(self.bot.db_path, text)
         if reference is not None and reference.is_test_driver:
-            account = reference.discord_user_id
-            return ResolvedDriver(account, await self._name_of(interaction, account, is_test_driver=True))
+            return ResolvedDriver(
+                reference.discord_user_id, await self._name_of(interaction, reference)
+            )
         parsed = parse_user(text)
         if parsed is None:
             await _refuse_unknown(interaction, text)
