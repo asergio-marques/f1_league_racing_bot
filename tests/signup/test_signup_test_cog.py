@@ -23,8 +23,6 @@ from leaguebot.signup.cogs.signup_cog import SignupCog
 from tests.signup.test_wizard_changes import MOCK, MOCK_NAME, START_KIND
 from tests.support.season_league import ADMIN_ID, LEWIS, SIGNING_UP, SeasonLeague
 
-_NOT_BUILT = "#600: the test-mode /signup group is not yet built"
-
 #: The two ways a driver field names Mock Alpha: by its ID, and by mention.
 _MOCK_NAMED = [
     pytest.param(str(MOCK), id="by its ID"),
@@ -109,7 +107,6 @@ async def _driver_state(league: SeasonLeague, user_id: int) -> str | None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_BUILT)
 @pytest.mark.parametrize("named", _MOCK_NAMED)
 async def test_signup_start_asks_a_fake_driver_s_signup_with_the_admin_as_its_actor(
     tmp_path, named
@@ -156,7 +153,6 @@ _START_REFUSALS = [
 ]
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_BUILT)
 @pytest.mark.parametrize(("standing", "named", "words"), _START_REFUSALS)
 async def test_signup_start_is_refused(tmp_path, standing, named, words):
     """Test mode is on. Admin runs the test-mode `/signup start` naming *named*, where: it is
@@ -196,7 +192,6 @@ async def test_signup_start_is_refused(tmp_path, standing, named, words):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_BUILT)
 @pytest.mark.parametrize("named", _MOCK_NAMED)
 async def test_cancel_of_a_fake_driver_by_mention_or_id_asks_what_the_member_cancel_asks(
     tmp_path, monkeypatch, named
@@ -234,7 +229,6 @@ async def test_cancel_of_a_fake_driver_by_mention_or_id_asks_what_the_member_can
     assert fake_payload == {**real_payload, "user_id": str(MOCK)}
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_BUILT)
 @pytest.mark.parametrize("text", ["nobody", "555"])
 async def test_cancel_naming_no_driver_is_refused_naming_the_text(tmp_path, text):
     """Test mode is on. Admin runs the test-mode `/signup cancel` naming *text*, which is neither
@@ -256,7 +250,6 @@ async def test_cancel_naming_no_driver_is_refused_naming_the_text(tmp_path, text
     assert await change_rows(league.db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_BUILT)
 @pytest.mark.parametrize("qualified", ["signup cancel", "signup start"])
 async def test_each_driver_field_offers_drivers_by_name(tmp_path, qualified):
     """Test mode is on. Admin starts typing in the driver field of the test-mode `/<qualified>`:
@@ -318,7 +311,6 @@ def _record_bodies(monkeypatch: Any) -> list[tuple[str, tuple, dict]]:
     return calls
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_BUILT)
 @pytest.mark.parametrize("qualified", _OTHER_COMMANDS)
 async def test_every_other_subcommand_runs_the_member_one_s_body(tmp_path, monkeypatch, qualified):
     """Test mode is on. Admin runs `/<qualified>` of the member group and then of the test-mode
@@ -342,7 +334,6 @@ async def test_every_other_subcommand_runs_the_member_one_s_body(tmp_path, monke
     assert calls == member_calls
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_BUILT)
 @pytest.mark.parametrize("qualified", sorted([*_MEMBER_COMMANDS, "signup start"]))
 async def test_every_test_mode_subcommand_is_refused_while_test_mode_is_off(
     tmp_path, monkeypatch, qualified
@@ -380,7 +371,6 @@ async def test_every_test_mode_subcommand_is_refused_while_test_mode_is_off(
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_BUILT)
 async def test_both_signup_groups_load_and_the_global_tree_carries_the_member_group():
     """Both `/signup` cogs are added to one bot, the member group's first: neither clashes with
     the other, and the global command tree carries `/signup` once, the member group's, which has

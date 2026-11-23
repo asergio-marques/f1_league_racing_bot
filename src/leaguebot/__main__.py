@@ -1268,6 +1268,7 @@ async def build(settings: Settings) -> LeagueBot:
     from leaguebot.core.cogs.team_cog import TeamCog
     from leaguebot.core.cogs.module_cog import ModuleCog
     from leaguebot.signup.cogs.signup_cog import SignupCog
+    from leaguebot.signup.cogs.signup_test_cog import SignupTestCog
     from leaguebot.signup.cogs.admin_review_cog import AdminReviewCog
     from leaguebot.framework.cogs.retry_cog import RetryCog
     from leaguebot.results.cogs.results_cog import ResultsCog
@@ -1287,6 +1288,7 @@ async def build(settings: Settings) -> LeagueBot:
     await bot.add_cog(TeamCog(bot))
     await bot.add_cog(ModuleCog(bot))
     await bot.add_cog(SignupCog(bot))
+    await bot.add_cog(SignupTestCog(bot))
     await bot.add_cog(AdminReviewCog(bot))
     retry_cog = RetryCog(bot)
     await bot.add_cog(retry_cog)

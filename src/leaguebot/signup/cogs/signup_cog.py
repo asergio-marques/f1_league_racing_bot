@@ -46,15 +46,6 @@ _after_the_catch_up = after_the_catch_up(lambda cog: cog.bot.change_queue)
 
 log = logging.getLogger(__name__)
 
-_DAY_CHOICES = [
-    app_commands.Choice(name="Monday", value="1"),
-    app_commands.Choice(name="Tuesday", value="2"),
-    app_commands.Choice(name="Wednesday", value="3"),
-    app_commands.Choice(name="Thursday", value="4"),
-    app_commands.Choice(name="Friday", value="5"),
-    app_commands.Choice(name="Saturday", value="6"),
-    app_commands.Choice(name="Sunday", value="7"),
-]
 
 class SignupCog(commands.Cog):
     def __init__(self, bot: LeagueBot) -> None:
@@ -194,7 +185,7 @@ class SignupCog(commands.Cog):
 
     @time_slot_group.command(name="add", description="Add an availability time slot.")
     @app_commands.describe(day="Day of week", time="Time in HH:MM 24h or 12h format (e.g. 14:30 or 2:30pm)")
-    @app_commands.choices(day=_DAY_CHOICES)
+    @app_commands.choices(day=signup_commands.DAY_CHOICES)
     @league_manager_only
     @_after_the_catch_up
     async def time_slot_add(

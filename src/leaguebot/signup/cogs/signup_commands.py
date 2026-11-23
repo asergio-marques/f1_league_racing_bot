@@ -48,6 +48,18 @@ from leaguebot.utils.time_parsing import parse_time_of_day
 log = logging.getLogger(__name__)
 
 
+#: The days of the week a time slot is added for.
+DAY_CHOICES = [
+    app_commands.Choice(name="Monday", value="1"),
+    app_commands.Choice(name="Tuesday", value="2"),
+    app_commands.Choice(name="Wednesday", value="3"),
+    app_commands.Choice(name="Thursday", value="4"),
+    app_commands.Choice(name="Friday", value="5"),
+    app_commands.Choice(name="Saturday", value="6"),
+    app_commands.Choice(name="Sunday", value="7"),
+]
+
+
 @dataclass(frozen=True)
 class SignupDriver:
     """The driver `/signup cancel` acts on: the account they use now, and the name the command
