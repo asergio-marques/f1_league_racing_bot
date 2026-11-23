@@ -204,6 +204,8 @@ async def test_the_sync_command_leaves_the_driver_the_flag_calls_for(tmp_path, t
 
     expected = (None, test_group) if test_mode else (member_group, None)
     assert (bot.tree.get_command("driver"), bot.tree.get_command("driver", guild=guild)) == expected
+    [reply] = [each.args[0] for each in ctx.send.await_args_list]
+    assert reply.startswith("✅ Cleared guild overrides and synced ")
     assert sorted(seen, key=lambda each: each[0] is not None) == [
         (None, expected[0]), (guild, expected[1])
     ]
