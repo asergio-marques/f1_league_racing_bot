@@ -138,7 +138,6 @@ async def test_signup_start_asks_a_fake_driver_s_signup_with_the_admin_as_its_ac
 #: carries (None where the plan fixes none).
 _START_REFUSALS = [
     pytest.param("real", str(LEWIS), "only a fake driver is signed up this way", id="a real driver"),
-    pytest.param("test mode off", str(MOCK), "test mode", id="test mode off"),
     pytest.param("closed", str(MOCK), "Signups are closed.", id="signups closed"),
     pytest.param("PENDING_SIGNUP_COMPLETION", str(MOCK), None, id="its signup under way"),
     pytest.param("UNASSIGNED", str(MOCK), None, id="its signup approved"),
@@ -148,16 +147,17 @@ _START_REFUSALS = [
 @pytest.mark.xfail(strict=True, reason=_NOT_BUILT)
 @pytest.mark.parametrize(("standing", "named", "words"), _START_REFUSALS)
 async def test_signup_start_is_refused(tmp_path, standing, named, words):
-    """Admin runs the test-mode `/signup start` naming *named*, where: it is Lewis, a real driver;
-    test mode is off; the signup window is closed; or Mock Alpha's own signup is under way, or
-    already approved. The reply refuses it (with *words*, where given; naming the restart, too,
-    where test mode is off); after the queue runs no signup channel was created and the driver's
-    state is as it was; and the log channel takes the refusal as a line."""
+    """Test mode is on. Admin runs the test-mode `/signup start` naming *named*, where: it is
+    Lewis, a real driver; the signup window is closed; or Mock Alpha's own signup is under way, or
+    already approved. The reply refuses it (with *words*, where given); after the queue runs no
+    signup channel was created and the driver's state is as it was; and the log channel takes the
+    refusal as a line. Its refusal with test mode off is pinned beside every other subcommand's,
+    below."""
     from leaguebot.framework.utils.log_lines import reply_reason
     from tests.support.change_queue import run_queue
     from tests.support.settings_league import last_said, log_lines
 
-    league = await _league(tmp_path, test_mode=standing != "test mode off")
+    league = await _league(tmp_path)
     if standing == "closed":
         await league.write("UPDATE signup_module_config SET signups_open = 0")
     elif standing.isupper():
@@ -174,8 +174,6 @@ async def test_signup_start_is_refused(tmp_path, standing, named, words):
     assert reply.startswith("⛔")
     if words is not None:
         assert words.casefold() in reply.casefold()
-    if standing == "test mode off":
-        assert "restart" in reply.casefold()
     assert league.created == []
     assert await _driver_state(league, int(named)) == before
     assert [line for line in await log_lines(league)
@@ -339,9 +337,11 @@ async def test_every_test_mode_subcommand_is_refused_while_test_mode_is_off(
 ):
     """Test mode is off (a swap having failed, the test-mode group still shows). Admin runs the
     test-mode `/<qualified>`. The reply refuses it, saying test mode is off and that a restart
-    puts `/signup` right; no command body runs; and nothing is asked of the queue."""
+    puts `/signup` right; no command body runs; nothing is asked of the queue; and the log channel
+    takes the refusal as a line."""
+    from leaguebot.framework.utils.log_lines import reply_reason
     from tests.support.change_queue import change_rows
-    from tests.support.settings_league import last_said
+    from tests.support.settings_league import last_said, log_lines
     from tests.support.undecorate import undecorate
 
     league = await _league(tmp_path, test_mode=False)
@@ -359,6 +359,8 @@ async def test_every_test_mode_subcommand_is_refused_while_test_mode_is_off(
     assert "/signup" in reply
     assert calls == []
     assert await change_rows(league.db_path) == []
+    assert [line for line in await log_lines(league)
+            if line.startswith("⛔") and reply_reason(reply) in line]
 
 
 # ---------------------------------------------------------------------------
