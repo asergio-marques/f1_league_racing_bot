@@ -8,7 +8,8 @@ the global tree and the test-mode group goes onto the server's; off, the reverse
 
 **It is handed the two groups** by the entry point, which gets them from the cogs it makes: a
 service never imports a cog, and never finds one on the bot. **It is handed the league's settings**
-for the same reason, to find the league's server by. **It reads the flag itself**, off the
+for the same reason, to tell a bot with no server claimed from one with a claim; the claimed
+server itself is reached through `league_guild`, the one route to it. **It reads the flag itself**, off the
 database, as the step that runs it follows the save that set the flag.
 
 **It reports nothing and refuses nothing.** Discord's refusal of a sync is raised as it came, and
@@ -29,6 +30,7 @@ from leaguebot.framework.models.change import GuildUnavailable, StepKind, StepRe
 from leaguebot.framework.services.posting.league_settings import LeagueSettings
 from leaguebot.framework.services.queue.change_types import Step, StepContext, StepView
 from leaguebot.framework.utils.league_bot import LeagueBot
+from leaguebot.framework.utils.league_server import league_guild
 
 #: The name both groups go by.
 DRIVER_GROUP = "driver"
@@ -69,7 +71,7 @@ async def swap_driver_commands(
             bot.tree.remove_command(DRIVER_GROUP, guild=server)
             await bot.tree.sync(guild=server)
         return synced
-    guild = bot.get_guild(server_id)
+    guild = await league_guild(bot)
     if guild is None:
         if not test_mode:
             bot.tree.add_command(member, override=True)
