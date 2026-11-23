@@ -489,7 +489,7 @@ def start_change(
             ),
             view=build_step_view(
                 queue_of(), record.wizard_state, user_id, record.config_snapshot.team_names,
-                signup=signup(),
+                signup=signup(), config=config, drivers=drivers(),
             ),
             mentions=discord.AllowedMentions(
                 everyone=False, roles=False,

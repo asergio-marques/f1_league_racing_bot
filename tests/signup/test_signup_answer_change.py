@@ -631,11 +631,6 @@ async def _wizard_of(league: SeasonLeague, user_id: int) -> dict[str, Any]:
     return dict(row, draft=json.loads(row["draft_answers_json"] or "{}"))
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#600: a league admin's typed answer in a fake driver's channel is ignored, not taken "
-    "as the fake driver's",
-)
 async def test_a_league_admin_s_typed_answer_is_saved_on_the_fake_driver_s_wizard(tmp_path):
     """The server is in test mode. Mock Alpha, a fake driver, is at the nationality question,
     beside Kimi at his. The league admin Admin (77) types "British" in Mock Alpha's signup
@@ -705,11 +700,6 @@ async def test_a_league_admin_typing_in_a_wizard_not_theirs_to_answer_is_ignored
     assert (await _wizard(league), await _wizard_of(league, MOCK)) == before
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#600: a fake driver's wizard view is handed no configuration or driver service, "
-    "and refuses a league admin's press as not theirs",
-)
 async def test_a_league_admin_s_press_on_a_fake_driver_s_wizard_is_saved_as_its_answer(tmp_path):
     """The server is in test mode. Mock Alpha, a fake driver, has given its nationality and is at
     the platform question. The league admin Admin (77) presses Steam on it, the view built for
@@ -747,11 +737,6 @@ async def test_a_league_admin_s_press_on_a_fake_driver_s_wizard_is_saved_as_its_
     assert any("Step 3 — Platform ID" in text for text in league.channel(MOCK_CHANNEL).texts)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#600: a league admin's last answer in a fake driver's channel is ignored, and the "
-    "review panel names a driver by mention",
-)
 async def test_a_league_admin_s_last_answer_submits_the_fake_driver_s_signup_for_review(tmp_path):
     """The server is in test mode. Mock Alpha, a fake driver, has answered every question but its
     notes, its draft naming it "Mock Alpha". The league admin Admin (77) types "Happy to race

@@ -627,9 +627,6 @@ async def test_a_cancel_signup_press_after_the_signup_ended_is_refused_and_recor
         "another-member-on-a-fake-driver-s-under-test-mode",
     ],
 )
-@pytest.mark.xfail(
-    strict=True, reason="#600: the wizard has no single check of who may answer it, may_answer"
-)
 async def test_who_may_answer_a_signup_wizard(tmp_path, who, owner, test_mode, may):
     """The league at Signups, the window open: Kimi (105), a real driver, part-way through
     signing up, and Mock Alpha, a fake driver, at Pending Signup Completion; test mode on or off

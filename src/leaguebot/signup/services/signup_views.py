@@ -23,7 +23,7 @@ import discord
 
 from leaguebot.framework.models.change import ChangeOrigin
 from leaguebot.core.models.driver_profile import DriverState
-from leaguebot.core.utils.channel_guard import is_league_manager
+from leaguebot.core.utils.channel_guard import is_league_admin, is_league_manager
 from leaguebot.framework.utils.background import start_background
 from leaguebot.framework.utils.interaction_errors import report_failure
 from leaguebot.framework.utils.league_bot import LeagueBot, bot_of
@@ -523,10 +523,59 @@ async def _resolve_view_context(
     return wizard.discord_user_id if wizard else None
 
 
-async def may_answer(actor: discord.User | discord.Member, owner_id: str) -> bool:
+async def may_answer(
+    actor: discord.User | discord.Member,
+    owner_id: str,
+    *,
+    config: "ConfigService | None" = None,
+    drivers: "DriverService | None" = None,
+) -> bool:
     """Whether *actor* may answer the wizard whose driver is the account *owner_id*: every button
-    of the wizard and every message typed in its channel is judged here. Only the driver may."""
-    return str(actor.id) == owner_id
+    of the wizard and every message typed in its channel is judged here.
+
+    The driver may. So may a league admin where the driver is a fake driver and the server is in
+    test mode, a fake driver having no account to answer from (`config` reads the tiers and the
+    test-mode flag, `drivers` says whether the driver is fake: both the wizard's views are handed).
+    A real driver's wizard answers nobody else, test mode or not, and a view built with neither
+    answers only its driver.
+    """
+    if str(actor.id) == owner_id:
+        return True
+    if config is None or drivers is None or not isinstance(actor, discord.Member):
+        return False
+    server_cfg = await config.get_server_config()
+    if server_cfg is None or not server_cfg.test_mode_active:
+        return False
+    if not is_league_admin(server_cfg, actor):
+        return False
+    return await drivers.fake_driver_name(owner_id) is not None
+
+
+class WizardStepView(LeagueView):
+    """What every view that answers a wizard's question shares: the driver it is for (None where
+    registered at start-up, to be found by its channel), the change queue, and the services its
+    presses are judged and its wizard found through."""
+
+    def __init__(
+        self,
+        discord_user_id: str | None = None,
+        queue: ChangeQueue | None = None,
+        signup: "SignupModuleService | None" = None,
+        *,
+        config: "ConfigService | None" = None,
+        drivers: "DriverService | None" = None,
+    ) -> None:
+        super().__init__(timeout=None)
+        self._discord_user_id = discord_user_id
+        self._queue = queue
+        self._signup = signup
+        self._config = config
+        self._drivers = drivers
+
+    async def _may_answer(self, interaction: discord.Interaction, owner_id: str) -> bool:
+        return await may_answer(
+            interaction.user, owner_id, config=self._config, drivers=self._drivers
+        )
 
 
 def _signup_of(signup: "SignupModuleService | None") -> "SignupModuleService":
@@ -707,24 +756,13 @@ class SignupButtonView(LeagueView):
         )
 
 
-class WithdrawButtonView(LeagueView):
+class WithdrawButtonView(WizardStepView):
     """Withdrawal button view — visible throughout all in-wizard driver states (T027).
 
     Posted in the private wizard channel immediately after the channel is
     created.  The driver can press Withdraw at any point while in any
     in-wizard state.
     """
-
-    def __init__(
-        self,
-        discord_user_id: str | None = None,
-        queue: ChangeQueue | None = None,
-        signup: "SignupModuleService | None" = None,
-    ) -> None:
-        super().__init__(timeout=None)
-        self._discord_user_id = discord_user_id
-        self._queue = queue
-        self._signup = signup
 
     @discord.ui.button(
         label="Cancel Signup",
@@ -737,25 +775,14 @@ class WithdrawButtonView(LeagueView):
         """Cancel Signup: check the presser is the driver, then ask `signup.end` through
         `_withdraw`."""
         _user_id = await _resolve_view_context(interaction, self._discord_user_id, self._signup)
-        if _user_id is None or not await may_answer(interaction.user, _user_id):
+        if _user_id is None or not await self._may_answer(interaction, _user_id):
             await _not_for_you(interaction, _user_id, "Cancel Signup")
             return
         await _withdraw(interaction, self._queue, _user_id)
 
 
-class NoNotesButtonView(LeagueView):
+class NoNotesButtonView(WizardStepView):
     """Step 9 view — 'No Notes' shortcut alongside Cancel Signup."""
-
-    def __init__(
-        self,
-        discord_user_id: str | None = None,
-        queue: ChangeQueue | None = None,
-        signup: "SignupModuleService | None" = None,
-    ) -> None:
-        super().__init__(timeout=None)
-        self._discord_user_id = discord_user_id
-        self._queue = queue
-        self._signup = signup
 
     @discord.ui.button(
         label="No Notes",
@@ -766,7 +793,7 @@ class NoNotesButtonView(LeagueView):
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         _user_id = await _resolve_view_context(interaction, self._discord_user_id, self._signup)
-        if _user_id is None or not await may_answer(interaction.user, _user_id):
+        if _user_id is None or not await self._may_answer(interaction, _user_id):
             await _not_for_you(interaction, _user_id, "No Notes")
             return
         await _answer(interaction, self._queue, _user_id, "No Notes", "notes", None)
@@ -780,29 +807,18 @@ class NoNotesButtonView(LeagueView):
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         _user_id = await _resolve_view_context(interaction, self._discord_user_id, self._signup)
-        if _user_id is None or not await may_answer(interaction.user, _user_id):
+        if _user_id is None or not await self._may_answer(interaction, _user_id):
             await _not_for_you(interaction, _user_id, "Cancel Signup")
             return
         await _withdraw(interaction, self._queue, _user_id)
 
 
-class PlatformButtonView(LeagueView):
+class PlatformButtonView(WizardStepView):
     """Step 2 — one button per platform, plus Cancel Signup."""
-
-    def __init__(
-        self,
-        discord_user_id: str | None = None,
-        queue: ChangeQueue | None = None,
-        signup: "SignupModuleService | None" = None,
-    ) -> None:
-        super().__init__(timeout=None)
-        self._discord_user_id = discord_user_id
-        self._queue = queue
-        self._signup = signup
 
     async def _pick(self, interaction: discord.Interaction, platform: str) -> None:
         _user_id = await _resolve_view_context(interaction, self._discord_user_id, self._signup)
-        if _user_id is None or not await may_answer(interaction.user, _user_id):
+        if _user_id is None or not await self._may_answer(interaction, _user_id):
             await _not_for_you(interaction, _user_id, platform)
             return
         await _answer(interaction, self._queue, _user_id, platform, "platform", platform)
@@ -826,29 +842,18 @@ class PlatformButtonView(LeagueView):
     @discord.ui.button(label="Cancel Signup", style=discord.ButtonStyle.danger, custom_id="plat_cancel")
     async def cancel(self, interaction: discord.Interaction, b: discord.ui.Button) -> None:
         _user_id = await _resolve_view_context(interaction, self._discord_user_id, self._signup)
-        if _user_id is None or not await may_answer(interaction.user, _user_id):
+        if _user_id is None or not await self._may_answer(interaction, _user_id):
             await _not_for_you(interaction, _user_id, "Cancel Signup")
             return
         await _withdraw(interaction, self._queue, _user_id)
 
 
-class DriverTypeButtonView(LeagueView):
+class DriverTypeButtonView(WizardStepView):
     """Step 5 — Full-Time / Reserve buttons, plus Cancel Signup."""
-
-    def __init__(
-        self,
-        discord_user_id: str | None = None,
-        queue: ChangeQueue | None = None,
-        signup: "SignupModuleService | None" = None,
-    ) -> None:
-        super().__init__(timeout=None)
-        self._discord_user_id = discord_user_id
-        self._queue = queue
-        self._signup = signup
 
     async def _pick(self, interaction: discord.Interaction, driver_type: str) -> None:
         _user_id = await _resolve_view_context(interaction, self._discord_user_id, self._signup)
-        if _user_id is None or not await may_answer(interaction.user, _user_id):
+        if _user_id is None or not await self._may_answer(interaction, _user_id):
             await _not_for_you(interaction, _user_id, driver_type)
             return
         await _answer(interaction, self._queue, _user_id, driver_type, "driver_type", driver_type)
@@ -864,13 +869,13 @@ class DriverTypeButtonView(LeagueView):
     @discord.ui.button(label="Cancel Signup", style=discord.ButtonStyle.danger, custom_id="dtype_cancel")
     async def cancel(self, interaction: discord.Interaction, b: discord.ui.Button) -> None:
         _user_id = await _resolve_view_context(interaction, self._discord_user_id, self._signup)
-        if _user_id is None or not await may_answer(interaction.user, _user_id):
+        if _user_id is None or not await self._may_answer(interaction, _user_id):
             await _not_for_you(interaction, _user_id, "Cancel Signup")
             return
         await _withdraw(interaction, self._queue, _user_id)
 
 
-class PreferredTeamsButtonView(LeagueView):
+class PreferredTeamsButtonView(WizardStepView):
     """Step 6 — one button per available team, No Preference, and Cancel Signup."""
 
     def __init__(
@@ -880,11 +885,11 @@ class PreferredTeamsButtonView(LeagueView):
         team_names: list[str] | None = None,
         excluded: list[str] | None = None,
         signup: "SignupModuleService | None" = None,
+        *,
+        config: "ConfigService | None" = None,
+        drivers: "DriverService | None" = None,
     ) -> None:
-        super().__init__(timeout=None)
-        self._discord_user_id = discord_user_id
-        self._queue = queue
-        self._signup = signup
+        super().__init__(discord_user_id, queue, signup, config=config, drivers=drivers)
 
         if team_names is not None:
             available = [n for n in team_names if n not in (excluded or [])]
@@ -937,7 +942,7 @@ class PreferredTeamsButtonView(LeagueView):
             _user_id = await _resolve_view_context(interaction, self._discord_user_id, self._signup)
             named = _pressed_label(interaction, "")
             label = named or f"Team {i + 1}"
-            if _user_id is None or not await may_answer(interaction.user, _user_id):
+            if _user_id is None or not await self._may_answer(interaction, _user_id):
                 await _not_for_you(interaction, _user_id, label)
                 return
             wizard = await _signup_of(self._signup).get_wizard_by_channel(
@@ -958,37 +963,26 @@ class PreferredTeamsButtonView(LeagueView):
 
     async def _no_preference_callback(self, interaction: discord.Interaction) -> None:
         _user_id = await _resolve_view_context(interaction, self._discord_user_id, self._signup)
-        if _user_id is None or not await may_answer(interaction.user, _user_id):
+        if _user_id is None or not await self._may_answer(interaction, _user_id):
             await _not_for_you(interaction, _user_id, "No Preference")
             return
         await _answer(interaction, self._queue, _user_id, "No Preference", "team", None)
 
     async def _cancel_callback(self, interaction: discord.Interaction) -> None:
         _user_id = await _resolve_view_context(interaction, self._discord_user_id, self._signup)
-        if _user_id is None or not await may_answer(interaction.user, _user_id):
+        if _user_id is None or not await self._may_answer(interaction, _user_id):
             await _not_for_you(interaction, _user_id, "Cancel Signup")
             return
         await _withdraw(interaction, self._queue, _user_id)
 
 
-class NoPreferenceTeammateView(LeagueView):
+class NoPreferenceTeammateView(WizardStepView):
     """Step 7 — No Preference shortcut plus Cancel Signup."""
-
-    def __init__(
-        self,
-        discord_user_id: str | None = None,
-        queue: ChangeQueue | None = None,
-        signup: "SignupModuleService | None" = None,
-    ) -> None:
-        super().__init__(timeout=None)
-        self._discord_user_id = discord_user_id
-        self._queue = queue
-        self._signup = signup
 
     @discord.ui.button(label="No Preference", style=discord.ButtonStyle.secondary, custom_id="tmmate_nopref")
     async def no_preference(self, interaction: discord.Interaction, b: discord.ui.Button) -> None:
         _user_id = await _resolve_view_context(interaction, self._discord_user_id, self._signup)
-        if _user_id is None or not await may_answer(interaction.user, _user_id):
+        if _user_id is None or not await self._may_answer(interaction, _user_id):
             await _not_for_you(interaction, _user_id, "No Preference")
             return
         await _answer(interaction, self._queue, _user_id, "No Preference", "teammate", None)
@@ -996,7 +990,7 @@ class NoPreferenceTeammateView(LeagueView):
     @discord.ui.button(label="Cancel Signup", style=discord.ButtonStyle.danger, custom_id="tmmate_cancel")
     async def cancel(self, interaction: discord.Interaction, b: discord.ui.Button) -> None:
         _user_id = await _resolve_view_context(interaction, self._discord_user_id, self._signup)
-        if _user_id is None or not await may_answer(interaction.user, _user_id):
+        if _user_id is None or not await self._may_answer(interaction, _user_id):
             await _not_for_you(interaction, _user_id, "Cancel Signup")
             return
         await _withdraw(interaction, self._queue, _user_id)

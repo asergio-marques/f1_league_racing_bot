@@ -797,6 +797,8 @@ def recollect_change(
     *,
     signup: Callable[[], "SignupModuleService"],
     queue_of: Callable[[], "ChangeQueue"],
+    config: "ConfigService",
+    drivers: Callable[[], "DriverService"],
 ) -> ChangeType:
     """The `signup.recollect` change type, for the builder to register, on the driver's lane
     (``channel:<signup channel>``): the league asked it back once a manager's choice was saved.
@@ -805,7 +807,8 @@ def recollect_change(
     ``reason`` (the manager's, which the prompt gives). Its one job `post_recollect` sets the
     driver's typing for the step they return to (taken away for a button step, given back for a
     typed one: a driver returned to a typed question with typing revoked could not answer) and
-    posts the prompt. A channel gone from the server is nothing to post in: the driver's state is
+    posts the prompt. *config* and *drivers* are handed to the step's buttons, with which they
+    judge who may answer. A channel gone from the server is nothing to post in: the driver's state is
     the league's record and the prompt only how they learn of it. *queue_of* gives the change
     queue the step's buttons are handed. A change whose driver is no longer part-way through a
     correction is dropped.
@@ -859,7 +862,7 @@ def recollect_change(
             ),
             view=build_step_view(
                 queue_of(), state, user_id, snapshot.team_names if snapshot else [],
-                signup=signup(),
+                signup=signup(), config=config, drivers=drivers(),
             ),
             mentions=discord.AllowedMentions(
                 everyone=False, roles=False, users=[discord.Object(id=int(user_id))]

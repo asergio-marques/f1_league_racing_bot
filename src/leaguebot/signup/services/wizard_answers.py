@@ -414,18 +414,25 @@ def _what(step: str, owner: str) -> str:
 
 async def take_typed_answer(
     bot: "LeagueBot", message: discord.Message, wizard: SignupWizardRecord, *,
-    queue: "ChangeQueue", router: "OutputRouter",
+    queue: "ChangeQueue", router: "OutputRouter", drivers: "DriverService",
 ) -> None:
-    """What the signup cog does with a message the wizard's driver typed in their channel:
-    nothing where the wizard asks nothing; else turned away where an earlier answer still waits
+    """What the signup cog does with a message typed in a wizard's channel by someone who may
+    answer it (`may_answer`: the driver, or a league admin for a fake driver under test mode; the
+    answer is the wizard's driver's and the typist is the actor): nothing where the wizard asks
+    nothing; else turned away where an earlier answer still waits
     (a note, the message deleted, a line in the log), else marked ⏳ at once and asked as a turn
     of the driver's lane. The answer is judged when its turn comes. *router* is the output router
-    the turned-away line is written through."""
+    the turned-away line is written through and *drivers* names a fake driver whose wizard it is."""
     state = wizard.wizard_state
     if state not in STEP_NAMES:
         return
     author = message.author
-    owner = _owner(getattr(author, "display_name", None), author.id)
+    # Whose wizard it is: the typist's own, or a fake driver's, named by its test name.
+    if str(author.id) == wizard.discord_user_id:
+        called = getattr(author, "display_name", None)
+    else:
+        called = await drivers.fake_driver_name(wizard.discord_user_id)
+    owner = _owner(called, wizard.discord_user_id)
     what = _what(STEP_NAMES[state], owner)
     if await typed_turns.turn_waiting(
         bot.db_path, queue.types, message.channel.id, held=queue.held_turn_channels()
@@ -440,7 +447,7 @@ async def take_typed_answer(
     await queue.ask(
         ANSWER,
         {
-            "user_id": str(author.id),
+            "user_id": wizard.discord_user_id,
             "channel_id": message.channel.id,
             "state": state.value,
             "message_id": message.id,
@@ -543,6 +550,8 @@ def answer_change(
     *,
     signup: Callable[[], "SignupModuleService"],
     queue_of: Callable[[], "ChangeQueue"],
+    config: "ConfigService",
+    drivers: Callable[[], "DriverService"],
     now: Callable[[], datetime],
     arm_once: Callable[[str, str, datetime], None],
 ) -> ChangeType:
@@ -692,13 +701,17 @@ def answer_change(
             picks = list(wizard.draft_answers.get("preferred_teams") or [])
             text = ordinal_prompt(int(wizard.draft_answers.get("_pref_teams_step", 1)), picks)
             view: discord.ui.View = PreferredTeamsButtonView(
-                user_id, queue, snapshot.team_names, excluded=picks, signup=signup()
+                user_id, queue, snapshot.team_names, excluded=picks, signup=signup(),
+                config=config, drivers=drivers(),
             )
         else:
             async with get_connection(ctx.db_path) as db:
                 track_map = await track_service.get_track_name_map(db)
             text = WizardService._prompt_for_state(state, snapshot, wizard, track_name_map=track_map)
-            view = build_step_view(queue, state, user_id, snapshot.team_names, signup=signup())
+            view = build_step_view(
+                queue, state, user_id, snapshot.team_names, signup=signup(),
+                config=config, drivers=drivers(),
+            )
         await post(
             channel, text, view=view, mentions=discord.AllowedMentions.none(),
             refused=f"the next question could not be posted in channel {channel.id}",
@@ -913,7 +926,7 @@ def submit_change(
 
 async def post_review_panel(
     channel: discord.TextChannel, user_id: str, *, signup: "SignupModuleService", db_path: str,
-    view: Callable[[], discord.ui.View],
+    drivers: "DriverService", view: Callable[[], discord.ui.View],
 ) -> bool:
     """Post the review panel of *user_id*'s signup in *channel*, and say whether there was a
     signup to post. The panel runs as long as the driver's answers do, so it is divided through
@@ -933,7 +946,10 @@ async def post_review_panel(
     async with get_connection(db_path) as db:
         track_map = await track_service.get_track_name_map(db)
     parts = chunk_message(
-        WizardService._format_review_panel(record, slot_labels, track_name_map=track_map)
+        WizardService._format_review_panel(
+            record, slot_labels, track_name_map=track_map,
+            fake=await drivers.fake_driver_name(user_id) is not None,
+        )
     )
     sent: list[int] = []
     for number, part in enumerate(parts, start=1):
@@ -1082,7 +1098,7 @@ def panel_change(
             await _set_typing(channel, member, allowed=False, reason="Signup wizard channel hold")
         await standing_posts.remove_kept(ctx.bot, ctx.kept)
         posted = await post_review_panel(
-            channel, user_id, signup=signup(), db_path=ctx.db_path,
+            channel, user_id, signup=signup(), db_path=ctx.db_path, drivers=drivers(),
             view=lambda: _review_view(user_id),
         )
         lines = () if lapse is None else (correction_lapse_line(lapse, panel=posted),)

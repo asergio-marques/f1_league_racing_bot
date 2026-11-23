@@ -1194,6 +1194,8 @@ async def build(settings: Settings) -> LeagueBot:
         settings.db_path,
         bot.signup_module_service,
         change_queue=bot.change_queue,
+        config=bot.config_service,
+        drivers=bot.driver_service,
         bot=bot,
     )
     bot.attendance_service = AttendanceService(settings.db_path)
@@ -1318,15 +1320,35 @@ async def build(settings: Settings) -> LeagueBot:
     from leaguebot.results.services.review.appeals_review_views import AppealsReviewView
     from leaguebot.attendance.cogs.check_in_buttons import RsvpView
 
+    # Each wizard view is handed the services it judges who may answer with: a league admin
+    # answers a fake driver's wizard under test mode.
     for _view in (
         SignupButtonView(bot.change_queue),
-        WithdrawButtonView(None, bot.change_queue, signup=bot.signup_module_service),
-        NoNotesButtonView(None, bot.change_queue, signup=bot.signup_module_service),
-        PlatformButtonView(None, bot.change_queue, signup=bot.signup_module_service),
-        DriverTypeButtonView(None, bot.change_queue, signup=bot.signup_module_service),
+        WithdrawButtonView(
+            None, bot.change_queue, signup=bot.signup_module_service,
+            config=bot.config_service, drivers=bot.driver_service,
+        ),
+        NoNotesButtonView(
+            None, bot.change_queue, signup=bot.signup_module_service,
+            config=bot.config_service, drivers=bot.driver_service,
+        ),
+        PlatformButtonView(
+            None, bot.change_queue, signup=bot.signup_module_service,
+            config=bot.config_service, drivers=bot.driver_service,
+        ),
+        DriverTypeButtonView(
+            None, bot.change_queue, signup=bot.signup_module_service,
+            config=bot.config_service, drivers=bot.driver_service,
+        ),
         # registers pteam_0..pteam_19 stubs + nopref + cancel
-        PreferredTeamsButtonView(None, bot.change_queue, signup=bot.signup_module_service),
-        NoPreferenceTeammateView(None, bot.change_queue, signup=bot.signup_module_service),
+        PreferredTeamsButtonView(
+            None, bot.change_queue, signup=bot.signup_module_service,
+            config=bot.config_service, drivers=bot.driver_service,
+        ),
+        NoPreferenceTeammateView(
+            None, bot.change_queue, signup=bot.signup_module_service,
+            config=bot.config_service, drivers=bot.driver_service,
+        ),
         AdminReviewView(
             change_queue=bot.change_queue, signup=bot.signup_module_service,
             drivers=bot.driver_service, config=bot.config_service, router=bot.output_router,

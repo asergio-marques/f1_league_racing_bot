@@ -1370,7 +1370,8 @@ def wizard_service(bot: Any, db_path: str, *, change_queue: Any) -> Any:
     from leaguebot.signup.services.wizard_service import WizardService
 
     return WizardService(
-        db_path, bot.signup_module_service, change_queue=change_queue, bot=bot
+        db_path, bot.signup_module_service, change_queue=change_queue,
+        config=bot.config_service, drivers=bot.driver_service, bot=bot,
     )
 
 

@@ -321,6 +321,7 @@ def register_change_types(bot: "LeagueBot") -> None:
     bot.change_queue.register(
         answer_change(
             signup=lambda: bot.signup_module_service, queue_of=lambda: bot.change_queue,
+            config=bot.config_service, drivers=lambda: bot.driver_service,
             now=lambda: bot.change_queue.now(), arm_once=bot.scheduler_service.arm_once,
         )
     )
@@ -366,6 +367,7 @@ def register_change_types(bot: "LeagueBot") -> None:
     bot.change_queue.register(
         recollect_change(
             signup=lambda: bot.signup_module_service, queue_of=lambda: bot.change_queue,
+            config=bot.config_service, drivers=lambda: bot.driver_service,
         )
     )
     bot.change_queue.register(

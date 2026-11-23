@@ -352,11 +352,14 @@ class SignupCog(commands.Cog):
         wizard = await self.bot.wizard_service.get_wizard_by_channel(
             message.channel.id
         )
-        if wizard is None or not await may_answer(message.author, wizard.discord_user_id):
+        if wizard is None or not await may_answer(
+            message.author, wizard.discord_user_id,
+            config=self.bot.config_service, drivers=self.bot.driver_service,
+        ):
             return
         await take_typed_answer(
             self.bot, message, wizard, queue=self.bot.change_queue,
-            router=self.bot.output_router,
+            router=self.bot.output_router, drivers=self.bot.driver_service,
         )
 
     @commands.Cog.listener()
