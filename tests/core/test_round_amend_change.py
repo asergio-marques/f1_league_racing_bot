@@ -653,9 +653,7 @@ async def test_a_discarded_check_in_call_take_down_is_named_and_the_call_is_stil
     "the check-in deadline passes",
     "results entered",
     "the round cancelled",
-    pytest.param("round 4 takes the moment", marks=pytest.mark.xfail(
-        strict=True, reason="#605: the queue's check does not judge the division's other rounds",
-    )),
+    "round 4 takes the moment",
 ])
 async def test_an_amendment_judged_again_when_it_runs_is_refused_in_today_s_words(
     tmp_path, meanwhile,
