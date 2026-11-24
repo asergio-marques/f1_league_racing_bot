@@ -667,7 +667,7 @@ server owner's alone, from any channel, and nothing inside the bot can undo it.
 The base is gone. The bot is a fresh install serving no server: no season, no team but Reserve, no
 setting, test mode off and no scheduled work. Nothing remains to restore through the bot.
 
-**Before any other spec, run `00-base.md` again, from step 1.** Its step 1 clears the Fixture's
+**Before any other spec, run `00-base.md` again, from step 1** — or run `11-signup-off.md`, which builds its own season from this fresh install. Its step 1 clears the Fixture's
 posting channels, which now hold only the factory reset's closing line in `#bot-log` and anything a
 member posted; its step 2 stops the bot and deletes `bot.db`, `scheduler.db`, the saved backup, the
 lock and the pre-restore copies. It does not name the factory reset's backups: delete

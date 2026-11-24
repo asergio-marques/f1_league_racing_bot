@@ -30,6 +30,7 @@ league admin role.
 | `08-recovery.md` | Restores the base and restarts the bot at awkward moments, checking what resumes. |
 | `10-signup-and-drivers.md` | Restores the base, opens signups mid-season, signs fake drivers up through the real wizard with a league admin answering for them, reviews them, seats them with `/driver assign`, and works the `/driver` commands on fake drivers. |
 | `09-season-endings.md` | Restores the base, cancels its season, aborts a season set up after it, packs the bot and factory-resets it. **Run last: it erases everything.** |
+| `11-signup-off.md` | Builds its own season, with the signup module never turned on, from the fresh install `09` leaves: the configuration confirmed straight into placements, fake drivers seated by `/driver assign` from Not Signed Up, `/driver unassign` and `/driver reject` returning one to Not Signed Up, and the placements confirmed. **Run after `09`**: it cannot restore the base, whose season fixed signup on. |
 
 Run **`00-base.md` first**, from no database file. It fixes, in its **Fixture** table, every
 name and value the other specs reuse: channels, roles, divisions, teams and drivers.
@@ -37,9 +38,14 @@ name and value the other specs reuse: channels, roles, divisions, teams and driv
 `10-signup-and-drivers.md` is listed before `09-season-endings.md` because `09` erases
 everything: run it before `09`.
 
-Run **`09-season-endings.md` last of all.** It ends with a factory reset, which erases the
-bot's database and its messages on the server, the base with them: after it, run `00-base.md`
-again before any other spec.
+Run **`09-season-endings.md` last of all** of the specs that restore the base. It ends with a
+factory reset, which erases the bot's database and its messages on the server, the base with
+them: after it, run `00-base.md` again before any other spec, `11-signup-off.md` excepted.
+
+**`11-signup-off.md` is run after `09`, from its factory reset.** A season's configuration fixes
+the signup module on or off for the season, and the base fixed it on, so a league without the
+signup module cannot be had by restoring the base: `11` builds its own, and ends with a season the
+base is not. Run `00-base.md` again before any spec after it.
 
 **Every other spec starts by restoring the base's locked backup:**
 
