@@ -220,9 +220,11 @@ async def _make_db(
     *,
     results_channel: int | None = RESULTS_CHANNEL,
     results_message_id: int | None = OLD_RESULTS,
+    results_posted_in: int | None = None,
 ) -> str:
     """Division 11 (Pro) of season 1, its round 3 at Silverstone with one Feature Race posted and
-    its standings posted, round 4's standings posted and round 5's never; a submission channel."""
+    its standings posted, round 4's standings posted and round 5's never; a submission channel.
+    Where *results_posted_in* is given, the race's table is recorded as posted in that channel."""
     db_path = os.path.join(str(tmp_path), "review_posting.db")
     await run_migrations(db_path)
     await seed_server(db_path)
@@ -259,6 +261,11 @@ async def _make_db(
             (ROUND_ID, DIVISION_ID, results_message_id,
              json.dumps([results_message_id]) if results_message_id else None),
         )
+        if results_posted_in is not None:
+            await db.execute(
+                "UPDATE session_results SET results_message_channel_id = ? WHERE round_id = ?",
+                (results_posted_in, ROUND_ID),
+            )
         for round_id, message_id in (
             (ROUND_ID, OLD_STANDINGS), (LATER_ROUND_ID, OLD_LATER_STANDINGS),
             (UNPOSTED_ROUND_ID, None),
@@ -373,6 +380,31 @@ async def _session_ids(db_path: str) -> tuple[int | None, list[int] | None]:
     return row["results_message_id"], ids
 
 
+async def _session_posted_in(db_path: str) -> int | None:
+    """The channel round 3's Feature Race table is recorded as posted in."""
+    async with get_connection(db_path) as db:
+        row = await (await db.execute(
+            "SELECT results_message_channel_id FROM session_results "
+            "WHERE round_id = ? AND session_type = 'FEATURE_RACE'", (ROUND_ID,),
+        )).fetchone()
+    return row[0]
+
+
+#: Why a moved results channel's case fails until the table keeps the channel it was posted in.
+TABLE_POSTED_IN = (
+    "#645: a results table keeps no channel it was posted in, so its old message is looked for "
+    "in the present results channel"
+)
+
+#: Each case of a results channel kept, or moved from 700 to 703 since the old table was posted:
+#: (the present results channel, the channel recorded beside the old table, or None).
+CHANNEL_KEPT_OR_MOVED = [
+    pytest.param(RESULTS_CHANNEL, None, id="kept"),
+    pytest.param(NEW_RESULTS_CHANNEL, RESULTS_CHANNEL, id="moved",
+                 marks=pytest.mark.xfail(strict=True, reason=TABLE_POSTED_IN)),
+]
+
+
 async def _stop_notice(league: _League) -> str:
     job = await stopped_job(league.db_path)
     assert job is not None, "the queue is not stopped"
@@ -384,26 +416,35 @@ async def _stop_notice(league: _League) -> str:
 # ---------------------------------------------------------------------------
 
 
-async def test_a_replacement_is_posted_before_the_old_message_is_deleted(tmp_path):
-    """Round 3's results table is posted again: the new table goes out, notifying the drivers it names,
-    before the old one (8800) is deleted."""
-    league = await _league(tmp_path)
+@pytest.mark.parametrize("present, posted_in", CHANNEL_KEPT_OR_MOVED)
+async def test_a_replacement_is_posted_before_the_old_message_is_deleted(
+    tmp_path, present, posted_in,
+):
+    """Round 3's results table is posted again: the new table goes out in the division's present
+    results channel, notifying the drivers it names, before the old one (8800) is deleted from
+    channel 700, where it was posted. Where the results channel has since moved to 703, the new
+    table goes to 703 and 700 is left holding nothing."""
+    league = await _league(tmp_path, results_channel=present, results_posted_in=posted_in)
     await _ask(league)
     await run_queue(league.bot)
 
     assert await stopped_job(league.db_path) is None
-    new = league.sent_to(RESULTS_CHANNEL)
+    new = league.sent_to(present)
     assert len(new) == 1
     events = league.events
-    assert events.index(("send", RESULTS_CHANNEL, new[0])) < events.index(
+    assert events.index(("send", present, new[0])) < events.index(
         ("delete", RESULTS_CHANNEL, OLD_RESULTS)
     )
-    assert set(league.channel(RESULTS_CHANNEL).messages) == {new[0]}
-    [sent] = league.channel(RESULTS_CHANNEL).send.await_args_list
+    assert set(league.channel(present).messages) == {new[0]}
+    assert OLD_RESULTS not in league.channel(RESULTS_CHANNEL).messages
+    [sent] = league.channel(present).send.await_args_list
     assert notified(sent.kwargs.get("allowed_mentions")) == USERS_ONLY
 
 
+@pytest.mark.xfail(strict=True, reason="#645: a results table keeps no channel it was posted in")
 async def test_the_new_message_id_is_saved_with_the_post(tmp_path):
+    """The new table's ids are saved with the post, and the channel it was posted in (700) beside
+    them, before the old table's delete has run."""
     league = await _league(tmp_path)
     await _ask(league)
     await _run_until_done(league, "post_session_results")
@@ -411,6 +452,7 @@ async def test_the_new_message_id_is_saved_with_the_post(tmp_path):
     new = league.sent_to(RESULTS_CHANNEL)
     assert len(new) == 1
     assert await _session_ids(league.db_path) == (new[0], [new[0]])
+    assert await _session_posted_in(league.db_path) == RESULTS_CHANNEL
     deletes = [row for row in await step_rows(league.db_path) if row["name"] == "delete_message"]
     assert deletes and all(row["done_at"] is None for row in deletes)
 
@@ -782,10 +824,13 @@ async def test_only_the_round_s_active_sessions_are_posted(tmp_path):
 OLD_CANCELLED_LINE = 8810
 
 
-async def _cancel_round_3_s_qualifying(league: _League, *, posted_as: int | None = None) -> str:
+async def _cancel_round_3_s_qualifying(
+    league: _League, *, posted_as: int | None = None, posted_in: int | None = None,
+) -> str:
     """Round 3's Feature Qualifying was submitted as CANCELLED; where *posted_as* is given its
-    line already stands in the results channel as that message, recorded as the session's. Gives
-    the session's label as a league reads it."""
+    line already stands in the results channel (700) as that message, recorded as the session's,
+    and where *posted_in* is given, recorded as posted in that channel. Gives the session's label
+    as a league reads it."""
     from leaguebot.core.models.round import RoundFormat
     from leaguebot.results.services.submission.result_submission_service import get_sessions_for_format
     from leaguebot.results.utils import results_formatter
@@ -798,6 +843,12 @@ async def _cancel_round_3_s_qualifying(league: _League, *, posted_as: int | None
             (ROUND_ID, DIVISION_ID, posted_as,
              json.dumps([posted_as]) if posted_as else None),
         )
+        if posted_in is not None:
+            await db.execute(
+                "UPDATE session_results SET results_message_channel_id = ? "
+                "WHERE round_id = ? AND session_type = 'FEATURE_QUALIFYING'",
+                (posted_in, ROUND_ID),
+            )
         await db.commit()
     if posted_as is not None:
         league.channel(RESULTS_CHANNEL).seed(
@@ -846,25 +897,27 @@ async def test_a_cancelled_session_s_line_is_posted_in_its_place_among_the_provi
     assert await _qualifying_ids(league.db_path) == (line, [line])
 
 
+@pytest.mark.parametrize("present, posted_in", CHANNEL_KEPT_OR_MOVED)
 async def test_a_cancelled_session_s_line_stands_in_its_place_when_the_tables_are_posted_at_the_appeals_stage(
-    tmp_path,
+    tmp_path, present, posted_in,
 ):
-    """Round 3's cancelled qualifying line already stands (message 8810, recorded as the
-    qualifying's) when the round's tables are posted again, as the appeals approval and a points
-    amendment post them. A new line is posted in the qualifying's place, before the race's table,
-    and recorded; the old line is deleted after it."""
-    league = await _league(tmp_path)
-    await _cancel_round_3_s_qualifying(league, posted_as=OLD_CANCELLED_LINE)
+    """Round 3's cancelled qualifying line already stands in channel 700 (message 8810, recorded
+    as the qualifying's) when the round's tables are posted again, as the appeals approval and a
+    points amendment post them. A new line is posted in the qualifying's place in the present
+    results channel, before the race's table, and recorded; the old line is deleted from 700 after
+    it. Where the results channel has since moved to 703, the new line goes to 703."""
+    league = await _league(tmp_path, results_channel=present, results_posted_in=posted_in)
+    await _cancel_round_3_s_qualifying(league, posted_as=OLD_CANCELLED_LINE, posted_in=posted_in)
 
     await _ask(league)
     await run_queue(league.bot)
 
     assert await stopped_job(league.db_path) is None
-    line, _table = league.sent_to(RESULTS_CHANNEL)
-    assert "This session was cancelled" in league.channel(RESULTS_CHANNEL).messages[line].content
+    line, _table = league.sent_to(present)
+    assert "This session was cancelled" in league.channel(present).messages[line].content
     assert await _qualifying_ids(league.db_path) == (line, [line])
     assert OLD_CANCELLED_LINE in league.deleted_in(RESULTS_CHANNEL)
-    assert league.events.index(("send", RESULTS_CHANNEL, line)) < league.events.index(
+    assert league.events.index(("send", present, line)) < league.events.index(
         ("delete", RESULTS_CHANNEL, OLD_CANCELLED_LINE))
 
 
