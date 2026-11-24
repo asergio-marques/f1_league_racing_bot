@@ -260,9 +260,11 @@ async def test_amend_round_runs_overdue_phases_while_weather_is_enabled(tmp_path
 # The notice follows what the amendment actually took away, so these two tests need a round
 # where something *is* taken away: Phase 1 falls five days before the round, so at three days
 # out it has been performed, and moving the round a month out puts it back in the future — it
-# would not have run under the new moment, so the forecast drawn for it is withdrawn.
+# would not have run under the new moment, so the forecast drawn for it is withdrawn. Thirty-one
+# days, not thirty: Am's round 1 is seeded thirty days out, and two rounds of one division may
+# not share a moment.
 _NOTICE_ROUND_AT = timedelta(days=3)
-_NOTICE_DELAYED_TO = timedelta(days=30)
+_NOTICE_DELAYED_TO = timedelta(days=31)
 
 
 async def test_amend_round_posts_no_invalidation_notice_while_weather_is_disabled(tmp_path):
