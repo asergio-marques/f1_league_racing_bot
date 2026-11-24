@@ -461,7 +461,9 @@ def forecast_steps(*, now: Callable[[], datetime], drawing: ImageDrawing) -> dic
                 )
                 found = await cursor.fetchone()
                 recorded = None if found is None else found["channel_id"]
-        channel = recorded or (None if rnd is None else rnd.forecast_channel_id)
+        channel = standing_posts.posted_in(
+            recorded, None if rnd is None else rnd.forecast_channel_id
+        )
         where = "the forecast channel" if not channel else f"<#{channel}>"
         number = _value(ctx, "round_number", None) or (None if rnd is None
                                                        else rnd.facts.round_number)
