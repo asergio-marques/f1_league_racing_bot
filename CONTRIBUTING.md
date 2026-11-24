@@ -82,6 +82,7 @@ Real cases, and why each landed where it did.
 |---|---|---|
 | [#113](https://github.com/asergio-marques/f1_league_racing_bot/issues/113) | Critical | Breaks a stated rule, and marks work done that can never be redone |
 | [#114](https://github.com/asergio-marques/f1_league_racing_bot/issues/114) | Critical | Charges penalties in a switched-off module, with no way back inside the season |
+| [#627](https://github.com/asergio-marques/f1_league_racing_bot/issues/627) | Critical | No season can be approved on the host; nothing the league runs gets past it |
 | [#110](https://github.com/asergio-marques/f1_league_racing_bot/issues/110) | High | A configured setting is silently discarded, and the pipeline runs on the wrong one |
 | [#112](https://github.com/asergio-marques/f1_league_racing_bot/issues/112) | Medium | Right outcome, wrong self-description |
 | [#115](https://github.com/asergio-marques/f1_league_racing_bot/issues/115) | Low | The damage self-cleans; a duplicated notice is all that survives |
