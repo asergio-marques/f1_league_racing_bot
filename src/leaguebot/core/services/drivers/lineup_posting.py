@@ -95,13 +95,15 @@ class SeatedDriver:
 class LineupPosted:
     """A lineup posted: the message sent and the one it replaces, for the jobs after the post.
 
-    *previous* is the division's recorded lineup message as it stood when the post was made, and
-    *form* is "image" for a picture and "text" for the embed. *problem* is the image module's
-    words for why a picture could not be drawn, carried for the job's own line where the lineup
-    fell back to text, or None where nothing went wrong, and *notices* the drawing's words for what a
-    picture it drew survived, for the job's own line. Nothing is saved: the post job's
-    `record` saves *message_id* (`lineup_posting.record_lineup_on`) and the job after it deletes
-    *previous*.
+    *previous* is the division's recorded lineup message as it stood when the post was made,
+    *previous_channel* the channel that message was recorded as posted in (None for one posted
+    before it was recorded; the division's lineup channel may have moved since), and *form* is
+    "image" for a picture and "text" for the embed. *problem* is the image module's words for why
+    a picture could not be drawn, carried for the job's own line where the lineup fell back to
+    text, or None where nothing went wrong, and *notices* the drawing's words for what a picture
+    it drew survived, for the job's own line. Nothing is saved: the post job's
+    `record` saves *message_id* and *channel_id* (`lineup_posting.record_lineup_on`) and the job
+    after it deletes *previous* from *previous_channel* (`standing_posts.posted_in`).
     """
 
     message_id: int
@@ -109,6 +111,7 @@ class LineupPosted:
     previous: int | None
     division_name: str
     form: str
+    previous_channel: int | None = None
     problem: str | None = None
     notices: tuple[str, ...] = ()
     #: Whether *problem* was Discord refusing the picture rather than the drawing failing: the
@@ -188,7 +191,8 @@ class LineupPoster:
         """
         async with get_connection(self._db_path) as db:
             cur = await db.execute(
-                "SELECT d.name AS div_name, d.lineup_channel_id, d.lineup_message_id "
+                "SELECT d.name AS div_name, d.lineup_channel_id, d.lineup_message_id, "
+                "d.lineup_message_channel_id "
                 "FROM divisions d JOIN seasons s ON s.id = d.season_id WHERE d.id = ?",
                 (division_id,),
             )
@@ -206,6 +210,7 @@ class LineupPoster:
 
         lineup_channel_id: int = div_row["lineup_channel_id"]
         lineup_message_id: int | None = div_row["lineup_message_id"]
+        lineup_message_channel_id: int | None = div_row["lineup_message_channel_id"]
         div_name: str = div_row["div_name"] or str(division_id)
 
         # Resolve the channel. Needed for both forms, read once.
@@ -272,7 +277,7 @@ class LineupPoster:
                 else:
                     return LineupPosted(
                         new_msg_id, lineup_channel_id, lineup_message_id, div_name, "image",
-                        notices=notices,
+                        previous_channel=lineup_message_channel_id, notices=notices,
                     )
                 finally:
                     attachment.close()
@@ -293,7 +298,8 @@ class LineupPoster:
 
             return LineupPosted(
                 new_msg_id, lineup_channel_id, lineup_message_id, div_name, "text",
-                problem=problem, notices=notices, refused=refused, fault_source=fault_source,
+                previous_channel=lineup_message_channel_id, problem=problem, notices=notices,
+                refused=refused, fault_source=fault_source,
             )
         finally:
             if drawing is not None:
@@ -355,8 +361,9 @@ def posted_result(posted: LineupPosted | None) -> dict[str, Any]:
     if posted is None:
         return {}
     return {
-        "new": posted.message_id, "old": posted.previous, "channel_id": posted.channel_id,
-        "division_name": posted.division_name, "form": posted.form, "problem": posted.problem,
+        "new": posted.message_id, "old": posted.previous, "old_channel_id": posted.previous_channel,
+        "channel_id": posted.channel_id, "division_name": posted.division_name,
+        "form": posted.form, "problem": posted.problem,
         RESULT_NOTICES: list(posted.notices), RESULT_DRAWN: _drawn_as(posted.division_name),
         "refused": posted.refused, "fault_source": posted.fault_source.value,
     }
@@ -434,14 +441,15 @@ def _then(result: Mapping[str, Any] | None) -> tuple[PlannedStep, ...]:
     return standing_posts.replaced(
         result.get("channel_id"), result.get("old"), result.get("new"),
         what="lineup", division_name=str(result.get("division_name") or "the division"),
+        old_channel_id=result.get("old_channel_id"),
     )
 
 
 async def record_lineup_on(
     db: aiosqlite.Connection, ctx: StepContext, result: StepResult, *, now: datetime
 ) -> None:
-    """Save the new lineup message on the division, and the audit of the posting, in the save
-    that marks the post job done. Nothing is committed here.
+    """Save the new lineup message and the channel it was posted in on the division, and the audit
+    of the posting, in the save that marks the post job done. Nothing is committed here.
 
     The audit is the system's (actor 0); a picture says so. It is
     stamped *now*.
@@ -451,7 +459,8 @@ async def record_lineup_on(
         return
     division_id = int(ctx.step_payload.get("division_id") or ctx.payload["division_id"])
     await db.execute(
-        "UPDATE divisions SET lineup_message_id = ? WHERE id = ?", (int(new), division_id)
+        "UPDATE divisions SET lineup_message_id = ?, lineup_message_channel_id = ? WHERE id = ?",
+        (int(new), result.result.get("channel_id"), division_id),
     )
     value: dict[str, Any] = {
         "channel_id": result.result.get("channel_id"),

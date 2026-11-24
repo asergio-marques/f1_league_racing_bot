@@ -501,6 +501,7 @@ CREATE TABLE "divisions" (
     lineup_channel_id   INTEGER,
     calendar_channel_id INTEGER,
     lineup_message_id   INTEGER,
+    lineup_message_channel_id INTEGER,
     calendar_message_id TEXT,
     calendar_message_channel_id INTEGER,
     UNIQUE (season_id, name COLLATE NOCASE)

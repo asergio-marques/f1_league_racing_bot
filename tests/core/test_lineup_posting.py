@@ -277,8 +277,6 @@ async def test_the_text_lineup_is_posted_before_the_old_one_is_deleted(tmp_path)
 MOVED_LINEUP = 608
 
 
-@pytest.mark.xfail(strict=True, reason="#607: no channel is recorded beside a lineup's id, so "
-                   "the old lineup is looked for in the division's present channel")
 async def test_a_lineup_is_deleted_from_the_channel_it_was_posted_in_after_the_channel_moves(
     tmp_path,
 ):
