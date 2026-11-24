@@ -362,7 +362,6 @@ async def test_renumbering_on_the_connection_handed_commits_nothing(tmp_path):
 
 
 
-@pytest.mark.xfail(strict=True, reason="#605: rounds sharing a moment are numbered in scan order")
 async def test_a_cancelled_round_is_numbered_before_a_round_sharing_its_moment(tmp_path):
     """Pro's round 1 (id 21) is not run and round 2 (id 22) is cancelled, both at 18:00 on 13
     December; round 3 (id 23) is not run, a week later. Renumbering Pro numbers the cancelled

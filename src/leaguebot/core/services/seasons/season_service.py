@@ -831,11 +831,14 @@ def round_holding(
 async def renumber_rounds_on(db: aiosqlite.Connection, division_id: int) -> None:
     """Rewrite ``round_number`` for all rounds in a division on *db*, committing nothing.
 
-    Sorted ascending by ``scheduled_at``. A change's save calls it, so the renumbering outlasts
+    Sorted ascending by ``scheduled_at``. A cancelled round holds no moment (`round_holding`), so
+    another round may be scheduled at the one it held; where the two share a moment, the cancelled
+    round is numbered first, then by id. A change's save calls it, so the renumbering outlasts
     nothing the save does not (a round amendment writes the round and renumbers in one save).
     """
     cursor = await db.execute(
-        "SELECT id FROM rounds WHERE division_id = ? ORDER BY scheduled_at",
+        "SELECT id FROM rounds WHERE division_id = ? "
+        "ORDER BY scheduled_at, status = 'CANCELLED' DESC, id",
         (division_id,),
     )
     rows = await cursor.fetchall()
