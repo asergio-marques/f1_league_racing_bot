@@ -51,15 +51,16 @@ async def replace_round_results(
     collected: list[service.CollectedSession],
     *,
     now: datetime | None = None,
-) -> None:
+) -> list:
     """Replace every session of a round with *collected*, in one transaction: all of it lands or,
-    where anything raises, none of it.
+    where anything raises, none of it. Gives what the swap gives: the messages of the old sessions
+    the resubmission does not enter again, for the caller to take down.
 
     *now* is the time the new sessions are recorded as submitted at: the wall clock where the test
     hands none, as the swap read it before the clock was handed in."""
     async with get_connection(db_path) as db:
         try:
-            await service.replace_round_results_on(
+            unplaced = await service.replace_round_results_on(
                 db, round_id, division_id, season_id, collected,
                 now=now or datetime.now(timezone.utc),
             )
@@ -67,6 +68,7 @@ async def replace_round_results(
         except BaseException:
             await db.rollback()
             raise
+    return list(unplaced)
 
 
 async def apply_points_from_config(

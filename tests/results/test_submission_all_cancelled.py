@@ -872,20 +872,44 @@ async def _snapshot_rounds(league: Any, round_id: int) -> tuple[int, int]:
     return counts[0], counts[1]
 
 
+#: A standings channel moved from 701 to this one after round 3's standings were posted in 701.
+MOVED_STANDINGS_CHANNEL = 706
+
+
+@pytest.mark.parametrize("moved", [
+    pytest.param(False, id="kept"),
+    pytest.param(True, id="moved", marks=pytest.mark.xfail(strict=True, reason=(
+        "#645: standings keep no channel they were posted in, so the withdrawn ones are looked "
+        "for in the present standings channel"
+    ))),
+])
 async def test_a_resubmission_entering_every_session_cancelled_withdraws_the_round_s_standings(
-    tmp_path, monkeypatch,
+    tmp_path, monkeypatch, moved,
 ):
-    """Round 3's provisional standings were posted when its review opened. Alex resubmits and
-    types CANCELLED for its qualifying and then for its race. When the queue runs, round 3 holds
-    no driver or team standings rows any more, and each of its standings posts is deleted, by a
-    job of `results.submission.all_cancelled` run after both sessions' "This session was
-    cancelled." lines are posted (owner, check 1)."""
+    """Round 3's provisional standings were posted in Pro's standings channel (701) when its
+    review opened. Alex resubmits and types CANCELLED for its qualifying and then for its race.
+    When the queue runs, round 3 holds no driver or team standings rows any more, and each of its
+    standings posts is deleted from 701, by a job of `results.submission.all_cancelled` run after
+    both sessions' "This session was cancelled." lines are posted (owner, check 1). Where Pro's
+    standings channel was moved to 706 before Alex resubmitted, the posts are still deleted from
+    701, where they stand."""
+    from leaguebot.framework.db.database import get_connection
     from tests.results.test_resubmission_changes import ROUND_ID as REVIEWED_ROUND, _changes, _type
-    from tests.results.test_review_open_change import RESULTS_CHANNEL, STANDINGS_CHANNEL
+    from tests.results.test_review_open_change import DIVISION_ID, RESULTS_CHANNEL, STANDINGS_CHANNEL
+    from tests.support.review_league import channel
 
     league = await _resubmitting(tmp_path, monkeypatch)
     standings = league.sent_to(STANDINGS_CHANNEL)
     assert standings and (await _snapshot_rounds(league, REVIEWED_ROUND))[0]
+    if moved:
+        league.channels[MOVED_STANDINGS_CHANNEL] = channel(MOVED_STANDINGS_CHANNEL, league.events)
+        league.channels[MOVED_STANDINGS_CHANNEL].guild = league.guild
+        async with get_connection(league.db_path) as db:
+            await db.execute(
+                "UPDATE division_results_config SET standings_channel_id = ? "
+                "WHERE division_id = ?", (MOVED_STANDINGS_CHANNEL, DIVISION_ID),
+            )
+            await db.commit()
 
     await _type(league, "CANCELLED")
     await _type(league, "CANCELLED")

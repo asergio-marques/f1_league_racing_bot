@@ -157,20 +157,32 @@ async def _flags(db_path: str) -> tuple[int, int, int]:
         return tuple(await cursor.fetchone())
 
 
+@pytest.mark.xfail(strict=True, reason="#645: a results table keeps no channel it was posted in")
 async def test_the_new_results_replace_the_old_in_one_go(tmp_path):
-    """The round's Feature Race was posted as message 8800. Its results are replaced by a
-    resubmission's qualifying and race: both new sessions stand, scored, and the new race carries
-    message 8800 as the table it replaces, so that table comes down once the new one stands; the
-    new qualifying, which had no table, carries none (results :412; owner Q-E6)."""
+    """The round's Feature Race was posted as message 8800 and its Sprint Race as 8900, both in
+    results channel 700. Its results are replaced by a resubmission's qualifying and race: both new
+    sessions stand, scored, and the new race carries message 8800, and channel 700 it was posted
+    in, as the table it replaces, so that table comes down from 700 once the new one stands; the
+    new qualifying, which had no table, carries none (results :412; owner Q-E6). The Sprint Race,
+    not entered again, is handed back as message 8900 in channel 700, for the caller to take
+    down."""
     db_path = await _make_db(tmp_path, name="replace_swap")
     async with get_connection(db_path) as db:
         await db.execute(
-            "UPDATE session_results SET results_message_id = 8800, results_message_ids = '[8800]' "
-            "WHERE id = 1"
+            "UPDATE session_results SET results_message_id = 8800, results_message_ids = '[8800]', "
+            "results_message_channel_id = 700 WHERE id = 1"
+        )
+        await db.execute(
+            "INSERT INTO session_results (id, round_id, division_id, session_type, status, "
+            "config_name, results_message_id, results_message_ids, results_message_channel_id) "
+            "VALUES (2, ?, ?, 'SPRINT_RACE', 'ACTIVE', 'Standard', 8900, '[8900]', 700)",
+            (ROUND_ID, DIVISION_ID),
         )
         await db.commit()
 
-    await replace_round_results(db_path, ROUND_ID, DIVISION_ID, SEASON_ID, _collected())
+    unplaced = await replace_round_results(
+        db_path, ROUND_ID, DIVISION_ID, SEASON_ID, _collected()
+    )
 
     assert await _sessions(db_path) == [
         ("FEATURE_QUALIFYING", "ACTIVE"),
@@ -179,10 +191,15 @@ async def test_the_new_results_replace_the_old_in_one_go(tmp_path):
     assert await _race_points(db_path) == {NEW_A: 25, NEW_B: 18}
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT session_type, results_message_id, results_message_ids FROM session_results"
+            "SELECT session_type, results_message_id, results_message_ids, "
+            "results_message_channel_id FROM session_results"
         )
-        carried = {r[0]: (r[1], r[2]) for r in await cursor.fetchall()}
-    assert carried == {"FEATURE_QUALIFYING": (None, None), "FEATURE_RACE": (8800, "[8800]")}
+        carried = {r[0]: (r[1], r[2], r[3]) for r in await cursor.fetchall()}
+    assert carried == {
+        "FEATURE_QUALIFYING": (None, None, None),
+        "FEATURE_RACE": (8800, "[8800]", 700),
+    }
+    assert [tuple(pair) for pair in unplaced] == [(700, 8900)]
 
 
 async def test_the_channel_stops_resubmitting_and_the_new_results_await_posting(tmp_path):
