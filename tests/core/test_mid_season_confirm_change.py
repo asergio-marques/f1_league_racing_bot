@@ -273,10 +273,6 @@ async def test_a_stop_after_the_save_finishes_the_roles_and_lineups_on_restart(
     [
         pytest.param(
             False, [DRIVER_ROLE], id="signup-off",
-            marks=pytest.mark.xfail(
-                strict=True,
-                reason="#624: with signup off confirmation does not yet give the driver role",
-            ),
         ),
         pytest.param(True, [], id="signup-on"),
     ],

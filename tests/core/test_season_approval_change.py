@@ -443,10 +443,6 @@ async def test_the_opening_standings_are_posted_in_each_division_s_standings_cha
         pytest.param(
             False, True, "the driver role and their division's and team's roles",
             id="signup-off-driver-role-set",
-            marks=pytest.mark.xfail(
-                strict=True,
-                reason="#624: with signup off the line does not yet name the driver role",
-            ),
         ),
         pytest.param(True, True, "their division's and team's roles", id="signup-on"),
     ],
@@ -931,10 +927,6 @@ async def test_a_seat_with_no_team_role_grants_the_division_role_alone(tmp_path,
     [
         pytest.param(
             False, True, [DRIVER_ROLE], id="signup-off-driver-role-set",
-            marks=pytest.mark.xfail(
-                strict=True,
-                reason="#624: with signup off confirmation does not yet give the driver role",
-            ),
         ),
         pytest.param(False, False, [], id="signup-off-no-driver-role"),
         pytest.param(True, True, [], id="signup-on"),

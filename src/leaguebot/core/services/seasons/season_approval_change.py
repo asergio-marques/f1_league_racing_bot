@@ -200,17 +200,29 @@ async def tell_channel(bot: Any, channel_id: int, text: str, actor_id: int | Non
     await send_notice(channel, text, mentions=mentioned)
 
 
-def ungranted_line(user_ids: list[str]) -> str:
+def ungranted_line(user_ids: list[str], *, driver_role: bool = False) -> str:
     """The drivers whose roles a league admin discarded the granting of.
 
     The confirmation is saved by then and no command grants them again, so the manager grants
-    them by hand.
+    them by hand: their division's and team's roles, and with *driver_role* the driver role too,
+    which a league running without the signup module is given at confirmation.
     """
     who = ", ".join(f"<@{user_id}>" for user_id in user_ids)
-    return (
-        f"{who} — their roles could not be granted. Give them their division's and team's "
-        f"roles by hand."
+    give = "the driver role and their division's and team's" if driver_role else (
+        "their division's and team's"
     )
+    return f"{who} — their roles could not be granted. Give them {give} roles by hand."
+
+
+async def driver_role_due_on(db: aiosqlite.Connection, modules: "ModuleService") -> bool:
+    """Whether a confirmation gives each driver the league's driver role: the signup module is
+    off, which approves no signup and so grants no driver role before, and the league has set one.
+    Read on *db*, the save's connection, and carried on each driver's job as `driver_role`."""
+    if await modules.is_enabled_on(db, "signup"):
+        return False
+    cursor = await db.execute("SELECT driver_role_id FROM server_configs")
+    row = await cursor.fetchone()
+    return row is not None and bool(row["driver_role_id"])
 
 
 def unposted_lineup_line(division_name: str) -> str:
@@ -244,11 +256,13 @@ def driver_roles_step(roles: "TeamRoleService", name: str = GRANT_ROLES) -> Step
     """The one job that gives a driver the roles of their division and their team.
 
     The season's approval and the mid-season confirmation both plan it, one per driver, with the
-    payload ``{user_id, division_id, division_name, team_name}``. It raises where Discord will not
+    payload ``{user_id, division_id, division_name, team_name}`` and, where the confirmation gives
+    the driver role too (`driver_role_due_on`), ``driver_role: True``. It raises where Discord will not
     (:meth:`TeamRoleService.grant_roles`), so the queue stops, and passes over a member Discord
     reports absent. A driver seated with no team, or whose team has no role set, is given their
     division's role alone, and one with no role to give is given nothing: Discord is not reached for
-    it.
+    it. The driver role is read as the job runs, so one the league has put right since is the one
+    given.
     """
 
     async def grant_roles(ctx: StepContext) -> StepResult:
@@ -268,6 +282,12 @@ def driver_roles_step(roles: "TeamRoleService", name: str = GRANT_ROLES) -> Step
             team = await roles.get_team_role_config(str(each["team_name"]))
             if team is not None:
                 role_ids.append(team.role_id)
+        if each.get("driver_role"):
+            async with get_connection(ctx.db_path) as db:
+                cursor = await db.execute("SELECT driver_role_id FROM server_configs")
+                config = await cursor.fetchone()
+            if config is not None and config["driver_role_id"]:
+                role_ids.append(int(config["driver_role_id"]))
         if not role_ids:
             return StepResult(result={"granted": False})
         granted = await roles.grant_roles(guild, int(each["user_id"]), *role_ids)
@@ -452,6 +472,7 @@ def season_approval_change(
             (season_id,),
         )
         divisions = list(await cursor.fetchall())
+        driver_role = {"driver_role": True} if await driver_role_due_on(db, modules) else {}
         for division in divisions:
             cursor = await db.execute(
                 "SELECT dp.discord_user_id, ti.name AS team_name "
@@ -472,6 +493,7 @@ def season_approval_change(
                         "division_id": int(division["id"]),
                         "division_name": str(division["name"]),
                         "team_name": str(driver["team_name"]),
+                        **driver_role,
                     },
                 )
                 for driver in await cursor.fetchall()
@@ -847,6 +869,7 @@ def _left(ctx: OutcomeContext, steps: Mapping[str, Step], *, told: bool = True) 
     lines: list[str] = []
     ungranted: list[str] = []
     ungranted_at: int | None = None
+    driver_role = False
     for view in ctx.steps:
         if not _discarded(view):
             continue
@@ -859,6 +882,7 @@ def _left(ctx: OutcomeContext, steps: Mapping[str, Step], *, told: bool = True) 
                 ungranted_at = len(lines)
                 lines.append("")
             ungranted.append(str(each["user_id"]))
+            driver_role = driver_role or bool(each.get("driver_role"))
         elif view.name == POST_BATCH_NOTICE:
             lines.append(NOTICE_NOT_POSTED)
         elif view.name == REFRESH_LINEUP:
@@ -878,7 +902,7 @@ def _left(ctx: OutcomeContext, steps: Mapping[str, Step], *, told: bool = True) 
         elif told and view.name == TELL_REVIEW_CHANNEL:
             lines.append(f"<#{ctx.payload['channel_id']}> was not told how the approval ended")
     if ungranted_at is not None:
-        lines[ungranted_at] = ungranted_line(ungranted)
+        lines[ungranted_at] = ungranted_line(ungranted, driver_role=driver_role)
     return lines
 
 
