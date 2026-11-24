@@ -46,8 +46,10 @@ MYSTERY_COUNTRY = "Mystery"
 MYSTERY_RACE_NAME = "Mystery Grand Prix"
 MYSTERY_TRACK_NAME = "Mystery"
 
-#: Round format -> the label placed on ``round_<x>_format``. A normal round is emptied,
-#: so a template author decides by the chrome they draw whether it is marked at all.
+#: Round format -> the label placed on ``round_<x>_format``. A normal round's label is
+#: blank by design, so a template author decides by the chrome they draw whether it is
+#: marked at all; the field is emptied without a word, the blank being the value
+#: determined and not one that could not be (``build_fill_spec``'s ``put_format``).
 FORMAT_LABELS = {
     "SPRINT": "Sprint",
     "ENDURANCE": "Endurance",
@@ -253,6 +255,7 @@ def build_fill_spec(
 
     text: dict[str, str] = {}
     empty: list[str] = []
+    empty_quietly: list[str] = []
     image_data: dict[str, tuple[str, str]] = {}
 
     def put(field_id: str, value: str) -> None:
@@ -263,6 +266,22 @@ def build_fill_spec(
             text[field_id] = value
         else:
             empty.append(field_id)
+
+    def put_format(field_id: str, value: str) -> None:
+        """Fill the format label where declared; empty it quietly where it is blank.
+
+        A blank format label is the value determined, not one that could not be: the
+        label of a normal round is blank by design, so that the template's chrome decides
+        whether an ordinary round is marked. A field the data determine to be empty "is no
+        error at all ... nothing shall be reported" (image spec, on a field determined to
+        be empty), so it goes to ``empty_quietly`` and raises no notice.
+        """
+        if field_id not in declared:
+            return
+        if value:
+            text[field_id] = value
+        else:
+            empty_quietly.append(field_id)
 
     put("division_name", drawing.division_name)
 
@@ -281,7 +300,7 @@ def build_fill_spec(
         put(f"{prefix}_country_name", entry.country_name)
         put(f"{prefix}_race_name", entry.race_name)
         put(f"{prefix}_track_name", entry.track_name)
-        put(f"{prefix}_format", entry.format_label)
+        put_format(f"{prefix}_format", entry.format_label)
         put(f"{prefix}_date", entry.date_text)
         put(f"{prefix}_time", entry.time_text)
         # A round is pictured two ways and the template chooses, round by round: the
@@ -335,6 +354,7 @@ def build_fill_spec(
         image_type=TEMPLATE_KEY,
         text=text,
         empty=empty,
+        empty_quietly=empty_quietly,
         remove=remove,
         off_canvas=off_canvas,
         crop=crop_id if crop_id in declared else None,

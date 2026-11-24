@@ -26,6 +26,7 @@ from leaguebot.image.services.aspects.image_calendar_service import (
     build_fill_spec,
     resolve_drawing,
 )
+from leaguebot.image.utils import svg_fill
 
 SVG_NS = "http://www.w3.org/2000/svg"
 
@@ -152,6 +153,19 @@ def test_spec_fills_the_rounds_it_draws():
     assert spec.text["round_1_race_name"] == "British Grand Prix"
     assert spec.text["round_2_number"] == "2"
     assert spec.row_count == 2
+
+
+def test_a_normal_round_s_format_is_emptied_without_a_notice():
+    """A Normal round's format label is blank by design, so it is determined empty, not
+    a value that could not be determined: nothing is reported (#636)."""
+    spec = build_fill_spec(_draw([_round(1, "NORMAL"), _round(2, "SPRINT")]), _template(2))
+    assert "round_1_format" in spec.empty_quietly
+    assert "round_1_format" not in spec.empty
+    assert spec.text["round_2_format"] == "Sprint"
+
+    result = svg_fill.fill(spec)
+    assert not [n for n in result.notices if n.field_id == "round_1_format"]
+    assert "OPTIONAL_FIELD_EMPTIED" not in {n.notice_kind for n in result.notices}
 
 
 def test_spec_crops_at_the_final_drawn_round():
