@@ -2,7 +2,7 @@
 
 Builds a test league from no database file: every module on, eleven racing teams and the
 Reserve team, a two-division test season of three rounds each with forty-five fake drivers
-seated, approved and ready to run. Ends by
+signed up through its signup window and seated, approved and ready to run. Ends by
 saving that state as a locked backup, which every later spec restores. Read
 [the README](README.md) first for the step format and how to report a failure.
 
@@ -22,6 +22,7 @@ Every name and value below is fixed here, once. The later specs reuse them; do n
 | Interaction channel | `#bot-commands` |
 | Log channel | `#bot-log` |
 | Signup channel | `#signup` |
+| Signup availability slot | Monday 20:00 UTC, the one slot |
 | Division 1 channels | `#d1-calendar`, `#d1-lineup`, `#d1-weather`, `#d1-results`, `#d1-standings`, `#d1-verdicts`, `#d1-rsvp`, `#d1-attendance` |
 | Division 2 channels | `#d2-calendar`, `#d2-lineup`, `#d2-weather`, `#d2-results`, `#d2-standings`, `#d2-verdicts`, `#d2-rsvp`, `#d2-attendance` |
 | Season | Season #1, game edition `25` (F1 25), season id 1 |
@@ -41,10 +42,11 @@ early March is UTC.
 | 2 | `<YEAR+1>-03-08` 20:00 — Sprint — Hungaroring (14) | `<YEAR+1>-03-08` 21:00 — Sprint — Circuit de Spa-Francorchamps (13) |
 | 3 | `<YEAR+1>-03-15` 20:00 — Mystery | `<YEAR+1>-03-15` 21:00 — Normal — Circuit Zandvoort (15) |
 
-**Drivers.** Fake drivers, seated by `/test-mode roster add-bulk` (step 27), IDs
-9000000000000000001 to 9000000000000000045. Seats are per division, so each division's
-lineup is its own: Division 1 fills every team; Division 2 leaves `BRV` empty and `CHL` with one
-driver.
+**Drivers.** Fake drivers, IDs 9000000000000000001 to 9000000000000000045, created, signed up
+and approved with the nationality below by `/test-mode roster sign-up-bulk` (step 24) while
+signups are open, then each seated in the team and division below by `/driver assign` (step 32)
+once the season is in placements. Seats are per division, so each division's lineup is its own:
+Division 1 fills every team; Division 2 leaves `BRV` empty and `CHL` with one driver.
 
 | ID | Driver | Team | Division | Nationality |
 |---|---|---|---|---|
@@ -330,7 +332,7 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
 
 ---
 
-## Part B — The season, test mode, the divisions and the calendar
+## Part B — The season, test mode, its signups and its calendar
 
 ### Setting up the season
 
@@ -346,7 +348,8 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
       When done, run `/season placements-review` to review and approve.
       ```
       (The reply's next steps are not this spec's order: `/division add` is refused until the
-      configuration is confirmed. Follow the spec.)
+      season is in placements, which it reaches once its signup window closes (step 26). Follow
+      the spec.)
     - **Log:**
       ```
       <you> | /season setup | Success
@@ -369,9 +372,31 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
         seeded_configs: Standard, Half Points
       ```
 
+### The signup's availability slot
+
+20. `/signup open` refuses a window with no availability slot, and once the configuration is
+    confirmed (step 22) the signup module's settings are fixed for the season, so the slot is
+    added now, while the season is in configuration.
+
+    **Do:** `/signup time-slot add day:Monday time:20:00`
+
+    **Expect:**
+    - **Ack:** `Adding the time slot Monday 20:00`
+    - **Then:**
+      ```
+      **Availability Time Slots**
+      #1 — Monday 20:00 UTC
+      ```
+    - **Log:**
+      ```
+      <you> | /signup time-slot add | Success
+        day: Monday
+        time: 20:00
+      ```
+
 ### Confirming the configuration
 
-20. **Do:** `/season config-review`
+21. **Do:** `/season config-review`
 
     **Expect:**
     - **Ack:** `Posting the review of /season config-review`
@@ -396,22 +421,147 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
         ```
     - **Log:** `<you> | /season config-review | Review posted`
 
-21. **Do:** within five minutes, press **✅ Confirm configuration** on the question.
+22. **Do:** within five minutes, press **✅ Confirm configuration** on the question.
 
     **Expect:**
     - **Ack:** `Confirming season 1's configuration`
-    - **Then:** ``✅ Season #1's configuration is confirmed. The season is now in placements — build its divisions and calendar, place its drivers, then run `/season placements-review`.``
-    - **Posts:** every message step 20 posted in `#bot-commands` is deleted.
+    - **Then:** ``✅ Season #1's configuration is confirmed. The season now waits for its signup window — open it with `/signup open`.``
+    - **Posts:** every message step 21 posted in `#bot-commands` is deleted.
     - **Log:**
       ```
       <you> | /season config-review | Confirmed
         season: Season #1
-        stage: PLACEMENTS
+        stage: WAITING
+      ```
+
+### The signup window
+
+23. **Do:** `/signup open`
+
+    **Expect:**
+    - **Ack:** `Opening signups`
+    - **Then:** `✅ Signups opened. Button posted in <#<signup id>>.`
+    - **Posts** (`#signup`): one message, an embed titled `🏁 Driver Signups Are Open!` with a
+      **Sign Up** button, its description:
+      ```
+      **Available time slots:**
+      • Monday 20:00 UTC
+
+      **Tracks:**
+      No tracks specified
+
+      **Time type:** Time Trial
+      **Time image proof:** Required
+      **Nationality:** Required
+
+      <@&<Members role id>> — click below to sign up!
+      ```
+      The season moves from waiting to signups; nothing posts that.
+    - **Log:** `<you> | /signup open | Success`
+
+24. **Do:** `/test-mode roster sign-up-bulk`. In the form **Sign up fake drivers**, paste the
+    following into **Paste ID,Driver name,Nationality**, and submit. The header line is
+    optional. Each driver is created, signed up with the default answers and approved, left
+    Unassigned with no seat; no signup channel, review panel, role or post is made for a fake
+    driver (`signup/services/fake_signups.py`). The nationalities are taken because
+    `/test-mode nationality` is on, as a fresh database has it.
+
+    (Optional: `tools/data-generator/test-roster/generate_test_roster.py --record` writes a
+    `sign_up.csv` in this shape, in `tools/data-generator/`. Its drivers are not the Fixture's:
+    for the base, paste the list below.)
+
+    ```
+    ID,Driver name,Nationality
+    9000000000000000001,Adam Archer,British
+    9000000000000000002,Bruno Bianchi,Italian
+    9000000000000000003,Carlos Cortes,Spanish
+    9000000000000000004,Dirk Dekker,Dutch
+    9000000000000000005,Emil Engel,German
+    9000000000000000006,Felix Fournier,French
+    9000000000000000007,Gabriel Gomes,Brazilian
+    9000000000000000008,Hiro Hayashi,Japanese
+    9000000000000000009,Ian Irwin,Australian
+    9000000000000000010,Jari Jokinen,Finnish
+    9000000000000000011,Kevin Keller,American
+    9000000000000000012,Liam Lavoie,Canadian
+    9000000000000000013,Mateo Morales,Mexican
+    9000000000000000014,Niels Nygaard,Danish
+    9000000000000000015,Olivier Orsini,Monegasque
+    9000000000000000016,Pim Prasert,Thai
+    9000000000000000017,Quinn Quayle,Austrian
+    9000000000000000018,Rafael Rossi,Argentine
+    9000000000000000019,Samuel Shaw,British
+    9000000000000000020,Tomas Torres,Italian
+    9000000000000000021,Ugo Ulivi,Spanish
+    9000000000000000022,Victor Vance,Dutch
+    9000000000000000023,Willem Wouters,German
+    9000000000000000024,Xavier Xu,French
+    9000000000000000025,Yuki Yamada,Brazilian
+    9000000000000000026,Zane Zeller,Japanese
+    9000000000000000027,Aaron Abbott,Australian
+    9000000000000000028,Bastien Blanc,Finnish
+    9000000000000000029,Conor Cole,American
+    9000000000000000030,Diego Duarte,Canadian
+    9000000000000000031,Elias Eriksen,Mexican
+    9000000000000000032,Finn Fischer,Danish
+    9000000000000000033,Gianni Galli,Monegasque
+    9000000000000000034,Hugo Hartley,Thai
+    9000000000000000035,Isaac Ingram,Austrian
+    9000000000000000036,Jonas Janssen,Argentine
+    9000000000000000037,Kai Kimura,British
+    9000000000000000038,Lucas Lambert,Italian
+    9000000000000000039,Marco Moretti,Spanish
+    9000000000000000040,Noah Novak,Dutch
+    9000000000000000041,Owen Oakley,German
+    9000000000000000042,Pablo Pena,French
+    9000000000000000043,Quentin Quint,Brazilian
+    9000000000000000044,Rory Reid,Japanese
+    9000000000000000045,Stefan Sommer,Australian
+    ```
+
+    **Expect:**
+    - **Ack:** `Signing up 45 fake drivers`
+    - **Then:** ``✅ Signed up and approved **45** fake driver(s). Seat each with `/driver assign`.``
+    - **Posts:** nothing.
+    - **Log:**
+      ```
+      <you> | /test-mode roster sign-up-bulk | Success
+        drivers_signed_up: 45
+      ```
+
+25. **Do:** `/test-mode roster list`
+
+    **Expect:**
+    - **Reply:** headed `**Fake Driver Roster**`, then a code block whose first two lines are the
+      column heads `Name`, `Mention`, `State`, `Nationality`, `Seats` and a rule of 110 `-`, then
+      one row per driver, the 45 of the Fixture in its order: each with its mention,
+      `<@9000000000000000001>` to `<@9000000000000000045>`, the state `Unassigned`, its
+      nationality as the Fixture gives it and the seats `none`. A long roster may come as several
+      messages, each a complete table repeating the heading. It ends:
+      ```
+      Copy mention strings above when submitting results in the format:
+      `Position, <@user_id>, <@&role_id>, ...`
+      ```
+    - **Log:** nothing; it is a view.
+
+26. **Do:** `/signup close`
+
+    **Expect:** no confirmation is asked: no driver is part-way through a signup, the fake drivers
+    being Unassigned.
+    - **Ack:** `Closing signups`
+    - **Then:** `✅ Signups closed.`
+    - **Posts** (`#signup`): the message step 23 posted, with its **Sign Up** button, is deleted,
+      and `🔒 Signups are now closed.` is posted. The season moves from signups to placements;
+      nothing posts that.
+    - **Log:**
+      ```
+      <you> | /signup close | Success
+        drivers_returned_to_not_signed_up: 0
       ```
 
 ### The divisions
 
-22. **Do:** `/division add name:Division 1 role:@Division 1 tier:1`
+27. **Do:** `/division add name:Division 1 role:@Division 1 tier:1`
 
     **Expect:**
     - **Ack:** `Adding division **Division 1** (Tier 1)`
@@ -429,7 +579,7 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
         division: Division 1, tier: 1
       ```
 
-23. **Do:** `/division add name:Division 2 role:@Division 2 tier:2`
+28. **Do:** `/division add name:Division 2 role:@Division 2 tier:2`
 
     **Expect:**
     - **Ack:** `Adding division **Division 2** (Tier 2)`
@@ -450,7 +600,7 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
 
 ### The calendar
 
-24. **Do:** `/round add-xml`. In the form **Add rounds from XML**, paste the following into
+29. **Do:** `/round add-xml`. In the form **Add rounds from XML**, paste the following into
     **XML payload**, with `<YEAR+1>` replaced by the year after the run (six places), and submit.
 
     ```xml
@@ -514,7 +664,7 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
 
 ### The division channels
 
-25. **Do**, for **Division 1**, each command of the table below with `name:Division 1` and
+30. **Do**, for **Division 1**, each command of the table below with `name:Division 1` and
     the `#d1-` channel it names.
 
     | Do | Ack | Then | Log, first line |
@@ -535,121 +685,122 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
       channel: #<the channel's name, e.g. d1-calendar>
     ```
 
-26. **Do** step 25 again for **Division 2**: every command with `name:Division 2` and the
+31. **Do** step 30 again for **Division 2**: every command with `name:Division 2` and the
     matching `#d2-` channel.
 
-    **Expect:** as step 25, with `Division 2` and the `#d2-` channels throughout.
+    **Expect:** as step 30, with `Division 2` and the `#d2-` channels throughout.
 
 ---
 
-## Part C — The drivers, the approval and the backup
+## Part C — The seating, the approval and the backup
 
 ### Seating the drivers
 
-27. **Do:** `/test-mode roster add-bulk`. In the form **Import a test roster**, paste the
-    following into **Paste roster.csv, header and all**, and submit.
+32. Under test mode `/driver` is the test-mode group: its `user` option is text, a mention or an
+    ID, with the server's drivers offered by name as it is typed. A team is typed by its
+    shorthand.
 
-    ```
-    ID,Driver name,Team,Division,Nationality
-    9000000000000000001,Adam Archer,ALP,Division 1,British
-    9000000000000000002,Bruno Bianchi,ALP,Division 1,Italian
-    9000000000000000003,Carlos Cortes,BRV,Division 1,Spanish
-    9000000000000000004,Dirk Dekker,BRV,Division 1,Dutch
-    9000000000000000005,Emil Engel,CHL,Division 1,German
-    9000000000000000006,Felix Fournier,CHL,Division 1,French
-    9000000000000000007,Gabriel Gomes,DLT,Division 1,Brazilian
-    9000000000000000008,Hiro Hayashi,DLT,Division 1,Japanese
-    9000000000000000009,Ian Irwin,ECH,Division 1,Australian
-    9000000000000000010,Jari Jokinen,ECH,Division 1,Finnish
-    9000000000000000011,Kevin Keller,FOX,Division 1,American
-    9000000000000000012,Liam Lavoie,FOX,Division 1,Canadian
-    9000000000000000013,Mateo Morales,GLF,Division 1,Mexican
-    9000000000000000014,Niels Nygaard,GLF,Division 1,Danish
-    9000000000000000015,Olivier Orsini,HTL,Division 1,Monegasque
-    9000000000000000016,Pim Prasert,HTL,Division 1,Thai
-    9000000000000000017,Quinn Quayle,IND,Division 1,Austrian
-    9000000000000000018,Rafael Rossi,IND,Division 1,Argentine
-    9000000000000000019,Samuel Shaw,JLT,Division 1,British
-    9000000000000000020,Tomas Torres,JLT,Division 1,Italian
-    9000000000000000021,Ugo Ulivi,KLO,Division 1,Spanish
-    9000000000000000022,Victor Vance,KLO,Division 1,Dutch
-    9000000000000000023,Willem Wouters,Reserve,Division 1,German
-    9000000000000000024,Xavier Xu,Reserve,Division 1,French
-    9000000000000000025,Yuki Yamada,ALP,Division 2,Brazilian
-    9000000000000000026,Zane Zeller,ALP,Division 2,Japanese
-    9000000000000000027,Aaron Abbott,CHL,Division 2,Australian
-    9000000000000000028,Bastien Blanc,DLT,Division 2,Finnish
-    9000000000000000029,Conor Cole,DLT,Division 2,American
-    9000000000000000030,Diego Duarte,ECH,Division 2,Canadian
-    9000000000000000031,Elias Eriksen,ECH,Division 2,Mexican
-    9000000000000000032,Finn Fischer,FOX,Division 2,Danish
-    9000000000000000033,Gianni Galli,FOX,Division 2,Monegasque
-    9000000000000000034,Hugo Hartley,GLF,Division 2,Thai
-    9000000000000000035,Isaac Ingram,GLF,Division 2,Austrian
-    9000000000000000036,Jonas Janssen,HTL,Division 2,Argentine
-    9000000000000000037,Kai Kimura,HTL,Division 2,British
-    9000000000000000038,Lucas Lambert,IND,Division 2,Italian
-    9000000000000000039,Marco Moretti,IND,Division 2,Spanish
-    9000000000000000040,Noah Novak,JLT,Division 2,Dutch
-    9000000000000000041,Owen Oakley,JLT,Division 2,German
-    9000000000000000042,Pablo Pena,KLO,Division 2,French
-    9000000000000000043,Quentin Quint,KLO,Division 2,Brazilian
-    9000000000000000044,Rory Reid,Reserve,Division 2,Japanese
-    9000000000000000045,Stefan Sommer,Reserve,Division 2,Australian
-    ```
+    **Do**, once for each row below, in this order, each after the last one's reply:
 
-    No refusal is expected for Division 2's empty `BRV` or half-filled `CHL`: the import refuses
-    only a misspelt team, an unknown nationality, a division not in the season or already
-    seated, a team given more drivers than it has seats, or a division given more drivers than
-    a configured template draws (`judge_bulk_on`). Leaving seats empty is none of those.
+    | ID | Driver | Do | Team's full name |
+    |---|---|---|---|
+    | 9000000000000000001 | Adam Archer | `/driver assign user:9000000000000000001 division:Division 1 team:ALP` | Alpha Racing |
+    | 9000000000000000002 | Bruno Bianchi | `/driver assign user:9000000000000000002 division:Division 1 team:ALP` | Alpha Racing |
+    | 9000000000000000003 | Carlos Cortes | `/driver assign user:9000000000000000003 division:Division 1 team:BRV` | Bravo Motorsport |
+    | 9000000000000000004 | Dirk Dekker | `/driver assign user:9000000000000000004 division:Division 1 team:BRV` | Bravo Motorsport |
+    | 9000000000000000005 | Emil Engel | `/driver assign user:9000000000000000005 division:Division 1 team:CHL` | Charlie GP |
+    | 9000000000000000006 | Felix Fournier | `/driver assign user:9000000000000000006 division:Division 1 team:CHL` | Charlie GP |
+    | 9000000000000000007 | Gabriel Gomes | `/driver assign user:9000000000000000007 division:Division 1 team:DLT` | Delta Racing |
+    | 9000000000000000008 | Hiro Hayashi | `/driver assign user:9000000000000000008 division:Division 1 team:DLT` | Delta Racing |
+    | 9000000000000000009 | Ian Irwin | `/driver assign user:9000000000000000009 division:Division 1 team:ECH` | Echo Racing |
+    | 9000000000000000010 | Jari Jokinen | `/driver assign user:9000000000000000010 division:Division 1 team:ECH` | Echo Racing |
+    | 9000000000000000011 | Kevin Keller | `/driver assign user:9000000000000000011 division:Division 1 team:FOX` | Foxtrot Motorsport |
+    | 9000000000000000012 | Liam Lavoie | `/driver assign user:9000000000000000012 division:Division 1 team:FOX` | Foxtrot Motorsport |
+    | 9000000000000000013 | Mateo Morales | `/driver assign user:9000000000000000013 division:Division 1 team:GLF` | Golf GP |
+    | 9000000000000000014 | Niels Nygaard | `/driver assign user:9000000000000000014 division:Division 1 team:GLF` | Golf GP |
+    | 9000000000000000015 | Olivier Orsini | `/driver assign user:9000000000000000015 division:Division 1 team:HTL` | Hotel Racing |
+    | 9000000000000000016 | Pim Prasert | `/driver assign user:9000000000000000016 division:Division 1 team:HTL` | Hotel Racing |
+    | 9000000000000000017 | Quinn Quayle | `/driver assign user:9000000000000000017 division:Division 1 team:IND` | India Motorsport |
+    | 9000000000000000018 | Rafael Rossi | `/driver assign user:9000000000000000018 division:Division 1 team:IND` | India Motorsport |
+    | 9000000000000000019 | Samuel Shaw | `/driver assign user:9000000000000000019 division:Division 1 team:JLT` | Juliett GP |
+    | 9000000000000000020 | Tomas Torres | `/driver assign user:9000000000000000020 division:Division 1 team:JLT` | Juliett GP |
+    | 9000000000000000021 | Ugo Ulivi | `/driver assign user:9000000000000000021 division:Division 1 team:KLO` | Kilo Racing |
+    | 9000000000000000022 | Victor Vance | `/driver assign user:9000000000000000022 division:Division 1 team:KLO` | Kilo Racing |
+    | 9000000000000000023 | Willem Wouters | `/driver assign user:9000000000000000023 division:Division 1 team:Reserve` | Reserve |
+    | 9000000000000000024 | Xavier Xu | `/driver assign user:9000000000000000024 division:Division 1 team:Reserve` | Reserve |
+    | 9000000000000000025 | Yuki Yamada | `/driver assign user:9000000000000000025 division:Division 2 team:ALP` | Alpha Racing |
+    | 9000000000000000026 | Zane Zeller | `/driver assign user:9000000000000000026 division:Division 2 team:ALP` | Alpha Racing |
+    | 9000000000000000027 | Aaron Abbott | `/driver assign user:9000000000000000027 division:Division 2 team:CHL` | Charlie GP |
+    | 9000000000000000028 | Bastien Blanc | `/driver assign user:9000000000000000028 division:Division 2 team:DLT` | Delta Racing |
+    | 9000000000000000029 | Conor Cole | `/driver assign user:9000000000000000029 division:Division 2 team:DLT` | Delta Racing |
+    | 9000000000000000030 | Diego Duarte | `/driver assign user:9000000000000000030 division:Division 2 team:ECH` | Echo Racing |
+    | 9000000000000000031 | Elias Eriksen | `/driver assign user:9000000000000000031 division:Division 2 team:ECH` | Echo Racing |
+    | 9000000000000000032 | Finn Fischer | `/driver assign user:9000000000000000032 division:Division 2 team:FOX` | Foxtrot Motorsport |
+    | 9000000000000000033 | Gianni Galli | `/driver assign user:9000000000000000033 division:Division 2 team:FOX` | Foxtrot Motorsport |
+    | 9000000000000000034 | Hugo Hartley | `/driver assign user:9000000000000000034 division:Division 2 team:GLF` | Golf GP |
+    | 9000000000000000035 | Isaac Ingram | `/driver assign user:9000000000000000035 division:Division 2 team:GLF` | Golf GP |
+    | 9000000000000000036 | Jonas Janssen | `/driver assign user:9000000000000000036 division:Division 2 team:HTL` | Hotel Racing |
+    | 9000000000000000037 | Kai Kimura | `/driver assign user:9000000000000000037 division:Division 2 team:HTL` | Hotel Racing |
+    | 9000000000000000038 | Lucas Lambert | `/driver assign user:9000000000000000038 division:Division 2 team:IND` | India Motorsport |
+    | 9000000000000000039 | Marco Moretti | `/driver assign user:9000000000000000039 division:Division 2 team:IND` | India Motorsport |
+    | 9000000000000000040 | Noah Novak | `/driver assign user:9000000000000000040 division:Division 2 team:JLT` | Juliett GP |
+    | 9000000000000000041 | Owen Oakley | `/driver assign user:9000000000000000041 division:Division 2 team:JLT` | Juliett GP |
+    | 9000000000000000042 | Pablo Pena | `/driver assign user:9000000000000000042 division:Division 2 team:KLO` | Kilo Racing |
+    | 9000000000000000043 | Quentin Quint | `/driver assign user:9000000000000000043 division:Division 2 team:KLO` | Kilo Racing |
+    | 9000000000000000044 | Rory Reid | `/driver assign user:9000000000000000044 division:Division 2 team:Reserve` | Reserve |
+    | 9000000000000000045 | Stefan Sommer | `/driver assign user:9000000000000000045 division:Division 2 team:Reserve` | Reserve |
 
-    **Expect:**
-    - **Ack:** `Seating 45 test drivers in **Division 1**, **Division 2**`
-    - **Then:**
-      ```
-      ✅ Seated **45** test driver(s) across 2 division(s): Division 1, Division 2.
-      `/test-mode roster list` shows a division's drivers with the mentions result submission wants.
-      ```
+    No refusal is expected for Division 2's empty `BRV` or half-filled `CHL`: nothing requires a
+    team's seats filled. A team's two seats are taken in the order its drivers are assigned, so
+    Aaron Abbott holds `CHL`'s first seat in Division 2.
+
+    **Expect**, for each, `<driver>`, `<ID>`, `<full name>` and `<division>` being the row's:
+    - **Ack:** `Assigning **<driver>** to **<full name>** in **<division>**`
+    - **Then:** `✅ Assigned **<driver>** to **<full name>** in **<division>**.`
     - **Log:**
       ```
-      <you> | /test-mode roster add-bulk | Success
-        drivers_seated: 45
-        divisions: Division 1, Division 2
+      <you> | /driver assign | Success
+        user: <driver> (<@<ID>>)
+        team: <full name>
+        division: <division>
       ```
+    - No role is granted and no lineup is posted: the placement is unconfirmed until the season
+      is approved.
 
-28. **Do:** `/test-mode roster list division:Division 1`
+33. **Do:** `/test-mode roster list division:Division 1`
 
     **Expect:**
     - **Reply:** headed `**Fake Driver Roster — Division 1**`, then a code block whose first
-      two lines are the column heads `Name`, `Mention`, `Team`, `Nationality` and a rule of
-      86 `-`, then one row per driver: the 24 Division 1 drivers of the Fixture, each with
-      its mention, `<@9000000000000000001>` to `<@9000000000000000024>`, its team by full name
-      (two to each of the eleven racing teams, two in `Reserve`) and its nationality as the
-      Fixture gives it. A long roster may come as several messages, each a complete table
-      repeating the heading. It ends:
+      two lines are the column heads `Name`, `Mention`, `State`, `Nationality`, `Seats` and a
+      rule of 110 `-`, then one row per driver seated in the division: the 24 Division 1 drivers
+      of the Fixture, each with its mention, `<@9000000000000000001>` to
+      `<@9000000000000000024>`, the state `Assigned`, its nationality as the Fixture gives it,
+      and its seat as `<team's full name> (Division 1)`: two in each of the eleven racing teams,
+      two `Reserve (Division 1)`. A long roster may come as several messages, each a complete
+      table repeating the heading. It ends:
       ```
       Copy mention strings above when submitting results in the format:
       `Position, <@user_id>, <@&role_id>, ...`
       ```
     - **Log:** nothing; it is a view.
 
-29. **Do:** `/test-mode roster list division:Division 2`
+34. **Do:** `/test-mode roster list division:Division 2`
 
-    **Expect:** as step 28, headed `**Fake Driver Roster — Division 2**`, with the 21
-    Division 2 drivers, `<@9000000000000000025>` to `<@9000000000000000045>`: none in
-    `Bravo Motorsport`, one (Aaron Abbott) in `Charlie GP`, two in each other racing
-    team and two in `Reserve`.
+    **Expect:** as step 33, headed `**Fake Driver Roster — Division 2**`, with the 21
+    Division 2 drivers, `<@9000000000000000025>` to `<@9000000000000000045>`, each seat ending
+    `(Division 2)`: none in `Bravo Motorsport`, one (Aaron Abbott) in `Charlie GP`, two in each
+    other racing team and two in `Reserve`.
 
 ### Approving the season
 
-30. **Do:** `/season placements-review`
+35. **Do:** `/season placements-review`
 
     **Expect:**
     - **Ack:** `Posting the review of /season placements-review`
     - **Then:** where any picture drew with notices — a fallback team badge or flag, where
       `resources/league/` holds no artwork for it — the acknowledgement is updated to
       `✅ Review posted.`, a blank line, and a section headed `⚠️ **Image notices**` naming
-      each picture with its notices beneath. Otherwise, as in step 20, the acknowledgement stands
+      each picture with its notices beneath. Otherwise, as in step 21, the acknowledgement stands
       unchanged and the host's log shows, at ERROR, `could not update the reply to <the change>
       (change <n>)` — believed a bot defect: record it, and carry on.
     - **Posts** (`#bot-commands`, public), in this order:
@@ -688,7 +839,7 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
     - **Log:** `<you> | /season placements-review | Review posted`, and, where a picture drew
       with notices, a line naming that picture and its notices.
 
-31. **Do:** within five minutes, press **✅ Approve** on the question.
+36. **Do:** within five minutes, press **✅ Approve** on the question.
 
     **Expect:**
     - **Reply**, with three buttons, **💾 Save, then approve**, **Approve without saving** and
@@ -700,7 +851,7 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
       ```
     - Nothing posted, nothing in the log yet.
 
-32. **Do:** press **Approve without saving**.
+37. **Do:** press **Approve without saving**.
 
     **Expect:**
     - **Ack** (a new message beneath the question): `Approving season 1`
@@ -715,10 +866,10 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
       (`lineup — Division 1`, then Division 2's), not grouped by division. No
       `⚠️ **Not everything could be done**` section.
     - **Posts:**
-      - `#bot-commands`: every message of the review (step 30) is deleted. Then
+      - `#bot-commands`: every message of the review (step 35) is deleted. Then
         `🎨 Posting lineups, calendars and opening classifications — one moment.`, deleted once
         the posts are made.
-      - `#d1-lineup`, `#d2-lineup`: the division's lineup, as a picture, as in step 30:
+      - `#d1-lineup`, `#d2-lineup`: the division's lineup, as a picture, as in step 35:
         Division 2's `Bravo Motorsport` with both seats blank and `Charlie GP` with one.
       - `#d1-calendar`, `#d2-calendar`: the division's calendar, as a picture.
       - `#d1-standings`, `#d2-standings`: the opening classification, as pictures, every driver
@@ -743,7 +894,7 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
 
 ### Saving the base
 
-33. **Do:** `/test-mode backup save`
+38. **Do:** `/test-mode backup save`
 
     **Expect:**
     - **Reply:**
@@ -758,7 +909,7 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
       ```
     - `bot.bkup.db` and `scheduler.bkup.db` now exist in the bot host folder.
 
-34. **Do:** `/test-mode backup lock`
+39. **Do:** `/test-mode backup lock`
 
     **Expect:**
     - **Reply:** ``🔒 Locked. `/test-mode backup save` will refuse to overwrite it until you run this again.``
@@ -769,24 +920,24 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
       ```
     - `backup.lock` now exists in the bot host folder.
 
-35. **A refusal.** **Do:** `/test-mode backup save`
+40. **A refusal.** **Do:** `/test-mode backup save`
 
     **Expect:**
     - **Reply:** ``⛔ the saved backup is locked, so it will not be overwritten. Unlock it with `/test-mode backup lock` first.``
     - **Log:** ``⛔ `/test-mode backup save` refused for <you> — the saved backup is locked, so it will not be overwritten. Unlock it with `/test-mode backup lock` first.``
 
-36. **Do:** `/test-mode backup status`
+41. **Do:** `/test-mode backup status`
 
     **Expect:**
     - **Reply:**
       ```
       📦 **Saved backup**
-        Taken: <timestamp: the moment of step 33, not step 35>
-        Size: <size: as in step 33> KB
+        Taken: <timestamp: the moment of step 38, not step 40>
+        Size: <size: as in step 38> KB
         Readable: yes
-        Locked: locked by <your display name> at <the moment of step 34, ISO 8601>
+        Locked: locked by <your display name> at <the moment of step 39, ISO 8601>
       ```
     - **Log:** nothing; it is a view.
 
-The base is built. Season #1 is ongoing in test mode, nothing has been advanced, and the locked
-backup holds this moment for every later spec to restore.
+The base is built. Season #1 is ongoing in test mode, its signup window closed, nothing has been
+advanced, and the locked backup holds this moment for every later spec to restore.
