@@ -588,10 +588,7 @@ async def test_installing_returns_each_value_changed_by_its_session_label(db_pat
     assert not any("18" in line for line in lines)
 
 
-@pytest.mark.parametrize("case", [
-    "mode off",
-    pytest.param("out of order"),
-])
+@pytest.mark.parametrize("case", ["mode off", "out of order"])
 async def test_installing_refuses_writing_nothing_where_amendment_mode_is_off_or_the_table_is_out_of_order(
     db_path, case,
 ):
