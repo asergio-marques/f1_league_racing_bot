@@ -569,6 +569,10 @@ def build_attendance_drawing(root, teams, *, limits: bool = True):
             )
         )
 
+    # The drawing keeps the order it is handed, which is attendance's: the textual sheet's
+    # after a round, most points first and drivers level on points by name.
+    records.sort(key=lambda record: (-(record.total or 0), display_names[record.key].lower()))
+
     return resolve_drawing(
         division_name="Test Division",
         round_number=finalised or 1,
