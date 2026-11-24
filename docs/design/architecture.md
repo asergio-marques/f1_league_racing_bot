@@ -1420,11 +1420,11 @@ The exceptions, each with its reason:
   message it replaces in the step after, so each table keeps one writer. The id is kept with the
   channel it was posted in, since the channel a post belongs to can move before the post is next
   replaced, and a message looked for in another channel is not found there. A message nobody
-  recorded can never be found again, to be edited or deleted. Where a module's specification takes its output
-  down when the module is switched off, every post in that output counts as one that might later be
-  deleted. A posted message's ids are kept on a row whose identity is the posting or the thing
-  posted, never on a row a recalculation deletes or rewrites, where a reordering or a rebuild would
-  carry them off or drop them.
+  recorded can never be found again, to be edited or deleted. Where a module's specification takes
+  its output down when the module is switched off, every post in that output counts as one that
+  might later be deleted. A posted message's ids are kept on a row whose identity is the posting
+  or the thing posted, never on a row a recalculation deletes or rewrites, where a reordering or a
+  rebuild would carry them off or drop them.
 - **Who it may mention,** stated where it is sent. A log line's mentions are wrapped so that they
   name without notifying, but one: the stop notice's mention of the league admins' role
   (`OutputRouter.post_notice`), the one mention the log channel notifies. Who it mentions is the
