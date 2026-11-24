@@ -393,7 +393,7 @@ Core's settings, each of kind `core.setting.<name>`:
 | `/bot log-channel`, `/bot interaction-channel` | yes | none |
 | `/bot interaction-role`, `/bot admin-role` | yes | the hub's permissions set again |
 | `/bot base-role` | no | the modules told (`base_role_changed`), the hub's permissions, and the role granted to every driver where the season's configuration is fixed |
-| `/bot driver-role` | no | the role granted to every driver where the season's configuration is fixed |
+| `/bot driver-role` | no | the role granted to every driver where the season's configuration is fixed, with the signup module off to drivers holding a confirmed placement |
 | `/bot hub-channel` | yes | the old hub stood down and the new one's permissions set, then the panel's refresh asked |
 | `/division lineup-channel`, `/division calendar-channel` | yes | none |
 | `/test-mode nationality` | no | none |
@@ -829,6 +829,7 @@ Each is stated where it lives and pinned by the test named. The framework's are 
 | A placed driver's seat stops a division's delete | `delete_division_on` | `test_a_division_with_a_driver_placed_in_it_is_not_deleted` |
 | A reassign judges every refusal on its save's connection before it writes | `DriverService.reassign_judged_on`, `driver_changes`' docstring | `test_a_failed_driver_reassign_changes_nothing`, `test_a_refusal_found_inside_the_save_ends_the_reassign_and_the_lane_goes_on` |
 | `write_transition` is the one writer of a driver's state | `write_transition` | `test_every_reset_goes_through_the_transition_table` |
+| The signup-off widening of the transition table is Not Signed Up to Assigned alone | `write_transition` | `test_not_signed_up_to_assigned_is_allowed_only_with_signup_off` |
 | The driver has no ban states | `DriverState` | `test_the_driver_has_seven_states_and_no_ban_among_them` |
 | A fingerprint that cannot be taken is empty, and differs from every fingerprint | `season_fingerprint_service.take_fingerprint` | `test_a_fingerprint_that_could_not_be_taken_differs_from_everything` |
 | A review's expiry asked twice posts one notice | `season_review_changes.claim_take_down` | `test_a_review_expired_twice_at_once_posts_one_notice` |
@@ -962,9 +963,9 @@ What the reply of a discarded save needs is read into the payload at the ask (`f
 in a save stops the lane. What each kind judges and writes is its docstring's. A roster the file
 shows wrong on its own is refused by the form before the ask. A roster command is judged in no stage
 of the season, only on test mode being on and a season standing: a fake driver is created unsigned,
-and the signup and `/driver assign` after it, or `/driver assign` alone with the signup module off,
-carry every rule of the stage (`sign-up-bulk`, which
-makes the signup, being the exception, below). Removal asks whether the driver has raced through
+and the signup and `/driver assign` after it, or `/driver assign` alone with the signup module
+off, carry every rule of the stage (`sign-up-bulk`, which makes the signup, being the exception,
+below). Removal asks whether the driver has raced through
 core's reader of the divisions a driver raced in (`divisions_raced_read`) and the former-driver
 flag, and whether it holds a committed seat, never the results tables, so core reads no table
 another module owns.
@@ -987,11 +988,11 @@ queue's clock is passed in.
 
 **Fake drivers are seeded, not moved through the state machine.** `test_roster_service` inserts a
 fake driver at Not Signed Up with no seat, flagged as a test driver, with a synthetic id above any
-real Discord id; the signup, or with the signup module off `/driver assign` alone, then moves it through the state
-machine, and its docstring says why the insert bypasses `write_transition`. They are removed through
-`delete_driver_profiles`, keeping their history. A fake driver always has its row, so the
-test-mode guard of `PlacementService` reads a missing profile as a real member and refuses it
-(core specification, "Test mode").
+real Discord id; the signup, or with the signup module off `/driver assign` alone, then moves it
+through the state machine, and its docstring says why the insert bypasses `write_transition`. They
+are removed through `delete_driver_profiles`, keeping their history. A fake driver always has its
+row, so the test-mode guard of `PlacementService` reads a missing profile as a real member and
+refuses it (core specification, "Test mode").
 
 **Advancing reads one moment and asks the modules.** `advance_next_step` reads the next step and
 the steps passed over at one `now`, for the reason its docstring gives. Each module hands back its
