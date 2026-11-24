@@ -805,7 +805,9 @@ class SeasonService:
 def round_holding(
     rounds: Iterable[Round], moment: datetime, *, other_than: Round | None = None
 ) -> Round | None:
-    """The first of *rounds* standing at *moment*, other than *other_than*, or ``None``.
+    """The first of *rounds* holding *moment*, other than *other_than*, or ``None``.
+
+    A cancelled round holds no moment, so it is never returned.
 
     The one judge of a shared moment for every path that schedules a round of a division (core
     specification, "Rounds": two rounds of one division shall not be scheduled at the same
@@ -814,7 +816,16 @@ def round_holding(
     offset still clashes. *other_than* is the round being moved, which never clashes with itself.
     """
     skipped = None if other_than is None else other_than.id
-    return next((r for r in rounds if r.scheduled_at == moment and r.id != skipped), None)
+    return next(
+        (
+            r
+            for r in rounds
+            if r.scheduled_at == moment
+            and r.id != skipped
+            and r.status != RoundStatus.CANCELLED.value
+        ),
+        None,
+    )
 
 
 async def renumber_rounds_on(db: aiosqlite.Connection, division_id: int) -> None:
