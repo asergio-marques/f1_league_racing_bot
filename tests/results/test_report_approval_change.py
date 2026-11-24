@@ -441,16 +441,25 @@ async def test_the_sheet_is_not_put_on_the_old_retry_queue(tmp_path):
     assert await one(league.db_path, "SELECT COUNT(*) FROM pending_messages") == 0
 
 
-async def test_the_sheet_after_a_review_replaces_the_old_one_by_a_delete_job(tmp_path):
+@pytest.mark.parametrize("sheet_channel, posted_in", [
+    pytest.param(707, None, id="channel kept"),
+    pytest.param(708, 707, id="channel moved", marks=pytest.mark.xfail(
+        strict=True, reason="#607: the review deletes the old sheet from the division's present "
+        "channel, not the one it was posted in")),
+])
+async def test_the_sheet_after_a_review_replaces_the_old_one_by_a_delete_job(
+    tmp_path, sheet_channel, posted_in,
+):
     """Attendance is on, with its real hook (the placement service and the lineup poster
-    doubles: no sanction is owed). Pro's attendance channel 707 holds its sheet 8805, recorded as
-    the live one. Alex approves round 3's reports: the `attendance_sheet` job posts the new sheet
-    and its save records it, the old one still standing; then a `delete_message` job of the
-    review deletes the old sheet."""
+    doubles: no sanction is owed). Pro's sheet 8805 stands in channel 707, recorded as the live
+    one. Pro's attendance channel is still 707, or has moved to 708 with 8805 recorded as posted
+    in 707. Alex approves round 3's reports: the `attendance_sheet` job posts the new sheet in
+    Pro's attendance channel and its save records it, the old one still standing; then a
+    `delete_message` job of the review deletes the old sheet from 707, where it stands."""
     from leaguebot.attendance.services.hooks.attendance_after_review import AttendanceAfterReview
     from tests.support.review_league import channel
 
-    sheet_channel, old_sheet = 707, 8805
+    old_channel, old_sheet = 707, 8805
     placement = MagicMock()
     for name in ("sack_driver", "move_driver"):
         setattr(placement, name, AsyncMock(return_value=None))
@@ -461,22 +470,28 @@ async def test_the_sheet_after_a_review_replaces_the_old_one_by_a_delete_job(tmp
         attendance_hook=lambda bot, _db_path: AttendanceAfterReview(
             bot, placement, lineups=lineups),
     )
-    league.channels[sheet_channel] = channel(sheet_channel, league.events)
-    league.channels[sheet_channel].guild = league.guild
-    league.channel(sheet_channel).seed(old_sheet, "Pro's attendance sheet")
+    for cid in {old_channel, sheet_channel}:
+        league.channels[cid] = channel(cid, league.events)
+        league.channels[cid].guild = league.guild
+    league.channel(old_channel).seed(old_sheet, "Pro's attendance sheet")
     async with get_connection(league.db_path) as db:
         await db.execute(
             "INSERT INTO attendance_division_config (division_id, attendance_channel_id, "
             "attendance_message_id) VALUES (?, ?, ?)",
             (DIVISION_ID, str(sheet_channel), str(old_sheet)),
         )
+        if posted_in is not None:
+            await db.execute(
+                "UPDATE attendance_division_config SET attendance_message_channel_id = ? "
+                "WHERE division_id = ?", (str(posted_in), DIVISION_ID),
+            )
         await db.commit()
 
     await _approve(league, staged=[penalty(LEWIS)])
     await run_until_done(league, "attendance_sheet")
 
     [new] = league.sent_to(sheet_channel)
-    assert old_sheet in league.channel(sheet_channel).messages, "the old sheet went too soon"
+    assert old_sheet in league.channel(old_channel).messages, "the old sheet went too soon"
     assert await one(
         league.db_path,
         "SELECT attendance_message_id FROM attendance_division_config WHERE division_id = ?",
@@ -486,8 +501,8 @@ async def test_the_sheet_after_a_review_replaces_the_old_one_by_a_delete_job(tmp
     await run_queue(league.bot)
 
     assert await stopped_at(league) is None
-    assert [(kind, mid) for kind, cid, mid in league.events if cid == sheet_channel] == [
-        ("send", new), ("delete", old_sheet),
+    assert [event for event in league.events if event[1] in (old_channel, sheet_channel)] == [
+        ("send", sheet_channel, new), ("delete", old_channel, old_sheet),
     ]
     deletes = [row for row in await step_rows(league.db_path) if row["name"] == "delete_message"
                and str(old_sheet) in (row["payload"] or "")]
