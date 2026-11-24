@@ -461,6 +461,7 @@ async def test_a_list_it_cannot_sign_up_is_refused_at_the_ask_writing_nothing(
     else:
         assert [row["test_display_name"] for row in await _drivers(league)] == ["Mock Zero"]
         assert await _signups(league) == []
+        assert await audit_rows(league.db_path) == []
 
 
 @pytest.mark.xfail(strict=True, reason=_NOT_BUILT)
