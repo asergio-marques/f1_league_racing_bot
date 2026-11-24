@@ -1494,8 +1494,9 @@ async def test_the_shipped_race_template_is_measured_against_what_lies_behind_th
     """The race template the bot ships, per-tier colours off: the fastest-lap cells of odd
     rows sit on the canvas (`#0B0D10`) and those of even rows on a band (`#14171C`), and the
     lowest of the two is the figure. White reads worst on the lighter band and black on the
-    darker canvas, so the two together prove both grounds are marked; the plate behind the
-    fastest-lap block at the top right, also `#14171C`, is not what the colour is drawn on.
+    darker canvas, so the two together prove both grounds are marked. The plate behind the
+    fastest-lap block at the top right is the same `#14171C`, so this test cannot tell
+    whether it is measured; the packaged-resources test checks that it is not marked.
     The default purple warns at 3.39:1, which the owner accepted (#616, 2026-11-24)."""
     await _enable(module_service, config_service)
 
