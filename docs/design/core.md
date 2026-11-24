@@ -965,10 +965,9 @@ shows wrong on its own is refused by the form before the ask. A roster command i
 of the season, only on test mode being on and a season standing: a fake driver is created unsigned,
 and the signup and `/driver assign` after it, or `/driver assign` alone with the signup module
 off, carry every rule of the stage (`sign-up-bulk`, which makes the signup, being the exception,
-below). Removal asks whether the driver has raced through
-core's reader of the divisions a driver raced in (`divisions_raced_read`) and the former-driver
-flag, and whether it holds a committed seat, never the results tables, so core reads no table
-another module owns.
+below). Removal asks whether the driver has raced through core's reader of the divisions a driver
+raced in (`divisions_raced_read`) and the former-driver flag, and whether it holds a committed
+seat, never the results tables, so core reads no table another module owns.
 
 **`/test-mode roster sign-up-bulk` creates in core and signs up in signup.** The one roster command
 judged on the season's state: it is refused unless signups are open (core specification, "Fake
