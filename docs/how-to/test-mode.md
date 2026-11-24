@@ -21,7 +21,7 @@ This is a developer and maintainer document. For configuring a league, see [Conf
 
 There is no on/off parameter: the command reads the flag once, at the ask, and asks the change queue for the other state (`core.test_mode_toggle`, carrying `{"on": …}`). The acknowledgement names the direction ("⏳ Turning test mode on. …"), and a second press while the first is still waiting to start asks the same thing and is refused as a repeat, so two presses no longer flip it back. The refusals below are judged at the ask and again as the change starts. The new state is persisted to `server_configs.test_mode_active`, with a `TEST_MODE_SET` audit entry, so it survives a restart. A fault in the save stops the league lane until a league admin discards it, test mode left as it was; the reply then reads "Nothing was changed: test mode is still **off**. Run `/test-mode toggle` again." Every command below refuses unless the flag is set.
 
-**Test mode belongs to a season's configuration.** The toggle is refused unless the server holds a season in Configuration, so run `/season setup` first. `/season config-review` fixes test mode for the season once its button is pressed, and a test-mode season goes from Configuration to Waiting, as any season with the signup module on does, and opens its signup windows as any other. The roster commands that change fake drivers (`roster add`, `add-bulk`, `remove`, `clear`) run in any stage of the season.
+**Test mode belongs to a season's configuration.** The toggle is refused unless the server holds a season in Configuration, so run `/season setup` first. `/season config-review` fixes test mode for the season once its button is pressed, and a test-mode season goes from Configuration to Waiting, as any season with the signup module on does, and opens its signup windows as any other. The roster commands that change fake drivers (`roster add`, `add-bulk`, `remove`, `clear`) run in any stage of the season, `roster sign-up-bulk` apart, which runs only while signups are open.
 
 **A server holding real drivers cannot enter test mode.** Enabling is refused, naming the count, while any real driver profile stands at anything other than Not Signed Up — mid-signup, unassigned or assigned. A profile retained at Not Signed Up is a former driver who has left, and does not stand in the way. Every driver returns to Not Signed Up when a season ends, so a league can test in the next season's configuration before its real window opens.
 
@@ -146,6 +146,8 @@ While placements are open, `/driver assign` gives a seated fake driver a seat in
 
 **Signing a fake driver up.** `/signup start user:<mention or ID>` opens its signup, as the Sign Up button does for a member: a channel named from its test name plus `-signup`, a welcome naming it, and the driver at Pending Signup Completion. Any league admin then answers its wizard in that channel, by the buttons and by typing, each answer saved as the fake driver's own; a real driver's wizard still answers to nobody but its driver. The review, approval and rejection run as any signup's, and approval grants no role. It is refused for a real driver, while signups are closed, and for a fake driver already signing up or approved.
 
+**Signing a list up at once.** To build a grid without answering a wizard per driver, `/test-mode roster sign-up-bulk` takes `ID,Driver name,Nationality` rows, creates every driver and signs each up and approves it with default answers, leaving it Unassigned, while signups are open. See [Signing a whole roster up](#signing-a-whole-roster-up).
+
 No Discord account sits behind a synthetic driver, so `/images use-pfp` never obtains a
 portrait for one: their lineup seat draws whatever is in the driver image folder under their
 synthetic ID, and the packaged placeholder otherwise. That is deliberate — the fetch resolves
@@ -157,11 +159,12 @@ The response includes a **synthetic mention string** (`<@…>` with the fake pro
 |---|---|
 | `/test-mode roster add` | `driver_name` only. The bot allocates the ID |
 | `/test-mode roster add-bulk` | Opens a box. Paste `ID,Driver name` rows, header accepted, and it creates every driver at once |
+| `/test-mode roster sign-up-bulk` | Opens a box. Paste `ID,Driver name,Nationality` rows, header accepted, and it creates, signs up and approves every driver at once, while signups are open |
 | `/test-mode roster remove` | Takes the synthetic `user_id`, not a name. Refused mid-signup, and for a driver who has raced or holds a confirmed seat (`/driver sack` first) |
 | `/test-mode roster list` | Every fake driver, or one division's. The cheat sheet — every mention string, with state, the nationality its signup gave and each seat held. A long roster arrives as several messages, each one a complete table |
 | `/test-mode roster clear` | Empties one division of its fake drivers, refused whole where any has raced or holds a confirmed seat |
 
-**The four commands that change the roster are changes on the queue** (`core.test_roster_add`, `core.test_roster_add_bulk`, `core.test_roster_remove`, `core.test_roster_clear`, in `test_roster_changes`). Each answers first with the queue's acknowledgement ("⏳ Adding fake driver **Test Alpha**. …", "⏳ Adding 51 test drivers. …", "⏳ Removing fake driver …", "⏳ Clearing the fake drivers from **Pro**. …") and updates it once run. The refusals are judged at the ask and again as the change starts, and once more in the save, which ends the change in the same words, changing nothing, where one has come up since. A second identical request while the first is still waiting is refused as a repeat. One save writes the rows and an audit entry for each driver — `TEST_DRIVER_ADDED` (naming the driver and its ID) or `TEST_DRIVER_REMOVED`. A fault in the save stops the league lane until a league admin discards it, and the reply then says nothing was changed and to run the command again ("Nothing was removed: **Test Alpha** is still on the server. Run `/test-mode roster remove` again.").
+**The five commands that change the roster are changes on the queue** (`core.test_roster_add`, `core.test_roster_add_bulk`, `core.test_roster_sign_up_bulk`, `core.test_roster_remove`, `core.test_roster_clear`, in `test_roster_changes`). Each answers first with the queue's acknowledgement ("⏳ Adding fake driver **Test Alpha**. …", "⏳ Adding 51 test drivers. …", "⏳ Removing fake driver …", "⏳ Clearing the fake drivers from **Pro**. …") and updates it once run. The refusals are judged at the ask and again as the change starts, and once more in the save, which ends the change in the same words, changing nothing, where one has come up since. A second identical request while the first is still waiting is refused as a repeat. One save writes the rows and an audit entry for each driver — `TEST_DRIVER_ADDED` (naming the driver and its ID) or `TEST_DRIVER_REMOVED`. A fault in the save stops the league lane until a league admin discards it, and the reply then says nothing was changed and to run the command again ("Nothing was removed: **Test Alpha** is still on the server. Run `/test-mode roster remove` again.").
 
 Fake drivers show up in `/season placements-review`'s lineup block with their display name beside the mention, which is the quickest way to confirm a division is fully seated — provided the lineup is being shown as text. With the `lineup` image output switched on, the review draws the picture instead, which carries the driver's display name and not the mention; switch that output off, or use `/test-mode roster list`, to read the mentions back.
 
@@ -181,9 +184,21 @@ Paste the file — header row and all — into the box that opens. It creates ev
 
 **About two hundred drivers fit.** Discord caps the box at 4000 characters. A larger roster goes in two pastes, the import adding to the fake drivers the season already holds.
 
+### Signing a whole roster up
+
+`/test-mode roster sign-up-bulk` does what `add-bulk` does and then signs each driver up and approves it, so a test season with full grids needs one paste in place of a wizard per driver. It is a helper for building a fixture, not a way round the flow: it is **refused unless signups are open** (the season in Signups, or Ongoing with signups open), the signup module enabled and configured, and an availability slot set. To see the wizard itself, walk a driver through `/signup start`.
+
+```
+/test-mode roster sign-up-bulk
+```
+
+Paste three columns, `ID,Driver name,Nationality`, header optional, nationality blank for none, into the box that opens. Every driver ends Unassigned with no seat, holding an approved signup to the season and the open window: Steam, its name as its platform ID, every availability slot, Full-Time Driver, no preferred teams, teammate, lap times or notes. No channel, wizard, review panel, role, post or timer is made. A nationality is refused while `/test-mode nationality` is off. Seat each with `/driver assign` once signups close.
+
+It is one change on the queue (`core.test_roster_sign_up_bulk`), all or nothing, refused whole with every fault named for what `add-bulk` refuses and for the wrong width, an unknown nationality, and signups not being open. It writes one log line, and audit entries for each driver's addition, its signup's start and its approval, naming you. A save discarded after a fault creates no driver, and the reply says to run it again.
+
 ### Nationality
 
-A fake driver's nationality is only ever the one its signup gave, so it is asked in its wizard like a real driver's, and the flag resolves exactly as a real driver's does. The roster commands take none. A driver whose signup gave none is drawn without a flag rather than given `other.svg`.
+A fake driver's nationality is only ever the one its signup gave, so it is asked in its wizard like a real driver's, and the flag resolves exactly as a real driver's does. `roster add` and `add-bulk` take none; `sign-up-bulk` takes it from its list. A driver whose signup gave none is drawn without a flag rather than given `other.svg`.
 
 ```
 /test-mode nationality
@@ -193,7 +208,7 @@ flips whether the signup wizard asks a fake driver its nationality at all. It is
 
 > **A posting is blanked exactly as the preview is.** The switch is read before the driver's own value, so a fake driver whose signup gave a nationality loses its flag with everyone else's on a real posting, not only in `/images test`. Nothing need be rebuilt to see it.
 
-Generating a roster by hand is tedious, and `tools/data-generator/test-roster/` writes the `roster add` commands for you, and with `--record` the `roster.csv` that `add-bulk` takes. See [the generator's README](../../tools/data-generator/README.md).
+Generating a roster by hand is tedious, and `tools/data-generator/test-roster/` writes the `roster add` commands for you, and with `--record` the `roster.csv` that `add-bulk` takes and the `sign_up.csv` that `sign-up-bulk` takes. See [the generator's README](../../tools/data-generator/README.md).
 
 ### Attendance
 
@@ -283,7 +298,7 @@ Building a season to test one thing is slow, and testing the next thing usually 
 [`tests/e2e/`](../../tests/e2e/README.md) holds step-by-step specs of such a run, each step with the reply it expects, starting from [`00-base.md`](../../tests/e2e/00-base.md).
 
 1. `/season setup`, then `/test-mode toggle` while the season is in configuration — which seeds the points configurations on a server that holds none — and `/season config-review` to confirm it, which takes the season to waiting for its signup window, or straight to placements where the signup module is off.
-2. `/test-mode roster add` or `add-bulk` for the drivers, then `/signup open` (a fake driver is placed only after a signup, so the signup module must be on), `/signup start` for each, answer each wizard in its channel as a league admin, nationality included if you mean to look at the graphics, and approve each.
+2. `/test-mode roster add` or `add-bulk` for the drivers, then `/signup open` (a fake driver is placed only after a signup, so the signup module must be on), `/signup start` for each, answer each wizard in its channel as a league admin, nationality included if you mean to look at the graphics, and approve each. To build a grid quickly, `/signup open` first and then `/test-mode roster sign-up-bulk` in place of the roster command and the wizards.
 3. `/signup close`, which takes the season to placements.
 4. Build the divisions and calendar as normal. Filling a calendar by hand is tedious, and `tools/data-generator/calendar-data/` writes one for you — random circuits, a weekday and an evening slot per division, rounds a week apart — as the XML `/round add-xml` takes. See [the generator's README](../../tools/data-generator/README.md). **Keep every round still to come, and beyond the configured windows**: a round whose moment has passed is refused at confirmation whatever the modules, and a first round inside the check-in notice or a weather phase deadline is refused as well, test mode included. The generator's own dates, in the year after the run, clear them all.
 5. `/driver assign` seats each, **before** confirming placements. `/test-mode roster list` to collect the mention strings.
