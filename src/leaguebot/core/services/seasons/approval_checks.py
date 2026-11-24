@@ -25,12 +25,12 @@ import discord
 from leaguebot.framework.db.database import get_connection
 from leaguebot.core.models.channel_needs import EMBED, SEND, VIEW, Needs, attaching
 from leaguebot.core.models.division import Division
-from leaguebot.core.models.round import Round, RoundLead
+from leaguebot.core.models.round import Round, RoundLead, RoundStatus
 from leaguebot.core.services.seasons.approval_window_service import calendar_faults
 from leaguebot.core.services.seasons.confirmation_refusals import Confirmation, read_refusals
 from leaguebot.core.services.modules.image_drawing import DivisionTeams, ImageDrawing, TeamSeats
 from leaguebot.framework.services.switches.module_service import ModuleService, SwitchNotSignedUp
-from leaguebot.core.services.seasons.season_service import SeasonService
+from leaguebot.core.services.seasons.season_service import SeasonService, round_holding
 from leaguebot.core.services.drivers.team_service import TeamService, validate_team_name
 from leaguebot.core.utils.asset_slug import normalise
 from leaguebot.utils.messages import discord_ts
@@ -400,18 +400,21 @@ def duplicate_round_times(
     divisions: Sequence[Division], rounds_of: Mapping[int, Sequence[Round]]
 ) -> list[str]:
     """One line for each division in *divisions* holding two rounds at the same moment, naming
-    the first moment repeated, in the order given: no two rounds of a division may share one."""
+    the first moment repeated, in the order given: no two rounds of a division may share one.
+    A cancelled round holds no moment (`round_holding`), so it clashes with none."""
     problems: list[str] = []
     for division in divisions:
-        seen: set[datetime] = set()
+        earlier: list[Round] = []
         for round_ in rounds_of[division.id]:
-            if round_.scheduled_at in seen:
+            if round_.status == RoundStatus.CANCELLED.value:
+                continue
+            if round_holding(earlier, round_.scheduled_at) is not None:
                 problems.append(
                     f"**{division.name}** has multiple rounds scheduled at "
                     f"{discord_ts(round_.scheduled_at)}"
                 )
                 break
-            seen.add(round_.scheduled_at)
+            earlier.append(round_)
     return problems
 
 

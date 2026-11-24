@@ -313,7 +313,6 @@ def test_the_divisions_with_no_rounds_are_named_in_order():
     assert approval_checks.divisions_without_rounds(divisions[:1], {1: [_round(at)]}) == []
 
 
-@pytest.mark.xfail(strict=True, reason="#605: a cancelled round still holds its moment at approval")
 def test_a_division_holding_two_rounds_at_one_moment_is_named_once():
     """No two rounds of a division may share a moment. Pro holds three rounds, two at 19:00 on
     20 November, and Am two at different moments; the check names Pro once, with the moment

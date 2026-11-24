@@ -821,7 +821,7 @@ def round_holding(
             r
             for r in rounds
             if r.scheduled_at == moment
-            and r.id != skipped
+            and (skipped is None or r.id != skipped)
             and r.status != RoundStatus.CANCELLED.value
         ),
         None,
