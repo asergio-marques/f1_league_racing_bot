@@ -21,7 +21,8 @@ used for the server alone.
 architecture.md, "All or nothing in one step"): saved together or not at all, reading nothing but
 the connection it is handed, so a fault leaves the season in Configuration with nothing kept and
 the queue stops at it to retry. The season moves to Waiting where the signup module is on and test
-mode is off, test mode never opening a signup window, and to Placements otherwise; the
+mode or not (a season in test mode opens its signup windows as any other, that its fake drivers
+sign up through them), and to Placements otherwise; the
 "configuration confirmed" hook then hands each subscriber the save's connection, the season and the
 queue's clock, each checking its own module's switch, so that signup keeps its settings for the
 season with the stage that fixes them. A retry judges the confirmation again before it saves
@@ -224,11 +225,8 @@ def configuration_confirm_change(
             # A backstop: the check passed, and something wrote the database after it.
             return _refused(ctx, STAGE_REFUSAL)
 
-        cursor = await db.execute("SELECT test_mode_active FROM server_configs")
-        server = await cursor.fetchone()
         signup_on = await modules.is_enabled_on(db, "signup")
-        test_mode = server is not None and bool(server["test_mode_active"])
-        target = SeasonStage.WAITING if signup_on and not test_mode else SeasonStage.PLACEMENTS
+        target = SeasonStage.WAITING if signup_on else SeasonStage.PLACEMENTS
         await confirm_configuration_on(db, season_id, target)
         # Every subscriber is called, each checking its own module's switch on *db*.
         await configuration_confirmed.call(db, season_id, now())

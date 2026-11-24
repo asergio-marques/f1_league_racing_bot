@@ -56,6 +56,7 @@ from leaguebot.framework.services.queue.change_types import (
     StepContext,
 )
 from leaguebot.framework.utils.league_server import league_guild
+from leaguebot.signup.services.driver_naming import fake_name_of, mention_or_name, named_in_progress
 from leaguebot.signup.services.signup_posting import post, post_standing_message
 
 if TYPE_CHECKING:
@@ -220,7 +221,8 @@ async def ask_expiry(queue: "ChangeQueue", db_path: str, user_id: str) -> int | 
     return await queue.ask(
         END,
         {"user_id": user_id, "reason": EXPIRED, "channel_id": row["signup_channel_id"]},
-        what=f"ending the signup of <@{user_id}>, left unanswered for a day",
+        what=f"ending the signup of {await mention_or_name(db_path, user_id)}, "
+        "left unanswered for a day",
         origin=ChangeOrigin.BOT,
     )
 
@@ -241,7 +243,7 @@ async def ask_channel_delete(queue: "ChangeQueue", db_path: str, user_id: str) -
     return await queue.ask(
         DELETE_KIND,
         {"user_id": user_id, "channel_id": int(row["signup_channel_id"])},
-        what=f"deleting the signup channel of <@{user_id}>",
+        what=f"deleting the signup channel of {await mention_or_name(db_path, user_id)}",
         origin=ChangeOrigin.BOT,
     )
 
@@ -328,10 +330,9 @@ def closing_steps(
     async def signup_notice(ctx: StepContext) -> StepResult:
         channel = await _channel(ctx)
         if channel is None:
-            user_id = ctx.step_payload["user_id"]
+            who = await mention_or_name(ctx.db_path, ctx.step_payload["user_id"])
             lines = (
-                (f"{line_prefix} | {NO_CHANNEL_LEFT.format(who=f'<@{user_id}>')}",)
-                if line_prefix else ()
+                (f"{line_prefix} | {NO_CHANNEL_LEFT.format(who=who)}",) if line_prefix else ()
             )
             return StepResult(result={"no_channel": True}, lines=lines)
         mentions = discord.AllowedMentions(
@@ -388,13 +389,16 @@ def closing_steps(
             await hold_until_on(db, str(ctx.step_payload["user_id"]), datetime.fromisoformat(until))
 
     async def describe_notice(ctx: StepContext) -> str:
-        return f"telling <@{ctx.step_payload['user_id']}> that their signup has closed"
+        who = await mention_or_name(ctx.db_path, ctx.step_payload["user_id"])
+        return f"telling {who} that their signup has closed"
 
     async def describe_close(ctx: StepContext) -> str:
-        return f"closing the signup of <@{ctx.step_payload['user_id']}>"
+        who = await mention_or_name(ctx.db_path, ctx.step_payload["user_id"])
+        return f"closing the signup of {who}"
 
     async def describe_arm(ctx: StepContext) -> str:
-        return f"arming the deletion of <@{ctx.step_payload['user_id']}>'s signup channel"
+        who = await mention_or_name(ctx.db_path, ctx.step_payload["user_id"])
+        return f"arming the deletion of {who}'s signup channel"
 
     async def describe_reason(ctx: StepContext) -> str:
         return f"deleting the reason typed in <#{ctx.step_payload['channel_id']}>"
@@ -565,12 +569,14 @@ async def recover_gone_channels(bot: "LeagueBot", *, queue: "ChangeQueue") -> se
                 fetched = None
             if isinstance(fetched, discord.TextChannel):
                 continue
+            fake = await fake_name_of(bot.db_path, user_id)
             await ask_channel_gone(
                 queue,
                 user_id=user_id,
                 channel_id=channel_id,
-                named=await name_of_member(bot, int(user_id)),
+                named=fake or await name_of_member(bot, int(user_id)),
                 found=RESTART,
+                fake=fake,
             )
             asked.add(user_id)
         except discord.HTTPException:
@@ -614,7 +620,7 @@ async def recover_correction_timeouts(
         if row["discord_user_id"] in skip:
             continue
         try:
-            await ask_lapse(queue, row["discord_user_id"], restart=True)
+            await ask_lapse(queue, db_path, row["discord_user_id"], restart=True)
         except Exception:  # noqa: BLE001 - one driver's refused ask must not strand the rest
             log.exception(
                 "recover_correction_timeouts: could not ask the lapse of %s",
@@ -722,7 +728,9 @@ def closing_change(
     (``channel:<signup channel>``): the notice, the lock and the deletion's arming of a signup
     that has ended. The payload is ``user_id``, ``channel_id`` and ``notice``, and
     ``reason_message_id`` where a manager's typed reason (after Reject) is to come down first: the
-    notice gives the reason, so the message is deleted ahead of it."""
+    notice gives the reason, so the message is deleted ahead of it. ``fake_name`` is the driver's
+    test name where they are a fake driver and None otherwise: the change's in-progress text names
+    them by it, as that text is built from the payload alone."""
 
     def plan(payload: dict[str, Any]) -> tuple[PlannedStep, ...]:
         shared = {"user_id": str(payload["user_id"]), "channel_id": int(payload["channel_id"])}
@@ -752,7 +760,7 @@ def closing_change(
         steps=closing_steps(now=now, arm_once=arm_once),
         check=standing,
         key=lambda payload: f"{KIND}:{payload['user_id']}",
-        doing=lambda payload: f"Closing the signup of <@{payload['user_id']}>",
+        doing=lambda payload: f"Closing the signup of {named_in_progress(payload)}",
         outcome=outcome,
         lane=lambda payload: f"channel:{int(payload['channel_id'])}",
         writes=("signup_wizard_records",),

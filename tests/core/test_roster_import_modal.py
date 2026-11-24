@@ -7,7 +7,7 @@ refusal listing one fault per row of a fifty-one row file exceeds Discord's 2000
 limit, which refuses the whole message rather than truncating it: the manager would get no
 reply at all.
 
-What a submission seats, refuses and records, on the change queue, is in
+What a submission creates, refuses and records, on the change queue, is in
 test_test_mode_roster_add_bulk.
 """
 from __future__ import annotations
@@ -49,8 +49,6 @@ def _cog(*, test_mode: bool = True):
     cog.bot.config_service.get_server_config = AsyncMock(
         return_value=SimpleNamespace(test_mode_active=test_mode)
     )
-    # The stage the roster may change in has tests of its own (test_test_mode_roster_stage).
-    cog._refuse_roster_change_outside_placements = AsyncMock(return_value=False)
     # A log channel that can be written to, as an imported roster now writes a line there (#482).
     cog.bot.output_router.post_log = AsyncMock()
     return cog
@@ -86,13 +84,15 @@ async def test_the_command_is_refused_outside_test_mode():
 
 async def test_the_box_stays_within_discord_s_limits():
     """Every one of these is a 400 from Discord rather than a validation message, and the
-    placeholder limit in particular has caught this project before."""
+    placeholder limit in particular has caught this project before. The placeholder names the
+    two columns a roster takes, `ID,Driver name` (#600)."""
     modal = _RosterImportModal(_cog())
 
     assert len(modal.title) <= 45
     assert len(modal.csv_text.label) <= 45
     assert len(modal.csv_text.placeholder) <= 100
     assert modal.csv_text.max_length <= 4000
+    assert modal.csv_text.placeholder == "ID,Driver name"
 
 
 # ── Submitting it ─────────────────────────────────────────────────────────
@@ -124,7 +124,7 @@ def test_a_systematically_wrong_file_still_fits_in_one_message():
     """Fifty-one faults at full width exceed 2000 characters, and Discord refuses the
     whole message rather than truncating it — the manager would see no reply at all."""
     text = _format_roster_errors(
-        [f"Line {n}: `Martian` is not a nationality the bot knows." for n in range(1, 52)]
+        [f"Line {n}: expected 2 columns (ID, driver name) but found 5." for n in range(1, 52)]
     )
 
     assert len(text) < 2000

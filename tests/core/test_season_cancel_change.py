@@ -1008,7 +1008,12 @@ async def test_the_jobs_run_in_order(tmp_path):
     assert jobs[17:19] == [("flush_forecasts", None), ("end", None)]
     assert names[-2:] == ["discard_portraits", "close"]
     between = names[names.index("end") + 1:names.index("discard_portraits")]
-    assert set(between) <= {"signup_notice", "close_signup", "take_driver_role"}
+    assert (
+        between.count("swap_test_mode_commands")
+        == names.count("swap_test_mode_commands") == 1
+    )
+    assert set(between) <= {"signup_notice", "close_signup", "take_driver_role",
+                            "swap_test_mode_commands"}
     assert "discard_backup" not in names
     assert await _status(league) == "CANCELLED"
 

@@ -472,6 +472,10 @@ def _stub_discord(bot: Any, *, real_config: bool = False) -> None:
     # A message reached by id alone, as the views' recoveries reach theirs.
     bot.get_partial_messageable = MagicMock()
     bot.add_view = MagicMock()
+    # The command tree's syncs, which would reach Discord: recorded, answering that nothing was
+    # synced (#600). The `/driver` swap after a toggle or a season's end succeeds only where a
+    # test gives the bot the league's server; with none found, as here, it ends on a fault.
+    bot.tree.sync = AsyncMock(return_value=[])
     if real_config:
         return
     # The hub's channel is read from the database once, here, rather than fixed: a test that

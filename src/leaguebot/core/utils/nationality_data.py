@@ -2,8 +2,7 @@
 
 Maps lowercase nationality adjectives and lowercase country names to the canonical Title-Case
 adjective that is stored: a signup's nationality (`signup_records.nationality`) when the signup
-wizard reads it, and a test driver's (`driver_profiles.test_nationality`) when the test roster
-does. "other", in any case, is the universal fallback, stored as "Other".
+wizard reads it, a fake driver's included. "other", in any case, is the universal fallback, stored as "Other".
 """
 
 from __future__ import annotations

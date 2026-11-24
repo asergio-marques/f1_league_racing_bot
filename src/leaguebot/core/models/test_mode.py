@@ -4,6 +4,8 @@ Discord and no database.
 `TestModePart` is a module's answer to test mode turned on (`test_mode_turned_on`): the names of
 what it seeded for the season under test, which the toggle's reply and log line name, and the
 audit entries its writes recorded, which the toggle's save writes after its own.
+
+`FakeSignUp` is a fake driver `/test-mode roster sign-up-bulk` hands the modules to sign up.
 """
 
 from __future__ import annotations
@@ -23,3 +25,14 @@ class TestModePart:
 
     seeded: tuple[str, ...] = ()
     audits: tuple[AuditRecord, ...] = ()
+
+
+@dataclass(frozen=True)
+class FakeSignUp:
+    """A fake driver `/test-mode roster sign-up-bulk` has created and hands the modules to sign
+    up (`fake_signups_approved`): the driver's account, its test name and the nationality the
+    list gave it, or None where the list left it blank."""
+
+    discord_user_id: str
+    driver_name: str
+    nationality: str | None

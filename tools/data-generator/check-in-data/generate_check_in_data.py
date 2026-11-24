@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Random check-in generator — emits the blocks /attendance test rsvp expects.
 
-Drivers are read from roster.csv in the parent directory, written there by the sibling
+Drivers are read from seating.csv in the parent directory, written there by the sibling
 roster generator - this script invents nobody of its own, so the IDs it emits are the
 ones the bot actually holds.
 
@@ -37,7 +37,7 @@ import unicodedata
 SCRIPT_DIR = pathlib.Path(__file__).parent
 DATA_DIR = SCRIPT_DIR.parent
 
-CSV_PATH = DATA_DIR / "roster.csv"
+CSV_PATH = DATA_DIR / "seating.csv"
 
 INITIAL_TEMPLATE = "{slug}_initial.txt"
 CHANGED_TEMPLATE = "{slug}_changed.txt"
@@ -383,7 +383,7 @@ def write_lines(path, lines):
     """Write the lines to *path*, replacing whatever was there.
 
     These files are disposable per-run output rather than a shared contract like
-    roster.csv, so they are replaced without asking and without a backup.
+    seating.csv, so they are replaced without asking and without a backup.
     """
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 

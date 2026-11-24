@@ -28,7 +28,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
+from unittest.mock import MagicMock
 
+import discord
 import pytest
 
 from leaguebot.core.cogs import test_mode_cog
@@ -104,14 +106,22 @@ async def db_path(tmp_path):
 
 @pytest.fixture
 async def cog(db_path):
-    """The test-mode cog on the bot the entry point builds, its queue's "now" pinned; the
-    scheduler's job store sits beside the database, for the saved backup to be found."""
+    """The test-mode cog on the bot the entry point builds, on the league's server, found by id,
+    its queue's "now" pinned; the scheduler's job store sits beside the database, for the saved
+    backup to be found."""
     bot = await league_bot(db_path, real_config=True)
+    bot.get_guild = MagicMock(return_value=discord.Object(id=await _server_id(db_path)))
     bot.scheduler_service.jobstore_path = str(Path(db_path).with_name("scheduler.db"))
     league_queue(bot, db_path, now=Clock(NOW))
     made = test_mode_cog.TestModeCog.__new__(test_mode_cog.TestModeCog)
     made.bot = bot
     return made
+
+
+async def _server_id(db_path: str) -> int:
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT server_id FROM server_configs")
+        return int((await cursor.fetchone())["server_id"])
 
 
 async def _ask(cog) -> Any:
@@ -587,7 +597,8 @@ async def test_switching_test_mode_off_clears_the_forecasts_once_the_flag_reads_
     asks it once, inside the toggle's save and handed the save's connection, on which the flag
     already reads off. The jobs the parts hand back run as jobs of the toggle's own change after
     its save and before the saved backup's deletion: weather's `flush_forecasts`, which core
-    plans under no name of its own. No change of its own is asked of the queue."""
+    plans under no name of its own, beside the `/driver` swap that follows the save. No change of
+    its own is asked of the queue."""
     flag_when_called: list[bool] = []
 
     async def watching(db: Any, *_args: Any, **_kwargs: Any) -> tuple[()]:
@@ -605,9 +616,9 @@ async def test_switching_test_mode_off_clears_the_forecasts_once_the_flag_reads_
     assert flag_when_called == [False]
     changes = await change_rows(db_path)
     assert "weather.forecast.flush" not in [row["kind"] for row in changes]
-    assert [row["name"] for row in await step_rows(db_path, changes[-1]["id"])] == [
-        "save", "flush_forecasts", "discard_backup",
-    ]
+    names = [row["name"] for row in await step_rows(db_path, changes[-1]["id"])]
+    assert (names[0], names[-1]) == ("save", "discard_backup")
+    assert sorted(names[1:-1]) == ["flush_forecasts", "swap_test_mode_commands"]
     assert await stopped_job(db_path) is None
 
 

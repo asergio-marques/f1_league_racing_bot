@@ -22,7 +22,7 @@ import asyncio
 import os
 from datetime import timedelta
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
@@ -550,6 +550,291 @@ async def test_a_corrected_answer_commits_the_correction_and_posts_a_fresh_panel
     assert (after["id"], after["platform_id"]) == (before["id"], "kimi_new")
     assert await _driver_state(league) == "PENDING_ADMIN_APPROVAL"
     assert len(_panels(league)) == 1
+
+
+
+# ---------------------------------------------------------------------------
+# A fake driver's wizard, answered by a league admin (#600, D2, D13)
+# ---------------------------------------------------------------------------
+
+#: Mock Alpha's signup channel.
+MOCK_CHANNEL = 6499
+
+
+async def _mock_alpha_at(league: SeasonLeague, state: str,
+                         draft: dict[str, Any] | None = None) -> None:
+    """Mock Alpha, a fake driver (`test_wizard_changes.MOCK`), part-way through signing up beside
+    Kimi: Pending Signup Completion, no member of the server behind it, its wizard at *state*
+    holding *draft* and asking its nationality, in its own signup channel (`MOCK_CHANNEL`),
+    standing and recording what it is sent."""
+    from leaguebot.framework.db.database import get_connection
+    from leaguebot.signup.models.signup_module import (
+        ConfigSnapshot,
+        SignupWizardRecord,
+        WizardState,
+    )
+    from leaguebot.signup.services.signup_module_service import SignupModuleService
+    from tests.signup.test_wizard_changes import MOCK, MOCK_NAME
+
+    await league.write(
+        "INSERT INTO driver_profiles (discord_user_id, current_state, is_test_driver, "
+        "test_display_name) VALUES (?, 'PENDING_SIGNUP_COMPLETION', 1, ?)",
+        str(MOCK), MOCK_NAME,
+    )
+    league.absent.add(MOCK)
+    async with get_connection(league.db_path) as db:
+        await SignupModuleService(league.db_path).save_wizard_on(db, SignupWizardRecord(
+            id=-1,
+            discord_user_id=str(MOCK),
+            wizard_state=WizardState(state),
+            signup_channel_id=MOCK_CHANNEL,
+            config_snapshot=ConfigSnapshot(
+                nationality_required=True,
+                time_type="TIME_TRIAL",
+                time_image_required=False,
+                selected_track_ids=[],
+                slots=[],
+                team_names=["Alpha", "Beta"],
+            ),
+            draft_answers=dict(draft or {}),
+            current_lap_track_index=0,
+            last_activity_at=league.clock.now.isoformat(),
+        ))
+        await db.commit()
+    made = league._recording(channel(MOCK_CHANNEL, league.events))
+    made.guild = league.guild
+    made.posted = []
+    made.set_permissions = AsyncMock()
+    league.channels[MOCK_CHANNEL] = made
+
+
+def _signup_entries(league: SeasonLeague) -> list[str]:
+    """The log channel's entries written under "Signup", each whole as a reader sees it, the
+    backticks that keep a mention from notifying taken out."""
+    import re
+
+    log = league.log().replace("`", "")
+    return [entry for entry in re.split(r"\n?―+\n?", log) if "| Signup |" in entry]
+
+
+async def _typed_by(league: SeasonLeague, author: Any, channel_id: int, content: str) -> Any:
+    """*author* types *content* in the signup channel *channel_id*, and the signup cog hears it.
+    Gives the message."""
+    from leaguebot.signup.cogs.signup_cog import SignupCog
+
+    message = typed_message(league.channel(channel_id), author, content,
+                            created_at=league.clock.now)
+    message.guild = league.guild
+    cog = SignupCog.__new__(SignupCog)
+    cog.bot = league.bot
+    await cog.on_message(message)
+    return message
+
+
+async def _wizard_of(league: SeasonLeague, user_id: int) -> dict[str, Any]:
+    import json
+
+    [row] = await league.rows(
+        "SELECT * FROM signup_wizard_records WHERE discord_user_id = ?", str(user_id)
+    )
+    return dict(row, draft=json.loads(row["draft_answers_json"] or "{}"))
+
+
+async def test_a_league_admin_s_typed_answer_is_saved_on_the_fake_driver_s_wizard(tmp_path):
+    """The server is in test mode. Mock Alpha, a fake driver, is at the nationality question,
+    beside Kimi at his. The league admin Admin (77) types "British" in Mock Alpha's signup
+    channel. At once the message is marked ⏳ and one `signup.answer` change waits on the lane of
+    Mock Alpha's channel. When the queue runs, Mock Alpha's nationality is saved as British and
+    its wizard asks the platform question, posted in its channel; Kimi's wizard is untouched, and
+    no wizard is started or answered for the admin."""
+    from tests.signup.test_wizard_changes import MOCK
+    from tests.support.change_queue import tier_member
+    from tests.support.season_league import ADMIN_ID
+
+    league = await _league(tmp_path)
+    await _mock_alpha_at(league, "COLLECTING_NATIONALITY")
+    await league.set_test_mode(True)
+    kimi_before = await _wizard(league)
+
+    message = await _typed_by(
+        league, tier_member("admin", member_id=ADMIN_ID), MOCK_CHANNEL, "British"
+    )
+
+    assert MARK in message.marks
+    [change] = await _changes_of(league, ANSWER_KIND)
+    assert _lane(change) == f"channel:{MOCK_CHANNEL}"
+
+    await run_queue(league.bot)
+
+    mock = await _wizard_of(league, MOCK)
+    assert mock["draft"]["nationality"] == "British"
+    assert mock["wizard_state"] == "COLLECTING_PLATFORM"
+    assert any("Step 2 — Platform" in text for text in league.channel(MOCK_CHANNEL).texts)
+    assert await _wizard(league) == kimi_before
+    assert await league.rows(
+        "SELECT * FROM signup_wizard_records WHERE discord_user_id = ?", str(ADMIN_ID)
+    ) == []
+
+
+@pytest.mark.parametrize(
+    "fake,test_mode",
+    [(False, True), (True, False)],
+    ids=["a-real-driver-s-channel-under-test-mode", "a-fake-driver-s-channel-with-test-mode-off"],
+)
+async def test_a_league_admin_typing_in_a_wizard_not_theirs_to_answer_is_ignored(
+    tmp_path, fake, test_mode
+):
+    """Kimi, a real driver, and Mock Alpha, a fake driver, are each at the nationality question;
+    test mode is on or off as the case says. The league admin Admin (77) types "British" in
+    Kimi's channel under test mode, or in Mock Alpha's with test mode off. The message is not
+    marked, no `signup.answer` change is asked, and once the queue runs neither wizard has
+    changed."""
+    from tests.signup.test_wizard_changes import MOCK
+    from tests.support.change_queue import tier_member
+    from tests.support.season_league import ADMIN_ID
+
+    league = await _league(tmp_path)
+    await _mock_alpha_at(league, "COLLECTING_NATIONALITY")
+    await league.set_test_mode(test_mode)
+    before = (await _wizard(league), await _wizard_of(league, MOCK))
+
+    message = await _typed_by(
+        league, tier_member("admin", member_id=ADMIN_ID),
+        MOCK_CHANNEL if fake else KIMI_CHANNEL, "British",
+    )
+    await run_queue(league.bot)
+
+    assert MARK not in message.marks
+    assert await _changes_of(league, ANSWER_KIND) == []
+    assert (await _wizard(league), await _wizard_of(league, MOCK)) == before
+
+
+async def test_a_league_admin_s_press_on_a_fake_driver_s_wizard_is_saved_as_its_answer(tmp_path):
+    """The server is in test mode. Mock Alpha, a fake driver, has given its nationality and is at
+    the platform question. The league admin Admin (77) presses Steam on it, the view built for
+    Mock Alpha and handed the change queue, the signup service, the configuration service and the
+    driver service. At once the admin is answered privately that it is under way. When the queue
+    runs Mock Alpha's platform is saved as Steam and its wizard asks the platform ID, posted in
+    its channel. The answer's log line, "Platform: Steam", names Admin, who answered, and Mock
+    Alpha by its test name, and nothing in the log channel mentions Mock Alpha's ID."""
+    from leaguebot.signup.services.signup_views import PlatformButtonView
+    from tests.signup.test_wizard_changes import MOCK, MOCK_NAME
+    from tests.support.change_queue import tier_member
+    from tests.support.season_league import ADMIN_ID
+
+    league = await _league(tmp_path)
+    await _mock_alpha_at(league, "COLLECTING_PLATFORM", draft={"nationality": "British"})
+    await league.set_test_mode(True)
+
+    press = member_interaction(league.bot, user=tier_member("admin", member_id=ADMIN_ID))
+    press.guild = league.guild
+    press.channel_id = MOCK_CHANNEL
+    press.channel = league.channel(MOCK_CHANNEL)
+    view = PlatformButtonView(
+        str(MOCK), league.bot.change_queue, signup=league.bot.signup_module_service,
+        config=league.bot.config_service, drivers=league.bot.driver_service,
+    )
+    [button] = [child for child in view.children if getattr(child, "label", None) == "Steam"]
+    await button.callback(press)
+
+    assert acknowledgement(press).startswith("⏳")
+
+    await run_queue(league.bot)
+
+    mock = await _wizard_of(league, MOCK)
+    assert mock["draft"]["platform"] == "Steam"
+    assert mock["wizard_state"] == "COLLECTING_PLATFORM_ID"
+    assert any("Step 3 — Platform ID" in text for text in league.channel(MOCK_CHANNEL).texts)
+    [answered] = _signup_entries(league)
+    assert "Platform: Steam" in answered, answered
+    assert f"<@{ADMIN_ID}>" in answered and MOCK_NAME in answered, answered
+    assert f"<@{MOCK}>" not in league.log().replace("`", ""), league.log()
+
+
+async def test_a_stale_press_on_a_fake_driver_s_wizard_refused_as_it_runs_names_it_by_its_test_name(
+    tmp_path,
+):
+    """The server is in test mode. Mock Alpha, a fake driver, has answered its platform and is at
+    the platform ID question. A league admin's press of Steam on its platform question, asked
+    before the answer moved the wizard on, comes up as the queue runs it: the answer change's
+    judge job is run for that press, whose payload names the button and no owner. It is refused,
+    and its one log line names the step of Mock Alpha's signup wizard by its test name and
+    mentions no account by Mock Alpha's ID."""
+    from leaguebot.framework.services.queue.change_types import StepContext
+    from leaguebot.signup.services.wizard_answers import ANSWER, JUDGE, answer_change
+    from tests.signup.test_wizard_changes import MOCK, MOCK_NAME
+    from tests.support.season_league import ADMIN_ID
+
+    league = await _league(tmp_path)
+    await _mock_alpha_at(league, "COLLECTING_PLATFORM_ID",
+                         draft={"nationality": "British", "platform": "Steam"})
+    await league.set_test_mode(True)
+    bot = league.bot
+    change = answer_change(
+        signup=lambda: bot.signup_module_service, queue_of=lambda: bot.change_queue,
+        config=bot.config_service, drivers=lambda: bot.driver_service,
+        now=lambda: league.clock.now, arm_once=MagicMock(),
+    )
+    payload = {"user_id": str(MOCK), "channel_id": MOCK_CHANNEL, "button": "platform",
+               "value": "Steam"}
+
+    result = await change.steps[JUDGE].run(StepContext(
+        bot=bot, db_path=league.db_path, change_id=1, kind=ANSWER, payload=dict(payload),
+        what="an answer", actor_id=ADMIN_ID, actor_name="Admin", named=f"Admin (<@{ADMIN_ID}>)",
+        steps=(), step_name=JUDGE, step_payload=dict(payload),
+    ))
+
+    [line] = result.lines
+    assert f"step of {MOCK_NAME}'s signup wizard" in line, line
+    assert f"<@{MOCK}>" not in line, line
+
+
+async def test_a_league_admin_s_last_answer_submits_the_fake_driver_s_signup_for_review(tmp_path):
+    """The server is in test mode. Mock Alpha, a fake driver, has answered every question but its
+    notes, its draft naming it "Mock Alpha". The league admin Admin (77) types "Happy to race
+    anywhere" in Mock Alpha's signup channel, and the queue runs. Mock Alpha's signup is saved
+    under its ID with its test name and those notes, it is Pending Admin Approval, and one review
+    panel is posted in its channel, naming it "Mock Alpha" and mentioning no account by its ID;
+    no signup is saved for the admin. The log channel's Submitted line, and every other line
+    under "Signup", names Admin, who answered, and Mock Alpha by its test name, and nothing in the
+    log channel mentions Mock Alpha's ID."""
+    from tests.signup.test_wizard_changes import MOCK, MOCK_NAME
+    from tests.support.change_queue import tier_member
+    from tests.support.season_league import ADMIN_ID
+
+    league = await _league(tmp_path)
+    await _mock_alpha_at(league, "COLLECTING_NOTES", draft=dict(
+        ANSWERED_TO_NOTES, discord_username=MOCK_NAME, server_display_name=MOCK_NAME,
+    ))
+    await league.set_test_mode(True)
+
+    await _typed_by(
+        league, tier_member("admin", member_id=ADMIN_ID), MOCK_CHANNEL, "Happy to race anywhere"
+    )
+    await run_queue(league.bot)
+
+    [record] = await league.rows(
+        "SELECT * FROM signup_records WHERE discord_user_id = ?", str(MOCK)
+    )
+    assert (record["server_display_name"], record["notes"]) == (
+        MOCK_NAME, "Happy to race anywhere"
+    )
+    [profile] = await league.rows(
+        "SELECT current_state FROM driver_profiles WHERE discord_user_id = ?", str(MOCK)
+    )
+    assert profile["current_state"] == "PENDING_ADMIN_APPROVAL"
+    [panel] = [call for call in league.channel(MOCK_CHANNEL).send.call_args_list
+               if type(call.kwargs.get("view")).__name__ == "AdminReviewView"]
+    shown = str(panel.args[0] if panel.args else panel.kwargs.get("content"))
+    assert MOCK_NAME in shown and f"<@{MOCK}>" not in shown
+    assert await league.rows(
+        "SELECT * FROM signup_records WHERE discord_user_id = ?", str(ADMIN_ID)
+    ) == []
+    entries = _signup_entries(league)
+    assert [entry for entry in entries if "| Signup | Submitted" in entry], entries
+    for entry in entries:
+        assert f"<@{ADMIN_ID}>" in entry and MOCK_NAME in entry, entry
+    assert f"<@{MOCK}>" not in league.log().replace("`", ""), league.log()
 
 
 #: For each step, what Kimi types, and the refusal and step name the wizard gives him today.

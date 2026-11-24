@@ -689,24 +689,24 @@ class TestOneRuleForTheCloseTime:
         ],
     )
     async def test_open_and_add_refuse_the_same_input_the_same_way(self, bad, expected):
-        from leaguebot.signup.cogs import signup_cog
+        from leaguebot.signup.cogs import signup_commands
 
-        iso, error = signup_cog._parse_close_time(bad, now=NOW)
+        iso, error = signup_commands._parse_close_time(bad, now=NOW)
 
         assert iso is None
         assert expected in error
 
     async def test_a_naive_time_is_read_as_utc(self):
-        from leaguebot.signup.cogs import signup_cog
+        from leaguebot.signup.cogs import signup_commands
 
-        iso, error = signup_cog._parse_close_time("2026-06-08T20:00:00", now=NOW)
+        iso, error = signup_commands._parse_close_time("2026-06-08T20:00:00", now=NOW)
 
         assert error is None
         assert iso == FIXED_FUTURE
 
     async def test_open_routes_through_the_shared_parser(self, monkeypatch, tmp_path):
         """Not just the same rule by coincidence — the same function."""
-        from leaguebot.signup.cogs import signup_cog
+        from leaguebot.signup.cogs import signup_commands
 
         calls: list[str] = []
 
@@ -714,7 +714,7 @@ class TestOneRuleForTheCloseTime:
             calls.append(raw)
             return None, "❌ refused"
 
-        monkeypatch.setattr(signup_cog, "_parse_close_time", _spy)
+        monkeypatch.setattr(signup_commands, "_parse_close_time", _spy)
 
         db_path = await _seed(tmp_path, signups_open=False)
         cog = _cog(db_path)

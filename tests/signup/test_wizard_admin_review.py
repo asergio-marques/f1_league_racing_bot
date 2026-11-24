@@ -284,6 +284,96 @@ async def test_a_driver_role_granted_adds_nothing_to_the_approval(tmp_path):
                for line in _lines(league)), league.log()
 
 
+
+async def test_a_fake_driver_is_approved_with_no_role_and_then_seated_by_driver_assign(tmp_path):
+    """The server is in test mode, at Signups with the window open, the driver role (820) set.
+    Mock Alpha, a fake driver with no member of the server behind it, has submitted its signup
+    and awaits approval in its own signup channel. Manager 77 presses Approve on its review
+    panel and the queue runs: Mock Alpha is Unassigned, its signup marked approved, the Approved
+    line written naming Mock Alpha by its test name, and no role granted to anyone, while neither the manager's reply nor the log
+    channel says a role could not be granted. The window then closes and the season moves to
+    Placements, and McLaren in Am is given a second, free seat; the league admin Admin (77) runs the test-mode `/driver assign` of Mock Alpha, by
+    ID, to McLaren in Am, and the queue runs it: Mock Alpha holds a placement at McLaren in Am,
+    sits in a McLaren seat, and is Assigned."""
+    from leaguebot.signup.services.signup_views import AdminReviewView
+    from tests.core.test_driver_test_cog import _run_variant
+    from tests.signup.test_wizard_changes import MOCK, MOCK_NAME
+    from tests.support.season_league import MCLAREN
+
+    mock_channel = SIGNUP_CHANNEL_BASE + 99
+    league = await _league(tmp_path)
+    await league.set_test_mode(True)
+    await league.write(
+        "INSERT INTO driver_profiles (discord_user_id, current_state, is_test_driver, "
+        "test_display_name) VALUES (?, 'PENDING_ADMIN_APPROVAL', 1, ?)",
+        str(MOCK), MOCK_NAME,
+    )
+    league.absent.add(MOCK)
+    await league.write(
+        "INSERT INTO signup_wizard_records (discord_user_id, wizard_state, signup_channel_id, "
+        "draft_answers_json, created_at, last_activity_at) VALUES (?, 'UNENGAGED', ?, '{}', ?, ?)",
+        str(MOCK), mock_channel, league.clock.now.isoformat(), league.clock.now.isoformat(),
+    )
+    await league.write(
+        "INSERT INTO signup_records (created_at, season_id, discord_user_id, discord_username, "
+        "server_display_name, nationality, platform, platform_id, driver_type, lap_times_json) "
+        "VALUES ('2026-01-01T00:00:00+00:00', ?, ?, ?, ?, 'British', 'Steam', 'alpha1', "
+        "'Full-Time Driver', ?)",
+        SEASON_ID, str(MOCK), MOCK_NAME, MOCK_NAME, json.dumps(LAP_TIMES),
+    )
+    made = league._recording(channel(mock_channel, league.events))
+    made.guild = league.guild
+    made.posted = []
+    made.set_permissions = AsyncMock()
+    league.channels[mock_channel] = made
+
+    press = member_interaction(league.bot, user=_manager(league), created_at=league.clock.now)
+    press.guild = league.guild
+    press.channel_id = mock_channel
+    press.channel = made
+    view = AdminReviewView(str(MOCK), change_queue=league.bot.change_queue,
+                           **review_services(league.bot))
+    await view.approve_button.callback(press)
+    await run_queue(league.bot)
+
+    [profile] = await league.rows(
+        "SELECT id, current_state FROM driver_profiles WHERE discord_user_id = ?", str(MOCK)
+    )
+    assert profile["current_state"] == "UNASSIGNED"
+    [record] = await league.rows(
+        "SELECT approved FROM signup_records WHERE discord_user_id = ?", str(MOCK)
+    )
+    assert record["approved"] == 1
+    assert any("| Signup | Approved" in line for line in _lines(league)), league.log()
+    assert any(line.startswith("  driver:") and MOCK_NAME in line
+               for line in _lines(league)), league.log()
+    assert league.granted == {}
+    assert "could not be granted" not in updated_reply(press).lower()
+    assert "could not be granted" not in league.log().lower()
+
+    await league.write("UPDATE signup_module_config SET signups_open = 0")
+    await league.write("UPDATE seasons SET stage = 'PLACEMENTS' WHERE id = ?", SEASON_ID)
+    await league.write(
+        "INSERT INTO team_seats (team_instance_id, seat_number) VALUES (?, 2)", MCLAREN
+    )
+    await _run_variant(league, "assign", user=str(MOCK), division="Am", team="McLaren")
+    await run_queue(league.bot)
+
+    placed = await league.rows(
+        "SELECT d.name AS division, ti.name AS team FROM driver_season_assignments dsa "
+        "JOIN divisions d ON d.id = dsa.division_id "
+        "JOIN team_seats ts ON ts.id = dsa.team_seat_id "
+        "JOIN team_instances ti ON ti.id = ts.team_instance_id "
+        "WHERE dsa.driver_profile_id = ?", profile["id"],
+    )
+    assert [(row["division"], row["team"]) for row in placed] == [("Am", "McLaren")]
+    [state] = await league.rows(
+        "SELECT current_state FROM driver_profiles WHERE discord_user_id = ?", str(MOCK)
+    )
+    assert state["current_state"] == "ASSIGNED"
+    assert league.granted == {}
+
+
 async def test_a_league_with_no_driver_role_configured_still_approves(tmp_path):
     """No driver role is set for the league: Kimi is approved and given no role."""
     league = await _league(tmp_path)
@@ -710,3 +800,381 @@ async def test_each_signup_decision_writes_an_audit_entry(tmp_path, decide, afte
     assert entry["old_value"]["state"] == before
     assert entry["old_value"]["discord_user_id"] == str(SIGNING_UP)
     assert entry["new_value"]["new_state"] == after
+
+
+# ---------------------------------------------------------------------------
+# A fake driver's signup is named by its test name (#600)
+# ---------------------------------------------------------------------------
+
+#: Kimi's test name, where a case makes him a fake driver.
+MOCK_KIMI = "Mock Alpha"
+
+
+async def _as_mock(league: SeasonLeague) -> None:
+    """Kimi made a fake driver called Mock Alpha, no member of the server holding his ID, and the
+    server put in test mode."""
+    await league.write(
+        "UPDATE driver_profiles SET is_test_driver = 1, test_display_name = ? "
+        "WHERE discord_user_id = ?", MOCK_KIMI, str(SIGNING_UP),
+    )
+    league.absent.add(SIGNING_UP)
+    await league.set_test_mode(True)
+
+
+async def _mock_rejected(tmp_path: Any) -> SeasonLeague:
+    league = await _league(tmp_path)
+    await _as_mock(league)
+    await _type_reason(league, "reject", "Lap time unverified")
+    return league
+
+
+async def _mock_changes_requested(tmp_path: Any) -> SeasonLeague:
+    league = await _league(tmp_path)
+    await _as_mock(league)
+    await _type_reason(league, "request_changes", "Lap times look mistyped")
+    return league
+
+
+async def _mock_field_chosen(tmp_path: Any) -> SeasonLeague:
+    from datetime import timedelta
+
+    from tests.signup.test_review_changes import _league as offered_league
+    from tests.signup.test_review_changes import _press_choice
+
+    league = await offered_league(tmp_path, state="AWAITING_CORRECTION_PARAMETER",
+                                  offered_ago=timedelta(minutes=1))
+    await _as_mock(league)
+    await _press_choice(league)
+    await run_queue(league.bot)
+    return league
+
+
+async def _mock_withdrew(tmp_path: Any) -> SeasonLeague:
+    """Kimi, made Mock Alpha part-way through signing up; the league admin Admin (77) presses
+    Cancel Signup on his wizard, the view handed the services that judge who may answer it."""
+    from leaguebot.signup.services.signup_views import WithdrawButtonView
+    from tests.signup.test_wizard_changes import _mid_signup
+    from tests.support.change_queue import tier_member
+    from tests.support.season_league import ADMIN_ID
+
+    league = await _mid_signup(tmp_path)
+    await _as_mock(league)
+    press = member_interaction(league.bot, user=tier_member("admin", member_id=ADMIN_ID))
+    press.guild = league.guild
+    press.channel_id = KIMI_CHANNEL
+    press.channel = league.channel(KIMI_CHANNEL)
+    view = WithdrawButtonView(
+        str(SIGNING_UP), league.bot.change_queue, league.bot.signup_module_service,
+        config=league.bot.config_service, drivers=league.bot.driver_service,
+    )
+    await view.withdraw_button.callback(press)
+    await run_queue(league.bot)
+    return league
+
+
+async def _mock_cancelled(tmp_path: Any) -> SeasonLeague:
+    """Kimi, made Mock Alpha awaiting review; the league admin Admin (77) runs the test-mode
+    `/signup cancel` naming his ID and gives the reason "Signed up twice"."""
+    from tests.signup.test_signup_test_cog import _run_test_command
+    from tests.signup.test_wizard_changes import _submit_cancel
+
+    league = await _league(tmp_path)
+    await _as_mock(league)
+    asked = await _run_test_command(league, "signup cancel", str(SIGNING_UP))
+    await _submit_cancel(league, asked, "Signed up twice")
+    await run_queue(league.bot)
+    return league
+
+
+async def _mock_expired(tmp_path: Any) -> SeasonLeague:
+    from datetime import timedelta
+
+    from tests.signup.test_wizard_changes import (
+        INACTIVITY_TIMER as INACTIVITY,
+        _idle,
+        _league as wizard_league,
+        _timer_callback,
+    )
+
+    league = await wizard_league(tmp_path)
+    await _idle(league, SIGNING_UP, league.clock.now - timedelta(hours=24, minutes=1))
+    await _as_mock(league)
+    await _timer_callback(league, INACTIVITY)(str(SIGNING_UP))
+    await run_queue(league.bot)
+    return league
+
+
+async def _mock_cancel_refused_on_the_queue(tmp_path: Any) -> SeasonLeague:
+    """Kimi, made Mock Alpha awaiting review; the league admin Admin (77) runs the test-mode
+    `/signup cancel` naming his ID and submits the form, and before the queue runs it his signup
+    is approved, so that the queued cancellation is refused as it runs."""
+    from tests.signup.test_signup_test_cog import _run_test_command
+    from tests.signup.test_wizard_changes import _submit_cancel
+
+    league = await _league(tmp_path)
+    await _as_mock(league)
+    asked = await _run_test_command(league, "signup cancel", str(SIGNING_UP))
+    await _submit_cancel(league, asked, "Signed up twice")
+    await league.write(
+        "UPDATE driver_profiles SET current_state = 'UNASSIGNED' WHERE discord_user_id = ?",
+        str(SIGNING_UP),
+    )
+    await run_queue(league.bot)
+    return league
+
+
+async def _mock_rejection_stops_the_lane(tmp_path: Any) -> SeasonLeague:
+    """Kimi, made Mock Alpha awaiting review; manager 77 rejects it, typing the reason, and the
+    save of the job that ends the signup fails, so that the queue stops at it."""
+    from leaguebot.signup.services.closing_steps import END
+    from leaguebot.signup.services.wizard_changes import END_JOB
+    from tests.support.change_queue import refuse_the_job
+
+    league = await _league(tmp_path)
+    await _as_mock(league)
+    await refuse_the_job(league.db_path, END, END_JOB, True)
+    await _type_reason(league, "reject", "Lap time unverified")
+    return league
+
+
+async def _mock_channel_gone_stops_the_lane(tmp_path: Any) -> SeasonLeague:
+    """Kimi, made Mock Alpha awaiting review; his signup channel is deleted, the bot sees it go
+    and asks for his signup's end, and the save of the job that ends it fails, so that the queue
+    stops at it. The fault is lifted and a league manager presses Retry."""
+    from leaguebot.signup.cogs.signup_cog import SignupCog
+    from leaguebot.signup.services.closing_steps import END
+    from leaguebot.signup.services.wizard_changes import END_JOB
+    from tests.support.change_queue import refuse_the_job, retry_job
+
+    league = await _league(tmp_path)
+    await _as_mock(league)
+    await refuse_the_job(league.db_path, END, END_JOB, True)
+    gone = league.channel(KIMI_CHANNEL)
+    league.remove_channel(KIMI_CHANNEL)
+    cog = SignupCog.__new__(SignupCog)
+    cog.bot = league.bot
+    await cog.on_guild_channel_delete(gone)
+    await run_queue(league.bot)
+    await refuse_the_job(league.db_path, END, END_JOB, False)
+    await retry_job(league.bot, lane="league")
+    # What the channel was sent before it went stays readable, for the test to read.
+    league.channels[KIMI_CHANNEL] = gone
+    return league
+
+
+async def _mock_lapse_stops_the_lane(tmp_path: Any) -> SeasonLeague:
+    """Kimi, made Mock Alpha awaiting the choice of a field to correct; its five minutes run out
+    and the timer asks for the lapse, whose job telling his channel the correction lapsed fails
+    to be saved as done, so that the queue stops at it. A league admin presses Discard."""
+    from leaguebot.signup.services.review_changes import LAPSE, POST_LAPSE
+    from tests.signup.test_correction_parameter_timeout import _fire_the_timer
+    from tests.signup.test_correction_parameter_timeout import _league as lapsing_league
+    from tests.support.change_queue import refuse_the_job
+
+    league = await lapsing_league(tmp_path)
+    await _as_mock(league)
+    await refuse_the_job(league.db_path, LAPSE, POST_LAPSE, True)
+    await _fire_the_timer(league)
+    await run_queue(league.bot)
+    await discard_job(league.bot, lane="league")
+    return league
+
+
+async def _mock_stale_press(tmp_path: Any) -> SeasonLeague:
+    """Kimi, made Mock Alpha awaiting review, his wizard past its questions; the league admin
+    Admin (77) scrolls up his channel and presses Steam on the platform question, the view handed
+    the services that judge who may answer it, and the queue runs."""
+    from leaguebot.signup.services.signup_views import PlatformButtonView
+    from tests.support.change_queue import tier_member
+    from tests.support.season_league import ADMIN_ID
+
+    league = await _league(tmp_path)
+    await _as_mock(league)
+    press = member_interaction(league.bot, user=tier_member("admin", member_id=ADMIN_ID))
+    press.guild = league.guild
+    press.channel_id = KIMI_CHANNEL
+    press.channel = league.channel(KIMI_CHANNEL)
+    view = PlatformButtonView(
+        str(SIGNING_UP), league.bot.change_queue, signup=league.bot.signup_module_service,
+        config=league.bot.config_service, drivers=league.bot.driver_service,
+    )
+    [button] = [child for child in view.children if getattr(child, "label", None) == "Steam"]
+    await button.callback(press)
+    await run_queue(league.bot)
+    return league
+
+
+async def _mock_close_discarding(tmp_path: Any, job: str) -> SeasonLeague:
+    """Kimi, made Mock Alpha part-way through signing up, his signup channel standing; manager 77
+    runs `/signup close` and presses Confirm Close, and the save of Mock Alpha's *job* (telling
+    his channel signups have closed, locking it, or arming its deletion a day on) fails, so that
+    the queue stops at it. A league admin presses Discard."""
+    from tests.signup.test_window_changes import CLOSE_KIND, _close_league, _confirm_close
+    from tests.support.change_queue import refuse_the_job
+
+    league = await _close_league(tmp_path, SIGNING_UP)
+    await _as_mock(league)
+    await refuse_the_job(league.db_path, CLOSE_KIND, job, True)
+    await _confirm_close(league)
+    await run_queue(league.bot)
+    await discard_job(league.bot)
+    return league
+
+
+async def _mock_switch_off_discarding(tmp_path: Any) -> SeasonLeague:
+    """Kimi, made Mock Alpha part-way through signing up, his signup channel standing, the window
+    open and the season in Configuration; manager 77 runs `/module disable signup`, and the save
+    of the job telling Mock Alpha's channel signups have closed fails, so that the queue stops at
+    it. A league admin presses Discard."""
+    from unittest.mock import MagicMock
+
+    from leaguebot.core.cogs.module_cog import ModuleCog
+    from leaguebot.signup.services.closing_steps import SIGNUP_NOTICE
+    from tests.signup.test_window_changes import MODULE_OFF_KIND, _close_league
+    from tests.signup.test_window_changes import _manager as closing_manager
+    from tests.support.change_queue import refuse_the_job
+
+    league = await _close_league(tmp_path, SIGNING_UP, stage="CONFIGURATION")
+    await _as_mock(league)
+    await refuse_the_job(league.db_path, MODULE_OFF_KIND, SIGNUP_NOTICE, True)
+    cog = ModuleCog.__new__(ModuleCog)
+    cog.bot = league.bot
+    interaction = closing_manager(league)
+    interaction.command = MagicMock(qualified_name="module disable")
+    await cog._disable_signup(interaction)
+    await run_queue(league.bot)
+    await discard_job(league.bot)
+    return league
+
+
+async def _mock_approved(tmp_path: Any) -> SeasonLeague:
+    """Kimi, made Mock Alpha awaiting review; manager 77 approves it and the queue runs, closing
+    his signup channel."""
+    league = await _league(tmp_path)
+    await _as_mock(league)
+    await _approve(league)
+    return league
+
+
+async def _mock_approval_role_discarded(tmp_path: Any) -> SeasonLeague:
+    """Kimi, made Mock Alpha awaiting review; manager 77 approves it, and the save of the job
+    granting the driver role (which grants a fake driver nothing) fails, so that the queue stops
+    at it. A league admin presses Discard."""
+    from leaguebot.signup.services.review_changes import APPROVE, GRANT_ROLE
+    from tests.support.change_queue import refuse_the_job
+
+    league = await _league(tmp_path)
+    await _as_mock(league)
+    await refuse_the_job(league.db_path, APPROVE, GRANT_ROLE, True)
+    league.approval = await _approve(league)
+    await discard_job(league.bot, lane="league")
+    return league
+
+
+#: How a fake driver's signup is ended, sent back or refused; the words of each log entry it
+#: writes that must name it, one or several; and the words of the post its channel is sent naming
+#: it (None where the post names nobody).
+_FAKE_DRIVER_NAMED = [
+    pytest.param(_mock_approved, "| Signup | Approved", None, id="approve"),
+    pytest.param(_mock_approval_role_discarded, "| Signup | Approved", None,
+                 id="approval, its role job discarded"),
+    pytest.param(_mock_rejected, "| Signup | Rejected", "rejected by", id="reject"),
+    pytest.param(_mock_changes_requested, "| Signup | Correction requested",
+                 "requested a correction", id="request-changes"),
+    pytest.param(_mock_field_chosen, "Correction requested: ", "re-submit", id="field-choice"),
+    pytest.param(_mock_withdrew, "| Signup | Withdrawn", None, id="withdrawal"),
+    pytest.param(_mock_cancelled, "| Signup | Cancelled", "cancelled by", id="cancel"),
+    pytest.param(_mock_expired, "lapsed unconfirmed", None, id="24-hour lapse"),
+    pytest.param(_mock_cancel_refused_on_the_queue, "signup has already been approved", None,
+                 id="cancel refused on the queue"),
+    pytest.param(_mock_rejection_stops_the_lane, "The queue is stopped at job #", None,
+                 id="rejection stopping the lane"),
+    pytest.param(_mock_channel_gone_stops_the_lane,
+                 ("The queue is stopped at job #", "| Retried"), None,
+                 id="deleted channel's ending stopping the lane, retried"),
+    pytest.param(_mock_lapse_stops_the_lane,
+                 ("The queue is stopped at job #", "| Discarded"), None,
+                 id="correction lapse stopping the lane, discarded"),
+    pytest.param(_mock_stale_press, "button of Mock Alpha's signup wizard refused", None,
+                 id="stale button pressed by a league admin"),
+    pytest.param(lambda tmp_path: _mock_close_discarding(tmp_path, "signup_notice"),
+                 "failed_step: Mock Alpha was not told signups had closed.", None,
+                 id="close, telling the channel discarded"),
+    pytest.param(lambda tmp_path: _mock_close_discarding(tmp_path, "close_signup"),
+                 "failed_step: Mock Alpha's signup channel could not be locked", None,
+                 id="close, locking the channel discarded"),
+    pytest.param(lambda tmp_path: _mock_close_discarding(tmp_path, "arm_deletion"),
+                 "failed_step: Mock Alpha's signup channel will not delete itself", None,
+                 id="close, arming the channel's deletion discarded"),
+    pytest.param(_mock_switch_off_discarding,
+                 "failed_step: Mock Alpha was not told signups had closed.", None,
+                 id="signup switched off, telling the channel discarded"),
+]
+
+#: The signup changes whose in-progress text names the driver they are for: the closing of a
+#: signup on its channel, the offer of the correction choices, and the prompt to re-submit an
+#: answer. The queue's "under way" reply and its "has already been asked for" refusal each print
+#: a change's in-progress text, `ChangeType.doing` of its payload, word for word.
+_DOING_NAMES_THE_DRIVER = ("signup.closing", "signup.choices", "signup.recollect")
+
+
+@pytest.mark.parametrize(("decide", "logged", "posted"), _FAKE_DRIVER_NAMED)
+async def test_a_fake_driver_s_signup_is_named_by_its_test_name_and_never_by_its_id(
+    tmp_path, decide, logged, posted
+):
+    """The server is in test mode and Kimi is a fake driver called Mock Alpha, no member of the
+    server holding his ID. His signup is rejected or sent back for changes by manager 77 (typing
+    the reason), the field to correct is picked by 77, a league admin presses Cancel Signup on
+    his wizard, the league admin Admin (77) cancels it with the test-mode `/signup cancel` giving
+    a reason, or it lapses after 24 hours idle; or Admin's cancellation is refused as the queue
+    runs it, his signup approved meanwhile; or 77's rejection stops the queue, the save of the job
+    ending his signup failing; or his signup channel is deleted and the save of the ending fails,
+    a league manager pressing Retry once the fault is lifted; or his correction lapses and its job
+    telling his channel fails to be saved, a league admin pressing Discard; or Admin presses Steam
+    on his wizard's platform question after it has been answered; or, Kimi part-way through
+    signing up, manager 77 closes signups or switches the signup module off, and the job telling
+    his channel signups have closed, locking it or arming its deletion fails to be saved, a league
+    admin pressing Discard; the queue runs. Each log entry the case names (the refusal, the notice
+    of the stopped queue naming the job, the Retry and Discard lines, and the close's report of
+    each discarded job included) names Mock Alpha, and nothing in the log channel or in his signup
+    channel mentions his ID;
+    the rejection notice, the correction choices, the re-submit prompt and the cancellation
+    notice posted in his channel name Mock Alpha;
+    and the in-progress text of every change the case asked, which the queue's "under way" reply
+    and its "has already been asked for" refusal print, mentions no account by his ID, the
+    closing of his signup, the offer of his correction choices and the prompt to re-submit an
+    answer naming Mock Alpha."""
+    league = await decide(tmp_path)
+
+    log = league.log().replace("`", "")
+    entries = [entry.replace("`", "") for entry in league.bot.log_channel.sent]
+    for words in (logged,) if isinstance(logged, str) else logged:
+        assert [entry for entry in entries if words in entry and MOCK_KIMI in entry], log
+    assert f"<@{SIGNING_UP}>" not in log, log
+    texts = _texts(league)
+    assert not [text for text in texts if f"<@{SIGNING_UP}>" in text], texts
+    if posted is not None:
+        [post] = [text for text in texts if posted in text]
+        assert MOCK_KIMI in post, post
+    types = {change_type.kind: change_type for change_type in league.bot.change_queue.types}
+    for change in await change_rows(league.db_path):
+        doing = types[change["kind"]].doing(json.loads(change["payload"]))
+        assert f"<@{SIGNING_UP}>" not in doing, (change["kind"], doing)
+        if change["kind"] in _DOING_NAMES_THE_DRIVER:
+            assert MOCK_KIMI in doing, (change["kind"], doing)
+
+
+async def test_a_fake_driver_s_approval_with_its_role_job_discarded_notes_no_role(tmp_path):
+    """The server is in test mode and Kimi is a fake driver called Mock Alpha. Manager 77 approves
+    his signup, the save of the job granting the driver role fails and stops the queue, and a
+    league admin presses Discard. A fake driver is never granted a role, so neither the
+    "Approved" line nor the reply to 77 says the driver role could not be granted: the line names
+    Mock Alpha alone, and the reply is "✅ Signup approved."."""
+    league = await _mock_approval_role_discarded(tmp_path)
+
+    [approved] = [entry for entry in league.bot.log_channel.sent if "| Signup | Approved" in entry]
+    assert approved.replace("`", "").startswith(
+        "Admin (<@77>) | Signup | Approved\n  driver: Mock Alpha\n―"
+    ), approved
+    assert "could not be granted" not in league.log()
+    assert "could not be granted" not in updated_reply(league.approval)

@@ -51,10 +51,10 @@ Discord timestamp, `<t:<unix time>:F>`, which Discord shows in your own time zon
    - **Reply:**
      ```
      📦 **Saved backup**
-       Taken: <timestamp: the moment of 00-base.md step 33>
-       Size: <size: as in 00-base.md step 33> KB
+       Taken: <timestamp: the moment of 00-base.md step 38>
+       Size: <size: as in 00-base.md step 38> KB
        Readable: yes
-       Locked: locked by <your display name> at <the moment of 00-base.md step 34, ISO 8601>
+       Locked: locked by <your display name> at <the moment of 00-base.md step 39, ISO 8601>
      ```
      A `Readable:` other than `yes`, or the reply
      ``📭 There is no saved backup. Take one with `/test-mode backup save`.``, means the base must
@@ -67,7 +67,7 @@ Discord timestamp, `<t:<unix time>:F>`, which Discord shows in your own time zon
    **Expect:**
    - **Reply**, with two buttons, **♻️ Restore** and **Cancel**:
      ```
-     ⚠️ **Restore the backup taken <relative timestamp: when 00-base.md step 33 ran>?**
+     ⚠️ **Restore the backup taken <relative timestamp: when 00-base.md step 38 ran>?**
      Everything the bot holds now — seasons, rounds, drivers, results and every scheduled job — is replaced by what that backup holds. A copy of the current database is kept beside it first.
      **The bot must be restarted afterwards** to pick it up.
      ```

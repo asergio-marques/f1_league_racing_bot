@@ -83,6 +83,7 @@ from leaguebot.framework.models.change import (
 )
 from leaguebot.core.models.server_config import ServerConfig
 from leaguebot.core.services.settings.bot_settings import init_channel_refusals
+from leaguebot.core.services.test_mode.driver_commands import COMMANDS_NAMED
 from leaguebot.framework.services.queue.change_types import (
     ChangeType,
     CheckContext,
@@ -122,6 +123,12 @@ ANOTHER_SERVER = (
 
 #: The command as the line and the member's reply name it.
 COMMAND = "/bot init"
+
+#: What `/bot init` and `/bot factory-reset` add to their reply where the test-mode flag is on once
+#: they have run. Neither swaps the server's `/driver` and `/signup` commands
+#: (`swap_test_mode_commands`, which the toggle and a test season's end carry): a restart does, and
+#: the member is told so.
+DRIVER_RESTART = f"{COMMANDS_NAMED.capitalize()} will show correctly once the bot is restarted."
 
 #: The four settings `/bot init` claims: the column, the reply's label, and the line's own key
 #: for it. The reply names each by its mention alone; the line adds a role's name beside its
@@ -247,6 +254,8 @@ def _save(config: "ConfigService") -> Callable[[aiosqlite.Connection, StepContex
                 lines=(refusal_line(ctx.named, ctx.what, reply_reason(ALREADY_CONFIGURED)),),
             )
 
+        held = await config.get_server_config_on(db)
+        test_mode_on = held is not None and held.test_mode_active
         details = tuple(
             _line_detail(column, line_key, payload, claimed[column])
             for column, _label, line_key in _SETTINGS
@@ -255,7 +264,7 @@ def _save(config: "ConfigService") -> Callable[[aiosqlite.Connection, StepContex
             [f"{ctx.named} | {COMMAND} | Success", *(f"  {detail}" for detail in details)]
         )
         return StepResult(
-            result={"outcome": "saved", **claimed},
+            result={"outcome": "saved", "test_mode_active": test_mode_on, **claimed},
             audits=(
                 AuditRecord("BOT_INITIALISED", dict.fromkeys(claimed), claimed),
             ),
@@ -302,7 +311,8 @@ def _outcome(ctx: Any) -> str:
     lines = "\n".join(
         f"**{label}**: {_mention(column, saved[column])}" for column, label, _key in _SETTINGS
     )
-    return f"✅ Bot configuration saved!\n{lines}"
+    saved_reply = f"✅ Bot configuration saved!\n{lines}"
+    return f"{saved_reply}\n{DRIVER_RESTART}" if saved.get("test_mode_active") else saved_reply
 
 
 def bot_init_change(*, config: "ConfigService", drawing: "ImageDrawing") -> ChangeType:
@@ -325,4 +335,4 @@ def bot_init_change(*, config: "ConfigService", drawing: "ImageDrawing") -> Chan
     )
 
 
-__all__ = ["ALREADY_CONFIGURED", "ANOTHER_SERVER", "KIND", "bot_init_change"]
+__all__ = ["ALREADY_CONFIGURED", "ANOTHER_SERVER", "DRIVER_RESTART", "KIND", "bot_init_change"]

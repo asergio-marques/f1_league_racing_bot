@@ -113,15 +113,18 @@ async def test_division_teams_on_reads_as_get_division_teams_and_sees_its_own_co
     driver 5's, which has no placement row, is still read as held."""
     service = TeamService(league)
     expected = await service.get_division_teams(PRO)
+    # Every seat names whether its driver is a fake one, and its test name, which a real one lacks.
+    _REAL = {"is_test_driver": False, "test_display_name": None}
     alpha_seats = [
-        {"seat_number": 1, "driver_profile_id": 1, "discord_user_id": "101"},
-        {"seat_number": 2, "driver_profile_id": 2, "discord_user_id": "102"},
-        {"seat_number": 3, "driver_profile_id": 5, "discord_user_id": "105"},
+        {"seat_number": 1, "driver_profile_id": 1, "discord_user_id": "101", **_REAL},
+        {"seat_number": 2, "driver_profile_id": 2, "discord_user_id": "102", **_REAL},
+        {"seat_number": 3, "driver_profile_id": 5, "discord_user_id": "105", **_REAL},
     ]
     reserve = {
         "id": 1, "name": "Reserve", "full_name": "Reserve Pool", "max_seats": 2,
         "is_reserve": True,
-        "seats": [{"seat_number": 1, "driver_profile_id": 3, "discord_user_id": "103"}],
+        "seats": [{"seat_number": 1, "driver_profile_id": 3, "discord_user_id": "103",
+                   "is_test_driver": False, "test_display_name": "Test Three"}],
     }
     alpha = {
         "id": 2, "name": "Alpha", "full_name": "Alpha Motorsport", "max_seats": 2,
@@ -138,7 +141,7 @@ async def test_division_teams_on_reads_as_get_division_teams_and_sees_its_own_co
     assert renamed == [{**alpha, "full_name": "Alpha Racing"}, reserve]
     assert committed[0]["seats"] == [
         alpha_seats[0],
-        {"seat_number": 2, "driver_profile_id": None, "discord_user_id": None},
+        {"seat_number": 2, "driver_profile_id": None, "discord_user_id": None, **_REAL},
         alpha_seats[2],
     ]
     assert committed[1] == reserve

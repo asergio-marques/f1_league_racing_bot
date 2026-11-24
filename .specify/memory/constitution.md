@@ -1,6 +1,54 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-11-24 — v14.18.0 → v14.18.1: PATCH — a team's shorthand is no longer typed in a test roster (issue #600)]
+  Version change    : 14.18.0 → 14.18.1
+  Bump rationale    : PATCH: a stale example corrected. A test roster carries no team since fake
+                      drivers are created from an identifier and a name alone and placed by
+                      `/driver assign`; the rule itself (a team is typed by its shorthand alone) is
+                      unchanged.
+
+  Modified sections :
+    - Data & State Management, A team's three names: "and in a test roster" dropped from where a
+      shorthand is typed.
+
+  Added sections    : none.
+  Removed sections  : none.
+  Templates checked : .specify/templates/*.md cite principles by number only — no change needed.
+  Documents to follow: none; the core specification already says a test roster carries no team.
+  Deferred / TODO   : none.
+
+[2026-11-23 — v14.17.0 → v14.18.0: MINOR — test mode's fake drivers sign up like any driver (issue #600)]
+  Version change    : 14.17.0 → 14.18.0
+  Bump rationale    : MINOR, sized by how much it matters: the owner's decisions of 2026-11-23
+                      on #600 change what test mode may do — a test season opens signup windows,
+                      and a fake driver is no longer placed directly but signs up and is placed
+                      as any driver is. No principle is added or removed.
+
+  Modified sections :
+    - Principle I, Tier 1 — league admin: the test-mode forms of `/driver` and `/signup` keep
+      the member forms' tiers, `/signup start` excepted.
+    - Principle VIII, Test-mode overrides: the direct assignment of Not Signed Up drivers to
+      Unassigned or Assigned removed; a driver created by test mode comes into being Not Signed
+      Up and reaches every other state through a signup of its own.
+    - Principle XI, Signups belong to a season: "A season in test mode MUST NOT open a signup
+      window" replaced; a test season opens its windows, and a real member's press is refused.
+    - Principle XI, Channel lifecycle: a fake driver's channel named from its test name, seen by
+      league managers and league admins alone.
+    - Data & State Management, DriverSeasonAssignment: the admin direct-assign in test mode
+      removed.
+    - The nationality-to-country map's neighbour named at `core/utils/nationality_data.py`, where
+      it has stood since the layering move (#564).
+
+  Added sections    : none.
+  Removed sections  : none.
+  Templates checked : .specify/templates/*.md cite principles by number only — no change needed.
+  Documents to follow: none; docs/wip-specs/core_specification.md ("Test mode", "The states of a
+                      driver", "Fake drivers and rosters") and
+                      docs/wip-specs/signup_module_specification.md ("Wizard flow") already hold
+                      the rules.
+  Deferred / TODO   : none.
+
 [2026-11-18 — v14.16.1 → v14.17.0: MINOR — Principle VIII: the Permitted Transitions table removed, the core specification its one home (issue #502)]
   Version change    : 14.16.1 → 14.17.0
   Bump rationale    : MINOR, sized by how much it matters: a rule moves out of the constitution
@@ -5580,8 +5628,9 @@ both tiers, the factory reset, as stated below.
 2. **Tier 1 — league admin**: held by the configured **league admin role**. A league admin
    governs what the bot is upon the server and everything that may undo a league entire:
    initialising the bot and repairing its four settings, packing the bot for another server,
-   enabling and disabling a module, every command of test mode, and every command that
-   destroys what a league is built from where nothing puts it back.
+   enabling and disabling a module, every command of test mode (save the test-mode forms of
+   `/driver` and `/signup`, which keep the member forms' tiers, `/signup start` excepted), and
+   every command that destroys what a league is built from where nothing puts it back.
 
 The league admin role MUST carry the league manager tier within it: a member holding it
 commands the bot without also holding the interaction role. Where this constitution does not
@@ -5990,8 +6039,10 @@ stewarding module, which will bring the bar together with the commands that impo
   hold a seat or a signup in the live season or both took part in one season's division. The
   driver's roles and any held signup channel MUST move to the current account.
 - **Test-mode overrides**: When test mode is active, league admins MAY directly set
-  `former_driver` to `true` or `false`, and MAY assign *Not Signed Up* drivers directly to
-  *Unassigned* or *Assigned*. All such overrides MUST produce audit log entries.
+  `former_driver` to `true` or `false`. Such an override MUST produce an audit log entry. A
+  driver created by test mode MUST come into being *Not Signed Up*, with no seat and no signup,
+  and MUST reach every other state as any driver does: through a signup of its own and a
+  placement after its approval.
 - **Absent profile semantics**: A Discord user with no database record is treated as
   *Not Signed Up*. The bot MUST NOT error or warn on absence — absence is the canonical
   default.
@@ -6014,8 +6065,8 @@ point:
   whenever that configuration is read or written and none is present.
 - **A team's three names**: A team MUST carry a **full name**, a **shorthand** and a **role**,
   and each MUST do one job and no other. The **full name** is what is shown wherever a team is
-  named to a league. The **shorthand** is the only text by which a team is typed — in a command,
-  in the team column of a results submission, and in a test roster — and is the datum its artwork
+  named to a league. The **shorthand** is the only text by which a team is typed — in a command
+  and in the team column of a results submission — and is the datum its artwork
   is named after. The **role** is granted to the team's drivers and is what the team is mentioned
   by; it MUST NOT name a team where one is typed. A command taking a team SHOULD offer the
   shorthands as the manager types, each suggestion carrying the full name beside it. Text that is
@@ -6214,7 +6265,9 @@ lifecycle state (Principle VIII). The following rules are non-negotiable:
   signups waits on the queue.
 - **Channel lifecycle**:
   - On wizard start, the bot MUST create a private channel named `<username>-signup`, visible
-    only to the driver, league managers, and league admins.
+    only to the driver, league managers, and league admins. For a driver created by test mode,
+    which has no account on the server, the channel MUST be named from its test name and be
+    visible to league managers and league admins alone.
   - The channel MUST be deleted after a 24-hour hold period following any terminal event
     (approval, rejection, withdrawal, or timeout cancellation). During the hold period the
     channel is read-only for the driver.
@@ -6254,7 +6307,9 @@ lifecycle state (Principle VIII). The following rules are non-negotiable:
   A signup window MUST open only while the season is in Waiting or Ongoing, and opening it moves
   the season to Signups or Ongoing signups. Closing it, by any route, MUST move the season to
   Placements, or mid-season to Ongoing placements where any signup is unsettled and to Ongoing
-  where none is. A season in test mode MUST NOT open a signup window.
+  where none is. A season in test mode opens its signup windows as any other; only drivers
+  created by test mode sign up in them, and a real member's press of the signup button MUST be
+  refused while test mode is on.
 - **Image proof validation (configurable)**: When `time_image_required` is enabled, every
   lap-time submission MUST include an attached image; text-only submissions MUST be rejected
   with a clear explanation. The requirement MUST be stated in the channel before each
@@ -8624,8 +8679,7 @@ to a client-server RDBMS (e.g., PostgreSQL) should be evaluated.
 - `is_historical` (BOOLEAN, default false — set to `true` on season completion)
 - A driver's final points and position are not held here: they are held on each history
   entry (`driver_history_entries`), written in the season-end save.
-- Rows are created on first `/driver assign` for a season, or on admin direct-assign in
-  test mode.
+- Rows are created on first `/driver assign` for a season.
 
 *Note: `current_points`, `current_position`, and `points_gap_to_leader` fields previously
 defined here (v2.3.0 draft) are superseded; authoritative live standings state is now
@@ -8789,7 +8843,7 @@ is recorded here so that it is not re-derived as a schema one.
 - `Track.country` is read as it stands. It has been an entity field since v2.9.0 and is now the
   datum a round's flag resolves by; nothing about the registry changes.
 - The **nationality-to-country map** is a module-shipped constant, not a table. It belongs beside
-  `image/utils/nationality_data.py`, whose `NATIONALITY_LOOKUP` already carries every country name the
+  `core/utils/nationality_data.py`, whose `NATIONALITY_LOOKUP` already carries every country name the
   map needs as a key of its own — the obligation is to state the correspondence in the opposite
   direction, adjective to country, and to leave no canonical adjective out of it. Its totality is
   a unit-test obligation (Rule 13).
@@ -9130,4 +9184,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 14.17.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-11-18
+**Version**: 14.18.1 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-11-24

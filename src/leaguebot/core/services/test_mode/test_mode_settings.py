@@ -3,9 +3,9 @@
 `/test-mode nationality` asks one change built from the `Setting` below by `setting_change`
 (`framework/services/queue/setting_change.py`, which holds what every settings change does with a value
 already held and with a fault). While test mode is active the switch stands in for the signup
-one everywhere the image module asks whether the league collects nationality, so the graphics of
-a server under test may be seen with flags and without them without the setting real signups run
-on being touched. It is core's, whatever modules are on, so it waits its turn on the league lane
+one: it decides whether a fake driver's signup wizard asks nationality, and so whether the
+graphics of a server under test show flags, without the setting real signups run on being
+touched. A fake driver's nationality is only ever the one its signup gave. It is core's, whatever modules are on, so it waits its turn on the league lane
 like any other change rather than overtaking a stop.
 
 **The change carries the state it sets, never a flip.** The command reads the switch once, to
@@ -93,9 +93,9 @@ def test_mode_nationality_setting(*, config: "ConfigService") -> Setting:
             state = "ON" if value else "OFF"
             return f"ℹ️ Nothing changed: test-mode nationality is already **{state}**."
         note = (
-            "Mock drivers may be given one with `/test-mode roster add`."
+            "The signup wizard asks a fake driver's nationality."
             if value
-            else "Mock drivers already holding one keep it, and graphics draw no flag at all."
+            else "The signup wizard does not ask it, and graphics draw no flag at all."
         )
         return f"✅ Test-mode nationality: **{'ON' if value else 'OFF'}**.\n{note}"
 

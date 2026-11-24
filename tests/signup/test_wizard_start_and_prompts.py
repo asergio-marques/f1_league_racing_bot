@@ -123,7 +123,10 @@ def _service(
     # Built as the builder builds it, handed the signup module service it reads wizards through
     # and passes to the views it makes (#286), the bot then carrying none of its own.
     bot.signup_module_service = None
-    return WizardService(":memory:", signup, change_queue=MagicMock(), bot=bot)
+    return WizardService(
+        ":memory:", signup, change_queue=MagicMock(), config=bot.config_service,
+        drivers=bot.driver_service, bot=bot,
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -47,7 +47,8 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
-from leaguebot.signup.cogs.signup_cog import ConfirmCloseView, SignupCog
+from leaguebot.signup.cogs.signup_cog import SignupCog
+from leaguebot.signup.cogs.signup_commands import ConfirmCloseView
 from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.signup.services.signup_module_service import SignupModuleService
 from tests.support.change_queue import (
@@ -367,24 +368,40 @@ async def test_opening_signups_posts_the_button_and_records_the_window(tmp_path)
     assert await _is_open(db_path)
 
 
-async def test_opening_signups_moves_a_waiting_season_to_signups(tmp_path):
-    """Issue #220: the window belongs to the season, and opening it moves the season on."""
+#: Test mode off, and on: a season configured in test mode opens signup windows as any other
+#: (#600), so that its fake drivers sign up through them.
+_TEST_MODE_OR_NOT = [
+    pytest.param(False, id="test mode off"),
+    pytest.param(True, id="test mode on"),
+]
+
+
+@pytest.mark.parametrize("test_mode", _TEST_MODE_OR_NOT)
+async def test_opening_signups_moves_a_waiting_season_to_signups(tmp_path, test_mode):
+    """Issue #220: the window belongs to the season, and opening it moves the season on. The
+    season is in Waiting, the server in test mode or not; `/signup open` opens the window, and
+    the season is in Signups."""
     from leaguebot.core.services.seasons.season_lifecycle_service import live_season_stage
 
-    db_path = await _seed(tmp_path)
+    db_path = await _seed(tmp_path, test_mode=test_mode)
 
     await _open(await _cog(db_path), _interaction())
 
+    assert await _is_open(db_path)
     assert (await live_season_stage(db_path))[1].value == "SIGNUPS"
 
 
-async def test_opening_mid_season_moves_the_season_to_ongoing_signups(tmp_path):
+@pytest.mark.parametrize("test_mode", _TEST_MODE_OR_NOT)
+async def test_opening_mid_season_moves_the_season_to_ongoing_signups(tmp_path, test_mode):
+    """The season is Ongoing, the server in test mode or not; `/signup open` opens the window,
+    and the season is in Ongoing Signups."""
     from leaguebot.core.services.seasons.season_lifecycle_service import live_season_stage
 
-    db_path = await _seed(tmp_path, stage="ONGOING")
+    db_path = await _seed(tmp_path, stage="ONGOING", test_mode=test_mode)
 
     await _open(await _cog(db_path), _interaction())
 
+    assert await _is_open(db_path)
     assert (await live_season_stage(db_path))[1].value == "ONGOING_SIGNUPS"
 
 
@@ -560,7 +577,6 @@ def _lines(cog) -> list[str]:
 #: Every refusal `/signup open` makes: how the server is seeded, how the interaction is built,
 #: the arguments, and a fragment of the reply.
 SIGNUP_OPEN_REFUSALS = [
-    pytest.param({"test_mode": True}, {}, {}, "test mode", id="test-mode"),
     pytest.param({"config": False}, {}, {}, "not configured", id="not-configured"),
     pytest.param({"signups_open": True}, {}, {}, "already open", id="already-open"),
     pytest.param({"stage": "PLACEMENTS"}, {}, {}, "can only be opened", id="wrong-stage"),
@@ -582,8 +598,6 @@ async def test_every_signup_open_refusal_reaches_the_log_channel(
     """Each refusal answers the manager as before, opens nothing, leaves the window as it stood
     (closed, or open for the already-open case), and writes one line in the standard form.
 
-    - Under test mode no real driver may sign up, so a window opened then is one nobody could
-      use.
     - Opening twice would post a second button and leave the first standing.
     - The wizard asks which slots a driver is available for; with none configured that question
       has no answers and the driver could not finish.
@@ -692,11 +706,25 @@ async def test_every_in_progress_state_forces_a_confirmation(tmp_path, state):
 
 
 async def test_the_confirmation_counts_and_names_the_drivers(tmp_path):
+    """Under test mode, Lewis (7000) is filling the wizard in and Max (7001) awaits approval, both
+    members of the server, and the fake driver Mock Alpha (7002), no member holding its ID, is
+    filling its wizard in. The manager runs `/signup close`. The confirmation says the close will
+    return 2 drivers to Not Signed Up, naming Lewis and Mock Alpha by its test name and never by
+    its ID, and that Max keeps his place."""
     db_path = await _seed(
         tmp_path,
         signups_open=True,
-        in_progress=("PENDING_SIGNUP_COMPLETION", "PENDING_ADMIN_APPROVAL"),
+        test_mode=True,
+        in_progress=(
+            "PENDING_SIGNUP_COMPLETION", "PENDING_ADMIN_APPROVAL", "PENDING_SIGNUP_COMPLETION",
+        ),
     )
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "UPDATE driver_profiles SET is_test_driver = 1, test_display_name = 'Mock Alpha' "
+            "WHERE discord_user_id = '7002'"
+        )
+        await db.commit()
     lewis, max_ = MagicMock(), MagicMock()
     lewis.display_name = "Lewis"
     max_.display_name = "Max"
@@ -705,8 +733,10 @@ async def test_the_confirmation_counts_and_names_the_drivers(tmp_path):
     await _close(await _cog(db_path), interaction)
 
     returned, kept = _replied(interaction).split("keep their place")
-    assert "return 1 driver(s) to Not Signed Up" in returned
+    assert "return 2 driver(s) to Not Signed Up" in returned
     assert "Lewis" in returned
+    assert "Mock Alpha" in returned
+    assert "7002" not in returned
     assert "Max" in kept
 
 

@@ -1,7 +1,9 @@
 """`/test-mode set-former-driver` on the change queue (#283).
 
-The command is a change on the league's lane: the driver named at the ask by the account the
-league admin picked, the value carried with it, the queue's acknowledgement its first reply, and
+The command is a change on the league's lane: the driver named at the ask by the text the league
+admin typed, a mention or an ID of any account the driver has held, so that a fake driver, which no
+Discord member field can carry, is named as a real one is (#600); text naming no driver is refused
+at the ask, naming what was typed. The value is carried with it, the queue's acknowledgement its first reply, and
 one save setting the driver's former-driver flag and writing its `TEST_FORMER_DRIVER_FLAG_SET`
 audit entry, stamped with the queue's clock, then the reply and the line in the words the command
 used before the queue. Test mode, and a profile for the account named, are judged at the ask and
@@ -10,13 +12,16 @@ stops the league's lane, as any change's does, with nothing saved; once a league
 the stopped job, the reply says nothing was changed and to run the command again.
 
 These run on the bot the entry point builds, its configuration read from the database, with the
-real queue and "now" pinned: the server in test mode, and Racer (4242) a driver holding a profile.
+real queue and "now" pinned: the server in test mode, Racer (4242) a driver holding a profile and a
+member of the server, and, where a case says so, Ghost (9000000000000000001) a fake driver.
 """
 from __future__ import annotations
 
 from datetime import datetime, timezone
 from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
 
+import discord
 import pytest
 
 # Imported as a module: pytest tries to collect a bare `TestModeCog` name as a test class.
@@ -46,10 +51,20 @@ NOW = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
 RACER = "4242"
 #: The account Racer moved to, in the case naming them by the one they left.
 RACER_NOW = "5353"
+#: A fake driver, which no member field can name.
+GHOST = "9000000000000000001"
 
 _AUDIT_TYPE = "TEST_FORMER_DRIVER_FLAG_SET"
 _NOT_IN_TEST_MODE = "⛔ This command is only available when test mode is enabled."
-_NO_PROFILE = f"⛔ No driver profile found for user {RACER} on this server."
+
+
+def _no_driver(text: str) -> str:
+    """The refusal of text naming no driver, naming what was typed, as the test-mode `/driver`
+    group words it."""
+    return (
+        f"⛔ No driver found for `{text}`. Give a mention or an ID of any account the driver has "
+        "held."
+    )
 
 
 @pytest.fixture
@@ -79,24 +94,48 @@ async def _seed_racer(db_path: str, *, former: bool) -> None:
         await db.commit()
 
 
-def _racer():
-    """Racer as the command's `user` option gives them: the member the league admin picked."""
-    return SimpleNamespace(id=int(RACER), display_name="Racer", mention=f"<@{RACER}>")
+async def _seed_ghost(db_path: str, *, former: bool) -> None:
+    """Ghost, a fake driver as the roster creates one: Not Signed Up, no member behind it."""
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO driver_profiles (discord_user_id, current_state, former_driver, "
+            "is_test_driver, test_display_name) VALUES (?, 'NOT_SIGNED_UP', ?, 1, 'Ghost')",
+            (GHOST, int(former)),
+        )
+        await db.commit()
+
+
+def _server():
+    """The league's server as the interaction gives it: Racer a member under either account he
+    has held, and no other account a member."""
+    members = {
+        int(account): SimpleNamespace(id=int(account), display_name="Racer", mention=f"<@{account}>")
+        for account in (RACER, RACER_NOW)
+    }
+    guild = MagicMock()
+    guild.get_member = MagicMock(side_effect=members.get)
+    guild.fetch_member = AsyncMock(
+        side_effect=discord.NotFound(MagicMock(status=404, reason="Not Found"), "Unknown Member")
+    )
+    return guild
 
 
 def _asks(league):
-    """Admin's (77) interaction for `/test-mode set-former-driver`, recording every word they are
-    told."""
-    return member_asks(
+    """Admin's (77) interaction for `/test-mode set-former-driver`, on the league's server,
+    recording every word they are told."""
+    interaction = member_asks(
         league.bot, "test-mode set-former-driver",
         user=member(ACTOR_ID, "Admin", "Admin#0001"),
     )
+    interaction.guild = _server()
+    return interaction
 
 
-async def _ask(league, interaction, value: bool) -> None:
-    """Admin runs the command for Racer with *value*, and nothing more: the queue is not run."""
+async def _ask(league, interaction, value: bool, user: str = RACER) -> None:
+    """Admin runs the command with *value*, naming the driver by the text *user* (Racer's ID
+    unless said otherwise), and nothing more: the queue is not run."""
     await undecorate(test_mode_cog.TestModeCog.set_former_driver)(
-        league.cog, interaction, _racer(), value
+        league.cog, interaction, user, value
     )
 
 
@@ -112,44 +151,58 @@ def _lines(league) -> list[str]:
     return [unruled(str(line)) for line in league.bot.log_channel.sent]
 
 
-def _doing(value: bool) -> str:
-    return f"Setting **Racer**'s former-driver flag to **{value}**"
+def _doing(value: bool, name: str = "Racer") -> str:
+    return f"Setting **{name}**'s former-driver flag to **{value}**"
 
 
 @pytest.mark.parametrize(
-    "former, value, past_account",
+    "former, value, named_by",
     [
-        pytest.param(False, True, False, id="set"),
-        pytest.param(True, False, False, id="cleared"),
-        pytest.param(False, True, True, id="through an account Racer has left"),
-        pytest.param(False, False, False, id="unchanged"),
+        pytest.param(False, True, "id", id="set"),
+        pytest.param(True, False, "id", id="cleared"),
+        pytest.param(False, True, "past account", id="through an account Racer has left"),
+        pytest.param(False, False, "id", id="unchanged"),
+        pytest.param(False, True, "mention", id="by mention"),
+        pytest.param(False, True, "fake driver", id="a fake driver by its ID"),
     ],
 )
 async def test_the_flag_and_its_audit_entry_and_line_are_one_save(
-    league, former, value, past_account
+    league, former, value, named_by
 ):
     """The core specification's former-driver flag set by hand under test mode, and its record of
-    what changed. The server is in test mode; Racer holds a profile whose flag is *former*, and in
-    the third case has since moved to another account, the one Admin picks being the account
-    Racer left; in the fourth the flag already reads *value*, and the change is saved, audited and
-    answered all the same, as the command always has. Admin (77) runs `/test-mode set-former-driver` for Racer with *value*. They are
-    answered at once with the queue's acknowledgement, "Setting **Racer**'s former-driver flag to
-    **<value>**", naming its first job, and nothing is written until the queue runs the change, of
-    kind `core.test_mode_former_driver`. Once it has, Racer's flag reads *value*; one audit entry,
-    `TEST_FORMER_DRIVER_FLAG_SET`, by Admin, on no division, stamped with the queue's clock,
-    names Racer and the account Racer holds now (the one moved to, in the third case) and records
-    the flag before and after; the acknowledgement reads today's reply, naming Racer and
-    both values; and the log channel holds today's success line once."""
-    await _seed_racer(league.db_path, former=former)
-    if past_account:
+    what changed. The server is in test mode; Racer holds a profile whose flag is *former*, and
+    Admin names him by his ID; in the third case Racer has since moved to another account, and
+    Admin names him by the ID of the account he left; in the fourth the flag already reads
+    *value*, and the change is saved, audited and answered all the same, as the command always
+    has; in the fifth Admin names Racer by his mention; in the sixth the driver is instead Ghost,
+    a fake driver at Not Signed Up with no member behind it, named by its ID. Admin (77) runs
+    `/test-mode set-former-driver` for the driver with *value*. They are answered at once with the
+    queue's acknowledgement, "Setting **<name>**'s former-driver flag to **<value>**", naming its
+    first job, and nothing is written until the queue runs the change, of kind
+    `core.test_mode_former_driver`. Once it has, the driver's flag reads *value*; one audit entry,
+    `TEST_FORMER_DRIVER_FLAG_SET`, by Admin, on no division, stamped with the queue's clock, names
+    the driver (Ghost by its test name) and the account the driver holds now (the one moved to, in
+    the third case) and records the flag before and after; the acknowledgement reads today's reply,
+    naming the driver and both values; and the log channel holds today's success line once, naming
+    the driver and mentioning the account the driver holds now."""
+    fake = named_by == "fake driver"
+    if fake:
+        await _seed_ghost(league.db_path, former=former)
+    else:
+        await _seed_racer(league.db_path, former=former)
+    if named_by == "past account":
         await reassigned(league.db_path, RACER, RACER_NOW)
-    held = RACER_NOW if past_account else RACER
+    held = GHOST if fake else RACER_NOW if named_by == "past account" else RACER
+    name = "Ghost" if fake else "Racer"
+    typed = f"<@{RACER}>" if named_by == "mention" else GHOST if fake else RACER
     interaction = _asks(league)
 
-    await _ask(league, interaction, value)
+    await _ask(league, interaction, value, user=typed)
 
     first_job = (await step_rows(league.db_path))[0]["id"]
-    assert said(interaction)[0] == f"{acknowledged(_doing(value))} It begins with job #{first_job}."
+    assert said(interaction)[0] == (
+        f"{acknowledged(_doing(value, name))} It begins with job #{first_job}."
+    )
     assert [row["kind"] for row in await change_rows(league.db_path)] == [
         "core.test_mode_former_driver"
     ]
@@ -164,19 +217,19 @@ async def test_the_flag_and_its_audit_entry_and_line_are_one_save(
         for row in await audit_rows(league.db_path)
     ] == [(
         _AUDIT_TYPE,
-        {"driver": "Racer", "user_id": held, "former_driver": former},
-        {"driver": "Racer", "user_id": held, "former_driver": value},
+        {"driver": name, "user_id": held, "former_driver": former},
+        {"driver": name, "user_id": held, "former_driver": value},
         ACTOR_ID, None, NOW.isoformat(),
     )]
     assert last_said(interaction) == (
         "✅ former_driver flag updated.\n"
-        "   User     : Racer\n"
+        f"   User     : {name}\n"
         f"   Old value: {former}\n"
         f"   New value: {value}"
     )
     assert _lines(league) == [
         f"{_NAMED} | /test-mode set-former-driver | Success\n"
-        f"  user: Racer (`<@{RACER}>`)\n"
+        f"  user: {name} (`<@{held}>`)\n"
         f"  former_driver: {former} -> {value}"
     ]
 
@@ -188,25 +241,29 @@ async def _test_mode_off(league) -> None:
 
 
 @pytest.mark.parametrize(
-    "racer_held, meanwhile, refusal",
+    "racer_held, meanwhile, typed, refusal",
     [
-        pytest.param(False, None, _NO_PROFILE, id="no profile"),
-        pytest.param(True, _test_mode_off, _NOT_IN_TEST_MODE, id="test mode off"),
+        pytest.param(False, None, RACER, _no_driver(RACER), id="no profile"),
+        pytest.param(True, None, "nobody", _no_driver("nobody"), id="text that is no account"),
+        pytest.param(True, _test_mode_off, RACER, _NOT_IN_TEST_MODE, id="test mode off"),
     ],
 )
-async def test_it_is_refused_at_the_ask(league, racer_held, meanwhile, refusal):
-    """The server is in test mode and Racer holds no profile; or Racer holds one whose flag is
-    false and test mode is switched off. Admin (77) runs the command for Racer with true: they are
-    refused at once, seen by them alone, in the words the command has always used, naming the
-    account where it is the profile that is missing; nothing is queued or audited, Racer's flag is
-    untouched, and the log channel takes the refusal line."""
+async def test_it_is_refused_at_the_ask(league, racer_held, meanwhile, typed, refusal):
+    """The server is in test mode and Racer holds no profile, Admin naming him by his ID; or Racer
+    holds a profile whose flag is false and Admin types "nobody", which is neither a mention nor an
+    ID; or Racer holds one, test mode is switched off, and Admin names him by his ID. Admin (77)
+    runs the command with true: they are refused at once, seen by them alone, for text naming no
+    driver with "No driver found for `<what was typed>`. Give a mention or an ID of any account
+    the driver has held.", and with test mode off in the words the command has always used;
+    nothing is queued or audited, Racer's flag is untouched, and the log channel takes the
+    refusal line."""
     if racer_held:
         await _seed_racer(league.db_path, former=False)
     if meanwhile is not None:
         await meanwhile(league)
     interaction = _asks(league)
 
-    await _ask(league, interaction, True)
+    await _ask(league, interaction, True, user=typed)
 
     assert said(interaction) == [refusal]
     [reply] = interaction.response.send_message.await_args_list
@@ -225,8 +282,9 @@ async def test_it_is_judged_again_as_it_starts(league, meanwhile):
     command for Racer with true and is acknowledged; before the queue runs it, test mode is
     switched off, or Racer's profile is deleted. The change judges again as it starts and is
     refused: nothing is saved or audited, Admin's reply becomes the refusal the command gives at
-    the ask, word for word, the log channel takes that refusal as its only line, and the queue is
-    not stopped."""
+    the ask, word for word (with the profile gone, "No driver found for `4242`", the one wording
+    the league sees for that fault), the log channel takes that refusal as its only line, and the
+    queue is not stopped."""
     await _seed_racer(league.db_path, former=False)
     interaction = _asks(league)
 
@@ -240,7 +298,7 @@ async def test_it_is_judged_again_as_it_starts(league, meanwhile):
         await db.commit()
     await run_queue(league.bot)
 
-    refusal = _NOT_IN_TEST_MODE if meanwhile == "test mode turned off" else _NO_PROFILE
+    refusal = _NOT_IN_TEST_MODE if meanwhile == "test mode turned off" else _no_driver(RACER)
     assert last_said(interaction) == refusal
     assert await _flags(league.db_path) == ([False] if meanwhile == "test mode turned off" else [])
     assert await audit_rows(league.db_path) == []

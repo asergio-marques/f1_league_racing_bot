@@ -73,9 +73,10 @@ from leaguebot.framework.services.queue.change_types import (
 from leaguebot.framework.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.input_validator import SIGNUP_ANSWER, parse_nationality
 from leaguebot.framework.utils.league_server import league_guild
-from leaguebot.framework.utils.log_lines import abandoned_line, name_of_member, refusal_line
+from leaguebot.framework.utils.log_lines import abandoned_line, refusal_line
 from leaguebot.utils.messages import chunk_message
 from leaguebot.framework.utils.member_names import member_named
+from leaguebot.signup.services.driver_naming import mention_or_name, name_of_driver
 from leaguebot.signup.models.signup_module import SignupRecord, SignupWizardRecord, WizardState
 from leaguebot.signup.services.closing_steps import CHANNEL_GONE, END, INACTIVITY_TIMER
 from leaguebot.signup.services.signup_posting import post
@@ -344,9 +345,11 @@ def judge_button(
     step = int(draft.get("_pref_teams_step", 0))
     picks = list(draft.get("preferred_teams") or [])
     if value is None:
+        # No Preference ends the picking; a pick already made is kept, and the line names it.
         return Accepted(
             {"preferred_teams": picks}, drop=("_pref_teams_step",),
-            line="Preferred team: no preference",
+            line=(f"Preferred teams: {', '.join(picks)}" if picks
+                  else "Preferred team: no preference"),
         )
     if value in picks:
         return _refused("", _TEAM_PICKED)
@@ -414,18 +417,25 @@ def _what(step: str, owner: str) -> str:
 
 async def take_typed_answer(
     bot: "LeagueBot", message: discord.Message, wizard: SignupWizardRecord, *,
-    queue: "ChangeQueue", router: "OutputRouter",
+    queue: "ChangeQueue", router: "OutputRouter", drivers: "DriverService",
 ) -> None:
-    """What the signup cog does with a message the wizard's driver typed in their channel:
-    nothing where the wizard asks nothing; else turned away where an earlier answer still waits
+    """What the signup cog does with a message typed in a wizard's channel by someone who may
+    answer it (`may_answer`: the driver, or a league admin for a fake driver under test mode; the
+    answer is the wizard's driver's and the typist is the actor): nothing where the wizard asks
+    nothing; else turned away where an earlier answer still waits
     (a note, the message deleted, a line in the log), else marked ⏳ at once and asked as a turn
     of the driver's lane. The answer is judged when its turn comes. *router* is the output router
-    the turned-away line is written through."""
+    the turned-away line is written through and *drivers* names a fake driver whose wizard it is."""
     state = wizard.wizard_state
     if state not in STEP_NAMES:
         return
     author = message.author
-    owner = _owner(getattr(author, "display_name", None), author.id)
+    # Whose wizard it is: the typist's own, or a fake driver's, named by its test name.
+    if str(author.id) == wizard.discord_user_id:
+        called = getattr(author, "display_name", None)
+    else:
+        called = await drivers.fake_driver_name(wizard.discord_user_id)
+    owner = _owner(called, wizard.discord_user_id)
     what = _what(STEP_NAMES[state], owner)
     if await typed_turns.turn_waiting(
         bot.db_path, queue.types, message.channel.id, held=queue.held_turn_channels()
@@ -440,7 +450,7 @@ async def take_typed_answer(
     await queue.ask(
         ANSWER,
         {
-            "user_id": str(author.id),
+            "user_id": wizard.discord_user_id,
             "channel_id": message.channel.id,
             "state": state.value,
             "message_id": message.id,
@@ -523,18 +533,18 @@ async def _signup_channel_or_gone(
 
 
 async def channel_gone_ending(
-    ctx: StepContext, user_id: str, channel_id: int | None,
+    ctx: StepContext, user_id: str, channel_id: int | None, drivers: "DriverService",
 ) -> StepResult:
     """The result of a job that found the driver's signup channel gone, or found that the wizard
     names none (*channel_id* None): nothing is posted, and `signup.end` is asked of the league's
     queue in the job's own save (#439, slice 8)."""
-    named = await name_of_member(ctx.bot, int(user_id))
+    named, fake = await name_of_driver(ctx.bot, drivers, user_id)
     return StepResult(
         result={"no_channel": True, "ended": True},
         follow_ons=(FollowOn(
             END,
             {"user_id": user_id, "reason": CHANNEL_GONE, "channel_id": channel_id, "named": named},
-            f"ending <@{user_id}>'s signup, their signup channel being gone",
+            f"ending {named if fake else f'<@{user_id}>'}'s signup, their signup channel being gone",
         ),),
     )
 
@@ -543,6 +553,8 @@ def answer_change(
     *,
     signup: Callable[[], "SignupModuleService"],
     queue_of: Callable[[], "ChangeQueue"],
+    config: "ConfigService",
+    drivers: Callable[[], "DriverService"],
     now: Callable[[], datetime],
     arm_once: Callable[[str, str, datetime], None],
 ) -> ChangeType:
@@ -595,7 +607,9 @@ def answer_change(
                 ))
         if isinstance(judged, Refused):
             reason = judged.reply.splitlines()[0].removeprefix("❌").removeprefix("⛔").strip()
-            what = _what(judged.step, str(payload.get("owner") or _owner(None, user_id)))
+            # A button's payload names no owner: a fake driver's wizard is named by its test name.
+            owner = payload.get("owner") or _owner(await drivers().fake_driver_name(user_id), user_id)
+            what = _what(judged.step, str(owner))
             return StepResult(
                 result={"refused": reason},
                 lines=(refusal_line(ctx.named, what, reason),),
@@ -608,6 +622,10 @@ def answer_change(
             judged.ends_step and wizard.draft_answers.get("_is_correction")
         ):
             line = f"{ctx.named} | Signup | {judged.line}"
+            # A league admin answers for a fake driver: the line names it too, by its test name.
+            fake_name = await drivers().fake_driver_name(user_id)
+            if fake_name is not None:
+                line += f"\n  driver: {fake_name}"
         saving = {
             "user_id": user_id, "channel_id": channel_id,
             "state": wizard.wizard_state.value, "answers": judged.answers,
@@ -692,13 +710,17 @@ def answer_change(
             picks = list(wizard.draft_answers.get("preferred_teams") or [])
             text = ordinal_prompt(int(wizard.draft_answers.get("_pref_teams_step", 1)), picks)
             view: discord.ui.View = PreferredTeamsButtonView(
-                user_id, queue, snapshot.team_names, excluded=picks, signup=signup()
+                user_id, queue, snapshot.team_names, excluded=picks, signup=signup(),
+                config=config, drivers=drivers(),
             )
         else:
             async with get_connection(ctx.db_path) as db:
                 track_map = await track_service.get_track_name_map(db)
             text = WizardService._prompt_for_state(state, snapshot, wizard, track_name_map=track_map)
-            view = build_step_view(queue, state, user_id, snapshot.team_names, signup=signup())
+            view = build_step_view(
+                queue, state, user_id, snapshot.team_names, signup=signup(),
+                config=config, drivers=drivers(),
+            )
         await post(
             channel, text, view=view, mentions=discord.AllowedMentions.none(),
             refused=f"the next question could not be posted in channel {channel.id}",
@@ -718,8 +740,9 @@ def answer_change(
         return "arming the signup's 24 hours again"
 
     async def would_never_time_out(ctx: StepContext) -> str:
+        who = await mention_or_name(ctx.db_path, ctx.step_payload["user_id"])
         return (
-            f"<@{ctx.step_payload['user_id']}>'s signup would never time out if they stopped "
+            f"{who}'s signup would never time out if they stopped "
             "answering, and while they correct it the season's placements could not be "
             "confirmed until the bot restarts"
         )
@@ -802,19 +825,20 @@ def submit_change(
         profile = await drivers().get_profile(user_id)
         return StepResult(result={
             "named": member_named(getattr(member, "display_name", None), int(user_id)),
+            "fake": await drivers().fake_driver_name(user_id),
             "prior_state": None if profile is None else profile.current_state.value,
         })
 
-    def _named(ctx: StepContext) -> tuple[str, str | None]:
+    def _named(ctx: StepContext) -> tuple[str, str | None, str | None]:
         for view in ctx.steps:
             if view.name == NAME_DRIVER and view.done:
                 found = view.result or {}
-                return str(found["named"]), found.get("prior_state")
-        return f"<@{ctx.payload['user_id']}>", None
+                return str(found["named"]), found.get("prior_state"), found.get("fake")
+        return f"<@{ctx.payload['user_id']}>", None, None
 
     async def commit(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         user_id = str(ctx.payload["user_id"])
-        named, prior = _named(ctx)
+        named, prior, fake = _named(ctx)
         wizard = await signup().get_wizard_on(db, user_id)
         if wizard is None or wizard.wizard_state is WizardState.UNENGAGED:
             return StepResult(result={"committed": False})
@@ -864,7 +888,10 @@ def submit_change(
             text = f"Correction submitted: {_CORRECTION_LABELS[corrected]}"
         return StepResult(
             result={"committed": True},
-            lines=(f"{named} | Signup | {text}",),
+            lines=(
+                f"{ctx.named} | Signup | {text}\n  driver: {fake}" if fake is not None
+                else f"{named} | Signup | {text}",
+            ),
             follow_ons=(FollowOn(
                 PANEL,
                 {"user_id": user_id, "channel_id": _channel_of(ctx.payload),
@@ -887,8 +914,9 @@ def submit_change(
         return "taking the signup's 24 hours away"
 
     async def would_never_be_submitted(ctx: StepContext) -> str:
+        who = await mention_or_name(ctx.db_path, ctx.payload["user_id"])
         return (
-            f"<@{ctx.payload['user_id']}>'s signup would never be submitted, and while they "
+            f"{who}'s signup would never be submitted, and while they "
             "correct it the season's placements could not be confirmed until the bot restarts"
         )
 
@@ -913,7 +941,7 @@ def submit_change(
 
 async def post_review_panel(
     channel: discord.TextChannel, user_id: str, *, signup: "SignupModuleService", db_path: str,
-    view: Callable[[], discord.ui.View],
+    drivers: "DriverService", view: Callable[[], discord.ui.View],
 ) -> bool:
     """Post the review panel of *user_id*'s signup in *channel*, and say whether there was a
     signup to post. The panel runs as long as the driver's answers do, so it is divided through
@@ -933,7 +961,10 @@ async def post_review_panel(
     async with get_connection(db_path) as db:
         track_map = await track_service.get_track_name_map(db)
     parts = chunk_message(
-        WizardService._format_review_panel(record, slot_labels, track_name_map=track_map)
+        WizardService._format_review_panel(
+            record, slot_labels, track_name_map=track_map,
+            fake=await drivers.fake_driver_name(user_id) is not None,
+        )
     )
     sent: list[int] = []
     for number, part in enumerate(parts, start=1):
@@ -1061,8 +1092,9 @@ def panel_change(
             try:
                 await standing_posts.remove_kept(ctx.bot, ctx.kept)
             except StepFailedOnDiscord as refused:
+                who = await mention_or_name(ctx.db_path, user_id)
                 noted.append(
-                    f"  {refused}: the earlier parts of <@{user_id}>'s review panel in "
+                    f"  {refused}: the earlier parts of {who}'s review panel in "
                     f"<#{ctx.step_payload['channel_id']}> need removing by hand."
                 )
             if lapse is not None:
@@ -1070,7 +1102,9 @@ def panel_change(
             return StepResult(result={"dropped": True}, lines=tuple(noted))
         channel = await _signup_channel_or_gone(ctx, int(ctx.step_payload["channel_id"]))
         if channel is None:
-            ended = await channel_gone_ending(ctx, user_id, int(ctx.step_payload["channel_id"]))
+            ended = await channel_gone_ending(
+                ctx, user_id, int(ctx.step_payload["channel_id"]), drivers()
+            )
             if lapse is None:
                 return ended
             return StepResult(
@@ -1082,7 +1116,7 @@ def panel_change(
             await _set_typing(channel, member, allowed=False, reason="Signup wizard channel hold")
         await standing_posts.remove_kept(ctx.bot, ctx.kept)
         posted = await post_review_panel(
-            channel, user_id, signup=signup(), db_path=ctx.db_path,
+            channel, user_id, signup=signup(), db_path=ctx.db_path, drivers=drivers(),
             view=lambda: _review_view(user_id),
         )
         lines = () if lapse is None else (correction_lapse_line(lapse, panel=posted),)
@@ -1092,8 +1126,9 @@ def panel_change(
         return f"posting the review panel in <#{ctx.step_payload['channel_id']}>"
 
     async def would_wait_unreviewed(ctx: StepContext) -> str:
+        who = await mention_or_name(ctx.db_path, ctx.step_payload["user_id"])
         return (
-            f"<@{ctx.step_payload['user_id']}> would wait for approval with no review panel, "
+            f"{who} would wait for approval with no review panel, "
             "and the season's placements could not be confirmed"
         )
 

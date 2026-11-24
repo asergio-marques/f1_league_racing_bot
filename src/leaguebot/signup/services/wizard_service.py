@@ -25,6 +25,8 @@ from leaguebot.signup.services.closing_steps import recover_correction_timeouts
 
 if TYPE_CHECKING:
     from leaguebot.framework.services.queue.change_queue import ChangeQueue
+    from leaguebot.core.services.drivers.driver_service import DriverService
+    from leaguebot.core.services.settings.config_service import ConfigService
     from leaguebot.framework.utils.league_bot import LeagueBot
 
     from leaguebot.signup.services.signup_module_service import SignupModuleService
@@ -73,9 +75,12 @@ def build_step_view(
     team_names: list[str] | None = None,
     *,
     signup: "SignupModuleService",
+    config: "ConfigService",
+    drivers: "DriverService",
 ) -> discord.ui.View:
     """The view that answers the wizard's question at *state*, for the driver *discord_user_id*,
-    handed the change queue and *signup*, the signup service it finds the wizard through."""
+    handed the change queue, *signup*, the signup service it finds the wizard through, and
+    *config* and *drivers*, with which it judges who may answer (`may_answer`)."""
     from leaguebot.signup.services.signup_views import (  # lazy import — avoid circular
         WithdrawButtonView,
         PlatformButtonView,
@@ -84,17 +89,18 @@ def build_step_view(
         NoPreferenceTeammateView,
         NoNotesButtonView,
     )
+    handed: dict[str, Any] = {"signup": signup, "config": config, "drivers": drivers}
     if state == WizardState.COLLECTING_PLATFORM:
-        return PlatformButtonView(discord_user_id, queue, signup=signup)
+        return PlatformButtonView(discord_user_id, queue, **handed)
     if state == WizardState.COLLECTING_DRIVER_TYPE:
-        return DriverTypeButtonView(discord_user_id, queue, signup=signup)
+        return DriverTypeButtonView(discord_user_id, queue, **handed)
     if state == WizardState.COLLECTING_PREFERRED_TEAMS:
-        return PreferredTeamsButtonView(discord_user_id, queue, team_names or [], signup=signup)
+        return PreferredTeamsButtonView(discord_user_id, queue, team_names or [], **handed)
     if state == WizardState.COLLECTING_PREFERRED_TEAMMATE:
-        return NoPreferenceTeammateView(discord_user_id, queue, signup=signup)
+        return NoPreferenceTeammateView(discord_user_id, queue, signup=signup, config=config, drivers=drivers)
     if state == WizardState.COLLECTING_NOTES:
-        return NoNotesButtonView(discord_user_id, queue, signup=signup)
-    return WithdrawButtonView(discord_user_id, queue, signup=signup)
+        return NoNotesButtonView(discord_user_id, queue, signup=signup, config=config, drivers=drivers)
+    return WithdrawButtonView(discord_user_id, queue, signup=signup, config=config, drivers=drivers)
 
 
 # ---------------------------------------------------------------------------
@@ -147,6 +153,8 @@ class WizardService:
         signup_module_service: "SignupModuleService",
         *,
         change_queue: "ChangeQueue",
+        config: "ConfigService",
+        drivers: "DriverService",
         bot: "LeagueBot",
     ) -> None:
         self._db_path = db_path
@@ -156,6 +164,9 @@ class WizardService:
         # Handed the change queue when it is built, for the views it makes and the changes it asks
         # (docs/design/architecture.md, "Services stay attached to the bot, and are built in one place").
         self._change_queue = change_queue
+        # Handed the services the step views it makes judge who may answer with.
+        self._config = config
+        self._drivers = drivers
 
         self._bot = bot
 
@@ -167,26 +178,33 @@ class WizardService:
     @posts_in_a_job
     async def _create_wizard_channel(
         guild: discord.Guild,
-        member: discord.Member,
+        member: discord.Member | None,
         signup_channel_id: int | None,
         interaction_role_id: int | None,
         league_admin_role_id: int | None = None,
+        *,
+        name: str | None = None,
     ) -> discord.TextChannel:
         """Create a private ``<username>-signup`` channel for the driver.
+
+        A fake driver has no *member*: it is given its test name as *name*, the channel is named
+        from it, and no overwrite is made for it, the staff roles alone seeing the channel.
 
         Visible to the driver, the bot, and both tiers of the league. The admin review panel
         is posted into this channel, so a league admin who does not also hold the interaction
         role would otherwise be unable to see the signup they are entitled to approve
         (issue #116).
         """
-        safe_name = re.sub(r"[^a-z0-9_-]", "-", member.name.lower())
+        called = name if member is None else member.name
+        safe_name = re.sub(r"[^a-z0-9_-]", "-", (called or "").lower())
         channel_name = f"{safe_name}-signup"
 
         overwrites: dict[Any, discord.PermissionOverwrite] = {
             guild.default_role: discord.PermissionOverwrite(view_channel=False),
-            member: discord.PermissionOverwrite(view_channel=True, send_messages=True),
-            guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True),
         }
+        if member is not None:
+            overwrites[member] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
+        overwrites[guild.me] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
         for role_id in (interaction_role_id, league_admin_role_id):
             if not role_id:
                 continue
@@ -206,7 +224,7 @@ class WizardService:
             channel_name,
             overwrites=overwrites,
             category=category,
-            reason=f"Signup wizard for {member}",
+            reason=f"Signup wizard for {member if member is not None else called}",
         )
         return channel
 
@@ -300,7 +318,8 @@ class WizardService:
     ) -> discord.ui.View:
         """Return the appropriate view for the given wizard state."""
         return build_step_view(
-            self._change_queue, state, discord_user_id, team_names, signup=self._signup
+            self._change_queue, state, discord_user_id, team_names, signup=self._signup,
+            config=self._config, drivers=self._drivers,
         )
 
 
@@ -398,7 +417,11 @@ class WizardService:
         record: SignupRecord,
         slot_labels: dict[str, str] | None = None,
         track_name_map: dict[str, str] | None = None,
+        *,
+        fake: bool = False,
     ) -> str:
+        """The review panel's text for *record*. A fake driver (*fake*) has no account to
+        mention, so the panel names it by the name its signup holds and mentions nobody."""
         # slot_labels is keyed by durable slot ID ("Mon_19_00"), which is a storage
         # form no league should ever read. An answer with no label is a time that no
         # longer exists, so it is named as such rather than printed raw.
@@ -420,9 +443,13 @@ class WizardService:
             )
             if record.lap_times else "  (none required)"
         )
+        driver = (
+            record.discord_username if fake
+            else f"<@{record.discord_user_id}> ({record.discord_username})"
+        )
         return (
             "**📋 Signup Review**\n"
-            f"**Driver:** <@{record.discord_user_id}> ({record.discord_username})\n"
+            f"**Driver:** {driver}\n"
             f"**Display name:** {record.server_display_name}\n"
             f"**Nationality:** {record.nationality or 'Not collected'}\n"
             f"**Platform:** {record.platform}\n"

@@ -62,8 +62,8 @@ async def seated_teams(
     The seating is core's, as the lineup of record shows it (`division_seating`: every team, every
     seat, whoever holds it in any state, a placement not yet confirmed mid-season left out unless
     *include_uncommitted*). What a seat's driver is drawn under comes from core's record of them
-    (`read_driver_records`): the signup the league holds for them to *season_id*, and for a mock
-    driver, which has no signup to hold a nationality, its own.
+    (`read_driver_records`): the signup the league holds for them to *season_id*, or their latest
+    where they have none to it, a fake driver's as any driver's.
     """
     from leaguebot.core.services.drivers.division_seating import division_seating
     from leaguebot.core.services.drivers.driver_names import read_driver_records

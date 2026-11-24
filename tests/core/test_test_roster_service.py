@@ -1,14 +1,8 @@
 """`test_roster_service` — the fake driver roster of test mode.
 
-The service had no test file of its own until the nationality of a mock driver was added
-to it. These cover that addition and the seating rules it sits inside, which nothing else
-asserts directly: the preview suite goes through the service but only ever to arrange a
-league, so a failure there says nothing about which rule broke.
-
-A mock driver's nationality is stored the way a real driver's is — the canonical
-Title-Case adjective NATIONALITY_LOOKUP maps to — so that the country a flag is resolved
-from is derived from it identically. That is the whole point of validating it here rather
-than taking what was typed.
+A fake driver is created with an ID and a name alone, at Not Signed Up: its division, team and
+seat are decided as any driver's, by `/driver assign` once its signup is approved, and its
+nationality by its signup. These cover the creation, the name it is held to, and its removal.
 """
 from __future__ import annotations
 
@@ -16,7 +10,6 @@ import aiosqlite
 import pytest
 
 from leaguebot.framework.db.database import get_connection, run_migrations
-from leaguebot.core.services.test_mode.test_roster_service import list_test_drivers
 from tests.support.delete_hooks import DRIVER_HOOKS, delete_hooks
 
 
@@ -68,13 +61,13 @@ async def _seed_season(db_path):
         await db.commit()
 
 
-async def _add(db_path, name="Mock Alpha", team="Redline", **kwargs):
-    """Seat *name* at *team* in Division 1 through the roster's writer, on a connection of the
-    test's own, committed as a change's save commits it."""
+async def _add(db_path, name="Mock Alpha"):
+    """Create the fake driver *name* through the roster's writer, on a connection of the test's
+    own, committed as a change's save commits it."""
     from leaguebot.core.services.test_mode.test_roster_service import add_test_driver_on
 
     async with get_connection(db_path) as db:
-        result = await add_test_driver_on(db, name, team, DIVISION, **kwargs)
+        result = await add_test_driver_on(db, name)
         await db.commit()
     return result
 
@@ -92,155 +85,24 @@ async def _remove(db_path, discord_user_id: int):
     return result
 
 
-async def _stored_nationality(db_path, profile_id: int):
+# ── A fake driver is created, and nothing more ───────────────────────────
+
+
+async def test_each_driver_takes_the_next_synthetic_id_and_no_seat(db_path):
+    """Mock Alpha and then Mock Bravo are created in a season whose team has two free seats. Each
+    takes the next synthetic ID, Mock Bravo's one past Mock Alpha's; both are at Not Signed Up,
+    and both of the team's seats are still free."""
+    first = await _add(db_path, name="Mock Alpha")
+    second = await _add(db_path, name="Mock Bravo")
+
+    assert second["discord_user_id"] == first["discord_user_id"] + 1
     async with get_connection(db_path) as db:
-        row = await (
-            await db.execute(
-                "SELECT test_nationality FROM driver_profiles WHERE id = ?", (profile_id,)
-            )
-        ).fetchone()
-    return row["test_nationality"]
-
-
-# ── The nationality a mock driver is created with ─────────────────────────
-
-
-class TestTheNationalityIsRecorded:
-    async def test_an_adjective_is_stored_canonically(self, db_path):
-        result = await _add(db_path, nationality="british")
-
-        assert result["nationality"] == "British"
-        assert await _stored_nationality(db_path, result["profile_id"]) == "British"
-
-    async def test_a_country_name_is_stored_as_the_adjective(self, db_path):
-        """The wizard accepts either, and stores the one flags are resolved from."""
-        result = await _add(db_path, nationality="United Kingdom")
-
-        assert result["nationality"] == "British"
-
-    async def test_other_is_a_value_and_not_an_absence(self, db_path):
-        result = await _add(db_path, nationality="OTHER")
-
-        assert result["nationality"] == "Other"
-
-    async def test_omitting_it_records_none(self, db_path):
-        result = await _add(db_path)
-
-        assert result["nationality"] is None
-        assert await _stored_nationality(db_path, result["profile_id"]) is None
-
-    async def test_a_blank_string_records_none(self, db_path):
-        result = await _add(db_path, nationality="   ")
-
-        assert result["nationality"] is None
-
-
-class TestAnUnusableNationalityIsRefused:
-    async def test_an_unknown_word_is_refused(self, db_path):
-        result = await _add(db_path, nationality="Martian")
-
-        assert isinstance(result, str)
-        assert "Martian" in result
-
-    async def test_a_two_letter_code_is_refused(self, db_path):
-        """The wizard rejects ISO codes, so the roster command must too."""
-        result = await _add(db_path, nationality="gb")
-
-        assert isinstance(result, str)
-
-    async def test_no_driver_is_created_by_a_refused_command(self, db_path):
-        await _add(db_path, nationality="Martian")
-
-        async with get_connection(db_path) as db:
-            row = await (
-                await db.execute(
-                    "SELECT COUNT(*) AS n FROM driver_profiles",
-                )
-            ).fetchone()
-        assert row["n"] == 0
-
-    async def test_it_is_refused_before_the_season_is_even_looked_for(self, db_path):
-        """A typo is a typo whatever state the league is in, and says so plainly."""
-        async with get_connection(db_path) as db:
-            await db.execute("UPDATE seasons SET status = 'COMPLETED'")
-            await db.commit()
-
-        result = await _add(db_path, nationality="Martian")
-
-        assert isinstance(result, str)
-        assert "nationality" in result.lower()
-
-
-# ── Reading the roster back ───────────────────────────────────────────────
-
-
-class TestTheRosterListCarriesIt:
-    async def test_each_driver_reports_its_own(self, db_path):
-        await _add(db_path, name="Mock Alpha", nationality="Dutch")
-        await _add(db_path, name="Mock Bravo", nationality="brazil")
-
-        drivers = await list_test_drivers(DIVISION, db_path)
-
-        assert [(d["display_name"], d["nationality"]) for d in drivers] == [
-            ("Mock Alpha", "Dutch"),
-            ("Mock Bravo", "Brazilian"),
-        ]
-
-    async def test_a_driver_created_without_one_reports_none(self, db_path):
-        await _add(db_path)
-
-        drivers = await list_test_drivers(DIVISION, db_path)
-
-        assert drivers[0]["nationality"] is None
-
-    async def test_a_removed_driver_takes_its_nationality_with_it(self, db_path):
-        result = await _add(db_path, nationality="Dutch")
-
-        await _remove(db_path, result["discord_user_id"])
-
-        assert await list_test_drivers(DIVISION, db_path) == []
-
-
-# ── The seating rules the nationality sits inside ─────────────────────────
-
-
-class TestSeating:
-    """Not new, but unasserted until now, and the nationality rides on all of it."""
-
-    async def test_a_full_team_is_refused(self, db_path):
-        await _add(db_path, name="Mock Alpha")
-        await _add(db_path, name="Mock Bravo")
-
-        result = await _add(db_path, name="Mock Charlie")
-
-        assert isinstance(result, str)
-        assert "No free seats" in result
-
-    async def test_the_reserve_team_grows_a_seat_instead(self, db_path):
-        first = await _add(db_path, name="Mock Alpha", team="Reserve", nationality="Dutch")
-        second = await _add(db_path, name="Mock Bravo", team="Reserve")
-
-        assert not isinstance(first, str)
-        assert not isinstance(second, str)
-        assert second["discord_user_id"] == first["discord_user_id"] + 1
-
-    async def test_an_unknown_team_is_refused(self, db_path):
-        result = await _add(db_path, team="Nowhere", nationality="Dutch")
-
-        assert isinstance(result, str)
-        assert "Nowhere" in result
-
-    async def test_a_team_is_named_by_its_shorthand_in_any_case(self, db_path):
-        result = await _add(db_path, team="REDLINE")
-
-        assert not isinstance(result, str), result
-
-    async def test_a_role_mention_is_refused_saying_to_use_the_shorthand(self, db_path):
-        """A role is only for mentioning a team, never for naming one (#381)."""
-        result = await _add(db_path, team="<@&123456789012345678>")
-
-        assert isinstance(result, str)
-        assert "Name a team by its shorthand." in result
+        cursor = await db.execute("SELECT current_state FROM driver_profiles ORDER BY id")
+        assert [r[0] for r in await cursor.fetchall()] == ["NOT_SIGNED_UP"] * 2
+        cursor = await db.execute(
+            "SELECT COUNT(*) FROM team_seats WHERE driver_profile_id IS NOT NULL"
+        )
+        assert (await cursor.fetchone())[0] == 0
 
 
 # ── A mock driver's name is held to the rules every typed name is (#362) ──
@@ -277,8 +139,8 @@ class TestRemovingOneDriver:
     """`roster remove` deletes by the route `roster clear` and switching test mode off take."""
 
     async def test_a_driver_holding_attendance_and_standings_rows_is_deleted(self, db_path):
-        """The command is refused outside Placements, before any round has run, so only a fake
-        driver outliving a season whose switch-off failed holds either. The deletion `remove`
+        """A fake driver holding an attendance row and a standings snapshot is removed: its profile
+        and attendance row go and the snapshot is kept by its ID, unlinked. The deletion `remove`
         once wrote by hand left both in place and was refused by a foreign key."""
         result = await _add(db_path)
         uid, pid = result["discord_user_id"], result["profile_id"]
@@ -305,7 +167,7 @@ class TestRemovingOneDriver:
 
         removed = await _remove(db_path, uid)
 
-        assert removed == {"display_name": "Mock Alpha", "team_name": "Redline"}
+        assert removed["display_name"] == "Mock Alpha"
         async with get_connection(db_path) as db:
             cursor = await db.execute("SELECT COUNT(*) FROM driver_profiles WHERE id = ?", (pid,))
             assert (await cursor.fetchone())[0] == 0
@@ -344,7 +206,7 @@ class TestRemovingOneDriver:
 
 async def test_a_test_driver_profile_that_cannot_be_written_raises(db_path):
     """A fault in the database is the bot's, not a refusal the manager can act on: it is
-    raised, so the command's failure path reports it, and nothing is seated."""
+    raised, so the command's failure path reports it, and nothing is written."""
     import sqlite3
 
     async with get_connection(db_path) as db:
@@ -358,7 +220,5 @@ async def test_a_test_driver_profile_that_cannot_be_written_raises(db_path):
         await _add(db_path)
 
     async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT COUNT(*) FROM team_seats WHERE driver_profile_id IS NOT NULL"
-        )
+        cursor = await db.execute("SELECT COUNT(*) FROM driver_profiles")
         assert (await cursor.fetchone())[0] == 0

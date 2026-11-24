@@ -1270,6 +1270,11 @@ async def _run_main(tmp_path, monkeypatch, calls: list[str], tree: _Tree):
             self.tree = tree
             self.lines: list[str] = []
 
+        async def driver_swap(self, bot) -> list:
+            """The swap of `/driver`, which the start-up now syncs through: here, the tree's own
+            sync, which is all the fake bot has to swap."""
+            return await self.tree.sync()
+
         def event(self, handler):
             self.handlers[handler.__name__] = handler
             return handler

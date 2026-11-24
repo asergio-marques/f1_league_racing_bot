@@ -1,121 +1,103 @@
-"""The test roster changes only while the season is in Placements (issue #220).
+"""The test roster changes in every stage of a season while test mode is on (#600).
 
-Fake drivers are seated, removed and cleared where real drivers are placed: in Placements.
-Test mode replicates the live flow rather than inventing one of its own. Listing the roster
-stays free.
+Fake drivers are created at Not Signed Up and go through signup, approval and placement as any
+driver does, so the roster is no longer tied to Placements: `/test-mode roster add`, `add-bulk`,
+`remove` and `clear` run in Configuration, Waiting, Signups, Placements, Ongoing and Ongoing
+Signups alike. Test mode itself is the one gate. Placements is left to each command's own tests,
+whose league stands there.
 """
 from __future__ import annotations
 
-from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 
-from leaguebot.core.cogs.test_mode_cog import TestModeCog as _Cog
-from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.models.season import SeasonStage, status_of_stage
 from tests.support.undecorate import undecorate
 
-SERVER_ID = 22030
+async def _a_fake_driver_in_am(league, user_id: str, name: str) -> None:
+    """*name*, a fake driver in McLaren's second seat in Am, the placement not yet committed."""
+    from tests.support.season_league import AM, MCLAREN, SEASON_ID
 
-
-async def _cog(tmp_path, stage: SeasonStage | None) -> _Cog:
-    path = str(tmp_path / "roster_stage.db")
-    await run_migrations(path)
-    async with get_connection(path) as db:
-        await db.execute(
-            "INSERT INTO server_configs (server_id, interaction_role_id, "
-            "interaction_channel_id, log_channel_id, test_mode_active) VALUES (?, 1, 2, 3, 1)",
-            (SERVER_ID,),
-        )
-        if stage is not None:
-            await db.execute(
-                "INSERT INTO seasons (start_date, status, season_number, stage) "
-                "VALUES ('2026-09-17', ?, 1, ?)",
-                (status_of_stage(stage).value, stage.value),
-            )
-        await db.commit()
-    cog = _Cog.__new__(_Cog)
-    cog.bot = MagicMock()
-    cog.bot.db_path = path
-    cog.bot.config_service.get_server_config = AsyncMock(
-        return_value=SimpleNamespace(test_mode_active=True)
+    await league.write(
+        "INSERT INTO driver_profiles (discord_user_id, current_state, is_test_driver, "
+        "test_display_name) VALUES (?, 'ASSIGNED', 1, ?)",
+        user_id, name,
     )
-    return cog
-
-
-def _interaction():
-    """Nothing has answered it yet, so a refusal goes out as its response."""
-    interaction = MagicMock()
-    interaction.guild_id = SERVER_ID
-    interaction.response.is_done = MagicMock(return_value=False)
-    interaction.response.send_message = AsyncMock()
-    return interaction
-
-
-async def test_the_roster_may_change_in_placements(tmp_path):
-    cog = await _cog(tmp_path, SeasonStage.PLACEMENTS)
-    interaction = _interaction()
-
-    assert await cog._refuse_roster_change_outside_placements(interaction) is False
-    interaction.response.send_message.assert_not_awaited()
+    await league.write(
+        "INSERT INTO team_seats (team_instance_id, seat_number, driver_profile_id) "
+        "VALUES (?, 2, (SELECT id FROM driver_profiles WHERE discord_user_id = ?))",
+        MCLAREN, user_id,
+    )
+    await league.write(
+        "INSERT INTO driver_season_assignments (driver_profile_id, season_id, division_id, "
+        "team_seat_id, committed) SELECT p.id, ?, ?, s.id, 0 FROM driver_profiles p "
+        "JOIN team_seats s ON s.driver_profile_id = p.id WHERE p.discord_user_id = ?",
+        SEASON_ID, AM, user_id,
+    )
 
 
 @pytest.mark.parametrize(
-    "stage", [None, SeasonStage.CONFIGURATION, SeasonStage.ONGOING, SeasonStage.COMPLETED]
+    "stage",
+    [
+        SeasonStage.CONFIGURATION,
+        SeasonStage.WAITING,
+        SeasonStage.SIGNUPS,
+        SeasonStage.ONGOING,
+        SeasonStage.ONGOING_SIGNUPS,
+    ],
 )
-async def test_the_roster_may_not_change_outside_placements(tmp_path, stage):
-    cog = await _cog(tmp_path, stage)
-    interaction = _interaction()
+async def test_the_roster_changes_in_every_stage_under_test_mode(tmp_path, stage):
+    """`season_league`'s season 3 under test mode, moved to Configuration, Waiting, Signups,
+    Ongoing or Ongoing Signups, with Mock Bravo a fake driver in McLaren's second seat in Am, not yet committed. Admin
+    (77) runs `/test-mode roster add` naming Mock Alpha, and the queue runs it: Mock Alpha is a
+    fake driver. Admin runs `/test-mode roster add-bulk`: the import form opens. Admin runs
+    `/test-mode roster remove` with Mock Alpha's ID, and `/test-mode roster clear` of Am, and the
+    queue runs both: neither Mock Alpha nor Mock Bravo stands. None of the four is refused, and
+    the log channel takes no refusal line."""
+    from leaguebot.core.cogs import test_mode_cog
+    from tests.support.change_queue import member, run_queue
+    from tests.support.season_league import SEASON_ID, season_league
+    from tests.support.settings_league import interaction as member_asks
+    from tests.support.settings_league import unruled
 
-    assert await cog._refuse_roster_change_outside_placements(interaction) is True
-    assert "only be changed while the season is in placements" in (
-        interaction.response.send_message.await_args.args[0]
+    league = await season_league(tmp_path, test_mode=True)
+    await league.write(
+        "UPDATE seasons SET status = ?, stage = ? WHERE id = ?",
+        status_of_stage(stage).value, stage.value, SEASON_ID,
     )
+    await _a_fake_driver_in_am(league, "9000000000000000001", "Mock Bravo")
+    cog = test_mode_cog.TestModeCog.__new__(test_mode_cog.TestModeCog)
+    cog.bot = league.bot
+    admin = member(77, "Admin", "Admin#0001")
+
+    def asks(name):
+        interaction = member_asks(league.bot, f"test-mode roster {name}", user=admin)
+        interaction.response.send_modal = AsyncMock()
+        return interaction
+
+    await undecorate(test_mode_cog.TestModeCog.roster_add)(cog, asks("add"), "Mock Alpha")
+    await run_queue(league.bot)
+    [alpha] = await league.rows(
+        "SELECT discord_user_id FROM driver_profiles WHERE test_display_name = 'Mock Alpha'"
+    )
+    bulk = asks("add-bulk")
+    await undecorate(test_mode_cog.TestModeCog.roster_add_bulk)(cog, bulk)
+    bulk.response.send_modal.assert_awaited_once()
+    await undecorate(test_mode_cog.TestModeCog.roster_remove)(
+        cog, asks("remove"), str(alpha["discord_user_id"])
+    )
+    await undecorate(test_mode_cog.TestModeCog.roster_clear)(cog, asks("clear"), "Am")
+    await run_queue(league.bot)
+
+    assert await league.rows("SELECT 1 FROM driver_profiles WHERE is_test_driver = 1") == []
+    assert not [
+        line for line in (unruled(str(sent)) for sent in league.bot.log_channel.sent)
+        if line.startswith("⛔")
+    ]
 
 
 # ── Every refusal is recorded (#442) ──────────────────────────────────────
-
-
-def _recording(cog, interaction, command: str):
-    """Give the refusal a log channel to reach and a member and a command to name."""
-    cog.bot.output_router.post_log = AsyncMock()
-    interaction.client = cog.bot
-    interaction.user.id = 77
-    interaction.user.display_name = "Admin"
-    interaction.command.qualified_name = command
-    return [str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list]
-
-
-def _lines(cog) -> list[str]:
-    return [str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list]
-
-
-@pytest.mark.parametrize("record", [True, False], ids=["recorded", "not-recorded"])
-async def test_the_placements_check_logs_its_refusal_unless_record_is_false(tmp_path, record):
-    """The check answers the member either way. With `record` left at its default it writes
-    one line in the standard refusal form; with `record=False` it writes none."""
-    cog = await _cog(tmp_path, SeasonStage.ONGOING)
-    interaction = _interaction()
-    _recording(cog, interaction, "test-mode roster add")
-
-    refused = await cog._refuse_roster_change_outside_placements(interaction, record=record)
-
-    assert refused is True
-    assert "only be changed while the season is in placements" in (
-        interaction.response.send_message.await_args.args[0]
-    )
-    if record:
-        [line] = _lines(cog)
-        assert line.startswith("⛔ ")
-        assert "/test-mode roster add" in line
-        assert "refused for Admin (<@77>)" in line
-    else:
-        assert _lines(cog) == []
-
-
-async def _placements_approved(league) -> None:
-    await league.write("UPDATE seasons SET status = 'ACTIVE', stage = 'ONGOING'")
 
 
 async def _test_mode_off(league) -> None:
@@ -124,18 +106,12 @@ async def _test_mode_off(league) -> None:
 
 #: Every refusal the cog makes of a roster change before it is asked of the queue: the command,
 #: its arguments, what is done to `season_league`'s league first, and a fragment of the reply.
-#: Those `/test-mode roster remove` and `clear` make, and a nationality refused while switched
-#: off, are tested with their commands in `test_test_mode_roster_remove.py`,
-#: `test_test_mode_roster_clear.py` and `test_test_mode_roster_add.py`.
+#: Those `/test-mode roster remove` and `clear` make are tested with their commands in
+#: `test_test_mode_roster_remove.py` and `test_test_mode_roster_clear.py`.
 ROSTER_REFUSALS = [
-    pytest.param("roster_add", ("Mock", "McLaren", "Am"), _placements_approved,
-                 "only be changed while the season is in placements", id="add-outside-placements"),
-    pytest.param("roster_add_bulk", (), _placements_approved,
-                 "only be changed while the season is in placements",
-                 id="add-bulk-outside-placements"),
-    pytest.param("roster_add", ("Mock", "McLaren", "Am"), _test_mode_off,
+    pytest.param("roster_add", ("Mock",), _test_mode_off,
                  "only available when test mode is enabled", id="add-outside-test-mode"),
-    pytest.param("roster_add", ("Mock", "Nobody", "Am"), None, "⛔",
+    pytest.param("roster_add", ("<@&987654321098765432> Mock",), None, "⛔",
                  id="add-refused-by-the-roster"),
 ]
 
@@ -145,10 +121,9 @@ async def test_every_test_roster_refusal_reaches_the_log_channel(
     tmp_path, command, args, meanwhile, said_
 ):
     """On the bot the builder makes, `season_league`'s season 3 in Placements under test mode;
-    then the season's placements are approved (Ongoing), or test mode is switched off, or
-    neither. Admin (77) runs `/test-mode roster add` of Mock to McLaren in Am, or to Nobody, a
-    team Am does not hold, or `/test-mode roster add-bulk`. Each is refused at once, seen by Admin
-    alone and answered as before; the import form is not opened, nothing is queued, no fake
+    then test mode is switched off, or not. Admin (77) runs `/test-mode roster add` naming Mock,
+    or naming a driver with a role mention in its name, which no driver name may hold. Each is
+    refused at once, seen by Admin alone and answered as before; nothing is queued, no fake
     driver is created, and the log channel takes one line in the standard form, naming the
     command and Admin."""
     from leaguebot.core.cogs import test_mode_cog

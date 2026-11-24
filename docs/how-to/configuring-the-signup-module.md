@@ -43,7 +43,8 @@ A driver's status lives on the driver, not on their signup form. "Reserve" is an
 |---|---|
 | `/module enable signup` and `/module disable signup` | The **league admin role** |
 | `/driver sack` | The **league admin role** |
-| Everything under `/signup`, including `/signup channel` | The **interaction role** |
+| Everything else under `/signup`, including `/signup channel` | The **interaction role** |
+| `/signup start` (test mode only) | The **league admin role** |
 | `/driver assign`, `/driver unassign`, `/driver reject`, `/driver move`, `/driver release`, `/driver reassign` | The **interaction role** |
 
 > **Both tiers are roles, and Discord's permissions are not one of them.** Someone holding Administrator but neither role is refused every command here, and so is anyone running one outside the interaction channel. Being the server owner does not get you past it — give yourself one of the two roles instead.
@@ -102,7 +103,7 @@ Three settings, each a toggle with no parameters. Run the command and it flips.
 | `/signup time-type` | Whether lap times are called Time Trial or Short Qualification | Time Trial |
 | `/signup time-image` | Whether a screenshot must be attached to each lap time | On |
 
-Turning nationality off removes that question from the wizard entirely. While test mode is on, a separate switch stands in for this one wherever the pictures ask whether you collect nationality, so you can look at both without changing what your real signups ask — see [Testing with test mode](test-mode.md). The time type is only a label — it changes what the questionnaire calls the lap times and nothing else, so pick whichever matches how you actually asked drivers to set them.
+Turning nationality off removes that question from the wizard entirely. While test mode is on, a separate switch stands in for this one, for whether a fake driver's wizard asks and wherever the pictures ask whether you collect nationality, so you can look at both without changing what your real signups ask — see [Testing with test mode](test-mode.md). The time type is only a label — it changes what the questionnaire calls the lap times and nothing else, so pick whichever matches how you actually asked drivers to set them.
 
 ```
 /signup config view
@@ -163,9 +164,9 @@ Both parameters are optional.
 
 **The Sign Up button goes up before the "signups closed" notice comes down**, so the channel always shows one or the other, and the window is recorded open only once the "signups are open" message is up: a post Discord refuses stops the queue with signups still closed. The bot needs **View Channel**, **Send Messages** and **Embed Links** in the signup channel to post it; without them the command is refused, signups stay closed and the closed notice stays where it is.
 
-The bot checks things in order and stops at the first problem: test mode must be off, the module must be configured, the window must not already be open, the season must be waiting or ongoing, all three of channel and roles must be set — with both roles still on the server and the driver role one the bot can grant, every fault among these named together — there must be at least one slot, the close time must parse and be in the future, and every track ID must exist.
+The bot checks things in order and stops at the first problem: the module must be configured, the window must not already be open, the season must be waiting or ongoing, all three of channel and roles must be set — with both roles still on the server and the driver role one the bot can grant, every fault among these named together — there must be at least one slot, the close time must parse and be in the future, and every track ID must exist.
 
-> **A test-mode season never opens a window.** No real driver may sign up while the server is in test mode — the Sign Up button refuses them too — and a season confirmed in test mode goes straight to placements. Test mode is set in configuration and switched off when the season ends; see Step 10.
+> **A test-mode season opens its window as any other does**, but only fake drivers sign up in it: the Sign Up button refuses a real member while the server is in test mode, and a league admin starts a fake driver's signup with `/signup start`. Test mode is set in configuration and switched off when the season ends; see Step 10.
 
 When it goes through, the bot posts a green **Driver Signups Are Open!** message in your signup channel listing your slots, the tracks, the time type, whether a screenshot is needed, whether nationality is asked, and the auto-close time if you set one. Underneath is the **Sign Up** button, and the message pings your base role.
 
@@ -304,7 +305,7 @@ Then settle every one of them:
 
 A driver can hold one seat per division, and a team runs out of seats. The Reserve team is the exception: it has room for everyone.
 
-`/driver assign` is refused while test mode is active — a real driver is never seated under test. Fake drivers are placed by `/test-mode roster add` and are unaffected.
+`/driver assign` is refused for a real driver while test mode is active — a real driver is never seated under test. A fake driver is created by `/test-mode roster add`, signs up, and is placed here once approved, and every `/driver` command acts on it, named by mention or ID; see [Testing with test mode](test-mode.md).
 
 **Nothing is granted or posted when you assign.** A placement stands outside the championship until placements are confirmed from `/season placements-review`: that is when every placed driver is granted their division and team roles, and every lineup is posted. Until then `/driver unassign` takes a placement back without trace, returning the driver to the queue. The driver role is not part of this — it is granted when you approve the signup.
 
@@ -316,11 +317,11 @@ The lineup channel is set per division with `/division lineup-channel` — see s
 
 ## Step 10 — Try it without real drivers
 
-You will want to see the wizard before your league does. Test mode lets you seat fake drivers and walk the flow without waiting on anybody — see [Test mode](test-mode.md).
+You will want to see the wizard before your league does. Test mode lets you create fake drivers and walk the flow without waiting on anybody — see [Test mode](test-mode.md).
 
-**A test belongs to a season of its own.** Test mode can be switched on only while a season is in configuration, and a season confirmed with it on never opens a signup window — it goes straight to placements, where fake drivers are seated. While it is on, nobody real can sign up or be placed. It switches itself off when that season is completed, cancelled or aborted, and every fake driver is deleted with it; abort the test season with `/season abort` and start the real one.
+**A test belongs to a season of its own.** Test mode can be switched on only while a season is in configuration, and a season confirmed with it on goes to waiting and opens its signup window as any other. While it is on, nobody real can sign up or be placed: a league admin starts each fake driver's signup with `/signup start` and answers its wizard in its channel, any league admin being allowed to, and approves it as any signup. It switches itself off when that season is completed, cancelled or aborted, and every fake driver is deleted with it; abort the test season with `/season abort` and start the real one.
 
-The one thing you cannot fake is a second person pressing the button, so it is worth asking one other admin to run a signup through end to end before you announce it.
+The one thing you cannot fake is a real member pressing the button, so it is worth asking one other member to run a signup through end to end before you announce it, with test mode off.
 
 ---
 

@@ -4,9 +4,8 @@ The rule is the core specification's "The record of what changed": a refusal is 
 line naming the member, what was refused and why, and only a view, a list, a preview and the hub's
 About record nothing. Each case below turns a league admin away at one of the test-mode cog's own
 checks, and expects today's reply, seen by them alone, and exactly one standard refusal line; a
-refusal on the roster import form names the form. The refusal to change the roster outside
-placements is recorded already and is not a case, and neither is a refusal
-`/test-mode set-former-driver` makes, nor one `/test-mode roster remove`, `clear` or the import
+refusal on the roster import form names the form. A refusal `/test-mode set-former-driver` makes
+is not a case, nor one `/test-mode roster remove`, `clear` or the import
 form makes of what the database holds: each is judged as the change is asked of the queue (#283),
 and is tested with its command in `test_test_mode_former_driver.py`,
 `test_test_mode_roster_remove.py`, `test_test_mode_roster_clear.py` and
@@ -64,8 +63,6 @@ def _cog() -> _Cog:
     bot.output_router.post_log = AsyncMock(return_value=None)
     cog = _Cog.__new__(_Cog)
     cog.bot = bot
-    # The stage the roster may change in is recorded already, and tested on its own.
-    cog._refuse_roster_change_outside_placements = AsyncMock(return_value=False)
     return cog
 
 

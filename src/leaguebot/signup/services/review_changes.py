@@ -20,7 +20,8 @@ run. Its jobs are:
   a stop**: the approval stands, and the manager's reply and the line say so (signup specification,
   the approval's role rule). The "Approved" line is `grant_role`'s; where an admin discards that
   job the change's `finished_lines` write it as the change closes, since the approval it records
-  stands.
+  stands. A fake driver has no member behind it: it is granted no role, no note is made of that,
+  and the line names it by its test name.
 
 **Request Changes** asks `signup.request_changes` once the manager has typed the reason, through
 the press they made. Its check refuses a signup that has moved on since the press, as a rejection
@@ -100,7 +101,7 @@ from leaguebot.framework.models.change import (
     Verdict,
 )
 from leaguebot.core.models.driver_profile import DriverState, InvalidDriverTransition
-from leaguebot.core.services.drivers.driver_service import state_of_account_on
+from leaguebot.core.services.drivers.driver_service import driver_test_names_on, state_of_account_on
 from leaguebot.core.services.rounds import track_service
 from leaguebot.framework.services.posting import standing_posts
 from leaguebot.framework.db.database import get_connection
@@ -118,6 +119,9 @@ from leaguebot.framework.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.input_validator import parse_time
 from leaguebot.framework.utils.league_server import league_guild
 from leaguebot.framework.utils.log_lines import name_of_member
+from leaguebot.signup.services.driver_naming import (
+    fake_name_of, mention_or_name, name_of_driver, named_in_progress,
+)
 from leaguebot.signup.models.signup_module import WizardState
 from leaguebot.signup.services.closing_steps import (
     DELETE_REASON,
@@ -270,17 +274,21 @@ def approve_change(
         await drivers().transition_on(db, user_id, DriverState.UNASSIGNED)
         await signup().mark_approved_on(db, user_id)
         follow_ons: tuple[FollowOn, ...] = ()
+        fake = (await driver_test_names_on(db, [int(user_id)])).get(int(user_id))
         if wizard is not None and wizard.signup_channel_id is not None:
             follow_ons = (FollowOn(
                 CLOSING,
                 {
                     "user_id": user_id, "channel_id": int(wizard.signup_channel_id),
+                    "fake_name": fake,
                     "notice": APPROVED_NOTICE.format(manager=ctx.step_payload["actor_name"]),
                 },
                 "Closing an approved signup",
             ),)
         return StepResult(
-            result={},
+            # The approval's closing lines are written from its steps' results alone, so a fake
+            # driver's test name is kept here for them, read on this save's own connection.
+            result={"fake_name": fake} if fake is not None else {},
             audits=(AuditRecord(
                 "SIGNUP_APPROVE",
                 {"state": prior, "discord_user_id": user_id},
@@ -296,6 +304,13 @@ def approve_change(
 
     async def grant_role(ctx: StepContext) -> StepResult:
         user_id = str(ctx.step_payload["user_id"])
+        # A fake driver has no member to give a role: core never grants or revokes one for it, so
+        # it is named by its test name and no note is made of the role.
+        fake_name = await drivers().fake_driver_name(user_id)
+        if fake_name is not None:
+            return StepResult(
+                result={}, lines=(f"{ctx.named} | Signup | Approved\n  driver: {fake_name}",)
+            )
         note = await _grant(ctx, user_id)
         line = f"{ctx.named} | Signup | Approved\n  driver: {await name_of_member(ctx.bot, int(user_id))}"
         if note is not None:
@@ -322,10 +337,12 @@ def approve_change(
         return None
 
     async def describe_approve(ctx: StepContext) -> str:
-        return f"approving the signup of <@{ctx.step_payload['user_id']}>"
+        who = await mention_or_name(ctx.db_path, ctx.step_payload["user_id"])
+        return f"approving the signup of {who}"
 
     async def describe_grant(ctx: StepContext) -> str:
-        return f"giving <@{ctx.step_payload['user_id']}> the driver role"
+        who = await mention_or_name(ctx.db_path, ctx.step_payload["user_id"])
+        return f"giving {who} the driver role"
 
     def finished_lines(ctx: OutcomeContext) -> tuple[str, ...]:
         # The "Approved" line is `grant_role`'s; a role job an admin discarded wrote none, and the
@@ -339,6 +356,10 @@ def approve_change(
             or granted is None or "discarded" not in (granted.result or {})
         ):
             return ()
+        # A fake driver is never granted a role, so no note is made of the role it was not given.
+        fake_name = (approved_job.result or {}).get("fake_name")
+        if fake_name is not None:
+            return (f"{ctx.named} | Signup | Approved\n  driver: {fake_name}",)
         return (
             f"{ctx.named} | Signup | Approved\n  driver: <@{ctx.payload['user_id']}>\n"
             "  The driver role could not be granted: the job was discarded.",
@@ -350,6 +371,8 @@ def approve_change(
         if approved_job is not None and "discarded" in (approved_job.result or {}):
             return "⚠️ The signup was not approved: the job was discarded."
         text = "✅ Signup approved."
+        if approved_job is not None and (approved_job.result or {}).get("fake_name") is not None:
+            return text
         granted = views.get(GRANT_ROLE)
         if granted is not None and "discarded" in (granted.result or {}):
             return text + "\n⚠️ The driver role could not be granted: the job was discarded."
@@ -411,9 +434,8 @@ def request_changes_change(
                 PlannedStep(REQUEST_JOB, shared))
 
     async def name_driver(ctx: StepContext) -> StepResult:
-        return StepResult(result={
-            "named": await name_of_member(ctx.bot, int(ctx.step_payload["user_id"]))
-        })
+        named, fake = await name_of_driver(ctx.bot, drivers(), ctx.step_payload["user_id"])
+        return StepResult(result={"named": named, "fake": fake})
 
     async def request(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         payload = ctx.step_payload
@@ -434,6 +456,10 @@ def request_changes_change(
              if view.name == NAME_DRIVER and view.done),
             f"<@{user_id}>",
         )
+        fake = any(
+            bool((view.result or {}).get("fake")) for view in ctx.steps
+            if view.name == NAME_DRIVER and view.done
+        )
         line = f"{ctx.named} | Signup | Correction requested\n  driver: {named}"
         if payload["text"]:
             line += f"\n  reason: {payload['text']}"
@@ -445,6 +471,7 @@ def request_changes_change(
                     "user_id": user_id, "channel_id": int(wizard.signup_channel_id),
                     "actor_name": str(payload["actor_name"]),
                     "reason_message_id": int(payload["reason_message_id"]),
+                    "fake_name": named if fake else None,
                 },
                 "Offering a signup's correction choices",
             ),)
@@ -463,10 +490,12 @@ def request_changes_change(
         )
 
     async def describe_name(ctx: StepContext) -> str:
-        return f"finding the name of <@{ctx.step_payload['user_id']}> for the record"
+        who = await mention_or_name(ctx.db_path, ctx.step_payload["user_id"])
+        return f"finding the name of {who} for the record"
 
     async def describe_request(ctx: StepContext) -> str:
-        return f"asking for changes to the signup of <@{ctx.step_payload['user_id']}>"
+        who = await mention_or_name(ctx.db_path, ctx.step_payload["user_id"])
+        return f"asking for changes to the signup of {who}"
 
     def outcome(ctx: OutcomeContext) -> str:
         requested = {view.name: view for view in ctx.steps}.get(REQUEST_JOB)
@@ -514,8 +543,9 @@ def choices_change(
     """The `signup.choices` change type, for the builder to register, on the driver's lane
     (``channel:<signup channel>``): the league asked it back once a manager's request for changes
     was saved. The payload is ``user_id``, ``channel_id``, ``actor_name`` (the manager) and
-    ``reason_message_id``. *queue_of* gives the change queue the choices are handed, and *signup* and *config* the services
-    they read. *now* and
+    ``reason_message_id``, with ``fake_name`` (the driver's test name where they are a fake driver,
+    which the in-progress text names them by). *queue_of* gives the change queue the choices are
+    handed, and *signup* and *config* the services they read. *now* and
     *arm_once* are the queue's clock and the scheduler service's one-off timer."""
 
     def plan(payload: dict[str, Any]) -> tuple[PlannedStep, ...]:
@@ -549,7 +579,12 @@ def choices_change(
         from leaguebot.signup.services.signup_views import CorrectionParameterView
 
         member = found.guild.get_member(int(user_id))
-        mention = member.mention if member is not None else f"<@{user_id}>"
+        # A fake driver has no account to mention: its test name stands in, and nobody is mentioned.
+        fake_name = await fake_name_of(ctx.db_path, user_id)
+        mention = (
+            f"**{fake_name}**" if fake_name is not None
+            else member.mention if member is not None else f"<@{user_id}>"
+        )
         message_id = await post(
             found,
             f"{mention} **{ctx.step_payload['actor_name']}** has requested a correction.\n"
@@ -558,7 +593,8 @@ def choices_change(
                 user_id, change_queue=queue_of(), signup=signup(), config=config
             ),
             mentions=discord.AllowedMentions(
-                everyone=False, roles=False, users=[discord.Object(id=int(user_id))]
+                everyone=False, roles=False,
+                users=[] if fake_name is not None else [discord.Object(id=int(user_id))],
             ),
             refused=f"the correction choices could not be posted in channel {found.id}",
         )
@@ -585,14 +621,16 @@ def choices_change(
         return f"offering the correction choices in <#{ctx.step_payload['channel_id']}>"
 
     async def describe_arm(ctx: StepContext) -> str:
-        return f"arming the five minutes to choose for <@{ctx.step_payload['user_id']}>"
+        who = await mention_or_name(ctx.db_path, ctx.step_payload["user_id"])
+        return f"arming the five minutes to choose for {who}"
 
     async def describe_reason(ctx: StepContext) -> str:
         return f"deleting the reason typed in <#{ctx.step_payload['channel_id']}>"
 
     async def would_never_lapse(ctx: StepContext) -> str:
+        who = await mention_or_name(ctx.db_path, ctx.step_payload["user_id"])
         return (
-            f"nothing would end <@{ctx.step_payload['user_id']}>'s correction request once its "
+            f"nothing would end {who}'s correction request once its "
             "five minutes ran out, and the season's placements could not be confirmed until the "
             "bot restarts"
         )
@@ -615,7 +653,9 @@ def choices_change(
         },
         check=standing,
         key=lambda payload: f"{CHOICES}:{payload['user_id']}",
-        doing=lambda payload: f"Offering the correction choices of <@{payload['user_id']}>",
+        doing=lambda payload: (
+            f"Offering the correction choices of {named_in_progress(payload)}"
+        ),
         outcome=lambda _ctx: "",
         lane=lambda payload: f"channel:{int(payload['channel_id'])}",
         conversation_open=open_,
@@ -674,8 +714,12 @@ def choose_change(
         )
 
     async def name_driver(ctx: StepContext) -> StepResult:
+        user_id = str(ctx.step_payload["user_id"])
+        fake_name = await drivers().fake_driver_name(user_id)
+        if fake_name is not None:
+            return StepResult(result={"owner": f"{fake_name}'s", "fake_name": fake_name})
         guild = await league_guild(ctx.bot)
-        return StepResult(result={"owner": _owner_of(guild, str(ctx.step_payload["user_id"]))})
+        return StepResult(result={"owner": _owner_of(guild, user_id)})
 
     async def choose(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         pl = ctx.step_payload
@@ -707,6 +751,11 @@ def choose_change(
              if view.name == NAME_DRIVER and view.done),
             "a",
         )
+        fake_name = next(
+            ((view.result or {}).get("fake_name") for view in ctx.steps
+             if view.name == NAME_DRIVER and view.done),
+            None,
+        )
         label = pl["label"]
         line = (
             f"{ctx.named} | the “{label}” button of {owner} signup review | "
@@ -718,7 +767,7 @@ def choose_change(
                 RECOLLECT,
                 {
                     "user_id": user_id, "channel_id": int(wizard.signup_channel_id),
-                    "parameter": pl["parameter"], "reason": reason,
+                    "parameter": pl["parameter"], "reason": reason, "fake_name": fake_name,
                 },
                 "Asking a driver to re-submit an answer",
             ),)
@@ -749,17 +798,21 @@ def choose_change(
         return StepResult(result={})
 
     async def describe_name(ctx: StepContext) -> str:
-        return f"finding the name of <@{ctx.step_payload['user_id']}> for the record"
+        who = await mention_or_name(ctx.db_path, ctx.step_payload["user_id"])
+        return f"finding the name of {who} for the record"
 
     async def describe_choose(ctx: StepContext) -> str:
-        return f"sending <@{ctx.step_payload['user_id']}> back to one answer of their signup"
+        who = await mention_or_name(ctx.db_path, ctx.step_payload["user_id"])
+        return f"sending {who} back to one answer of their signup"
 
     async def describe_arm(ctx: StepContext) -> str:
-        return f"arming the 24 hours of <@{ctx.step_payload['user_id']}>'s correction"
+        who = await mention_or_name(ctx.db_path, ctx.step_payload["user_id"])
+        return f"arming the 24 hours of {who}'s correction"
 
     async def would_never_time_out(ctx: StepContext) -> str:
+        who = await mention_or_name(ctx.db_path, ctx.step_payload["user_id"])
         return (
-            f"<@{ctx.step_payload['user_id']}>'s signup would never time out if they stopped "
+            f"{who}'s signup would never time out if they stopped "
             "answering, and while they correct it the season's placements could not be "
             "confirmed until the bot restarts"
         )
@@ -797,15 +850,19 @@ def recollect_change(
     *,
     signup: Callable[[], "SignupModuleService"],
     queue_of: Callable[[], "ChangeQueue"],
+    config: "ConfigService",
+    drivers: Callable[[], "DriverService"],
 ) -> ChangeType:
     """The `signup.recollect` change type, for the builder to register, on the driver's lane
     (``channel:<signup channel>``): the league asked it back once a manager's choice was saved.
 
     The payload is ``user_id``, ``channel_id``, ``parameter`` (the answer to re-submit) and
-    ``reason`` (the manager's, which the prompt gives). Its one job `post_recollect` sets the
+    ``reason`` (the manager's, which the prompt gives), with ``fake_name`` (the driver's test name
+    where they are a fake driver, which the in-progress text names them by). Its one job `post_recollect` sets the
     driver's typing for the step they return to (taken away for a button step, given back for a
     typed one: a driver returned to a typed question with typing revoked could not answer) and
-    posts the prompt. A channel gone from the server is nothing to post in: the driver's state is
+    posts the prompt. *config* and *drivers* are handed to the step's buttons, with which they
+    judge who may answer. A channel gone from the server is nothing to post in: the driver's state is
     the league's record and the prompt only how they learn of it. *queue_of* gives the change
     queue the step's buttons are handed. A change whose driver is no longer part-way through a
     correction is dropped.
@@ -846,7 +903,11 @@ def recollect_change(
                     else "Signup wizard button step answered"
                 ),
             )
-        mention = member.mention if member is not None else f"<@{user_id}>"
+        fake_name = await drivers().fake_driver_name(user_id)
+        mention = (
+            f"**{fake_name}**" if fake_name is not None
+            else member.mention if member is not None else f"<@{user_id}>"
+        )
         reason_line = f"\n**Reason:** {pl['reason']}" if pl["reason"] else ""
         async with get_connection(ctx.db_path) as db:
             track_map = await track_service.get_track_name_map(db)
@@ -859,10 +920,11 @@ def recollect_change(
             ),
             view=build_step_view(
                 queue_of(), state, user_id, snapshot.team_names if snapshot else [],
-                signup=signup(),
+                signup=signup(), config=config, drivers=drivers(),
             ),
             mentions=discord.AllowedMentions(
-                everyone=False, roles=False, users=[discord.Object(id=int(user_id))]
+                everyone=False, roles=False,
+                users=[] if fake_name is not None else [discord.Object(id=int(user_id))],
             ),
             refused=f"the prompt to re-submit could not be posted in channel {channel.id}",
         )
@@ -882,7 +944,7 @@ def recollect_change(
         },
         check=standing,
         key=lambda payload: f"{RECOLLECT}:{payload['user_id']}",
-        doing=lambda payload: f"Asking <@{payload['user_id']}> to re-submit an answer",
+        doing=lambda payload: f"Asking {named_in_progress(payload)} to re-submit an answer",
         outcome=lambda _ctx: "",
         lane=lambda payload: f"channel:{int(payload['channel_id'])}",
         conversation_open=open_,
@@ -890,15 +952,19 @@ def recollect_change(
     )
 
 
-async def ask_lapse(queue: "ChangeQueue", user_id: str, *, restart: bool = False) -> int | None:
+async def ask_lapse(
+    queue: "ChangeQueue", db_path: str, user_id: str, *, restart: bool = False,
+) -> int | None:
     """Ask the queue, as the bot, for the lapse of *user_id*'s correction request
     (`signup.correction.lapse`): the correction timer's ask once its five minutes ran out, and the
     restart's for every driver still awaiting a choice (*restart*, which only changes the notice's
-    wording). Gives the change's id, or None where the change is not due (its check judges that)."""
+    wording). The change's words name a fake driver by its test name, read from *db_path*. Gives
+    the change's id, or None where the change is not due (its check judges that)."""
     return await queue.ask(
         LAPSE,
         {"user_id": user_id, "restart": restart},
-        what=f"returning <@{user_id}> to the approval queue, no correction having been chosen",
+        what=f"returning {await mention_or_name(db_path, user_id)} to the approval queue, "
+        "no correction having been chosen",
         origin=ChangeOrigin.BOT,
     )
 
@@ -906,8 +972,9 @@ async def ask_lapse(queue: "ChangeQueue", user_id: str, *, restart: bool = False
 async def would_await_a_choice_nobody_can_make(ctx: StepContext) -> str:
     """What a Discard of a job that moves a driver out of Awaiting Correction Parameter would
     leave: the driver stuck there, an unsettled signup that refuses the season's placements."""
+    who = await mention_or_name(ctx.db_path, ctx.step_payload["user_id"])
     return (
-        f"<@{ctx.step_payload['user_id']}> would be left awaiting a correction nobody can "
+        f"{who} would be left awaiting a correction nobody can "
         "choose, and the season's placements could not be confirmed until the bot restarts"
     )
 
@@ -956,7 +1023,7 @@ def lapse_change(
         asked = None if wizard is None else wizard.draft_answers.get("_correction_requested_by")
         guild = await league_guild(ctx.bot)
         member = None if guild is None else guild.get_member(int(user_id))
-        driver = getattr(member, "display_name", None)
+        driver = await drivers().fake_driver_name(user_id) or getattr(member, "display_name", None)
         return StepResult(result={
             "manager": await name_of_member(ctx.bot, int(asked) if asked else None),
             "driver": driver if isinstance(driver, str) else f"<@{user_id}>",
@@ -1046,7 +1113,7 @@ def lapse_change(
             # The wizard names no channel: the signup ends as it does for a driver who leaves,
             # since nothing else would ever settle a driver awaiting a review that cannot be
             # posted.
-            ended = await channel_gone_ending(ctx, user_id, None)
+            ended = await channel_gone_ending(ctx, user_id, None, drivers())
             return StepResult(
                 result={"panel": False, "channel_gone": True},
                 lines=(correction_lapse_line(lapse_record(ctx), panel=False, gone=True),),
@@ -1060,25 +1127,30 @@ def lapse_change(
             follow_ons=(FollowOn(
                 PANEL,
                 {"user_id": user_id, "channel_id": int(channel_id), "lapse": lapse_record(ctx)},
-                f"posting <@{user_id}>'s review panel again",
+                f"posting {await mention_or_name(ctx.db_path, user_id)}'s review panel again",
             ),),
         )
 
     async def describe_names(ctx: StepContext) -> str:
-        return f"finding the names of <@{ctx.step_payload['user_id']}> and their manager for the record"
+        who = await mention_or_name(ctx.db_path, ctx.step_payload["user_id"])
+        return f"finding the names of {who} and their manager for the record"
 
     async def describe_lapse(ctx: StepContext) -> str:
-        return f"returning <@{ctx.step_payload['user_id']}> to the approval queue"
+        who = await mention_or_name(ctx.db_path, ctx.step_payload["user_id"])
+        return f"returning {who} to the approval queue"
 
     async def describe_post_lapse(ctx: StepContext) -> str:
-        return f"telling <@{ctx.step_payload['user_id']}>'s channel the correction lapsed"
+        who = await mention_or_name(ctx.db_path, ctx.step_payload["user_id"])
+        return f"telling {who}'s channel the correction lapsed"
 
     async def describe_panel(ctx: StepContext) -> str:
-        return f"handing <@{ctx.step_payload['user_id']}>'s review panel to their own lane"
+        who = await mention_or_name(ctx.db_path, ctx.step_payload["user_id"])
+        return f"handing {who}'s review panel to their own lane"
 
     async def would_wait_unreviewed(ctx: StepContext) -> str:
+        who = await mention_or_name(ctx.db_path, ctx.step_payload["user_id"])
         return (
-            f"<@{ctx.step_payload['user_id']}> would wait for approval with no review panel, "
+            f"{who} would wait for approval with no review panel, "
             "and the season's placements could not be confirmed"
         )
 

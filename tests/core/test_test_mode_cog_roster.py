@@ -1,8 +1,9 @@
 """The test-mode command surface for driver nationality.
 
 `/test-mode nationality` is the test-mode counterpart of `/signup nationality`, and
-`/test-mode roster list` prints the nationality each fake driver holds; `/test-mode roster add`
-takes one on the change queue, in test_test_mode_roster_add. These tests run the callbacks
+`/test-mode roster list` prints each fake driver with its ID, its state, the nationality its signup
+gave and the seats it holds (#600); `/test-mode roster add`, on the change queue, is in
+test_test_mode_roster_add. These tests run the callbacks
 against a migrated database with Discord stubbed — no gateway, no server, no running bot.
 
 The guards are unwrapped as the other cog suites unwrap them: the tier guards have their
@@ -139,27 +140,72 @@ async def db_path(tmp_path):
 
 @pytest.fixture
 def cog(db_path):
-    return test_mode_cog.TestModeCog(
-        SimpleNamespace(
-            db_path=db_path,
-            config_service=ConfigService(db_path),
-            output_router=SimpleNamespace(post_log=AsyncMock()),
-        )
+    """The test-mode cog on a bot carrying the hook a driver's signup is read through, as the
+    entry point's does."""
+    from tests.support.review_workflows import sign_up_driver_names_read
+
+    bot = SimpleNamespace(
+        db_path=db_path,
+        config_service=ConfigService(db_path),
+        output_router=SimpleNamespace(post_log=AsyncMock()),
     )
+    sign_up_driver_names_read(bot)
+    return test_mode_cog.TestModeCog(bot)
 
 
-async def _add(cog, *, name="Mock Alpha", nationality=None, team="Redline"):
-    """Mock driver *name* seated at *team* in Division 1 by the roster's writer: the listing's
-    tests need fake drivers seated, not the command that seats them."""
+async def _add(cog, *, name="Mock Alpha"):
+    """Create the fake driver *name*, at Not Signed Up and unseated, through the roster's writer:
+    the listing's tests need fake drivers, not the command that creates them."""
     from leaguebot.core.services.test_mode.test_roster_service import add_test_driver_on
 
     async with get_connection(cog.bot.db_path) as db:
-        result = await add_test_driver_on(
-            db, driver_name=name, team_name=team, division_name=DIVISION,
-            nationality=nationality,
-        )
+        result = await add_test_driver_on(db, name)
         await db.commit()
     assert not isinstance(result, str), result
+    return result
+
+
+async def _seat(cog, driver, *, team="Redline") -> None:
+    """Seat *driver* in the first free seat of *team* in Division 1, committed, as `/driver
+    assign` and the placements' commit leave a driver."""
+    async with get_connection(cog.bot.db_path) as db:
+        seat = await (
+            await db.execute(
+                "SELECT ts.id, ti.division_id FROM team_seats ts "
+                "JOIN team_instances ti ON ti.id = ts.team_instance_id "
+                "WHERE ti.name = ? AND ts.driver_profile_id IS NULL "
+                "ORDER BY ts.seat_number LIMIT 1",
+                (team,),
+            )
+        ).fetchone()
+        season = await (await db.execute("SELECT id FROM seasons")).fetchone()
+        await db.execute(
+            "UPDATE team_seats SET driver_profile_id = ? WHERE id = ?",
+            (driver["profile_id"], seat["id"]),
+        )
+        await db.execute(
+            "INSERT INTO driver_season_assignments "
+            "(driver_profile_id, season_id, division_id, team_seat_id, committed) "
+            "VALUES (?, ?, ?, ?, 1)",
+            (driver["profile_id"], season["id"], seat["division_id"], seat["id"]),
+        )
+        await db.execute(
+            "UPDATE driver_profiles SET current_state = 'ASSIGNED' WHERE id = ?",
+            (driver["profile_id"],),
+        )
+        await db.commit()
+
+
+async def _signed_up(cog, driver, nationality) -> None:
+    """An approved signup to the season by *driver*, giving *nationality*."""
+    async with get_connection(cog.bot.db_path) as db:
+        season = await (await db.execute("SELECT id FROM seasons")).fetchone()
+        await db.execute(
+            "INSERT INTO signup_records (season_id, discord_user_id, nationality, created_at, "
+            "approved) VALUES (?, ?, ?, '2026-03-01T12:00:00+00:00', 1)",
+            (season["id"], str(driver["discord_user_id"]), nationality),
+        )
+        await db.commit()
 
 
 # ── /test-mode nationality ────────────────────────────────────────────────
@@ -250,8 +296,9 @@ class TestTheNationalityCommand:
         queued. The queue runs it: the switch is saved off, with one audit entry recording
         on → off. Admin runs the command once more: it is acknowledged as turning it back on, and
         once the queue has run it the switch is on again, a second audit entry recording
-        off → on; the replies read "OFF" and then "ON", and the lines "disabled" and then
-        "enabled", word for word."""
+        off → on; the replies read "OFF", saying the signup wizard does not ask it and graphics
+        draw no flag at all, and then "ON", saying the signup wizard asks a fake driver's
+        nationality, and the lines "disabled" and then "enabled", word for word."""
         first, repeat, again = _asks(league), _asks(league), _asks(league)
 
         await _ask_nationality(league, first)
@@ -282,11 +329,11 @@ class TestTheNationalityCommand:
         assert await _flags(league.db_path) == {_FLAG: 1, "test_mode_active": 1}
         assert last_said(first) == (
             "✅ Test-mode nationality: **OFF**.\n"
-            "Mock drivers already holding one keep it, and graphics draw no flag at all."
+            "The signup wizard does not ask it, and graphics draw no flag at all."
         )
         assert last_said(again) == (
             "✅ Test-mode nationality: **ON**.\n"
-            "Mock drivers may be given one with `/test-mode roster add`."
+            "The signup wizard asks a fake driver's nationality."
         )
         assert _lines(league) == [
             f"⛔ `/test-mode nationality` refused for {_NAMED} — Turning test-mode nationality "
@@ -344,7 +391,8 @@ class TestTheNationalityCommand:
         """The server is in test mode with nationality on. Admin (77) runs the command: they are
         answered at once with the queue's acknowledgement, naming the change's first job, and
         nothing is written until the queue runs it. Once it has, the acknowledgement reads the
-        reply word for word, and the log channel takes the one line, word for word."""
+        reply, "OFF", saying the signup wizard does not ask it and graphics draw no flag at all,
+        word for word, and the log channel takes the one line, word for word."""
         interaction = _asks(league)
 
         await _ask_nationality(league, interaction)
@@ -362,7 +410,7 @@ class TestTheNationalityCommand:
 
         assert last_said(interaction) == (
             "✅ Test-mode nationality: **OFF**.\n"
-            "Mock drivers already holding one keep it, and graphics draw no flag at all."
+            "The signup wizard does not ask it, and graphics draw no flag at all."
         )
         assert _lines(league) == [
             f"{_NAMED} | /test-mode nationality | Success\n  test_mode_nationality: disabled"
@@ -459,70 +507,103 @@ class TestTheNationalityCommand:
 # ── /test-mode roster list ────────────────────────────────────────────────
 
 
+
+def _line_of(rendered: str, name: str) -> str:
+    """The listing's one line naming *name*."""
+    [line] = [line for line in rendered.splitlines() if name in line]
+    return line
+
+
 class TestRosterListShowsIt:
-    async def _list(self, cog) -> str:
-        """The whole listing, however many messages it took to send it."""
+    async def _list(self, cog, division=None) -> str:
+        """The whole listing, however many messages it took to send it, for *division* or, where
+        it is None, for every fake driver."""
         interaction = _Interaction()
-        await _unwrap(test_mode_cog.TestModeCog.roster_list)(cog, interaction, DIVISION)
+        await _unwrap(test_mode_cog.TestModeCog.roster_list)(cog, interaction, division)
         return "\n".join(interaction.sent)
 
     async def test_the_column_is_headed(self, cog):
-        await _add(cog, nationality="Dutch")
+        """Mock Alpha is created; the listing, no division named, is headed with a state and a
+        nationality column."""
+        await _add(cog)
 
-        assert "Nationality" in await self._list(cog)
+        rendered = await self._list(cog)
+
+        assert "State" in rendered
+        assert "Nationality" in rendered
+
+    async def test_an_unseated_driver_is_listed_with_its_id_and_state(self, cog):
+        """Mock Alpha is created and nothing more: no seat, no signup. The listing, no division
+        named, shows Mock Alpha on a line of its own with the mention its ID makes, its state Not
+        Signed Up, and that it holds no seat."""
+        driver = await _add(cog, name="Mock Alpha")
+
+        line = _line_of(await self._list(cog), "Mock Alpha")
+
+        assert f"<@{driver['discord_user_id']}>" in line
+        assert "Not Signed Up" in line
+        assert "none" in line.lower()
 
     async def test_a_drivers_own_is_printed(self, cog):
-        await _add(cog, name="Mock Alpha", nationality="brazil")
+        """Mock Alpha's approved signup to the season gave Brazilian: Mock Alpha's line shows
+        Brazilian."""
+        driver = await _add(cog, name="Mock Alpha")
+        await _signed_up(cog, driver, "Brazilian")
 
-        rendered = await self._list(cog)
+        line = _line_of(await self._list(cog), "Mock Alpha")
 
-        assert "Brazilian" in rendered
+        assert "Brazilian" in line
 
     async def test_a_driver_without_one_prints_a_dash(self, cog):
+        """Mock Alpha has no signup, so no nationality: its line marks the nationality with a
+        dash."""
         await _add(cog, name="Mock Alpha")
 
-        rendered = await self._list(cog)
+        line = _line_of(await self._list(cog), "Mock Alpha")
 
-        assert "Mock Alpha" in rendered
-        assert "—" in rendered
+        assert "—" in line
 
-    async def test_the_team_column_still_stands_beside_it(self, cog):
-        await _add(cog, name="Mock Alpha", nationality="Dutch")
+    async def test_a_seated_driver_shows_its_team_and_division(self, cog):
+        """Mock Alpha is seated at Redline in Division 1, as `/driver assign` and the placements'
+        commit leave a driver: its line shows Redline and Division 1, and its state Assigned."""
+        driver = await _add(cog, name="Mock Alpha")
+        await _seat(cog, driver)
 
-        rendered = await self._list(cog)
+        line = _line_of(await self._list(cog), "Mock Alpha")
 
-        assert "Redline" in rendered
-        assert rendered.index("Redline") < rendered.index("Dutch")
+        assert "Redline" in line
+        assert "Division 1" in line
+        assert "Assigned" in line
 
-    async def test_a_roster_too_large_for_one_message_is_sent_as_several(
-        self, cog, db_path
-    ):
+    async def test_a_division_named_lists_only_the_drivers_seated_in_it(self, cog):
+        """Mock Alpha is seated at Redline in Division 1 and Mock Bravo is not seated. The
+        listing for Division 1 shows Mock Alpha and not Mock Bravo; the listing with no division
+        named shows both."""
+        alpha = await _add(cog, name="Mock Alpha")
+        await _seat(cog, alpha)
+        await _add(cog, name="Mock Bravo")
+
+        in_division = await self._list(cog, DIVISION)
+        everyone = await self._list(cog)
+
+        assert "Mock Alpha" in in_division
+        assert "Mock Bravo" not in in_division
+        assert "Mock Alpha" in everyone
+        assert "Mock Bravo" in everyone
+
+    async def test_a_roster_too_large_for_one_message_is_sent_as_several(self, cog):
         """The bug: past about twenty drivers Discord refused the whole listing.
 
         A body over 2000 characters is answered with a 400, not truncated, so the
-        manager got no roster at all and a traceback in the log. The reserve team is
-        used because it seats without limit — the point is the length of the reply,
-        not how the drivers came to be seated.
+        manager got no roster at all and a traceback in the log. Twenty-five fake drivers are
+        created, none seated, and listed with no division named: the listing spans several
+        messages, none over 2000 characters, and every driver is in it.
         """
-        async with get_connection(db_path) as db:
-            cursor = await db.execute(
-                "SELECT id FROM divisions WHERE name = ?", (DIVISION,)
-            )
-            division_id = (await cursor.fetchone())[0]
-            await db.execute(
-                "INSERT INTO team_instances (division_id, name, full_name, max_seats, is_reserve) "
-                "VALUES (?, 'Reserve', 'Reserve', 0, 1)",
-                (division_id,),
-            )
-            await db.commit()
-
         for i in range(25):
-            await _add(cog, name=f"Mock Driver {i:02d}", nationality="Dutch", team="Reserve")
+            await _add(cog, name=f"Mock Driver {i:02d}")
 
         interaction = _Interaction()
-        await _unwrap(test_mode_cog.TestModeCog.roster_list)(
-            cog, interaction, DIVISION
-        )
+        await _unwrap(test_mode_cog.TestModeCog.roster_list)(cog, interaction, None)
 
         assert len(interaction.sent) > 1, "a roster this size must span several messages"
         for message in interaction.sent:

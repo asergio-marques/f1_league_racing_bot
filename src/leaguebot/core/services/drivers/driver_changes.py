@@ -854,7 +854,8 @@ def driver_reject_change(
 
     The payload names the driver (`driver_profile_id`, `discord_user_id`, `driver_name`) and the
     season (`season_id`). The driver role is read inside the save and taken after it, from the
-    account the save read from the driver's profile.
+    account the save read from the driver's profile; a fake driver, never granted a role, has none
+    taken.
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -880,7 +881,8 @@ def driver_reject_change(
     async def apply(db: aiosqlite.Connection, ctx: StepContext) -> _Saved:
         profile_id = int(ctx.payload["driver_profile_id"])
         cursor = await db.execute(
-            "SELECT discord_user_id, current_state FROM driver_profiles WHERE id = ?",
+            "SELECT discord_user_id, current_state, is_test_driver FROM driver_profiles "
+            "WHERE id = ?",
             (profile_id,),
         )
         row = await cursor.fetchone()
@@ -901,7 +903,7 @@ def driver_reject_change(
                 None,
             ),
             user_id=int(row["discord_user_id"]),
-            revoke=[int(role_id)] if role_id else (),
+            revoke=[int(role_id)] if role_id and not row["is_test_driver"] else (),
         )
 
     def doing(payload: dict[str, Any]) -> str:

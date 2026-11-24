@@ -316,3 +316,40 @@ async def test_a_placed_or_departed_driver_is_not_listed(tmp_path):
     )
 
     assert await _service(db_path).get_unassigned_drivers_seeded() == []
+
+
+async def test_an_unassigned_fake_driver_with_no_signup_is_listed_by_its_test_name(tmp_path):
+    """A fake driver left Unassigned has filed no signup: `/signup unassigned list` names it by
+    its test name, as core names it, and every answer it never gave reads "—"."""
+    db_path = await _seed(tmp_path, [])
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO driver_profiles (discord_user_id, current_state, is_test_driver, "
+            "test_display_name) VALUES ('9000000000000000001', 'UNASSIGNED', 1, 'Ghost')"
+        )
+        await db.commit()
+
+    [row] = await _service(db_path).get_unassigned_drivers_seeded()
+
+    assert row["seed"] == 1
+    assert row["server_display_name"] == "Ghost"
+    assert (row["platform"], row["driver_type"], row["total_lap_fmt"]) == ("—", "—", "—")
+
+
+async def test_an_unassigned_fake_driver_with_no_signup_is_exported_by_its_test_name(tmp_path):
+    """A fake driver left Unassigned has filed no signup: the unassigned signups export names it
+    by its test name, not its raw ID, seeded first, and every answer it never gave is blank."""
+    db_path = await _seed(tmp_path, [], slots=[(1, "19:00")])
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO driver_profiles (discord_user_id, current_state, is_test_driver, "
+            "test_display_name) VALUES ('9000000000000000001', 'UNASSIGNED', 1, 'Ghost')"
+        )
+        await db.commit()
+
+    [row], _slots = await _export(db_path)
+
+    assert row["seed"] == 1
+    assert row["display_name"] == "Ghost"
+    assert (row["platform"], row["driver_type"], row["total_lap_fmt"]) == ("", "", "")
+    assert list(row["slot_presence"].values()) == [False]

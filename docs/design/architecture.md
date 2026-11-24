@@ -202,6 +202,17 @@ point, which would then hold every module's registrations and grow with each mod
   core's. *Rejected:* a cog for each subgroup, bound to the group by hand, which fights the library
   for no gain (`steward_module.md` §5). *Rejected:* each subgroup's class declaring its own, which
   holds the order only while nothing imports a subgroup's file before the cog.
+
+  *The one exception:* `/test-mode roster sign-up-bulk` sits in core's `roster` group and is written
+  in core's cog, the signup part handed to signup through two hooks (`fake_signups_ready_read`,
+  `fake_signups_approved`). A roster's tool belongs with the roster, which core owns, and the
+  command creates drivers, which only core does; what it asks of signup is a read and a signup's own
+  record, which a hook carries without part of signup moving into core. Its two hooks are therefore
+  named for what the roster asks of signing up, not for a moment of core's, and with nothing signed
+  up to the first core refuses; that is the price, accepted for this command alone, and core still
+  holds none of signup's rules. It is the one command under `/test-mode` whose work is chiefly a
+  module's, rather than a moment of core's the modules join as `/test-mode advance` and `toggle`
+  are; a further one needs the same reasons.
 - **A service** holds the league's rules and all the database code. It may use discord.py: it can
   post to a channel and build the buttons it posts, and a workflow, to which a cog hands a button's
   press, takes the pressed interaction and answers the member through it, while the gates it walks
@@ -279,12 +290,13 @@ a division or a season cancelled, a round's results made final, placements confi
 approval saved, a season's configuration confirmed, a review gathering its lines, the placements
 review gathering each division's lines, a division's channel faults read, a channel's uses read as a
 command sets it or as a module is switched on (weather, results, attendance and signup answer it
-only while the module is on), the channels a picture posts to read as an output is switched to one or
-the image module is switched on (core answers it for the lineup and the calendar, and weather,
+only while the module is on), the channels a picture posts to read as an output is switched to one
+or the image module is switched on (core answers it for the lineup and the calendar, and weather,
 results and attendance each for their own outputs, only while on), the factory reset gathering the
 channels each module holds, a round's drawn phases read, a driver's signup name, username and
 nationality read for a season, with whether a nationality is collected, which the modules that draw
-a driver ask through core's reader, the divisions a driver's accounts raced in read, a driver's
+a driver ask through core's reader, the divisions a driver's accounts raced in read, the faults in
+the way of signing fake drivers up read and the fake drivers signed up and approved, a driver's
 standing in a division read for the season's history, a season's fingerprint taken, a season's
 pending test-mode steps read, the test-mode review's marks read, a season's confirmation judged, a
 division's final round read, a season ending, a season, division, round or driver deleted, a driver
@@ -635,7 +647,7 @@ would make the file's write wait on a record of it.
 - **A job that fails stops its lane.** A lane is a list of jobs carried out in order, one at a
   time, and a job that fails, whether from Discord or from the bot (a post refused, a fault in the
   bot's own code, a check that raises as a change starts), stops that lane there until the job is
-  cleared, save for the four exceptions to this rule below. Nothing behind it on the lane runs: a
+  cleared, save for the five exceptions to this rule below. Nothing behind it on the lane runs: a
   change that makes the stopped job's work no longer due cannot overtake it either. The other lanes
   carry on, a stop in one holding only that one. The change keeps its state and the stop is the
   job's own record (when it first failed, how often it has been tried, when it is next due), so it
@@ -646,33 +658,34 @@ would make the file's write wait on a record of it.
   for meanwhile is acknowledged as usual, joins the back of its lane and says that the lane is
   stopped; one that overtakes a stop says it runs past it, the stop standing (`held_behind_text`).
 
-**Four exceptions: a league's settings, `/bot init`, roles moved after a driver's or team's change,
-and the settings a league repairs itself with.** A change to one of a league's settings is one
-atomic save of its value and its audit record (its line with them, or in the save of the step after
-it that carries the line — the arming of the daily portrait job, a role's grant to every driver
-where it replaces one gone from the server while the season's configuration is fixed, the old hub
-stood down and the new one's permissions set once its channel is moved, or the signup channel's
-permissions set (the new channel's first, the old one's cleared last); see "The record is the
-queue's"), after any step before the save, and the work after it that the setting does not need
-(checking it against the templates, arming or removing a timed job, granting a role to every
-driver, asking the hub's panel to be posted again as the bot's own change, posting the signup
-information in the new signup channel where a window is open) is work nothing later depends on.
-Work the save waits on may come before it (a module's kept channels checked before it is switched
-on, the channels an output switched to a picture posts to, and what it put back on Discord): it saves nothing, and a fault in it, or a refusal by it, ends
-the setting with nothing saved and no audit record, what a step before the save changed on Discord
-being undone so that nothing is half-set (framework.md, "Settings"). A fault in any of these leaves
-nothing half-done and nothing behind it on the lane waits on it. A fault in a step before the save
-saves nothing, and one in the save is rolled back whole, so nothing is saved and the member can
-simply ask again; a fault in a step after the save leaves the setting saved, so asking again with
-the same value saves nothing and repeats no step, and the reply says what was not done, or what to
-do by hand, where the step has anything to say. So such a step carries `Step.on_fault`: where it
-raises, the queue does not stop the lane but marks the job done with what `on_fault` returns, in a
-save of its own with its lines, and the change carries on to its next step or finishes. A change
-type may likewise give `ChangeType.on_check_fault` for a check that raises as a **member's** change
-starts: the change is ended as REFUSED in one save, with the failure line in place of a refusal's,
-and the reply it returns. What the member is told and what the log channel records of either is the
-core specification's "How a change is carried out"; the full detail goes to the host's log. A step
-that is `undiscardable` may not carry `on_fault`, since it is a step a stop must hold.
+**Five exceptions: a league's settings, `/bot init`, roles moved after a driver's or team's change,
+the settings a league repairs itself with, and the `/driver` and `/signup` swap after a test-mode change.** A
+change to one of a league's settings is one atomic save of its value and its audit record (its line
+with them, or in the save of the step after it that carries the line — the arming of the daily
+portrait job, a role's grant to every driver where it replaces one gone from the server while the
+season's configuration is fixed, the old hub stood down and the new one's permissions set once its
+channel is moved, or the signup channel's permissions set (the new channel's first, the old one's
+cleared last); see "The record is the queue's"), after any step before the save, and the work after
+it that the setting does not need (checking it against the templates, arming or removing a timed
+job, granting a role to every driver, asking the hub's panel to be posted again as the bot's own
+change, posting the signup information in the new signup channel where a window is open) is work
+nothing later depends on. Work the save waits on may come before it (a module's kept channels
+checked before it is switched on, the channels an output switched to a picture posts to, and what it
+put back on Discord): it saves nothing, and a fault in it, or a refusal by it, ends the setting with
+nothing saved and no audit record, what a step before the save changed on Discord being undone so
+that nothing is half-set (framework.md, "Settings"). A fault in any of these leaves nothing
+half-done and nothing behind it on the lane waits on it. A fault in a step before the save saves
+nothing, and one in the save is rolled back whole, so nothing is saved and the member can simply ask
+again; a fault in a step after the save leaves the setting saved, so asking again with the same
+value saves nothing and repeats no step, and the reply says what was not done, or what to do by
+hand, where the step has anything to say. So such a step carries `Step.on_fault`: where it raises,
+the queue does not stop the lane but marks the job done with what `on_fault` returns, in a save of
+its own with its lines, and the change carries on to its next step or finishes. A change type may
+likewise give `ChangeType.on_check_fault` for a check that raises as a **member's** change starts:
+the change is ended as REFUSED in one save, with the failure line in place of a refusal's, and the
+reply it returns. What the member is told and what the log channel records of either is the core
+specification's "How a change is carried out"; the full detail goes to the host's log. A step that
+is `undiscardable` may not carry `on_fault`, since it is a step a stop must hold.
 `framework/services/queue/setting_change.py` builds both callbacks for every settings command once.
 *Rejected:* a step that catches its own fault, which would leave its partial writes on the save's
 connection and could not catch what fails after it returns, the queue's own audit and line writes
@@ -754,6 +767,26 @@ stop nobody yet holds the role to clear.
   the one a later reader could tune away: a change that can stop its lane and claims a channel
   would need the save to re-check, or would need to be barred from being overtaken.
 
+  **A fifth exception: the swap of the `/driver` and `/signup` commands after a change of test mode.** Switching
+  test mode on or off, a test season's completion, abort and cancellation each end with the server
+  showing the `/driver` and `/signup` the flag calls for, the member groups or the test-mode groups
+  (`swap_test_mode_commands`, `core/services/test_mode/driver_commands.py`). The swap is an ACT step
+  after the commit, and carries `Step.on_fault` as role moves do: where Discord refuses it, or the
+  league's server is missing from the cache, the queue does not stop the lane but marks the job
+  done, for the reply and log line to say so. The change it follows stands, and nothing behind it on
+  the lane waits on it: the swap is Discord work the save does not need, as a role move is, so a
+  stopped lane would hold every change for a lost command definition. The remedy it names is a
+  restart, never the change run again, which would flip test mode (and, turning it off, delete every
+  fake driver) or, after a season's end, be refused. What the member and the log channel are told of
+  it is the core specification's ("How a change is carried out"), as are the moments of the swap and
+  the restart named after a factory reset or `/bot init` ("Test mode"). Off the queue, start-up and
+  `!sync` run the same swap and catch a refusal or a missing server as `discord.HTTPException` or
+  `GuildUnavailable` by name, posting it through `start_up_failure_line`. *Rejected:* stopping the
+  lane on a refused swap, as other jobs do, which would hold the lane for work nothing waits on; and
+  the swap run off the queue after the outcome, which would need an exception of its own stated here
+  and machinery of its own (a catch-all reporting through `post_log`), and leave the swap unrecorded
+  on the change's job.
+
   Nothing else overtakes the stopped job, so whatever runs outside the queue leaves alone what a
   change is in hand on, stopped included, as the queue tells it (`unfinished` or `in_hand`; core
   specification, "How a change is carried out"). Discord answering that a message is already
@@ -813,8 +846,9 @@ stop nobody yet holds the role to clear.
   second rule beside "every failure stops its lane", which is the rule the core specification's
   "How a change is carried out" records. A conversation runs apart from a stop on the league lane,
   or on another conversation's, only because its work is its own, and what a conversation hands
-  the league goes to the league lane's back. The first three exceptions (above) are not a job
-  stepping aside either: the job is ended, not stopped, and nothing it leaves undone is waited on.
+  the league goes to the league lane's back. The first three exceptions and the fifth (above) are
+  not a job stepping aside either: the job is ended, not stopped, and nothing it leaves undone is
+  waited on.
   The fourth exception is the one true overtake: the settings a league repairs itself with run
   ahead of their own lane's stopped head, by design, because a league locked out of the bot has no
   other lane to wait apart on, and a channel stop's remedy has to be able to run. It is kept
@@ -949,12 +983,12 @@ update or delete on any table but those. The queue's own tables are always allow
 the job's mark, its audit records, its log lines and the changes it asks for), so the mark, the
 lines and a follow-on pass, and an empty `writes` allows those alone. A write the authoriser refuses
 raises in the step, rolls its save back whole and stops the lane at that job, so it never lands; in
-a league's setting, `/bot init`'s save or a role move, whose steps end on a fault (see "A job that
-fails stops its lane"), it ends the job instead and the lane goes on. A change type whose `writes`
-is `None`, the default, is not restricted; most league change types leave it so, and a league change
-type may declare the tables it writes and be confined to them likewise, as replacing a round's
-results with its resubmission drafts does. What a conversation hands the league, it asks of the
-league lane (see "How a change is carried out").
+a league's setting, `/bot init`'s save, a role move or the `/driver` and `/signup` swap, whose steps end on a
+fault (see "A job that fails stops its lane"), it ends the job instead and the lane goes on. A change
+type whose `writes` is `None`, the default, is not restricted; most league change types leave it so,
+and a league change type may declare the tables it writes and be confined to them likewise, as
+replacing a round's results with its resubmission drafts does. What a conversation hands the league,
+it asks of the league lane (see "How a change is carried out").
 
 *Rejected:* trusting each step to keep to its tables, which a lane's own tests would never catch
 once the flows are many; and a separate connection for each lane, which SQLite would not make a
@@ -1524,8 +1558,8 @@ stated exceptions below them:
    check that raises as the change starts (`ChangeQueue._start`), and of a hook that raises in
    either (`ChangeQueue._step_failed`, `_end_on_check_fault` and `_refuse`, each leading to the
    lane's stop) are failure paths as well: the catches of a step and of a check each stop the lane,
-   or, for a step of a league's setting, `/bot init`'s save or a role move that gives
-   `Step.on_fault`, end the job instead, or, for a member's change of a type that gives
+   or, for a step of a league's setting, `/bot init`'s save, a role move or the `/driver` and `/signup` swap that
+   gives `Step.on_fault`, end the job instead, or, for a member's change of a type that gives
    `ChangeType.on_check_fault`, end the change, and the lane goes on (see "A job that fails stops
    its lane"), and a hook's catch always leads to the stop. Either way the fault is logged on the
    host and recorded in the log channel as a failure, once — save a fault in `/bot init`'s save,

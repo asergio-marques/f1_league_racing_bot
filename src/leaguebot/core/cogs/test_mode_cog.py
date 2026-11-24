@@ -5,15 +5,21 @@ APScheduler triggers:
 
   /test-mode toggle            — enable or disable test mode (state persists), a change on
                                  the change queue
-  /test-mode nationality       — toggle whether mock drivers carry a nationality
+  /test-mode nationality       — toggle whether the signup wizard asks a fake driver's
+                                 nationality
   /test-mode advance           — immediately execute the next pending phase
   /test-mode review            — show season/round/phase status summary (ephemeral)
   /test-mode set-former-driver — set or clear a driver's former-driver flag
-  /test-mode roster …          — manage the fake driver roster of a division
+  /test-mode roster …          — create, list and remove fake drivers; `sign-up-bulk` also signs
+                                 a pasted list up and approves it, the one place a fake driver's
+                                 signup is made for it, and only while signups are open
   /test-mode backup …          — save the whole database, and put it back
 
 A module's own test tool sits under that module's group, not here, and is test mode's all the
-same: `/attendance test rsvp` sets the RSVP status of fake drivers.
+same: `/attendance test rsvp` sets the RSVP status of fake drivers. `/test-mode roster
+sign-up-bulk` is the one exception: it sits here because it creates the roster's drivers, and
+signup's part is handed to signup through the two hooks `fake_signups_ready_read` and
+`fake_signups_approved` (architecture.md, "What each part may do").
 
 Every command here is a league admin's — the core specification places the whole of test
 mode at that tier, backup and restore no more than the rest — and is given in the
@@ -32,9 +38,18 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from leaguebot.core.services.drivers.driver_reference import (
+    NO_DRIVER,
+    driver_choices,
+    reference_name,
+    resolve_driver,
+)
 from leaguebot.core.services.test_mode.test_mode_settings import NOT_IN_TEST_MODE
+from leaguebot.core.services.test_mode.test_roster_sign_up_change import (
+    TEST_ROSTER_SIGN_UP_BULK,
+    sign_up_payload,
+)
 from leaguebot.core.services.test_mode.test_roster_changes import (
-    NOT_PLACING,
     TEST_ROSTER_ADD,
     TEST_ROSTER_ADD_BULK,
     TEST_ROSTER_CLEAR,
@@ -49,10 +64,8 @@ from leaguebot.core.services.test_mode.test_mode_service import (
     AdvanceStatus,
     advance_next_step,
 )
-from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.services.upkeep import backup_service
 from leaguebot.framework.utils.autocomplete import bounded_autocomplete
-from leaguebot.core.utils.team_autocomplete import team_autocomplete
 from leaguebot.framework.utils.catch_up_gate import after_the_catch_up
 from leaguebot.core.utils.channel_guard import league_admin_only, changes_nothing
 from leaguebot.core.utils.input_validator import parse_user_id
@@ -62,7 +75,14 @@ from leaguebot.utils.messages import chunk_message, paginate_fenced
 from leaguebot.framework.utils.league_server import LeagueModal, LeagueView
 from leaguebot.framework.utils.log_lines import record_abandoned, refuse
 from leaguebot.core.utils.roster_import import format_roster_errors as _format_roster_errors
-from leaguebot.core.utils.roster_import import parse_roster_csv
+from leaguebot.core.utils.roster_import import (
+    format_sign_up_errors as _format_sign_up_errors,
+    parse_roster_csv,
+    parse_sign_up_csv,
+)
+
+#: What the typed text is clipped to where a refusal names it.
+_TEXT_SHOWN = 100
 
 #: Waits for the catch-up after a restart before a command answered off the change queue acts.
 _after_the_catch_up = after_the_catch_up(lambda cog: cog.bot.change_queue)
@@ -113,16 +133,15 @@ class TestModeCog(commands.Cog):
 
     @test_mode.command(
         name="nationality",
-        description="Toggle whether mock drivers carry a nationality.",
+        description="Toggle whether the signup wizard asks a fake driver's nationality.",
     )
     @league_admin_only
     async def nationality(self, interaction: discord.Interaction) -> None:
         """The test-mode counterpart of /signup nationality.
 
-        While test mode is active this switch stands in for the signup one everywhere the
-        image module asks whether the league collects nationality, so the graphics of a
-        server under test may be seen with flags and without them without the setting real
-        signups run on being touched.
+        While test mode is active this switch stands in for the signup one: it decides whether
+        a fake driver's signup wizard asks nationality, and so whether the graphics of a server
+        under test show flags, without the setting real signups run on being touched.
         """
         config = await self.bot.config_service.get_server_config()
         if config is None or not config.test_mode_active:
@@ -302,27 +321,49 @@ class TestModeCog(commands.Cog):
         description="Manually set the former_driver flag on a driver profile (test mode only).",
     )
     @app_commands.describe(
-        user="The driver whose flag is being updated.",
+        user="The driver whose flag is being updated: a mention or an ID, a fake driver's too.",
         value="The new value for the former_driver flag.",
     )
     @league_admin_only
     async def set_former_driver(
         self,
         interaction: discord.Interaction,
-        user: discord.Member,
+        user: str,
         value: bool,
     ) -> None:
-        """Ask the change that sets the flag of the driver holding the account picked.
+        """Ask the change that sets the flag of the driver *user* names.
 
-        Test mode and the profile are judged by the change, as it is asked and as it starts
-        (`test_mode_former_driver_change`).
+        The driver is a text field, a mention or an ID of any account they have held, because
+        Discord's member field cannot carry a fake driver; text naming no driver is refused here,
+        naming what was typed. Test mode and the profile are judged by the change, as it is asked
+        and as it starts (`test_mode_former_driver_change`).
         """
+        reference = await resolve_driver(self.bot.db_path, user)
+        if reference is None:
+            await refuse(
+                interaction,
+                NO_DRIVER.format(text=user.strip()[:_TEXT_SHOWN]),
+                what=describe(interaction),
+            )
+            return
+        name = await reference_name(
+            self.bot.db_path, self.bot.driver_names_read, interaction.guild, reference
+        )
         await self.bot.change_queue.ask(
             TEST_MODE_FORMER_DRIVER,
-            {"user_id": str(user.id), "name": user.display_name, "value": value},
+            {"user_id": reference.discord_user_id, "name": name, "value": value},
             interaction=interaction,
             what=describe(interaction),
         )
+
+    @bounded_autocomplete()
+    async def _driver_autocomplete(
+        self, interaction: discord.Interaction, current: str
+    ) -> list[app_commands.Choice[str]]:
+        """A driver is offered by name, a fake driver by its test name, each sending its ID."""
+        return await driver_choices(self.bot.db_path, self.bot.driver_names_read, current)
+
+    set_former_driver.autocomplete("user")(_driver_autocomplete)
 
     # ------------------------------------------------------------------
     # /test-mode backup (subgroup)
@@ -340,28 +381,6 @@ class TestModeCog(commands.Cog):
         guild_only=True,
         default_permissions=None,
     )
-
-    async def _refuse_roster_change_outside_placements(
-        self, interaction: discord.Interaction, *, record: bool = True
-    ) -> bool:
-        """Reply and return True where the season is not in Placements, having recorded the refusal
-        in the log channel unless *record* is False.
-
-        Fake drivers are seated, removed and cleared only while the season is in Placements,
-        which is where real drivers are placed too: test mode replicates the live flow rather
-        than inventing one. Listing the roster is left free.
-        """
-        from leaguebot.core.services.seasons.season_lifecycle_service import live_season_stage
-
-        live = await live_season_stage(self.bot.db_path)
-        if live is not None and live[1] is SeasonStage.PLACEMENTS:
-            return False
-        reply = NOT_PLACING
-        if record:
-            await refuse(interaction, reply, what=describe(interaction))
-        else:
-            await interaction.response.send_message(reply, ephemeral=True)
-        return True
 
     async def _refuse_outside_test_mode(
         self, interaction: discord.Interaction, *, record: bool = True
@@ -575,36 +594,20 @@ class TestModeCog(commands.Cog):
 
     @roster.command(
         name="add",
-        description="Add a fake driver to a team in a division.",
+        description="Add a fake driver, at Not Signed Up.",
     )
-    @app_commands.describe(
-        driver_name="Display name for the fake driver.",
-        team_name="The shorthand of the team the driver is seated in.",
-        division="Name of the division.",
-        nationality="Optional. A nationality (e.g. British), a country name (e.g. United Kingdom), or 'other'.",
-    )
+    @app_commands.describe(driver_name="Display name for the fake driver.")
     @league_admin_only
-    async def roster_add(
-        self,
-        interaction: discord.Interaction,
-        driver_name: str,
-        team_name: str,
-        division: str,
-        nationality: str | None = None,
-    ) -> None:
-        """Ask the change that seats the fake driver.
+    async def roster_add(self, interaction: discord.Interaction, driver_name: str) -> None:
+        """Ask the change that creates the fake driver.
 
-        Test mode, the season's stage, the nationality and the seat are judged by the change, as it
-        is asked and as it starts (`test_roster_changes`).
+        Test mode and the season's stage are judged by the change, as it is asked and as it starts
+        (`test_roster_changes`). The driver is created with a name alone, at Not Signed Up: its
+        division, team and seat are decided by `/driver assign` once its signup is approved.
         """
         await self.bot.change_queue.ask(
             TEST_ROSTER_ADD,
-            {
-                "driver_name": driver_name,
-                "team_name": team_name,
-                "division": division,
-                "nationality": nationality,
-            },
+            {"driver_name": driver_name},
             interaction=interaction,
             what=describe(interaction),
         )
@@ -613,7 +616,7 @@ class TestModeCog(commands.Cog):
 
     @roster.command(
         name="add-bulk",
-        description="Seat a whole roster from the generator's roster.csv.",
+        description="Add a whole roster of fake drivers from the generator's roster.csv.",
     )
     @league_admin_only
     async def roster_add_bulk(self, interaction: discord.Interaction) -> None:
@@ -634,10 +637,34 @@ class TestModeCog(commands.Cog):
                 what=describe(interaction),
             )
             return
-        if await self._refuse_roster_change_outside_placements(interaction):
-            return
 
         await interaction.response.send_modal(_RosterImportModal(self))
+
+    # /test-mode roster sign-up-bulk ---------------------------------------
+
+    @roster.command(
+        name="sign-up-bulk",
+        description="Add fake drivers from a pasted list, signed up and approved, while signups are open.",
+    )
+    @league_admin_only
+    async def roster_sign_up_bulk(self, interaction: discord.Interaction) -> None:
+        """Open the box a list of fake drivers to sign up is pasted into.
+
+        **Does not defer**, for the reason `roster_add_bulk` gives: `send_modal` has to be the
+        interaction's first response. Whether signups are open, and everything else the database
+        must answer, is judged by the change, as it is asked and as it starts
+        (`test_roster_sign_up_change`).
+        """
+        config = await self.bot.config_service.get_server_config()
+        if config is None or not config.test_mode_active:
+            await refuse(
+                interaction,
+                NOT_IN_TEST_MODE,
+                what=describe(interaction),
+            )
+            return
+
+        await interaction.response.send_modal(_SignUpBulkModal(self))
 
     # /test-mode roster remove --------------------------------------------
 
@@ -656,7 +683,7 @@ class TestModeCog(commands.Cog):
     ) -> None:
         """Ask the change that removes the fake driver, once the ID reads as a number.
 
-        Test mode, the season's stage and the driver are judged by the change, as it is asked and
+        Test mode and the driver are judged by the change, as it is asked and
         as it starts (`test_roster_changes`).
         """
         discord_uid = parse_user_id(user_id)
@@ -678,19 +705,21 @@ class TestModeCog(commands.Cog):
 
     @roster.command(
         name="list",
-        description="Show all fake drivers in a division (cheat sheet for result submission).",
+        description="Show the fake drivers (cheat sheet for result submission).",
     )
-    @app_commands.describe(division="Name of the division.")
+    @app_commands.describe(division="Optional. Only the fake drivers seated in this division.")
     @league_admin_only
     @changes_nothing
     async def roster_list(
         self,
         interaction: discord.Interaction,
-        division: str,
+        division: str | None = None,
     ) -> None:
-        # A division's roster outgrows one Discord message somewhere past twenty
-        # drivers, and the listing is then sent as several — so the reply is deferred
-        # and every page goes out through followup.
+        """List every fake driver, or those seated in *division*, with its ID, state, the
+        nationality its signup gave and each seat it holds."""
+        # A roster outgrows one Discord message somewhere past twenty drivers, and the listing
+        # is then sent as several — so the reply is deferred and every page goes out through
+        # followup.
         await interaction.response.defer(ephemeral=True)
 
         config = await self.bot.config_service.get_server_config(
@@ -706,31 +735,38 @@ class TestModeCog(commands.Cog):
         from leaguebot.core.services.test_mode.test_roster_service import list_test_drivers
 
         result = await list_test_drivers(
-            division_name=division,
-            db_path=self.bot.db_path,
+            division,
+            self.bot.db_path,
+            self.bot.driver_names_read,
         )
 
         if isinstance(result, str):
             await interaction.followup.send(f"⛔ {result}", ephemeral=True)
             return
 
+        where = f" in **{division}**" if division is not None else ""
         if not result:
             await interaction.followup.send(
-                f"ℹ️ No fake drivers in **{division}**. Use `/test-mode roster add` to create some.",
+                f"ℹ️ No fake drivers{where}. Use `/test-mode roster add` to create some.",
                 ephemeral=True,
             )
             return
 
-        body = [f"{'Name':<20} {'Mention':<30} {'Team':<20} Nationality", "-" * 86]
+        body = [
+            f"{'Name':<20} {'Mention':<30} {'State':<26} {'Nationality':<14} Seats",
+            "-" * 110,
+        ]
         for driver in result:
-            mention = f"<@{driver['discord_user_id']}>"
+            mention = f"<@{driver.discord_user_id}>"
+            state = driver.state.replace("_", " ").title()
+            seats = "; ".join(f"{team} ({name})" for team, name in driver.seats) or "none"
             body.append(
-                f"{driver['display_name']:<20} {mention:<30} "
-                f"{driver['team_name']:<20} {driver['nationality'] or '—'}"
+                f"{driver.display_name:<20} {mention:<30} {state:<26} "
+                f"{driver.nationality or '—':<14} {seats}"
             )
 
         for page in paginate_fenced(
-            header=f"**Fake Driver Roster — {division}**",
+            header=f"**Fake Driver Roster — {division}**" if division else "**Fake Driver Roster**",
             body_lines=body,
             footer=(
                 "Copy mention strings above when submitting results in the format:\n"
@@ -754,7 +790,7 @@ class TestModeCog(commands.Cog):
     ) -> None:
         """Ask the change that clears the division of its fake drivers.
 
-        Test mode, the season's stage and the division are judged by the change, as it is asked
+        Test mode and the division are judged by the change, as it is asked
         and as it starts (`test_roster_changes`).
         """
         await self.bot.change_queue.ask(
@@ -766,27 +802,14 @@ class TestModeCog(commands.Cog):
 
     # (submit-results removed — use /test-mode advance which now handles result submission)
 
-    # ------------------------------------------------------------------
-    # The team parameter's autocomplete
-    # ------------------------------------------------------------------
-
-    @roster_add.autocomplete("team_name")
-    @bounded_autocomplete()
-    async def _roster_team_autocomplete(
-        self, interaction: discord.Interaction, current: str
-    ) -> list[app_commands.Choice[str]]:
-        """A team is typed by its shorthand; offered under both its names, Reserve included."""
-        return await team_autocomplete(self.bot, current, include_reserve=True)
-
 
 class _RosterImportModal(LeagueModal, title="Import a test roster"):
     """The box a `roster.csv` is pasted into.
 
     **4000 characters is the whole of what Discord allows a text input**, which is roughly
-    sixty drivers at the width the generator writes. A larger roster is imported in two
-    passes — the import appends to what a season already holds, so a second paste naming
-    only the divisions still empty lands cleanly. A paste naming a division that already
-    holds drivers is refused whole, its empty divisions with it.
+    130 drivers at the width a roster takes, `ID,Driver name` (a 19-digit ID, a comma, a name of
+    about ten characters and a line break, some 30 characters a row). A larger roster is imported in
+    more than one paste: the import adds to the fake drivers a season already holds.
     """
 
     # The placeholder is capped at 100 characters by Discord, which is not room for an
@@ -794,7 +817,7 @@ class _RosterImportModal(LeagueModal, title="Import a test roster"):
     csv_text: discord.ui.TextInput = discord.ui.TextInput(
         label="Paste roster.csv, header and all",
         style=discord.TextStyle.paragraph,
-        placeholder="ID,Driver name,Team,Division,Nationality",
+        placeholder="ID,Driver name",
         required=True,
         max_length=4000,
     )
@@ -804,7 +827,7 @@ class _RosterImportModal(LeagueModal, title="Import a test roster"):
         self._cog = cog
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
-        """Ask the change that seats the roster, once the file reads on its own.
+        """Ask the change that creates the roster, once the file reads on its own.
 
         What a file shows wrong by itself is refused here, before the ask. Test mode, the
         season's stage and everything the database must answer are judged by the change, as it is
@@ -824,6 +847,52 @@ class _RosterImportModal(LeagueModal, title="Import a test roster"):
         await self._cog.bot.change_queue.ask(
             TEST_ROSTER_ADD_BULK,
             bulk_payload(drivers),
+            interaction=interaction,
+            what=describe_form(self),
+        )
+
+
+class _SignUpBulkModal(LeagueModal, title="Sign up fake drivers"):
+    """The box a list of fake drivers to sign up is pasted into: `ID,Driver name,Nationality`.
+
+    The nationality may be blank, and 4000 characters, the whole of what Discord allows a text
+    input, is a list of about a hundred drivers (some 38 characters a row, the nationality
+    included); a longer list is pasted in more than one go.
+    """
+
+    csv_text: discord.ui.TextInput = discord.ui.TextInput(
+        label="Paste ID,Driver name,Nationality",
+        style=discord.TextStyle.paragraph,
+        placeholder="ID,Driver name,Nationality",
+        required=True,
+        max_length=4000,
+    )
+
+    def __init__(self, cog: "TestModeCog") -> None:
+        super().__init__()
+        self._cog = cog
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        """Ask the change that signs the list up, once the list reads on its own.
+
+        What the text shows wrong by itself is refused here, before the ask. Test mode, whether
+        signups are open and everything the database must answer are judged by the change, as it
+        is asked and as it starts (`test_roster_sign_up_change`).
+        """
+        await interaction.response.defer(ephemeral=True)
+
+        drivers, errors = parse_sign_up_csv(str(self.csv_text.value))
+        if errors:
+            await refuse(
+                interaction,
+                _format_sign_up_errors(errors),
+                what=describe_form(self),
+            )
+            return
+
+        await self._cog.bot.change_queue.ask(
+            TEST_ROSTER_SIGN_UP_BULK,
+            sign_up_payload(drivers),
             interaction=interaction,
             what=describe_form(self),
         )

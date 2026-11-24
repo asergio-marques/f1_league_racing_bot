@@ -46,6 +46,7 @@ def sign_up(bot: "LeagueBot") -> None:
     sign_up_to_driver_names_read(bot)
     sign_up_to_driver_turned_down(bot)
     sign_up_to_driver_account_changed(bot)
+    sign_up_to_fake_signups(bot)
     sign_up_to_season_end(bot)
 
 
@@ -121,6 +122,21 @@ def sign_up_to_driver_account_changed(bot: "LeagueBot") -> None:
         scheduler_service=lambda: bot.scheduler_service,
         signup=lambda: bot.signup_module_service,
         now=lambda: bot.change_queue.now(),
+    ))
+
+
+def sign_up_to_fake_signups(bot: "LeagueBot") -> None:
+    """Sign signup up to the two hooks `/test-mode roster sign-up-bulk` asks through: the faults
+    that stand in the way of a fake driver's signup, read on the connection handed, and the signup
+    recorded and approved for each fake driver, on the save's connection, given the drivers and the
+    queue's clock. The signup and driver services are read when it runs, which a test that replaces
+    either on the bot after registering relies on."""
+    from leaguebot.signup.services import fake_signups
+
+    bot.fake_signups_ready_read.subscribe(fake_signups.fake_signups_faults_on)
+    bot.fake_signups_approved.subscribe(partial(
+        fake_signups.fake_signups_approved_on,
+        lambda: bot.signup_module_service, lambda: bot.driver_service,
     ))
 
 
@@ -321,6 +337,7 @@ def register_change_types(bot: "LeagueBot") -> None:
     bot.change_queue.register(
         answer_change(
             signup=lambda: bot.signup_module_service, queue_of=lambda: bot.change_queue,
+            config=bot.config_service, drivers=lambda: bot.driver_service,
             now=lambda: bot.change_queue.now(), arm_once=bot.scheduler_service.arm_once,
         )
     )
@@ -366,6 +383,7 @@ def register_change_types(bot: "LeagueBot") -> None:
     bot.change_queue.register(
         recollect_change(
             signup=lambda: bot.signup_module_service, queue_of=lambda: bot.change_queue,
+            config=bot.config_service, drivers=lambda: bot.driver_service,
         )
     )
     bot.change_queue.register(
@@ -378,7 +396,7 @@ def register_change_types(bot: "LeagueBot") -> None:
     # nobody chose within five minutes is lapsed by the change its timer asks of the queue, as the
     # bot.
     bot.scheduler_service.register_timer(
-        CORRECTION_TIMER, lambda key: ask_lapse(bot.change_queue, str(key))
+        CORRECTION_TIMER, lambda key: ask_lapse(bot.change_queue, bot.db_path, str(key))
     )
     # A signup left unanswered for a day is ended by the expiry its timer asks of the queue, as
     # the bot.

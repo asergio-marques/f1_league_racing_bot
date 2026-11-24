@@ -596,6 +596,27 @@ async def test_the_new_drivers_lineup_is_drawn_with_them_in_it_and_in_place_of_i
     assert _offered(cog)
 
 
+async def test_a_fake_driver_in_a_text_lineup_is_named_as_the_posted_lineup_names_it(monkeypatch):
+    """Under test mode Pro's Alpha seats Kimi, a real member (1001), and Mock Alpha, a fake driver
+    (9000000000000000001), whose account no member holds. The review's text lineup names each as
+    the posted lineup does: the real member by mention, the fake driver by mention with its test
+    name beside it, so that the manager can tell who it is."""
+    cog = _report_cog(placements=[_placement("1002")])
+    cog.bot.team_service.get_division_teams = AsyncMock(
+        return_value=[
+            {"name": "Alpha", "seats": [
+                {"discord_user_id": "1001", "is_test_driver": False, "test_display_name": None},
+                {"discord_user_id": "9000000000000000001", "is_test_driver": True,
+                 "test_display_name": "Mock Alpha"},
+            ]},
+        ]
+    )
+
+    text = "\n".join(m for m, _ in await _mid_season_report(cog, monkeypatch))
+
+    assert "**Alpha**: <@1001>, <@9000000000000000001> (Mock Alpha)" in text
+
+
 async def test_nothing_is_drawn_or_announced_where_the_lineup_graphic_is_off(monkeypatch):
     """With the image module on but the lineup picture switched off, the review asks the queue
     for no picture, and Pro's lineup, once confirmed, is in its report as text."""

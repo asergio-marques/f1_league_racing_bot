@@ -1,7 +1,7 @@
 """The signup window's opening and closing on the change queue (#439, slice 6b).
 
 `/signup open` asks `signup.open`, whose check holds every refusal the command has always made
-(the module, test mode, the configuration, the season's stage, the league's roles, the slots) and
+(the module, the configuration, the season's stage, the league's roles, the slots) and
 the bot's permissions on the signup channel, so that a refusal names what is wrong before anything
 is posted. Its jobs are three:
 
@@ -57,7 +57,9 @@ from leaguebot.framework.models.change import (
     Verdict,
 )
 from leaguebot.framework.services.posting import standing_posts
-from leaguebot.core.services.drivers.driver_service import drivers_in_states, write_transition
+from leaguebot.core.services.drivers.driver_service import (
+    driver_test_names_on, drivers_in_states, write_transition,
+)
 from leaguebot.framework.services.queue.change_types import (
     ChangeType,
     CheckContext,
@@ -178,11 +180,6 @@ def window_open_change(
         if not await modules.is_enabled(SWITCH_KEY):
             return Verdict.refuse(MODULE_OFF)
         server_cfg = await config.get_server_config()
-        if server_cfg is not None and server_cfg.test_mode_active:
-            return Verdict.refuse(
-                "⛔ Signups cannot be opened while test mode is active. "
-                "Turn it off with `/test-mode toggle` first."
-            )
         cfg = await signup.get_config()
         if cfg is None:
             return Verdict.refuse("❌ Signup module is not configured.")
@@ -353,12 +350,19 @@ def discarded(view: StepView | None) -> bool:
 
 
 def failed_jobs(steps: tuple[StepView, ...]) -> list[str]:
-    """One plain sentence for each job of a close a league admin discarded, in the order they ran."""
+    """One plain sentence for each job of a close a league admin discarded, in the order they ran.
+    A fake driver is named by its test name, which the return of the drivers kept in its result
+    (`return_drivers_step`): the jobs that follow it are planned from that return alone."""
+    names: dict[str, str] = {}
+    for view in steps:
+        if view.name == RETURN_DRIVERS:
+            names.update((view.result or {}).get("fake_names") or {})
     failed: list[str] = []
     for view in steps:
         if not discarded(view):
             continue
-        who = f"<@{view.payload.get('user_id')}>"
+        user_id = str(view.payload.get("user_id"))
+        who = names.get(user_id) or f"<@{user_id}>"
         if view.name == RETURN_DRIVERS:
             failed.append(NOT_RETURNED)
         elif view.name == DELETE_BUTTON:
@@ -479,6 +483,7 @@ def return_drivers_step(
         channel_id = None if config is None else config["signup_channel_id"]
         button_id = None if config is None else config["signup_button_message_id"]
         returned: list[tuple[str, int | None]] = []
+        fake_names: dict[str, str] = {}
         for row in rows:
             account = str(row["discord_user_id"])
             current = DriverState(row["current_state"])
@@ -494,6 +499,10 @@ def return_drivers_step(
             )
             wizard = await cursor.fetchone()
             returned.append((account, None if wizard is None else wizard["signup_channel_id"]))
+            # Read on the save's own connection: no second connection opens while it is open.
+            fake = (await driver_test_names_on(db, [int(account)])).get(int(account))
+            if fake is not None:
+                fake_names[account] = fake
         planned = (
             *disarming(
                 [account for account, _ in returned],
@@ -501,7 +510,10 @@ def return_drivers_step(
             ),
             *plan_after(ctx, channel_id, button_id, returned),
         )
-        return StepResult(result={"returned": [account for account, _ in returned]}, then=planned)
+        result: dict[str, Any] = {"returned": [account for account, _ in returned]}
+        if fake_names:
+            result["fake_names"] = fake_names
+        return StepResult(result=result, then=planned)
 
     async def describe_return(_ctx: StepContext) -> str:
         return "returning the drivers still signing up to Not Signed Up"

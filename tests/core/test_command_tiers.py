@@ -90,12 +90,16 @@ LEAGUE_ADMIN_COMMANDS: dict[str, str] = {
     "test-mode roster clear": ADMIN,
     "test-mode roster list": ADMIN,
     "test-mode roster remove": ADMIN,
+    # Signs fake drivers up and approves them in bulk, while signups are open (#600).
+    "test-mode roster sign-up-bulk": ADMIN,
     "test-mode backup save": ADMIN,
     "test-mode backup lock": ADMIN,
     "test-mode backup restore": ADMIN,
     "test-mode backup status": ADMIN,
     # A module's test tool sits under the module's own group, and is test mode's all the same.
     "attendance test rsvp": ADMIN,
+    # Starts a fake driver's signup in its stead, in the test-mode `/signup` alone (#600, D16).
+    "signup start": ADMIN,
 }
 
 
@@ -112,11 +116,16 @@ def _walk(objects):
             yield obj
 
 
-def _every_command() -> dict[str, app_commands.Command]:
-    """Every app command the bot declares, by its full name, off the cog classes."""
+def _every_command() -> dict[str, list[app_commands.Command]]:
+    """Every app command the bot declares, by its full name, off the cog classes.
+
+    A name may carry more than one command: the member `/driver` and `/signup` groups and their
+    test-mode variants share their names, and each is held to the register. A cog imported into a second
+    module is met twice and kept once.
+    """
     import leaguebot
 
-    found: dict[str, app_commands.Command] = {}
+    found: dict[str, list[app_commands.Command]] = {}
     for module_info in pkgutil.walk_packages(leaguebot.__path__, "leaguebot."):
         if ".cogs." not in module_info.name:
             continue
@@ -129,7 +138,9 @@ def _every_command() -> dict[str, app_commands.Command]:
                 and candidate is not discord_commands.Cog
             ):
                 for command in _walk(getattr(candidate, "__cog_app_commands__", []) or []):
-                    found[command.qualified_name] = command
+                    same_name = found.setdefault(command.qualified_name, [])
+                    if not any(command is seen for seen in same_name):
+                        same_name.append(command)
     return found
 
 
@@ -143,27 +154,30 @@ def test_the_cogs_declare_commands_at_all():
 
 @pytest.mark.parametrize("name", sorted(COMMANDS))
 def test_every_command_sits_at_the_tier_the_register_gives_it(name):
-    callback = COMMANDS[name].callback
+    """Every command of the name, the member `/driver` and `/signup` and their test-mode variants
+    alike."""
     expected = LEAGUE_ADMIN_COMMANDS.get(name)
-    tier = getattr(callback, TIER_ATTRIBUTE, None)
-    exempt = getattr(callback, CHANNEL_EXEMPT_ATTRIBUTE, None)
+    for command in COMMANDS[name]:
+        callback = command.callback
+        tier = getattr(callback, TIER_ATTRIBUTE, None)
+        exempt = getattr(callback, CHANNEL_EXEMPT_ATTRIBUTE, None)
 
-    if name in SERVER_OWNER_COMMANDS:
-        assert tier == SERVER_OWNER, f"/{name} should be the server owner's alone"
-        assert exempt is True, f"/{name} should run from any channel"
-    elif expected is None:
-        assert tier == LEAGUE_MANAGER, (
-            f"/{name} is a league admin's in the code and a league manager's here. Either "
-            f"the guard is wrong, or the register needs the command adding to it — the "
-            f"second is a decision about who may run it, not a test to update."
-        )
-        assert exempt is False, f"/{name} is exempt from the interaction channel"
-    else:
-        assert tier == LEAGUE_ADMIN, f"/{name} should be a league admin's"
-        assert exempt is (expected is SETUP), (
-            f"/{name} is {'not ' if expected is SETUP else ''}exempt from the interaction "
-            f"channel and should be the other way about"
-        )
+        if name in SERVER_OWNER_COMMANDS:
+            assert tier == SERVER_OWNER, f"/{name} should be the server owner's alone"
+            assert exempt is True, f"/{name} should run from any channel"
+        elif expected is None:
+            assert tier == LEAGUE_MANAGER, (
+                f"/{name} is a league admin's in the code and a league manager's here. Either "
+                f"the guard is wrong, or the register needs the command adding to it — the "
+                f"second is a decision about who may run it, not a test to update."
+            )
+            assert exempt is False, f"/{name} is exempt from the interaction channel"
+        else:
+            assert tier == LEAGUE_ADMIN, f"/{name} should be a league admin's"
+            assert exempt is (expected is SETUP), (
+                f"/{name} is {'not ' if expected is SETUP else ''}exempt from the interaction "
+                f"channel and should be the other way about"
+            )
 
 
 def test_the_register_names_no_command_that_does_not_exist():
@@ -176,7 +190,8 @@ def test_only_the_setup_commands_and_the_factory_reset_run_outside_the_interacti
     """Every other command of either tier is given in the interaction channel."""
     exempt = sorted(
         name
-        for name, command in COMMANDS.items()
+        for name, commands in COMMANDS.items()
+        for command in commands
         if getattr(command.callback, CHANNEL_EXEMPT_ATTRIBUTE, False)
     )
     assert exempt == [
@@ -199,18 +214,21 @@ def test_the_tiers_divide_as_the_register_says():
     """
     admin = {
         name
-        for name, command in COMMANDS.items()
+        for name, commands in COMMANDS.items()
+        for command in commands
         if getattr(command.callback, TIER_ATTRIBUTE, None) == LEAGUE_ADMIN
     }
     manager = {
         name
-        for name, command in COMMANDS.items()
+        for name, commands in COMMANDS.items()
+        for command in commands
         if getattr(command.callback, TIER_ATTRIBUTE, None) == LEAGUE_MANAGER
     }
 
     owner = {
         name
-        for name, command in COMMANDS.items()
+        for name, commands in COMMANDS.items()
+        for command in commands
         if getattr(command.callback, TIER_ATTRIBUTE, None) == SERVER_OWNER
     }
 

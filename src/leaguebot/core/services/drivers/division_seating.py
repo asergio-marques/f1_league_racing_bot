@@ -30,7 +30,6 @@ class SeatOccupant:
     discord_user_id: str
     is_test_driver: bool
     test_display_name: str | None
-    test_nationality: str | None
     current_state: str
 
 
@@ -81,8 +80,7 @@ async def division_seating(
             rows = await (
                 await db.execute(
                     "SELECT ts.seat_number, dp.id AS profile_id, dp.discord_user_id, "
-                    "       dp.is_test_driver, dp.test_display_name, dp.test_nationality, "
-                    "       dp.current_state "
+                    "       dp.is_test_driver, dp.test_display_name, dp.current_state "
                     "FROM team_seats ts "
                     # A placement not yet confirmed mid-season is not shown, unless asked for.
                     "LEFT JOIN driver_season_assignments dsa "
@@ -123,7 +121,6 @@ def _occupant(row, states: Collection[str] | None) -> SeatOccupant | None:
         discord_user_id=str(row["discord_user_id"]),
         is_test_driver=bool(row["is_test_driver"]),
         test_display_name=row["test_display_name"],
-        test_nationality=row["test_nationality"],
         current_state=row["current_state"],
     )
 

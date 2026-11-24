@@ -73,10 +73,10 @@ session is in.
    - **Reply:**
      ```
      📦 **Saved backup**
-       Taken: <timestamp: the moment of 00-base.md step 33>
-       Size: <size: as in 00-base.md step 33> KB
+       Taken: <timestamp: the moment of 00-base.md step 38>
+       Size: <size: as in 00-base.md step 38> KB
        Readable: yes
-       Locked: locked by <your display name> at <the moment of 00-base.md step 34, ISO 8601>
+       Locked: locked by <your display name> at <the moment of 00-base.md step 39, ISO 8601>
      ```
      A `Readable:` other than `yes`, or the reply
      ``📭 There is no saved backup. Take one with `/test-mode backup save`.``, means the base must
@@ -88,7 +88,7 @@ session is in.
    **Expect:**
    - **Reply**, with two buttons, **♻️ Restore** and **Cancel**:
      ```
-     ⚠️ **Restore the backup taken <relative timestamp: when 00-base.md step 33 ran, e.g. "2 hours ago">?**
+     ⚠️ **Restore the backup taken <relative timestamp: when 00-base.md step 38 ran, e.g. "2 hours ago">?**
      Everything the bot holds now — seasons, rounds, drivers, results and every scheduled job — is replaced by what that backup holds. A copy of the current database is kept beside it first.
      **The bot must be restarted afterwards** to pick it up.
      ```
@@ -2729,7 +2729,7 @@ picture **reports** what it fell back on, as image notices:
   > another kind (`FONT_SUBSTITUTED`, `FIELD_REDUCED`), which depends on the host's fonts. Record
   > what appears.
 - **A command that draws** (a review, the approval) ends its reply with `⚠️ **Image notices**`,
-  as `00-base.md` steps 30 and 32 say.
+  as `00-base.md` steps 35 and 37 say.
 - **A preview** ends its reply with `⚠️ **Notices** — the render survived these:` and a link to
   the same block in `#bot-log`.
 
@@ -2742,7 +2742,7 @@ The subject is how a picture's notices are headed in `#bot-log`.
 
 | Step | Picture | Channel | Message text with it | Notices headed |
 |---|---|---|---|---|
-| Approval (`00-base.md` step 32) | Calendar, lineup, opening standings (drivers, constructors), opening attendance sheet | `#dN-calendar`, `#dN-lineup`, `#dN-standings`, `#dN-attendance` | as `00-base.md` step 32 | the approval's reply |
+| Approval (`00-base.md` step 37) | Calendar, lineup, opening standings (drivers, constructors), opening attendance sheet | `#dN-calendar`, `#dN-lineup`, `#dN-standings`, `#dN-attendance` | as `00-base.md` step 37 | the approval's reply |
 | Weather Phase 1, 2, 3 | The forecast, one per phase, the last superseding the one before; a Sprint round's on the sprint templates | `#dN-weather` | `<@&<Division N role id>>` alone | `round <R> in **Division N**, phase <P>` |
 | Mystery notice | The mystery notice | `#d1-weather` | none | `round 3 in **Division 1**, the mystery round notice` |
 | Check-in call | The check-in picture, with the call's embed and buttons | `#dN-rsvp` | `<@&<Division N role id>>` | `check-in call of round <R> in Season 1 **Division N**` |

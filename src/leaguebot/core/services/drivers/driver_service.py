@@ -595,6 +595,19 @@ class DriverService:
             return None
         return _row_to_profile(row)
 
+    async def fake_driver_name(self, discord_user_id: str) -> str | None:
+        """The test name of the fake driver holding *discord_user_id*, or None where the account
+        holds a real driver or no driver: a module asks it whether a driver is fake, and what it
+        is called, without reading core's table."""
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                "SELECT test_display_name FROM driver_profiles "
+                "WHERE discord_user_id = ? AND is_test_driver = 1",
+                (discord_user_id,),
+            )
+            row = await cursor.fetchone()
+        return None if row is None else row["test_display_name"]
+
     async def state_of_account_on(self, db: aiosqlite.Connection, discord_user_id) -> DriverState | None:
         """The state of the driver holding *discord_user_id*, read on the connection handed; see
         `state_of_account_on`."""

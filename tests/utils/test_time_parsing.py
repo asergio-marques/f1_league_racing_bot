@@ -80,7 +80,7 @@ def test_rejected_inputs_return_none(raw):
 
 def test_the_signup_cog_reads_the_same_parser():
     """The two surfaces must agree: a league that learns `7pm` here will type it there."""
-    from leaguebot.signup.cogs.signup_cog import _parse_time
+    from leaguebot.signup.cogs.signup_commands import _parse_time
 
     assert _parse_time("7pm") == parse_time_of_day("7pm") == "19:00"
     assert _parse_time("nonsense") is None

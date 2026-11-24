@@ -61,7 +61,7 @@ Feature Qualifying and Feature Race.
    **Expect:**
    - **Reply**, with two buttons, **♻️ Restore** and **Cancel**:
      ```
-     ⚠️ **Restore the backup taken <relative timestamp: when 00-base.md step 33 ran>?**
+     ⚠️ **Restore the backup taken <relative timestamp: when 00-base.md step 38 ran>?**
      Everything the bot holds now — seasons, rounds, drivers, results and every scheduled job — is replaced by what that backup holds. A copy of the current database is kept beside it first.
      **The bot must be restarted afterwards** to pick it up.
      ```

@@ -54,6 +54,7 @@ import aiosqlite
 import discord
 
 from leaguebot.signup.models.switch import SWITCH_KEY
+from leaguebot.signup.services.driver_naming import mention_or_name
 from leaguebot.framework.models.change import (
     AuditRecord,
     ChangeOrigin,
@@ -157,7 +158,7 @@ WITHDRAWN_NOTICE = (
 )
 #: What the driver's channel is told when a manager cancels their signup, before the reason (where
 #: one was given) and the hold on the channel.
-CANCELLED_BY_MANAGER = "<@{user_id}> ❌ Your signup has been cancelled by **{manager}**."
+CANCELLED_BY_MANAGER = "{who} ❌ Your signup has been cancelled by **{manager}**."
 #: What a manager is told who cancels the signup of a driver with none under way.
 NO_SIGNUP_IN_PROGRESS = "{name} has no signup in progress. Nothing was changed."
 #: What a manager is told who cancels the signup of a driver approved and not yet placed.
@@ -257,9 +258,11 @@ def start_change(
     async def check(ctx: CheckContext) -> Verdict:
         user_id = str(ctx.payload["user_id"])
         server_cfg = await config.get_server_config()
+        fake = await drivers().fake_driver_name(user_id)
         # A real driver never joins a server that is under test: test mode and a real league may
-        # not share one, and leaving test mode deletes every fake driver.
-        if server_cfg is not None and server_cfg.test_mode_active:
+        # not share one, and leaving test mode deletes every fake driver. A fake driver's signup
+        # is started for it, with no member behind it, so it is the one thing test mode admits.
+        if server_cfg is not None and server_cfg.test_mode_active and fake is None:
             return Verdict.refuse(
                 "⛔ Signups are closed while this server is in test mode. "
                 "Ask an admin to turn it off."
@@ -274,12 +277,16 @@ def start_change(
         profile = await drivers().get_profile(user_id)
         if profile is not None and profile.current_state != DriverState.NOT_SIGNED_UP:
             if profile.current_state in IN_PROGRESS_STATES:
+                if fake is not None:
+                    return Verdict.refuse(f"⛔ **{fake}** already has a signup in progress.")
                 return Verdict.refuse(
                     "⛔ You already have a signup in progress — check your private wizard channel."
                 )
             # Every remaining state is an approved one (`APPROVED_STATES` and
             # `IN_PROGRESS_STATES` cover the six): a new state gets a wrong message rather than a
             # wrong signup.
+            if fake is not None:
+                return Verdict.refuse(f"⛔ **{fake}**'s signup has already been approved.")
             return Verdict.refuse(
                 "⛔ Your signup has already been approved. You cannot sign up again."
             )
@@ -294,7 +301,7 @@ def start_change(
                 "⛔ Signups are being closed, so a new signup cannot start."
             )
         guild = await league_guild(ctx.bot)
-        if guild is not None and guild.get_member(int(user_id)) is None:
+        if fake is None and guild is not None and guild.get_member(int(user_id)) is None:
             # Leaving the server cancels a signup (signup :107): there is no one to sign up.
             return Verdict.not_due("the member left the server before their signup channel was made")
         beside = None if guild is None or cfg.signup_channel_id is None else guild.get_channel(
@@ -372,9 +379,13 @@ def start_change(
                         result=dict(ctx.kept or {}),
                     ) from error
         user_id = str(ctx.step_payload["user_id"])
-        member = guild.get_member(int(user_id))
-        if member is None:
+        fake = await drivers().fake_driver_name(user_id)
+        member = None if fake is not None else guild.get_member(int(user_id))
+        if fake is None and member is None:
             raise StepFailedOnDiscord("the member signing up could not be found on the server")
+        # A fake driver has no member: it is named by its test name and the staff roles alone see
+        # its channel.
+        named = fake
         cfg = await signup().get_config()
         server_cfg = await config.get_server_config()
         try:
@@ -382,6 +393,7 @@ def start_change(
                 guild, member, cfg.signup_channel_id if cfg else None,
                 server_cfg.interaction_role_id if server_cfg else None,
                 server_cfg.league_admin_role_id if server_cfg else None,
+                name=named,
             )
         except discord.HTTPException as error:
             raise StepFailedOnDiscord(
@@ -395,6 +407,11 @@ def start_change(
         default_teams = await teams().get_default_teams()
         snapshot.team_names = [t.full_name for t in default_teams if not t.is_reserve]
         snapshot.team_shorthands = {t.name: t.full_name for t in default_teams if not t.is_reserve}
+        # Under test mode the test-mode nationality switch stands in for the league's own setting
+        # (core specification, "Test mode"), so the frozen copy, which every later step reads
+        # (a correction among them), carries the switch's value.
+        if server_cfg is not None and server_cfg.test_mode_active:
+            snapshot.nationality_required = server_cfg.test_mode_nationality_required
         first_state = (
             WizardState.COLLECTING_NATIONALITY
             if snapshot.nationality_required
@@ -405,8 +422,8 @@ def start_change(
             "state": first_state.value,
             "snapshot": json.dumps(signup()._snapshot_to_dict(snapshot)),
             "draft": {
-                "discord_username": member.name,
-                "server_display_name": member.display_name,
+                "discord_username": named if member is None else member.name,
+                "server_display_name": named if member is None else member.display_name,
             },
             "at": now().isoformat(),
         })
@@ -423,8 +440,19 @@ def start_change(
 
     async def start(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         user_id = str(ctx.step_payload["user_id"])
+        prior = await drivers().state_of_account_on(db, user_id) or DriverState.NOT_SIGNED_UP
         await drivers().transition_on(db, user_id, DriverState.PENDING_SIGNUP_COMPLETION)
-        return StepResult(result={})
+        # The move out of Not Signed Up is audited, as the later ones are, whoever started the
+        # signup: the member pressing Sign Up (who has no profile until now), or a league admin
+        # for a fake driver.
+        return StepResult(
+            result={},
+            audits=(AuditRecord(
+                "SIGNUP_START",
+                {"state": prior.value, "discord_user_id": user_id},
+                {"new_state": DriverState.PENDING_SIGNUP_COMPLETION.value},
+            ),),
+        )
 
     async def arm_inactivity(ctx: StepContext) -> StepResult:
         arm_once(INACTIVITY_TIMER, str(ctx.step_payload["user_id"]), now() + INACTIVITY)
@@ -449,7 +477,8 @@ def start_change(
         record = await signup().get_wizard(user_id)
         if record is None or record.config_snapshot is None:
             raise StepFailedOnDiscord("the signup's record could not be found")
-        member = guild.get_member(int(user_id))
+        fake = await drivers().fake_driver_name(user_id)
+        member = None if fake is not None else guild.get_member(int(user_id))
         if record.wizard_state in WizardService._BUTTON_ONLY_STATES and member is not None:
             try:
                 await WizardService._revoke_driver_write(found, member)
@@ -459,22 +488,27 @@ def start_change(
                 ) from error
         async with get_connection(ctx.db_path) as db:
             track_map = await track_service.get_track_name_map(db)
+        greeted = f"**{fake}**" if fake is not None else f"<@{user_id}>"
         await post(
             found,
-            f"Welcome to the signup wizard, <@{user_id}>!\n"
+            f"Welcome to the signup wizard, {greeted}!\n"
             + WizardService._prompt_for_state(
                 record.wizard_state, record.config_snapshot, track_name_map=track_map
             ),
             view=build_step_view(
                 queue_of(), record.wizard_state, user_id, record.config_snapshot.team_names,
-                signup=signup(),
+                signup=signup(), config=config, drivers=drivers(),
             ),
             mentions=discord.AllowedMentions(
-                everyone=False, roles=False, users=[discord.Object(id=int(user_id))]
+                everyone=False, roles=False,
+                users=[] if fake is not None else [discord.Object(id=int(user_id))],
             ),
             refused=f"the welcome could not be posted in channel {found.id}",
         )
-        return StepResult(result={}, lines=(f"{ctx.named} | Signup | Started",))
+        started = f"{ctx.named} | Signup | Started"
+        if fake is not None:
+            started += f"\n  driver: {fake}"
+        return StepResult(result={}, lines=(started,))
 
     async def describe_delete(_ctx: StepContext) -> str:
         return "deleting the channel of the driver's earlier signup"
@@ -494,25 +528,38 @@ def start_change(
     def outcome(ctx: OutcomeContext) -> str:
         views = {view.name: view for view in ctx.steps}
         created = views.get(CREATE_CHANNEL)
+        # A fake driver's signup is started by a league admin, who is told of the fake driver
+        # and not of "your" signup.
+        fake_name = ctx.payload.get("fake_name")
         if created is None or "discarded" in (created.result or {}):
+            if fake_name is not None:
+                return (
+                    f"⚠️ **{fake_name}**'s signup channel could not be created and was "
+                    "discarded. Run `/signup start` again."
+                )
             return (
                 "⚠️ Your signup channel could not be created and was discarded. "
                 "Press Sign Up again."
             )
-        text = f"✅ Your signup channel has been created: <#{(created.result or {})['channel_id']}>"
+        channel = f"<#{(created.result or {})['channel_id']}>"
+        text = (
+            f"✅ **{fake_name}**'s signup channel has been created: {channel}"
+            if fake_name is not None else f"✅ Your signup channel has been created: {channel}"
+        )
         # Each job an admin discarded is named, so that the reply says what was not done.
         notes = {
             DELETE_OLD_CHANNEL: (
-                "The channel of your earlier signup could not be deleted and was left standing: "
-                "ask a league manager to delete it."
+                f"The channel of {'its' if fake_name else 'your'} earlier signup could not be "
+                "deleted and was left standing: ask a league manager to delete it."
             ),
             START_JOB: (
-                "Your signup was not started and was discarded: press Sign Up again to start "
-                "over."
+                f"{'Its' if fake_name else 'Your'} signup was not started and was discarded: "
+                + ("run `/signup start` again to start over."
+                   if fake_name else "press Sign Up again to start over.")
             ),
             ARM_INACTIVITY: (
-                "Your signup's 24 hours were not armed and were discarded, so it will not lapse "
-                "by itself until the bot starts again."
+                f"{'Its' if fake_name else 'Your'} signup's 24 hours were not armed and were "
+                "discarded, so it will not lapse by itself until the bot starts again."
             ),
             POST_WELCOME: "The welcome could not be posted and was discarded.",
         }
@@ -702,7 +749,8 @@ def end_change(
             # Judged on the database alone: a reason a manager is typing lives in memory, and
             # is refused at the ask (#502).
             refusal = cancellation_refusal(
-                None if profile is None else profile.current_state, f"<@{user_id}>"
+                None if profile is None else profile.current_state,
+                await mention_or_name(ctx.db_path, user_id),
             )
             if refusal is not None:
                 return Verdict.refuse(f"⛔ {refusal}", refusal)
@@ -764,9 +812,13 @@ def end_change(
         await drivers().transition_on(db, user_id, DriverState.NOT_SIGNED_UP)
         await signup().end_wizard_on(db, user_id)
         named = member_named(None, int(user_id))
+        fake = False
         for view in ctx.steps:
             if view.name == NAME_JOB and view.done:
                 named = str((view.result or {}).get("named") or named)
+                fake = bool((view.result or {}).get("fake"))
+        # A fake driver is no member to mention: the notice names it by its test name.
+        who = f"**{named}**" if fake else f"<@{user_id}>"
         if ctx.step_payload["reason"] == CHANNEL_GONE:
             payload = ctx.step_payload
             where = (
@@ -796,8 +848,9 @@ def end_change(
                     CLOSING,
                     {
                         "user_id": user_id, "channel_id": int(wizard_row["signup_channel_id"]),
+                        "fake_name": named if fake else None,
                         "notice": (
-                            f"<@{user_id}> ❌ Your signup has been rejected by "
+                            f"{who} ❌ Your signup has been rejected by "
                             f"**{payload['actor_name']}**.\n**Reason:** {payload['text']}\n"
                             "This channel will be automatically deleted in 24 hours."
                         ),
@@ -822,15 +875,14 @@ def end_change(
             manager = member_named(payload["actor_name"], int(payload["actor_id"]))
             text = payload.get("text")
             if wizard_row is not None and wizard_row["signup_channel_id"] is not None:
-                notice = CANCELLED_BY_MANAGER.format(
-                    user_id=user_id, manager=payload["actor_name"]
-                )
+                notice = CANCELLED_BY_MANAGER.format(who=who, manager=payload["actor_name"])
                 if text:
                     notice += f"\n**Reason:** {text}"
                 follow_ons = (FollowOn(
                     CLOSING,
                     {
                         "user_id": user_id, "channel_id": int(wizard_row["signup_channel_id"]),
+                        "fake_name": named if fake else None,
                         "notice": f"{notice}\nThis channel will be automatically deleted in 24 hours.",
                     },
                     "Closing a cancelled signup",
@@ -851,6 +903,7 @@ def end_change(
                 CLOSING,
                 {
                     "user_id": user_id, "channel_id": int(wizard_row["signup_channel_id"]),
+                    "fake_name": named if fake else None,
                     "notice": WITHDRAWN_NOTICE,
                 },
                 "Closing a withdrawn signup",
@@ -862,32 +915,39 @@ def end_change(
                 {"state": prior, "discord_user_id": user_id},
                 {"new_state": DriverState.NOT_SIGNED_UP.value},
             ),),
-            lines=(f"{named} | Signup | Withdrawn",),
+            lines=(
+                f"{ctx.named} | Signup | Withdrawn\n  driver: {named}" if fake
+                else f"{named} | Signup | Withdrawn",
+            ),
             follow_ons=follow_ons,
         )
 
     async def name_driver(ctx: StepContext) -> StepResult:
-        return StepResult(result={
-            "named": await name_of_member(ctx.bot, int(ctx.step_payload["user_id"]))
-        })
+        user_id = ctx.step_payload["user_id"]
+        fake_name = await drivers().fake_driver_name(str(user_id))
+        named = fake_name or await name_of_member(ctx.bot, int(user_id))
+        return StepResult(result={"named": named, "fake": fake_name is not None})
 
     async def describe_name(ctx: StepContext) -> str:
-        return f"finding the name of <@{ctx.step_payload['user_id']}> for the record"
+        who = await mention_or_name(ctx.db_path, ctx.step_payload["user_id"])
+        return f"finding the name of {who} for the record"
 
     async def describe_end(ctx: StepContext) -> str:
-        return f"ending the signup of <@{ctx.step_payload['user_id']}>"
+        who = await mention_or_name(ctx.db_path, ctx.step_payload["user_id"])
+        return f"ending the signup of {who}"
 
     async def would_never_end(ctx: StepContext) -> str:
+        who = await mention_or_name(ctx.db_path, ctx.step_payload["user_id"])
         if ctx.step_payload["reason"] == CHANNEL_GONE:
             if ctx.step_payload.get("found", PANEL) != PANEL:
                 return (
-                    f"<@{ctx.step_payload['user_id']}>'s signup would stay under way with no "
+                    f"{who}'s signup would stay under way with no "
                     "signup channel, so they could neither finish it nor sign up again, and "
                     "while they await review or a correction the season's placements could not "
                     "be confirmed"
                 )
             return (
-                f"<@{ctx.step_payload['user_id']}> would be left awaiting approval with no "
+                f"{who} would be left awaiting approval with no "
                 "signup channel and no review panel, and the season's placements could not be "
                 "confirmed"
             )
@@ -896,11 +956,11 @@ def end_change(
         # the plain text below, which is true of them all, serves them.
         if ctx.step_payload["reason"] == REJECTED:
             return (
-                f"<@{ctx.step_payload['user_id']}> would stay awaiting review, and the "
+                f"{who} would stay awaiting review, and the "
                 "season's placements could not be confirmed"
             )
         return (
-            f"<@{ctx.step_payload['user_id']}>'s signup would never end, and the season's "
+            f"{who}'s signup would never end, and the season's "
             "placements could not be confirmed"
         )
 
@@ -1066,20 +1126,23 @@ async def ask_member_left(
 
 async def ask_channel_gone(
     queue: "ChangeQueue", *, user_id: str, channel_id: int, named: str, found: str,
+    fake: str | None = None,
 ) -> int | None:
     """Ask the queue, as the bot, to end the signup of *user_id* whose signup channel *channel_id*
     is gone (`signup.end`, reason `CHANNEL_GONE`): *found* is `DELETED` where the bot saw the
     channel deleted and `RESTART` where a restart found it gone, and *named* is the driver's name
-    for the log, found by the asker. The change's own check drops the ask where the driver is no
-    longer signing up or their wizard names another channel. Gives the change's id, or None
-    where it was dropped."""
+    for the log, found by the asker. *fake* is the driver's test name where they are a fake
+    driver, found by the asker too: the change's own words then name them by it and never by
+    their ID, as the queue repeats them in a stopped lane's line.
+    The change's own check drops the ask where the driver is no longer signing up or their wizard
+    names another channel. Gives the change's id, or None where it was dropped."""
     return await queue.ask(
         END,
         {
             "user_id": user_id, "reason": CHANNEL_GONE, "channel_id": int(channel_id),
             "named": named, "found": found,
         },
-        what=f"ending the signup of <@{user_id}>, their signup channel deleted",
+        what=f"ending the signup of {fake or f'<@{user_id}>'}, their signup channel deleted",
         origin=ChangeOrigin.BOT,
     )
 

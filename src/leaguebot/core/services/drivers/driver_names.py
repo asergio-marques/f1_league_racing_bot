@@ -3,8 +3,9 @@
 Core owns the drivers, so this is the one reader of a driver's profile, accounts and test-mode
 fields, and of whether the league collects a nationality. What a signup records of a driver is
 signup's, asked through core's `driver_names_read` hook for the season drawn (`read_driver_records`);
-core merges it with what it holds itself: a mock driver has no signup, and carries its own name and
-nationality, and while test mode is on its own switch stands in for signup's.
+core merges it with what it holds itself: a fake driver carries its own test name, its nationality
+being the one its signup gave as any driver's is, and while test mode is on its own switch stands
+in for signup's.
 
 A caller is handed the hook (`bot.driver_names_read`) and passes it in: an empty one, as a bare test
 stand-in carries, names a driver by their account alone and collects a nationality.
@@ -30,7 +31,8 @@ log = logging.getLogger(__name__)
 @dataclass(frozen=True)
 class DriverRecord:
     """What is held of one driver to name them by: the signup's name, username and nationality for
-    the season asked about, and the profile's own test-mode fields. Each is None where none is held.
+    the season asked about, and the profile's own test name. Each is None where none is held. A fake
+    driver's nationality is its signup's, as a real driver's: the profile holds none.
     """
 
     profile_id: int
@@ -39,14 +41,12 @@ class DriverRecord:
     signup_username: str | None
     signup_nationality: str | None
     test_name: str | None
-    test_nationality: str | None
     is_test_driver: bool
 
     @property
     def nationality(self) -> str | None:
-        """The nationality the driver is drawn under: a mock driver's own, else their signup's."""
-        value = self.test_nationality if self.is_test_driver else self.signup_nationality
-        return value or None
+        """The nationality the driver is drawn under: the one their signup gave, fake driver or not."""
+        return self.signup_nationality or None
 
 
 def resolve_driver_name(
@@ -113,14 +113,14 @@ async def read_driver_records(
     if any_account:
         sql = (
             "SELECT da.discord_user_id AS asked, dp.id, dp.discord_user_id, dp.is_test_driver, "
-            "       dp.test_display_name, dp.test_nationality "
+            "       dp.test_display_name "
             "FROM driver_accounts da JOIN driver_profiles dp ON dp.id = da.driver_profile_id "
             f"WHERE da.discord_user_id IN ({marks})"
         )
     else:
         sql = (
             "SELECT dp.discord_user_id AS asked, dp.id, dp.discord_user_id, dp.is_test_driver, "
-            "       dp.test_display_name, dp.test_nationality "
+            "       dp.test_display_name "
             f"FROM driver_profiles dp WHERE dp.discord_user_id IN ({marks})"
         )
     async with get_connection(db_path) as db:
@@ -142,7 +142,6 @@ async def read_driver_records(
                 signup_username=signup.username if signup else None,
                 signup_nationality=signup.nationality if signup else None,
                 test_name=row["test_display_name"] if row["is_test_driver"] else None,
-                test_nationality=row["test_nationality"],
                 is_test_driver=bool(row["is_test_driver"]),
             ),
         )
@@ -229,8 +228,8 @@ async def read_driver_nationalities(
 ) -> dict[int, str | None]:
     """Each driver's recorded nationality, or None where they stated none.
 
-    Read from their signup to the season of *division_id*, where one is named. A mock driver has no
-    signup to hold one, and carries its own instead.
+    Read from their signup to the season of *division_id*, where one is named, a fake
+    driver's as a real driver's: the profile holds none of its own.
     """
     records = await read_driver_records(
         db_path,

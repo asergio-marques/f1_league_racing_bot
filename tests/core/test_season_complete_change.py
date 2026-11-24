@@ -1056,7 +1056,8 @@ async def test_the_jobs_run_in_order(tmp_path):
     """Results, attendance and test mode on; Pro's last round with results is its round 2, Am's
     its round 1. The jobs run in the core specification's order: the save, then for Pro and then
     for Am its final standings and its final sheet, each real driver's roles, the forecasts
-    cleared, the end save, the drivers' jobs, the portraits, the backup and the closing line. The
+    cleared, the end save, the `/driver` swap among the drivers' jobs after it, the portraits, the
+    backup and the closing line. The
     modules' final posts are planned through the season completed hook, called inside the first
     save, on its connection, once for each division in order and handed the division's id and
     name and the round results names for it; a further subscriber signed up to it sees the season
@@ -1084,7 +1085,12 @@ async def test_the_jobs_run_in_order(tmp_path):
     assert jobs[8:10] == [("flush_forecasts", None), ("end", None)]
     assert names[-3:] == ["discard_portraits", "discard_backup", "close"]
     between = names[names.index("end") + 1:names.index("discard_portraits")]
-    assert set(between) <= {"signup_notice", "close_signup", "take_driver_role"}
+    assert (
+        between.count("swap_test_mode_commands")
+        == names.count("swap_test_mode_commands") == 1
+    )
+    assert set(between) <= {"signup_notice", "close_signup", "take_driver_role",
+                            "swap_test_mode_commands"}
     assert ("revoke_roles", TEST_DRIVER) not in jobs
     assert handed == [
         (True, "PENDING_COMPLETION", PRO, "Pro", round_id(PRO, 2)),

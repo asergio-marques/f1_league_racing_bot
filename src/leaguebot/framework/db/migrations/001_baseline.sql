@@ -847,8 +847,7 @@ CREATE TABLE "driver_profiles" (
     current_state      TEXT    NOT NULL,
     former_driver      INTEGER NOT NULL DEFAULT 0,
     is_test_driver     INTEGER NOT NULL DEFAULT 0,
-    test_display_name  TEXT,
-    test_nationality   TEXT
+    test_display_name  TEXT
 );
 
 -- driver_accounts

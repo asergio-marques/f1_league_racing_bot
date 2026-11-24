@@ -16,9 +16,8 @@ A fourth site, ``image_verdict_post._driver_nationality``, carried the same phan
 and was corrected in 2026-08 alongside test-driver nationality; it is covered here too,
 for the same reason — only a real query against a real schema catches it.
 
-The same tests now also pin where a **mock driver's** nationality comes from. It has no
-signup record, so it carries its own on ``driver_profiles.test_nationality``, and every
-site must prefer that over the NULL its join yields.
+The same tests now also pin where a **mock driver's** nationality comes from: its signup, keyed
+by its synthetic id, as any driver's is. A mock driver that has not signed up has none.
 """
 from __future__ import annotations
 
@@ -79,14 +78,21 @@ async def _seed_driver(db_path, *, name: str = "Ada Lovelace", nationality: str 
 
 
 async def _seed_test_driver(db_path, *, name: str = "Mock Alpha", nationality=None):
-    """A mock driver as `/test-mode roster add` makes one: no signup record at all."""
+    """A mock driver as `/test-mode roster add` makes one, and, where *nationality* is given, its
+    signup naming it by its test name and recording *nationality*; with none, no signup at all."""
     async with get_connection(db_path) as db:
         await db.execute(
             "INSERT INTO driver_profiles (discord_user_id, current_state, "
-            "is_test_driver, test_display_name, test_nationality) "
-            "VALUES (?, 'ASSIGNED', 1, ?, ?)",
-            (str(TEST_USER_ID), name, nationality),
+            "is_test_driver, test_display_name) "
+            "VALUES (?, 'ASSIGNED', 1, ?)",
+            (str(TEST_USER_ID), name),
         )
+        if nationality is not None:
+            await db.execute(
+                "INSERT INTO signup_records (created_at, discord_user_id, server_display_name, "
+                "discord_username, nationality) VALUES ('2026-01-01T00:00:00+00:00', ?, ?, ?, ?)",
+                (str(TEST_USER_ID), name, name, nationality),
+            )
         await db.commit()
 
 
@@ -111,19 +117,18 @@ class TestSignupRecordsJoin:
     @pytest.mark.parametrize(
         ("seed", "user_id", "nationality"),
         [
-            (_seed_driver, USER_ID, "Dutch"),
-            (_seed_driver, USER_ID, None),
-            (_seed_test_driver, TEST_USER_ID, "Brazilian"),
-            (_seed_test_driver, TEST_USER_ID, None),
+            pytest.param(_seed_driver, USER_ID, "Dutch", id="seeded"),
+            pytest.param(_seed_driver, USER_ID, None, id="seeded-none-stated"),
+            pytest.param(_seed_test_driver, TEST_USER_ID, "Brazilian", id="mock"),
+            pytest.param(_seed_test_driver, TEST_USER_ID, None, id="mock-none-given"),
         ],
-        ids=["seeded", "seeded-none-stated", "mock", "mock-none-given"],
     )
     async def test_nationalities_reads_each_drivers_own(
         self, bot, db_path, seed, user_id, nationality
     ):
         """`_nationalities` is imported by the attendance and verdict paths too.
 
-        A mock driver has no signup record; its nationality is on its profile.
+        A mock driver's nationality is its signup's, and none where it has not signed up.
         """
         from leaguebot.core.services.drivers.driver_names import read_driver_nationalities
 
@@ -132,7 +137,8 @@ class TestSignupRecordsJoin:
         assert await read_driver_nationalities(db_path, _hook(db_path), [user_id]) == {user_id: nationality}
 
     async def test_the_verdict_lookup_reads_both_kinds_of_driver(self, db_path):
-        """The fourth site, which joined the phantom column until this was written."""
+        """The fourth site, which joined the phantom column until this was written. A real
+        driver's nationality and a mock driver's are each their signup's."""
         from leaguebot.image.services.aspects.image_verdict_post import _driver_nationality
 
         await _seed_driver(db_path, nationality="Dutch")
@@ -140,6 +146,54 @@ class TestSignupRecordsJoin:
 
         assert await _driver_nationality(db_path, _hook(db_path), USER_ID) == "Dutch"
         assert await _driver_nationality(db_path, _hook(db_path), TEST_USER_ID) == "Italian"
+
+    async def test_a_mock_driver_with_no_signup_to_the_season_is_read_from_its_latest(
+        self, db_path
+    ):
+        """D17. Season 1 is completed and season 2 is under way, with division D1. Mock Alpha, a
+        mock driver, signed up to season 1 alone, as "Mock Alpha", giving Brazilian. Read for D1,
+        in season 2, to which it made no signup, it is named "Mock Alpha" and its nationality is
+        Brazilian, from its latest signup, as any driver's is."""
+        from leaguebot.core.services.drivers.driver_names import (
+            read_driver_names,
+            read_driver_nationalities,
+        )
+
+        async with get_connection(db_path) as db:
+            earlier = (await db.execute(
+                "INSERT INTO seasons (start_date, status, season_number) "
+                "VALUES ('2025-03-01', 'COMPLETED', 1)"
+            )).lastrowid
+            current = (await db.execute(
+                "INSERT INTO seasons (start_date, status, season_number) "
+                "VALUES ('2026-03-01', 'ACTIVE', 2)"
+            )).lastrowid
+            division_id = (await db.execute(
+                "INSERT INTO divisions (season_id, name, mention_role_id, status, tier) "
+                "VALUES (?, 'D1', 1, 'ACTIVE', 1)",
+                (current,),
+            )).lastrowid
+            await db.execute(
+                "INSERT INTO driver_profiles (discord_user_id, current_state, "
+                "is_test_driver, test_display_name) VALUES (?, 'UNASSIGNED', 1, 'Mock Alpha')",
+                (str(TEST_USER_ID),),
+            )
+            await db.execute(
+                "INSERT INTO signup_records (created_at, season_id, discord_user_id, "
+                "server_display_name, discord_username, nationality) "
+                "VALUES ('2025-02-01T00:00:00+00:00', ?, ?, 'Mock Alpha', 'Mock Alpha', "
+                "'Brazilian')",
+                (earlier, str(TEST_USER_ID)),
+            )
+            await db.commit()
+
+        hook = _hook(db_path)
+        assert await read_driver_nationalities(
+            db_path, hook, [TEST_USER_ID], division_id=division_id
+        ) == {TEST_USER_ID: "Brazilian"}
+        assert await read_driver_names(
+            db_path, hook, None, [TEST_USER_ID], division_id=division_id
+        ) == {TEST_USER_ID: "Mock Alpha"}
 
     async def test_the_verdict_lookup_yields_none_for_an_unknown_driver(self, db_path):
         from leaguebot.image.services.aspects.image_verdict_post import _driver_nationality
@@ -157,7 +211,14 @@ class TestSignupRecordsJoin:
         assert names.get(USER_ID) == "Ada Lovelace"
 
     async def test_the_lineup_seat_query_runs_and_finds_its_driver(self, db_path):
-        """The third corrected site. Issued verbatim as `build_drawing` issues it."""
+        """The lineup picture's seat query, `seated_teams`, run against the migrated schema as
+        `build_drawing` runs it. Season 1 is active, with division D1 holding Redline, a one-seat
+        team; Ada (USER_ID) signed up as 'Ada Lovelace', British, is Active and holds its seat,
+        her placement confirmed. D1's lineup is Redline alone, its one seat drawn as Ada, under
+        her signup's name and flag."""
+        from leaguebot.image.services.aspects.image_lineup_post import seated_teams
+
+        await _seed_driver(db_path, name="Ada Lovelace", nationality="British")
         async with get_connection(db_path) as db:
             cursor = await db.execute(
                 "INSERT INTO seasons (start_date, status, season_number) "
@@ -175,52 +236,32 @@ class TestSignupRecordsJoin:
                 "VALUES (?, 'Redline', 'Redline', 1, 0)",
                 (division_id,),
             )
-            team_id = cursor.lastrowid
             cursor = await db.execute(
                 "INSERT INTO team_seats (team_instance_id, seat_number) VALUES (?, 1)",
-                (team_id,),
+                (cursor.lastrowid,),
             )
             seat_id = cursor.lastrowid
             cursor = await db.execute(
-                "INSERT INTO driver_profiles (discord_user_id, current_state) "
-                "VALUES (?, 'ACTIVE')",
-                (USER_ID,),
+                "SELECT id FROM driver_profiles WHERE discord_user_id = ?", (USER_ID,)
             )
-            profile_id = cursor.lastrowid
-            await db.execute(
-                "INSERT INTO signup_records (created_at, discord_user_id, "
-                "server_display_name, discord_username, nationality) "
-                "VALUES ('2026-01-01T00:00:00+00:00', ?, 'Ada Lovelace', 'ada', 'British')",
-                (str(USER_ID),),
-            )
+            [profile_id] = await cursor.fetchone()
             await db.execute(
                 "INSERT INTO driver_season_assignments (driver_profile_id, season_id, "
-                "division_id, team_seat_id) VALUES (?, ?, ?, ?)",
+                "division_id, team_seat_id, committed) VALUES (?, ?, ?, ?, 1)",
                 (profile_id, season_id, division_id, seat_id),
             )
             await db.commit()
 
-            rows = await (
-                await db.execute(
-                    "SELECT ts.seat_number, dp.discord_user_id, dp.is_test_driver, "
-                    "       dp.test_display_name, sr.server_display_name, "
-                    "       sr.discord_username, "
-                    "       CASE WHEN dp.is_test_driver = 1 THEN dp.test_nationality "
-                    "            ELSE sr.nationality END AS nationality "
-                    "FROM team_seats ts "
-                    "LEFT JOIN driver_season_assignments dsa "
-                    "       ON dsa.team_seat_id = ts.id AND dsa.division_id = ? "
-                    "LEFT JOIN driver_profiles dp ON dp.id = dsa.driver_profile_id "
-                    "LEFT JOIN signup_records sr "
-                    "       ON sr.discord_user_id = CAST(dp.discord_user_id AS TEXT) "
-                    "WHERE ts.team_instance_id = ? ORDER BY ts.seat_number",
-                    (division_id, team_id),
-                )
-            ).fetchall()
+        assert division_id is not None
+        [team] = await seated_teams(db_path, _hook(db_path), division_id, season_id)
 
-        assert len(rows) == 1
-        assert rows[0]["server_display_name"] == "Ada Lovelace"
-        assert rows[0]["nationality"] == "British"
+        assert team.name == "Redline"
+        [seat] = team.seats
+        assert seat.seat_number == 1
+        assert seat.profile_id == profile_id
+        assert seat.discord_user_id == str(USER_ID)
+        assert seat.server_display_name == "Ada Lovelace"
+        assert seat.nationality == "British"
 
 
 # ── The suppression switch ────────────────────────────────────────────────

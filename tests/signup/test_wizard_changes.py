@@ -537,6 +537,118 @@ async def test_sign_up_s_channel_is_seen_only_by_the_driver_and_both_staff_tiers
     assert staff and staff <= {getattr(key, "id", None) for key in overwrites}
 
 
+#: A fake driver, as the roster creates one: an ID in the synthetic range and a test name, at
+#: Not Signed Up, and no member of the server behind it.
+MOCK = 9000000000000000001
+MOCK_NAME = "Mock Alpha"
+
+
+async def _start_mock(league: SeasonLeague) -> None:
+    """Mock Alpha is created a fake driver at Not Signed Up, no member of the server holding its
+    ID; the league admin Admin (77) asks `signup.start` for it, as `/signup start` does, and the
+    queue runs."""
+    from tests.support.season_league import ADMIN_ID
+
+    await league.write(
+        "INSERT INTO driver_profiles (discord_user_id, current_state, is_test_driver, "
+        "test_display_name) VALUES (?, 'NOT_SIGNED_UP', 1, ?)",
+        str(MOCK), MOCK_NAME,
+    )
+    league.absent.add(MOCK)
+    asked = member_interaction(league.bot, user=league._member(ADMIN_ID))
+    asked.guild = league.guild
+    await league.bot.change_queue.ask(
+        START_KIND, {"user_id": str(MOCK)}, interaction=asked, what="Signing up"
+    )
+    await run_queue(league.bot)
+
+
+async def test_a_fake_driver_s_signup_starts_with_no_member_behind_it(tmp_path):
+    """The server is in test mode, at Signups with the window open. Mock Alpha is a fake driver
+    at Not Signed Up, its ID in the synthetic range, no member of the server holding it. The
+    league admin Admin (77) asks `signup.start` for it, as `/signup start` does, in its stead of
+    the Sign Up press it cannot make, and the queue runs. It is not refused, though the server is
+    in test mode and no member stands behind it: its jobs run in order (`create_channel`,
+    `start`, `arm_inactivity`, `post_welcome`); its channel, "mock-alpha-signup", is named from
+    its test name and created hidden from everyone but the league's interaction and league admin
+    roles, with no overwrite for the fake driver's ID; its wizard's draft holds its test name as
+    both its username and its server name; it is at Pending Signup Completion; and the welcome is
+    posted in the new channel, naming it "Mock Alpha" and mentioning no account by its ID."""
+    league = await _league(tmp_path)
+    await league.set_test_mode(True)
+    [roles] = await league.rows(
+        "SELECT interaction_role_id, league_admin_role_id FROM server_configs"
+    )
+    await _start_mock(league)
+
+    [change] = await _changes_of(league, START_KIND)
+    assert change["state"] == "DONE"
+    names = await _job_names(league, START_KIND)
+    assert _in_order(names, ["create_channel", "start", "arm_inactivity", "post_welcome"])
+    assert league.created == [NEW_CHANNEL]
+    created = league.guild.create_text_channel.await_args
+    assert (created.args[0] if created.args else created.kwargs["name"]) == "mock-alpha-signup"
+    overwrites = created.kwargs["overwrites"]
+    assert overwrites[league.guild.default_role].view_channel is False
+    assert not [key for key in overwrites if getattr(key, "id", None) == MOCK]
+    staff = {roles["interaction_role_id"], roles["league_admin_role_id"]} - {None}
+    assert staff and staff <= {
+        getattr(key, "id", None) for key, allowed in overwrites.items() if allowed.view_channel
+    }
+    wizard = await _wizard(league, MOCK)
+    assert wizard is not None and int(wizard["signup_channel_id"]) == NEW_CHANNEL
+    import json
+
+    draft = json.loads(wizard["draft_answers_json"] or "{}")
+    assert (draft.get("discord_username"), draft.get("server_display_name")) == (
+        MOCK_NAME, MOCK_NAME
+    )
+    assert await _driver_state(league, MOCK) == "PENDING_SIGNUP_COMPLETION"
+    welcome = "\n".join(league.channel(NEW_CHANNEL).texts)
+    assert "Welcome to the signup wizard" in welcome and MOCK_NAME in welcome
+    assert f"<@{MOCK}>" not in welcome
+
+
+@pytest.mark.parametrize(
+    ("league_asks", "switch", "first"),
+    [
+        pytest.param(True, False, "COLLECTING_PLATFORM", id="league asks, switch off"),
+        pytest.param(False, True, "COLLECTING_NATIONALITY", id="league does not ask, switch on"),
+    ],
+)
+async def test_under_test_mode_the_wizard_asks_nationality_by_the_test_mode_switch(
+    tmp_path, league_asks, switch, first
+):
+    """The server is in test mode, at Signups with the window open. The league's own signup
+    setting asks each driver's nationality, or does not, and `/test-mode nationality` stands the
+    other way. A league admin starts the fake driver Mock Alpha's signup, as `/signup start`
+    does, and the queue runs. Its wizard follows the test-mode switch, not the league's setting:
+    with the switch on it opens at Collecting Nationality, with it off at Collecting Platform; and
+    the configuration frozen with the wizard records the switch's value, so a later step (a
+    correction among them) asks or skips nationality the same way."""
+    import json
+
+    league = await _league(tmp_path)
+    await league.write(
+        "INSERT INTO signup_module_settings (id, nationality_required, time_type,"
+        " time_image_required) VALUES (1, ?, 'TIME_TRIAL', 1)",
+        int(league_asks),
+    )
+    await league.write(
+        "UPDATE season_signup_config SET nationality_required = ?", int(league_asks)
+    )
+    await league.set_test_mode(True)
+    await league.write(
+        "UPDATE server_configs SET test_mode_nationality_required = ?", int(switch)
+    )
+
+    await _start_mock(league)
+
+    wizard = await _wizard(league, MOCK)
+    assert wizard is not None and wizard["wizard_state"] == first
+    assert json.loads(wizard["config_snapshot_json"])["nationality_required"] is switch
+
+
 async def test_the_wizard_is_saved_with_the_configuration_as_it_stood_and_no_reserve_team(
     tmp_path,
 ):
@@ -616,6 +728,26 @@ async def test_sign_up_welcomes_the_driver_by_name_and_writes_its_started_line(t
     )
     started = [line for line in league.log().splitlines() if "Signup | Started" in line]
     assert len(started) == 1 and f"<@{SIGNING_UP}>" in started[0]
+
+
+async def test_a_member_s_sign_up_is_audited_as_its_start(tmp_path):
+    """Kimi, signed up to nothing, presses Sign Up while signups are open and test mode is off,
+    and the queue runs. One `SIGNUP_START` audit entry is written beside the "Signup | Started"
+    line, Kimi its actor, recording him moved from Not Signed Up to Pending Signup Completion: the
+    entry the test-mode `/signup start` writes for a fake driver, with the league admin its
+    actor."""
+    from tests.support.settings_league import audit_rows
+
+    league = await _league(tmp_path)
+
+    await _press_sign_up(league)
+    await run_queue(league.bot)
+
+    [entry] = [row for row in await audit_rows(league.db_path)
+               if row["change_type"] == "SIGNUP_START"]
+    assert entry["actor_id"] == SIGNING_UP
+    assert entry["old_value"] == {"state": "NOT_SIGNED_UP", "discord_user_id": str(SIGNING_UP)}
+    assert entry["new_value"] == {"new_state": "PENDING_SIGNUP_COMPLETION"}
 
 
 @pytest.mark.parametrize(

@@ -107,9 +107,11 @@ would otherwise collide with.
 
 **The wizard asks against a frozen copy of the configuration.** `config_snapshot_json` is taken as
 the wizard starts and holds the settings, the slots by their durable identity, the window's tracks
-and the teams' names and shorthands; the wizard judges every answer against it, so a setting
-changed mid-signup changes nothing for a driver part-way through. A slot's display ordinal is never
-stored (`_snapshot_to_dict`'s docstring; `AvailabilitySlot`'s docstring, pinned by
+and the teams' names and shorthands; the wizard judges every answer against it, so a setting changed
+mid-signup changes nothing for a driver part-way through. Under test mode the frozen copy carries
+the test-mode nationality switch in place of the league's own setting (the signup specification,
+"Signup module configuration"), a correction reading the same copy. A slot's display ordinal is
+never stored (`_snapshot_to_dict`'s docstring; `AvailabilitySlot`'s docstring, pinned by
 `test_no_display_ordinal_is_ever_stored`).
 
 ### Who writes each table
@@ -129,6 +131,7 @@ stored (`_snapshot_to_dict`'s docstring; `AvailabilitySlot`'s docstring, pinned 
 | | `signup_module_service` (`driver_account_changed_on`, `bot_packed_on`), `closing_steps.drivers_returned_on` and `window_changes`' `return_drivers` | the row re-keyed to a new account and the new account's abandoned draft deleted; every row deleted by a pack; a returned driver's wizard ended |
 | | `held_channel_moves` (`DELETE_REPLACED_CHANNEL`) | the replaced account's row, deleted with its channel |
 | `signup_records` | `signup_module_service`, for `wizard_answers` and `review_changes` | a signup saved or corrected, approved, its lap sum |
+| | `fake_signups`, for core's `core.test_roster_sign_up_bulk` save | a fake driver's signup saved and approved |
 | | `signup_module_service` (`driver_turned_down_on`, `season_deleted_on`) | the approval withdrawn; a season's records deleted |
 | `season_signup_config` | `signup_module_service` (`configuration_confirmed_on`, `season_deleted_on`) | the season's copy, written or replaced; deleted with the season |
 
@@ -146,11 +149,11 @@ specification's "Signup data" requires kept with the season, so that a signup ke
 `signup_windows.opened_at` and `signup_records.window_id` are kept for the same section's rule that
 a signup belongs to the window it came through. No code of the bot reads them back
 (`get_season_config` and `get_windows` are called by tests alone, and nothing outside the record's
-own reader reads `window_id`): they are the stated exception of `architecture.md`'s "A column nothing reads is removed,
-not kept". The season's copy is taken in the configuration's confirmation, on its save, while
-signup is on (`configuration_confirmed_on`, through core's `configuration_confirmed` hook;
-`test_the_season_config_snapshot_holds_settings_and_slots`); each window's, as it opens and as its
-close time is set.
+own reader reads `window_id`): they are the stated exception of `architecture.md`'s "A column
+nothing reads is removed, not kept". The season's copy is taken in the configuration's confirmation,
+on its save, while signup is on (`configuration_confirmed_on`, through core's
+`configuration_confirmed` hook; `test_the_season_config_snapshot_holds_settings_and_slots`); each
+window's, as it opens and as its close time is set.
 
 The wizard's `config_snapshot_json` is not history: the wizard reads it for every answer (above).
 
@@ -188,8 +191,8 @@ before anything is set, so a restore run again after a stop reads the first reco
 restores what stood before the first attempt, not what the stop left. The permissions are merged
 with what the league set by hand, which stands, and a take-back restores the exact recorded
 overwrite. The check is `kept_channels_check`'s own and `channel_needs` states what it holds the
-channel to, once, as the signup specification's "Enabling signup flow" gives it, and `/signup
-channel`'s check holds its new channel to all of it: `/signup open` reads the posting part
+channel to, once, as the signup specification's "Enabling signup flow" gives it, and
+`/signup channel`'s check holds its new channel to all of it: `/signup open` reads the posting part
 (`POSTING_NEEDS`), and `OVERWRITE_NEEDS` holds the rest, which setting who may see the channel
 needs. *Rejected:* an `After` step, which would leave the module on while they are unset, where
 nothing may be half-set (Constitution X, rule 2; `Before.undo` in `setting_change`). Tests:
@@ -255,20 +258,21 @@ The services sit flat in `signup/services/`, each file a topic. The table groups
 |---|---|---|
 | The service | `signup_module_service` | `SignupModuleService`, the reads and the `*_on` writers of every table, and signup's subscribers to core's hooks (the confirmation's copy, a driver's names, the turn-down, the account change, the season's delete, the pack, the review's section) |
 | Settings | `signup_settings`, `channel_setting`, `close_time_settings`, `module_switch_settings` | the five `/signup` settings that are not the channel or the close time, and `open_to_change`, the refusal they share; `/signup channel`; the close-time group; the switch-on |
+| The helper's signup | `fake_signups` | signup's two subscribers for `/test-mode roster sign-up-bulk`: the faults that stand in its way, and each fake driver's signup, recorded and approved |
 | The switch-off | `signup_off_change` | `module.off:signup` |
 | The window | `window_changes`, `window_close`, `information_post` | `signup.open` and `signup.close`, and the window's close at a season's end; the close timer, its handler and its catch-up; the one post of the information message |
-| The wizard | `wizard_changes`, `wizard_answers`, `wizard_service` | the start, the end, a held channel's deletion and a member leaving; the answers, the submission and the review panel; `WizardService`, the channel's making and lock, the prompts and the review panel's text |
+| The wizard | `wizard_changes`, `wizard_answers`, `wizard_service`, `driver_naming` | the start, the end, a held channel's deletion and a member leaving; the answers, the submission and the review panel; `WizardService`, the channel's making and lock, the prompts and the review panel's text; how a signup names its driver wherever it names one (log lines, posts, job descriptions, refusals), a fake driver by its test name |
 | The review | `review_changes` | Approve, Request Changes, the correction choices and their lapse |
 | A channel's closing | `closing_steps` | the jobs that close a driver's channel (notice, lock, deletion armed), `signup.closing`, the timers' names and asks, the window's closing jobs, and the start-up catch-ups of the wizards and of the held channels |
 | Posting | `signup_posting`, `signup_views` | the one place signup posts (below); every view and button signup posts, with the pending reasons |
 | Seams with core | `signup_prerequisites`, `held_channel_moves`, `channel_uses`, `fingerprint_areas` | what a season's confirmation and configuration lack; the held channel's move to a new account; the channels signup holds; signup's area of a season's fingerprint |
 
-**Two service classes, the rest functions.** `SignupModuleService` carries the database path and the reads
-and writes of the module's own rows; `WizardService` carries the bot, the queue and the signup
+**Two service classes, the rest functions.** `SignupModuleService` carries the database path and the
+reads and writes of the module's own rows; `WizardService` carries the bot, the queue and the signup
 service for the channel's making and the wizard's words. `LeagueBot` holds them as
-`signup_module_service` and `wizard_service`. Every change type is a factory the builder calls
-with what it needs, the services mostly handed as getters read when the change runs (the comments
-in `register_change_types` say why).
+`signup_module_service` and `wizard_service`. Every change type is a factory the builder calls with
+what it needs, the services mostly handed as getters read when the change runs (the comments in
+`register_change_types` say why).
 
 **The views live among the services** (`signup_views.py`), beside the jobs that post them, so a
 signup job imports no cog (its module docstring). The entry point registers each as a persistent
@@ -276,30 +280,56 @@ view, so its buttons answer after a restart.
 
 ### The cogs
 
-`/signup` is one group in one cog, `SignupCog` (`signup/cogs/signup_cog.py`): `channel`,
-`nationality`, `time-type`, `time-image`, `open`, `close` and `cancel` on the group, and the subgroups
-`config` (`view` alone, `test_the_signup_config_group_holds_only_view`), `time-slot`, `close-time`
-and `unassigned`. A command that changes something parses its own input (the close time, through
-`_parse_close_time`, one parser for `/signup open` and `/signup close-time`) and asks one change. A
-setting command holds no rule of its own; `/signup open` and `/signup close` also refuse at the ask
-(test mode, no configuration; signups not open, a season's end in hand, a close time armed), and
-`close` chooses between asking at once and `ConfirmCloseView`, the change's check judging again
-when its turn comes. `cancel` is the same shape: it reads the driver's state through the driver
-service on the bot (the cog runs no SQL), refuses at the ask through `cancellation_refusal`, a pure
-reader of that state, and opens `CancelSignupModal`, a `LeagueModal` with one optional reason; its
-submit reads the state again and asks `signup.end` with `CANCELLED`, the change's check judging a
-third time when its turn comes. Six commands run `_module_gate` after their tier guard: `time-slot
-list`, `open`, `close`, `cancel`, `unassigned list` and `unassigned export`. The setting commands go straight to the
-queue and leave the module-on refusal to their change's check: `open_to_change` for the five settings and
-`/signup channel`, the close-time group's own check for its three.
+`/signup` is two groups, each in a cog of its own: the member's in `SignupCog`
+(`signup/cogs/signup_cog.py`), the test-mode one in `SignupTestCog`
+(`signup/cogs/signup_test_cog.py`). `SignupCog` holds `channel`, `nationality`, `time-type`,
+`time-image`, `open`, `close` and `cancel` on the group, and the subgroups `config` (`view` alone,
+`test_the_signup_config_group_holds_only_view`), `time-slot`, `close-time` and `unassigned`. A
+command that changes something parses its own input (the close time, through `_parse_close_time`,
+one parser for `/signup open` and `/signup close-time`) and asks one change. A setting command holds
+no rule of its own; `/signup open` and `/signup close` also refuse at the ask (no configuration;
+signups not open, a season's end in hand, a close time armed), and `close` chooses between asking at
+once and `ConfirmCloseView`, the change's check judging again when its turn comes. `cancel` is the
+same shape: it reads the driver's state through the driver service on the bot (the cog runs no SQL),
+refuses at the ask through `cancellation_refusal`, a pure reader of that state, and opens
+`CancelSignupModal`, a `LeagueModal` with one optional reason; its submit reads the state again and
+asks `signup.end` with `CANCELLED`, the change's check judging a third time when its turn comes. Six
+command bodies run `module_gate` (`signup_commands.py`) after the cog's tier guard:
+`time-slot list`, `open`, `close`, `cancel`, `unassigned list` and `unassigned export`. The setting
+commands go straight to the queue and leave the module-on refusal to their change's check:
+`open_to_change` for the five settings and `/signup channel`, the close-time group's own check for
+its three.
+
+**Each command's body is a function of the bot** (`signup/cogs/signup_commands.py`), the cogs
+declaring a command, with its tier and guard, and calling the function, so that the member group and
+the test-mode group do one thing in each command and differ only in how the driver is named. The
+test-mode group is the member group's commands at the same tiers, with `cancel` taking its driver as
+text through core's `driver_reference`, as the test-mode `/driver` does, and `start`, which the
+member group has not, asking `signup.start` for a fake driver as the press does for a member (the
+core specification, "Fake drivers and rosters"). Both groups' commands parse, refuse and ask through
+those bodies, `start` excepted: the member group has no command for it to share, so its refusal of a
+real driver and its ask sit in the test-mode cog. The signup module owns the group, so core's swap
+names neither: it is handed the member and test-mode groups as a pair. *Rejected:* the test-mode
+group subclassing `SignupCog`, which would inherit the member group into its own app commands, as
+the same rejection for `/driver` puts it (`core.md`); and `start` as a `/test-mode` command: it sits
+in the module's group, as `architecture.md` puts a module's test-mode tools.
+
+**One function judges who may answer a wizard**, `may_answer` (`signup_views.py`), by the core
+specification's rule ("Fake drivers and rosters") and the signup specification's ("Wizard flow").
+Every button of the wizard and every typed answer calls it, so that the rule is written once and the
+two cannot differ. It is handed what it reads rather than looking a service up: the listener passes
+the bot's config and driver services, and `WizardStepView` is handed them with the signup service
+and the change queue and passes them on, the views registered at start-up being handed the same. A
+typed answer is keyed to the wizard's owner, the fake driver, so the signup holds it as the driver's
+own.
 
 The cog holds three listeners. `on_message` hands a message typed in a driver's channel to
-`take_typed_answer`, which asks the driver's own `signup.answer` turn as the driver, after turning
-away a message typed while an earlier answer waits and passing over one where the wizard asks
-nothing. The other two ask as the bot and leave the judgement to the change's check:
-`on_guild_channel_delete` asks a signup's ending where a wizard names the
-channel deleted; `on_member_remove` asks `signup.member_left` for every member who leaves. Each
-ignores a server not the league's.
+`take_typed_answer`, once `may_answer` has admitted the author, which asks the driver's own
+`signup.answer` turn, keyed to the driver, as whoever typed it, after turning away a message typed
+while an earlier answer waits and passing over one where the wizard asks nothing. The other two ask
+as the bot and leave the judgement to the change's check: `on_guild_channel_delete` asks a signup's
+ending where a wizard names the channel deleted; `on_member_remove` asks `signup.member_left` for
+every member who leaves. Each ignores a server not the league's.
 
 `AdminReviewCog` (`admin_review_cog.py`) holds one listener, which hands a message that may be a
 manager's reason to `take_reason`.
@@ -332,7 +362,7 @@ is told.
 | `module.on:signup`, `module.off:signup` | league | `/module enable` and `/module disable` |
 | `signup.open`, `signup.close` | league | `/signup open`; `/signup close` and its Confirm Close, the close timer, the restart |
 | `signup.close_timer.arm` | league | the restart, for a close time still ahead |
-| `signup.start`, `signup.end`, `signup.submit` | league | Sign Up; Cancel Signup, a Reject reason, a manager's `/signup cancel`, the 24 hours, a channel found gone; the last answer |
+| `signup.start`, `signup.end`, `signup.submit` | league | Sign Up, and `/signup start` for a fake driver; Cancel Signup, a Reject reason, a manager's `/signup cancel`, the 24 hours, a channel found gone; the last answer |
 | `signup.approve`, `signup.request_changes`, `signup.correction.choose`, `signup.correction.lapse` | league | the review's buttons; the five minutes' timer and the restart |
 | `signup.member_left` | league | the member-remove listener |
 | `signup.answer`, `signup.panel`, `signup.choices`, `signup.recollect`, `signup.closing`, `signup.reason.delete`, `signup.channel.delete` | the driver's, `channel:<id>` | a typed answer or a wizard button; asked back by the league's changes; the held channel's 24 hours |
@@ -342,15 +372,17 @@ driver's account changed (below).
 
 ### The two lanes
 
-**Every change of a driver's status is the league's**, as the core specification's "How a change
-is carried out" has it: a press outside a conversation is a command's, and so is a timer's change.
+**Every change of a driver's status is the league's**, as the core specification's "How a change is
+carried out" has it: a press outside a conversation is a command's, and so is a timer's change.
 **The driver's own lane, `channel:<id>`, carries the conversation:** the answers, and what a league
 change asks back of it to post in the driver's channel. So `signup.submit` saves the signup on the
-league lane and asks `signup.panel` back on the driver's; an approval, a withdrawal and a Reject
-ask `signup.closing` back, as does a manager's cancellation (`closing_steps`' module docstring), while an expiry runs the notice, the
-lock and the deletion's arming itself on the league lane and an ending for a channel gone asks
-nothing; `signup.request_changes` asks `signup.choices`, and the choice asks `signup.recollect`. A refusal Discord gives there stops that driver's lane alone, and the league's
-change is done (`test_a_closing_notice_asked_back_runs_on_the_driver_s_lane_and_a_refusal_stops_only_it`,
+league lane and asks `signup.panel` back on the driver's; an approval, a withdrawal and a Reject ask
+`signup.closing` back, as does a manager's cancellation (`closing_steps`' module docstring), while
+an expiry runs the notice, the lock and the deletion's arming itself on the league lane and an
+ending for a channel gone asks nothing; `signup.request_changes` asks `signup.choices`, and the
+choice asks `signup.recollect`. A refusal Discord gives there stops that driver's lane alone, and
+the league's change is done
+(`test_a_closing_notice_asked_back_runs_on_the_driver_s_lane_and_a_refusal_stops_only_it`,
 `test_the_last_answer_hands_the_submission_to_the_league_and_the_panel_comes_back_on_the_lane`).
 *Rejected:* one change for the whole signup, which would hold a driver's lane until the league had
 approved them (`wizard_answers`' module docstring).
@@ -481,7 +513,8 @@ parts on a best effort and completes, so the undiscardable job never sticks
 (`test_a_long_wrong_answer_is_refused_in_one_message`).
 
 A job that may be discarded is named in the reply and the line where it is: a refused role at
-approval is named and never a stop (`test_a_role_that_cannot_be_granted_is_named_and_does_not_stop_the_queue`).
+approval is named and never a stop
+(`test_a_role_that_cannot_be_granted_is_named_and_does_not_stop_the_queue`).
 
 ---
 
@@ -529,8 +562,9 @@ releases, is not so marked (`recover_held_channels`' docstring). Pinned by
 
 ### The three start-up steps
 
-Signup's turn of the start-up sweep is three steps named in `wiring.start_up_steps`, the first two run
-only while signup is on and the third whatever its switch says (`core.md`, "Start-up"), in this order:
+Signup's turn of the start-up sweep is three steps named in `wiring.start_up_steps`, the first two
+run only while signup is on and the third whatever its switch says (`core.md`, "Start-up"), in this
+order:
 
 1. **signup close timer** (`window_close.recover_missed_close`): a close time passed while the bot
    was down asks the close; one still ahead asks the timer's arming, so an arming a Discard dropped
@@ -611,6 +645,8 @@ several modules join a hook the entry point calls the function in its order.
 | `channel_uses_read`, `setting_channels_read` | `channel_uses` | the channels signup holds: `channel_uses` only while it is on, `setting_channels` whatever its switch |
 | `fingerprint_areas_read` | `fingerprint_areas.fingerprint_areas` | its channel, window, settings and slots in the season's fingerprint, whatever its switch |
 | `in_memory_state_cleared` | `signup_views.clear_pending_reasons` | drops the pending reasons |
+| `fake_signups_ready_read` | `fake_signups.fake_signups_faults_on` | the faults that stand in the way of signing fake drivers up, as values, whatever the switch says: the module off, or else unconfigured, or else signups not open and no availability slot |
+| `fake_signups_approved` | `fake_signups.fake_signups_approved_on` | the signup each fake driver would have made, recorded with default answers to the open window and approved, the driver moved through Pending Signup Completion and Pending Admin Approval to Unassigned by core's `transition_on`, and the audit records handed back |
 
 Signup's switch is the keyed hook `ModuleService.register_switch` under `"signup"`. Three of the
 subscribers that write in a save core calls them in whatever the switches say read signup's switch
@@ -621,6 +657,19 @@ the turn-down (`driver_turned_down_on`) and the account change (`driver_account_
 none. The names a signup gives, the channels and the fingerprint read none either, as their
 docstrings say (`driver_names`, `channel_uses`, `fingerprint_areas`): a signup kept still names its
 driver, and rows and channels held are held off or on.
+
+**The helper's signup is a record and three moves, never the wizard.** `/test-mode roster
+sign-up-bulk` is core's command, and core creates its drivers. Signup's subscribers read on the
+connection the save holds (`slots_on`, `config_on`, `window_state_on`), as the save judged them,
+write the signup's own tables through `save_record_on` and `mark_approved_on`, and move the driver
+only through core's `transition_on`, so that no other path writes a driver's state. No channel,
+wizard row, panel, role, post or timer is made (signup specification, "Wizard flow").
+The approval subscriber **raises** where the module is off or no window is open: core has refused
+the command before its first write on those faults, so that state in the save is a bug or a race,
+and the queue's own failure path (the stopped lane) is there for it, rather than a quiet success or
+a refusal after drivers were created (`fake_signups`' docstring). The readiness subscriber answers
+whatever the switch says, and names the switch alone while it is off, the command being refused
+while the module is off (core specification, "Fake drivers and rosters").
 
 ### Core holds no rule of signup's
 

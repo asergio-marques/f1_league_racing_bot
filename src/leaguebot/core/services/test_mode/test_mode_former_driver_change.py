@@ -1,12 +1,14 @@
 """`core.test_mode_former_driver`: `/test-mode set-former-driver`, on the change queue.
 
-A change type of its own on the league lane, registered by the builder, **carrying the account the
-league admin picked** (`user_id`), the member's name as the reply and the line give it (`name`) and
-**the value it sets** (`value`). The driver is the one who holds that account or has ever held it:
-the flag is set on their profile, and the audit entry names the account they hold now.
+A change type of its own on the league lane, registered by the builder, **carrying the account of
+the driver the league admin named** (`user_id`, the account the driver holds when it is asked: the
+command resolves the text a mention or an ID, a fake driver's included, through `driver_reference`),
+the name as the reply and the line give it (`name`) and **the value it sets** (`value`). The flag is
+set on that driver's profile, and the audit entry names the account they hold now.
 
 **The refusals are the check's**, judged at the ask and again as the change starts, in the league's
-log channel either time: test mode not on, and no profile for the account named. The save judges
+log channel either time: test mode not on, and no profile for the account named (worded as the command words text naming
+no driver, `NO_DRIVER`). The save judges
 them once more on its own connection, ending the change in the same words where one has come up
 since, changing nothing and not stopping the lane.
 
@@ -43,6 +45,7 @@ from leaguebot.framework.services.queue.change_types import (
     Step,
     StepContext,
 )
+from leaguebot.core.services.drivers.driver_reference import NO_DRIVER
 from leaguebot.core.services.drivers.driver_service import current_account_of
 from leaguebot.core.services.rounds.round_add_changes import saved_result
 from leaguebot.core.services.test_mode.test_mode_settings import NOT_IN_TEST_MODE
@@ -58,9 +61,6 @@ COMMAND = "/test-mode set-former-driver"
 
 #: The audit entry's change type.
 AUDIT_TYPE = "TEST_FORMER_DRIVER_FLAG_SET"
-
-#: What the command answers an account no profile is held under.
-NO_PROFILE = "⛔ No driver profile found for user {user_id} on this server."
 
 #: The reply once a league admin has discarded the stopped save: the flag was not changed.
 NOT_CHANGED = (
@@ -83,7 +83,7 @@ async def _judge_on(db: aiosqlite.Connection, user_id: str) -> str | aiosqlite.R
     )
     profile = await cursor.fetchone()
     if profile is None:
-        return NO_PROFILE.format(user_id=user_id)
+        return NO_DRIVER.format(text=user_id)
     return profile
 
 
@@ -172,4 +172,4 @@ def test_mode_former_driver_change() -> ChangeType:
     )
 
 
-__all__ = ["NO_PROFILE", "TEST_MODE_FORMER_DRIVER", "test_mode_former_driver_change"]
+__all__ = ["TEST_MODE_FORMER_DRIVER", "test_mode_former_driver_change"]

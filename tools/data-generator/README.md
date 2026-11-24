@@ -7,20 +7,43 @@ server is a paste rather than an afternoon of typing.
 Nothing here touches the database or needs a running bot. These are offline generators: they
 produce **text**, and the bot does the real work when you paste it in.
 
-All but one of them read `roster.csv`, described next. The calendar generator is the exception:
+All but one of them read `seating.csv`, described next. The calendar generator is the exception:
 a calendar names circuits and dates, never drivers, so it stands outside that contract.
 
 | Script | Generates | Reads | Writes |
 |---|---|---|---|
-| `test-roster/generate_test_roster.py` | drivers, teams and divisions | `test-roster/names.txt` | `roster.csv`, `teams.txt`, `test-roster/commands.txt` |
-| `check-in-data/generate_check_in_data.py` | RSVP check-ins and revisions | `roster.csv` | `check-in-data/<slug>_initial.txt`, `check-in-data/<slug>_changed.txt` |
-| `results-data/generate_results_data.py` | a round's session results | `roster.csv`, `teams.txt`, `check-in-data/<slug>_*.txt` | `results-data/<slug>_<stamp>_<n>_<stage>_<session>.txt` |
+| `test-roster/generate_test_roster.py` | drivers, teams and divisions | `test-roster/names.txt` | `roster.csv`, `sign_up.csv`, `seating.csv`, `teams.txt`, `test-roster/commands.txt` |
+| `check-in-data/generate_check_in_data.py` | RSVP check-ins and revisions | `seating.csv` | `check-in-data/<slug>_initial.txt`, `check-in-data/<slug>_changed.txt` |
+| `results-data/generate_results_data.py` | a round's session results | `seating.csv`, `teams.txt`, `check-in-data/<slug>_*.txt` | `results-data/<slug>_<stamp>_<n>_<stage>_<session>.txt` |
 | `calendar-data/generate_calendar_data.py` | a season's calendar of rounds | the bot's track migration | `calendar-data/calendar.xml` |
 
-## `roster.csv` — the shared contract
+## `roster.csv` and `seating.csv`
 
 The roster generator is the first link in the chain, because everything else refers to
-drivers. With `--record` it writes `roster.csv` in this directory:
+drivers. With `--record` it writes three files in this directory. `roster.csv` is what the bot
+imports, the two columns `/test-mode roster add-bulk` takes and no others:
+
+```
+ID,Driver name
+9000000000000000001,Juggernaut
+9000000000000000002,Deadbolt
+9000000000000000003,Saltire
+```
+
+The bot creates each driver at Not Signed Up, with no team, division or nationality: those
+come later, from the driver's signup and from `/driver assign`. `sign_up.csv` is the same
+drivers with the nationality each drew, the three columns `/test-mode roster sign-up-bulk`
+takes:
+
+```
+ID,Driver name,Nationality
+9000000000000000001,Juggernaut,Brazilian
+9000000000000000002,Deadbolt,Finnish
+9000000000000000003,Saltire,British
+```
+
+The rest of what the generator drew goes in `seating.csv`, the shared contract the sibling
+scripts read:
 
 ```
 ID,Driver name,Team,Division,Nationality
@@ -29,12 +52,17 @@ ID,Driver name,Team,Division,Nationality
 9000000000000000003,Saltire,Ferrari,Division 1,British
 ```
 
-**A new column goes on the end.** The siblings read the file by column name but then flatten
+Each row is where the driver is to be seated, with `/driver assign` once its signup is
+approved, and the nationality to answer in its wizard or to sign it up with. The bot reads neither file's team,
+division or nationality; the siblings do, so that their results and check-ins agree with the
+seats you give.
+
+**A new column goes on the end.** The siblings read `seating.csv` by column name but then flatten
 each row into a fixed four-field tuple they index by position, so a column appended after
 `Division` is ignored by them and a column inserted before it would break them silently.
 `Nationality` was added that way and any further column must be too.
 
-**A sibling script that needs driver identities reads this file rather than inventing its
+**A sibling script that needs driver identities reads `seating.csv` rather than inventing its
 own.** A results generator picking finishing positions, an attendance generator choosing who
 turned up — both need the same drivers in the same divisions with the same IDs, and this is
 where that agreement lives. Invent identities independently and the generated data stops
@@ -43,15 +71,15 @@ lining up with the roster actually loaded into the bot.
 > **The IDs match the bot only on a clean slate.** The generator counts up from
 > `9000000000000000001`, which is what the bot hands out to the *first* test driver in a
 > season. If the division already holds test drivers, the bot continues from its own highest
-> ID and the CSV will disagree. Clear the roster first — `/test-mode roster clear` — or treat
-> the CSV as names-and-teams only.
+> ID and the CSVs will disagree. Clear the roster first — `/test-mode roster clear` — or treat
+> the CSVs as names-and-teams only.
 
 Generated output is gitignored. Only the scripts are tracked, so a roster is a local working
 file and never lands in a commit.
 
 ## `teams.txt` — the other half of the contract
 
-Written beside `roster.csv` by the same `--record` run, one team name per line in the order
+Written beside `seating.csv` by the same `--record` run, one team name per line in the order
 they were typed:
 
 ```
@@ -60,7 +88,7 @@ Aston Martin
 Audi
 ```
 
-**The CSV cannot answer "which teams exist".** It lists drivers, so a team whose two seats
+**The seating cannot answer "which teams exist".** It lists drivers, so a team whose two seats
 both came out empty leaves no row behind it — and those are precisely the teams the bot puts
 *first* in line when it hands out reserves. A generator that inferred the team list from the
 driver rows would never see them, and would distribute reserves differently from the bot
@@ -78,21 +106,39 @@ python tools/data-generator/test-roster/generate_test_roster.py [--record]
 ```
 
 It asks two questions — the divisions, then the teams, each comma-separated — and prints one
-command per driver:
+command per driver, the name alone, since the bot allocates the ID and creates the driver with no seat:
 
 ```
-/test-mode roster add driver_name:Juggernaut team_name:Red Bull division:Division 1 nationality:Brazilian
+/test-mode roster add driver_name:Juggernaut
 ```
 
 The same lines go to `test-roster/commands.txt`. Paste them into a server with test mode
-enabled and a season in setup or active, in order.
+enabled and a season in setup or active, in order. The team, division and nationality the generator drew are in `seating.csv`, for you to use when you sign each driver up and seat it.
 
 **Or import the CSV instead, which is quicker and more faithful.** With `--record`, run
-`/test-mode roster add-bulk` and paste `roster.csv` whole: it seats every driver in one
+`/test-mode roster add-bulk` and paste `roster.csv` whole: it creates every driver in one
 go, and — unlike the commands above — writes the **IDs the file names**. The results and
 check-in generators key on those IDs, so importing the CSV keeps them lined up whatever
 order you do things in. `commands.txt` only lines up on a season with no test drivers
 in it yet.
+
+**Or sign the drivers up as well.** With `--record`, run `/test-mode roster sign-up-bulk`,
+while signups are open, and paste `sign_up.csv` whole: it creates every driver as `add-bulk`
+does and signs each up and approves it with default answers, leaving it Unassigned. It is
+refused while the test-mode nationality switch (`/test-mode nationality`) is off, because the
+file names a nationality for every driver; turn the switch on, or blank the column. Seating
+stays `/driver assign`, one driver at a time, from `seating.csv`. Use either `roster.csv` or
+`sign_up.csv` for a roster, not both: the second would find the IDs already held.
+
+**How each file is used.**
+
+| File | Used by |
+|---|---|
+| `commands.txt` | pasted into the server, one `/test-mode roster add` each |
+| `roster.csv` | pasted into `/test-mode roster add-bulk` |
+| `sign_up.csv` | pasted into `/test-mode roster sign-up-bulk`, while signups are open |
+| `seating.csv` | read by the sibling generators, and the guide to each `/driver assign` |
+| `teams.txt` | read by the results generator |
 
 **Naming your divisions and teams.** Only a single space *after* a comma is stripped, so
 `Division 1, Division 2` gives you exactly those two names, and a team called `Red Bull`
@@ -135,9 +181,10 @@ writing anything and tells you the count it needed, which is your cue to add mor
 A missing or empty `names.txt` stops the run before it asks you anything, so you are never
 part-way through a set of answers when it fails.
 
-**Every driver gets a nationality, and there is no file to keep for it.** The pool is
-imported from the bot's own `src/leaguebot/image/utils/nationality_data.py` — all 195 nationalities it
-accepts — because a nationality the bot rejects would make the whole command fail, and a
+**Every driver is drawn a nationality for `seating.csv`, and there is no file to keep for it.** The
+bot's commands take none: the nationality is the one you answer in the driver's signup wizard. The pool is
+imported from the bot's own `src/leaguebot/core/utils/nationality_data.py` — all 195 nationalities it
+accepts — because a nationality the bot rejects would be refused by the wizard, and a
 list kept beside `names.txt` would drift from the bot's the first time one was added there.
 This is the one script in the family that imports from `src/` rather than porting the rule;
 it needs a full checkout to run, and says so if it cannot find one.
@@ -157,19 +204,19 @@ odd unlikely flag still gets exercised. Retune it by editing the two lists and t
 `NATIONALITY_WEIGHT_*` numbers at the top of the script; a tier naming something the bot does
 not accept is reported and skipped rather than stopping the run.
 
-Test mode has a switch of its own for this. `/test-mode nationality` is on by default, and
-these commands are refused while it is off — see
+Test mode has a switch of its own for the wizard's question. `/test-mode nationality` is on by
+default, and the wizard asks no nationality while it is off — see
 [Testing with test mode](../../docs/how-to/test-mode.md).
 
 **`--record`.** Without it, only `commands.txt` is written and this directory is untouched.
-With it, `roster.csv` and `teams.txt` are written too. If a `roster.csv` is already there you
-are asked to confirm; the existing file is moved to `roster_old.csv` and replaced, keeping one
-generation of history. `teams.txt` is replaced outright — it is three lines of names that the
-CSV beside it can always be regenerated with, so a backup of it would only be one more file to
-keep in step.
+With it, `roster.csv`, `sign_up.csv`, `seating.csv` and `teams.txt` are written too. If a `seating.csv` is
+already there you are asked to confirm; the existing file is moved to `seating_old.csv` and
+replaced, keeping one generation of history. `roster.csv`, `sign_up.csv` and `teams.txt` are replaced
+outright — they hold names that the seating beside them can always regenerate, so a backup of
+either would only be one more file to keep in step.
 
 > Answering anything but yes aborts the run **entirely** — `commands.txt` is left alone as
-> well, not just the recorded pair. One question covers all three files because they describe
+> well, not just the recorded files. One question covers all three files because they describe
 > one and the same roster, so a refused overwrite leaves them consistent rather than
 > half-updated.
 
@@ -211,9 +258,9 @@ initial file, then run it again and paste the changed file.
 > division is far smaller than that, which is why nothing here is written for a whole roster at
 > once.
 
-**Divisions must already be in `roster.csv`.** The script invents nobody: it reads the CSV for
+**Divisions must already be in `seating.csv`.** The script invents nobody: it reads the CSV for
 the IDs, matches your division name against it ignoring case, and asks again — listing the
-divisions the file actually holds — if you name one it does not. A missing `roster.csv` stops the
+divisions the file actually holds — if you name one it does not. A missing `seating.csv` stops the
 run before the question, with the roster generator command to fix it.
 
 **`<<<DEFAULT>>>` stands for every division in the file.** Type it at the question and it expands
@@ -248,7 +295,7 @@ anything else is dropped, so `Division 1` gives `division_1_initial.txt` and `El
 `pro_series_initial.txt` rather than losing the letters they sat on. Two names that reduce to
 the same slug get a numbered suffix rather than one overwriting the other.
 
-Unlike `roster.csv`, these files are replaced without asking and without a backup. They are
+Unlike `seating.csv`, these files are replaced without asking and without a backup. They are
 per-run output, not a contract anything else reads — regenerate them as often as you like.
 
 ## `results-data/generate_results_data.py`
@@ -381,7 +428,7 @@ That file is the payload `/round add-xml` parses, and it goes into the modal who
 </config>
 ```
 
-**This is the one script here that reads no `roster.csv`.** It invents a calendar, not
+**This is the one script here that reads no `seating.csv`.** It invents a calendar, not
 drivers, so there is nothing for it to agree with the roster about. It reads the bot instead,
 in two places, and both are the same argument the roster generator makes for importing
 nationalities: a value the bot rejects would make the whole import fail.
@@ -450,7 +497,7 @@ replacing it, so pasting a few divisions at a time builds one calendar. Note tha
 refuses an import **whole** if any round in it fails a validation, so a refused pass leaves
 nothing behind to clean up.
 
-Like the check-in files and unlike `roster.csv`, `calendar.xml` is replaced without asking and
+Like the check-in files and unlike `seating.csv`, `calendar.xml` is replaced without asking and
 without a backup. It is per-run output, not a contract anything else reads.
 
 ## Adding a script here
@@ -459,7 +506,7 @@ Give it its own subdirectory and keep the same shape as the roster generator: pr
 varies, and write what you generate to files beside the script. Add the generated filenames to
 `.gitignore` and a row to the table above.
 
-**Read `roster.csv` for anything driver-shaped.** A generator that invents its own drivers stops
+**Read `seating.csv` for anything driver-shaped.** A generator that invents its own drivers stops
 lining up with the roster actually loaded into the bot. A generator that needs no drivers at all
 needs no roster either — the calendar generator is the one such script — but it should still read
 the bot rather than copy from it wherever the bot would reject what it made up.

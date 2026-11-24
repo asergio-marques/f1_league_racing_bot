@@ -84,10 +84,10 @@ channel, so nothing is posted for it.
    - **Reply:**
      ```
      📦 **Saved backup**
-       Taken: <timestamp: the moment of 00-base.md step 33>
-       Size: <size: as in 00-base.md step 33> KB
+       Taken: <timestamp: the moment of 00-base.md step 38>
+       Size: <size: as in 00-base.md step 38> KB
        Readable: yes
-       Locked: locked by <your display name> at <the moment of 00-base.md step 34, ISO 8601>
+       Locked: locked by <your display name> at <the moment of 00-base.md step 39, ISO 8601>
      ```
      A `Readable:` other than `yes`, or the reply
      ``📭 There is no saved backup. Take one with `/test-mode backup save`.``, means the base must
@@ -100,7 +100,7 @@ channel, so nothing is posted for it.
    **Expect:**
    - **Reply**, with two buttons, **♻️ Restore** and **Cancel**:
      ```
-     ⚠️ **Restore the backup taken <relative timestamp: when 00-base.md step 33 ran>?**
+     ⚠️ **Restore the backup taken <relative timestamp: when 00-base.md step 38 ran>?**
      Everything the bot holds now — seasons, rounds, drivers, results and every scheduled job — is replaced by what that backup holds. A copy of the current database is kept beside it first.
      **The bot must be restarted afterwards** to pick it up.
      ```
@@ -708,7 +708,7 @@ back on is refused for as long as the season runs.
 
 ## Part I — Ending Season #1
 
-The season is cancelled, as `02-roster-changes.md` step 27 cancels it, so that the modules may be
+The season is cancelled, as `02-roster-changes.md` step 31 cancels it, so that the modules may be
 switched on again and the backup survives. With weather, attendance and results off, none of
 their channels is told; with images off, the calendars go out as text.
 
@@ -731,7 +731,7 @@ their channels is told; with images off, the calendars go out as text.
         `— Cancelled`, `Autodromo Nazionale Monza`, `Circuit de Spa-Francorchamps` and
         `Circuit Zandvoort`; and the calendar picture the base's approval posted deleted.
       - **No notice** in `#dN-rsvp`, `#dN-weather` or `#dN-results`: the `📢 **Season Cancelled**`
-        notices of `02-roster-changes.md` step 27 are each their module's, and each module is off.
+        notices of `02-roster-changes.md` step 31 are each their module's, and each module is off.
       - `#d1-weather`: the Phase 1 forecast of step 20 is deleted. The season's end clears every
         forecast posted under test mode, with weather off (`test_mode_flushed_on`; the deletion
         reads no module switch).
@@ -946,7 +946,7 @@ while it was off is then read back against Part B.
 
 Test mode is off, and the backup commands run only in test mode, which may be switched on only
 while a season is in configuration. A Season #2 is set up for that alone, as
-`02-roster-changes.md` steps 43 and 45 do, and the base restored over it.
+`02-roster-changes.md` steps 47 and 49 do, and the base restored over it.
 
 70. **Do:** `/season setup game_edition:25`
 
@@ -981,7 +981,7 @@ while a season is in configuration. A Season #2 is set up for that alone, as
 72. **Do:** steps 1 to 4 again: `/test-mode backup status`, `/test-mode backup restore`, press
     **♻️ Restore**, and restart the bot.
 
-    **Expect:** as steps 1 to 4: the backup taken at `00-base.md` step 33, readable and locked,
+    **Expect:** as steps 1 to 4: the backup taken at `00-base.md` step 38, readable and locked,
     survived the cancellation. `bot.prerestore.db` and `scheduler.prerestore.db` now hold the
     server as this part found it, should it be wanted.
 
