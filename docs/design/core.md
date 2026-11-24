@@ -894,28 +894,23 @@ a profile where none exists and the table allows the move from Not Signed Up; no
 one. `write_transition` takes one keyword, `signup_off`, which widens one move and no other: Not
 Signed Up to Assigned. Nothing else of the table bends for a switch.
 
-**A league without signups places a driver from Not Signed Up.** Unassigned is reached only by an
-approved signup, so with the signup module off a driver is seated straight from Not Signed Up
-(the widening above), a member holding no profile being Not Signed Up in all but a row. The row is
-made in the save that places them, by `profile_for_placement_on`, the one place a profile is made
-for a placement: it resolves the account through every account a driver has held and inserts only
-where none names a driver, so a past account never gains a profile beside its driver's. A move
-through Unassigned first was not taken: it would write a state no signup made and split one
-placement into two transitions. The switch is read by name through
-`ModuleService.is_enabled_on` on the connection the check or the save already holds, the service
-handed to the change by the builder and never looked up on the bot; the switch is fixed for the
-season once its configuration is confirmed, so a read in the check and another in the save agree.
-The services take the answer as `signup_off` rather than read it themselves: `PlacementService`
-judges and writes what it is told, and the change owns the question. The other placement moves
-follow the same flag. A driver left holding no placement returns to Not Signed Up, where signup
-would have left them Unassigned. A reject, which signup's approval otherwise bounds, removes every
-unconfirmed placement through `PlacementService.reject_placements_on` in the save, so seats free
-with the state and the audit entry in one write, and takes no role, none having been given. The
-driver role follows the placements, not an approval: confirmation plans it onto each driver's
-grant job (`driver_role_due_on`, read on the save's connection, carried in the job's payload and
-its role read as the job runs so one put right meanwhile is the one given), `driver_role_ids_on`
-counts it only for a confirmed placement so that a reassign moves no role ahead of one, and
-`grant_to_every_driver` narrows a replaced driver role to confirmed drivers by the same test.
+**A league without signups places a driver from Not Signed Up.** What such a league sees is the core
+specification's ("The states of a driver", "Placement into a division and team", "The league's
+roles", "Test mode"); this is the mechanism. The widening above is the one move the flag allows. The
+profile of a member holding none is made in the save that places them, by `profile_for_placement_on`,
+the one place a profile is made for a placement: it resolves the account through every account a
+driver has held and inserts only where none names a driver, so a past account never gains a profile
+beside its driver's. The switch is read by name through `ModuleService.is_enabled_on` on the
+connection the check or the save already holds, the service handed to the change by the builder and
+never looked up on the bot; it is fixed for the season once its configuration is confirmed, so a read
+in the check and another in the save agree. `PlacementService` and `DriverService` take the answer as
+`signup_off` from the change, and the other placement moves follow the same flag.
+`PlacementService.reject_placements_on` removes every unconfirmed placement in the save, so seats free
+with the state and the audit entry in one write. Confirmation plans the driver role onto each driver's
+grant job (`driver_role_due_on`, read on the save's connection, carried in the job's payload and its
+role read as the job runs so one put right meanwhile is the one given); `driver_role_ids_on` counts it
+only for a confirmed placement, and `grant_to_every_driver` narrows a replaced driver role to
+confirmed drivers by the same test.
 
 **The accounts are a table the database keeps.** `driver_profiles.discord_user_id` names the
 current account; `driver_accounts` lists every account the driver has held, written by two
@@ -994,9 +989,9 @@ queue's clock is passed in.
 fake driver at Not Signed Up with no seat, flagged as a test driver, with a synthetic id above any
 real Discord id; the signup, or with the signup module off `/driver assign` alone, then moves it through the state
 machine, and its docstring says why the insert bypasses `write_transition`. They are removed through
-`delete_driver_profiles`, keeping their history. A member holding no profile is placed, with the
-signup module off, only as a real driver, which test mode refuses: a fake driver always has its row,
-so the test-mode guard reads a missing profile as a real one.
+`delete_driver_profiles`, keeping their history. A fake driver always has its row, so the
+test-mode guard of `PlacementService` reads a missing profile as a real member and refuses it
+(core specification, "Test mode").
 
 **Advancing reads one moment and asks the modules.** `advance_next_step` reads the next step and
 the steps passed over at one `now`, for the reason its docstring gives. Each module hands back its
