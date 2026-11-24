@@ -27,7 +27,7 @@ runs, on a connection the change queue or a core hook hands in.
 | Table | One row is | Held to it by |
 |---|---|---|
 | `attendance_config` | the module's switch and its eight settings: the three lead times of the check-in (`rsvp_notice_days`, `rsvp_last_notice_hours`, `rsvp_deadline_hours`), the three penalties, and the autoreserve and autosack thresholds (null where off) | `CHECK (id = 1)`; every value but the thresholds is `NOT NULL` with a column default |
-| `attendance_division_config` | one division's check-in channel, its attendance channel and the id of its live sheet | keyed by the division |
+| `attendance_division_config` | one division's check-in channel, its attendance channel, the id of its live sheet and the channel that sheet was posted in | keyed by the division |
 | `driver_round_attendance` | one driver's attendance of one round of one division: the answer and when it was accepted, the reserve's placement (`assigned_team_id`, `is_standby`), whether the driver attended, and the points that attendance conferred and the total after them | `UNIQUE (round_id, division_id, driver_profile_id)` |
 | `rsvp_embed_messages` | a round's check-in call and what follows it: the call's message and channel, the last notice's and the distribution's, and `deadline_run_at`, the mark that the deadline has run | `UNIQUE (round_id, division_id)` |
 | `attendance_pardons` | one pardon of one kind (`NO_RSVP`, `ABSENT` or `NO_SHOW`) on one attendance row, with its justification and who granted it | `UNIQUE (attendance_id, pardon_type)`, `CHECK` on the kind; goes with its attendance row by cascade |
@@ -58,7 +58,7 @@ write.
 | | `attendance_settings` | one column for each of the eight settings, in the setting's save |
 | | `attendance_config_service` (`switch_off_on`) | the flag lowered, the settings kept |
 | `attendance_division_config` | `division_channels` | each channel, by an upsert naming its one column, so setting one never blanks the other |
-| | `attendance_sheet` (`record_sheet_on`) | the live sheet's message id |
+| | `attendance_sheet` (`record_sheet_on`) | the live sheet's message id and the channel it was posted in |
 | | `attendance_config_service` (`switch_off_on`) | every row's sheet message id cleared, the channels kept, so a returning module posts a sheet afresh and keeps its channels |
 | | `attendance_hooks` | a deleted division's row; every sheet id cleared when the bot is packed |
 | `driver_round_attendance` | `attendance_config_service` | a round's rows as its call is posted (`bulk_insert_attendance_rows_on`) and a driver's answer (`upsert_rsvp_status_on`, `answer_rsvp_on`) |
@@ -172,7 +172,7 @@ topic. The table names a service by its file.
 | `check_in/` | `attendance_config_service` (`AttendanceService`: the settings read, a round's rows, an answer decided and written, the call's rows, and `rsvp_lock` and `derive_checkin_deadline`, the rules of the lock and of the deadline), `check_in_answer_changes` (an answer asked as a change, and the form's paste), `rsvp_service` (the embed built, the roster, the reserves distributed, the last notice's text, the call's graphic), `check_in_record` (the audit of a round's check-in, read before a call comes down), `check_in_leads` (the check-in's leads, and `check_in_moments`, the moments they and the recovery and amendment rules all read), `check_in_recovery` (start-up: it asks the queue), and the check-in's four changes, below | `driver_round_attendance`, `rsvp_embed_messages`, `rounds.checkin_cleared` |
 | `scoring/` | `attendance_scoring` (who attended and the points a round confers), `attendance_recompute` (the one recompute of the stored copies, and what stands in the way of a recalculation), `attendance_pardons` | `driver_round_attendance`, `attendance_pardons` |
 | `sanctions/` | `attendance_sanctions` (who is owed one and its save), `attendance_sync_change` (`/attendance sync`, its cards among its jobs) | none of its own: the sanction is core's placement written on the handed connection |
-| `sheet/` | `attendance_sheet` (the rows, the graphic and its posting), `sheet_posting` (the `post_sheet` job, and the opening and final sheets) | `attendance_division_config` (the sheet's id) |
+| `sheet/` | `attendance_sheet` (the rows, the graphic and its posting), `sheet_posting` (the `post_sheet` job, and the opening and final sheets) | `attendance_division_config` (the sheet's id and its channel) |
 | `settings/` | `attendance_settings` (the eight), `penalty_recalculation` (a penalty changed while a season is ongoing), `channel_settings` and `division_channels` (the two channels), `module_switch_settings` (the switch) | `attendance_config`, `attendance_division_config`; through the sync's save, the recalculation's and the sanctions' tables |
 | `hooks/` | `attendance_hooks` (the deletes, the round's leads, the review's section and lines), `attendance_after_review` (the review's share, below), `cancellation_notice`, `preview_sources` (`AttendancePreviewSources`, the check-in deadline the image module's previews draw), `test_mode_steps`, `fingerprint_areas` | the rows of the delete hooks |
 
@@ -461,7 +461,7 @@ a job of a change, and goes through the framework's handler for its kind of post
 | the check-in call, its last notice and the distribution's announcement | notice | the division's check-in channel, read as it then stands | `send_notice`, naming who it may mention | the job's record, on `rsvp_embed_messages` |
 | the call's redraw as answers come in | notice | the call's own | `edit_notice` | the call's own |
 | the call's take-down | notice | the call's own | the one delete step every standing post shares (`delete_standing`) when a call is replaced or cleaned up; `delete_notice` when a cancellation or an amendment takes it down | the row, forgotten as it goes |
-| the attendance sheet | standing post | the division's attendance channel | `post_standing`: the new one is up before the old is deleted | `attendance_division_config.attendance_message_id` |
+| the attendance sheet | standing post | the division's attendance channel | `post_standing`: the new one is up before the old is deleted | `attendance_division_config.attendance_message_id`, with `attendance_message_channel_id`, the channel it was posted in |
 | the cancellation notice | notice | the division's check-in channel | `post_cancellation_notice`, core's | not kept |
 | the sanction cards and their banner | results' `review_verdicts` jobs | the division's verdicts channel | results' handlers | results' |
 
