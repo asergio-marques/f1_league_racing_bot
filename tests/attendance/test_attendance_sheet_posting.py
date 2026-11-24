@@ -427,10 +427,29 @@ async def _seat(
         await db.commit()
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#640: the picture re-sorts the sheet's rows by the names it draws",
+)
 @pytest.mark.asyncio
-async def test_the_sheet_lists_the_most_points_first_then_by_name(sheet_db):
-    """FR-017/FR-018. Zebra and Alpha are level on 3, so the name decides between them; the
-    name is the one the server shows, not the Discord id, which here sorts the other way."""
+async def test_the_sheet_lists_the_most_points_first_then_by_name(sheet_db, monkeypatch):
+    """FR-017/FR-018. Division 1's sheet after round 3, the images module on: Mike (222) on 5,
+    and Zebra (111) and Alpha (333) level on 3, so the name decides between them; the name is the
+    one the server shows, not the Discord id, which here sorts the other way. The picture draws
+    its rows in the text's order, though the names it draws (Aaron for 111, Zoe for 333) sort the
+    other way (owner's decision 2026-11-24, until #598/#641)."""
+    from types import SimpleNamespace
+
+    from leaguebot.core.services.drivers import driver_names
+
+    async def _names(*_args, **_kwargs):
+        return {111: "Aaron", 222: "Mike", 333: "Zoe"}
+
+    async def _empty(*_args, **_kwargs):
+        return {}
+
+    monkeypatch.setattr(driver_names, "read_driver_names", _names)
+    monkeypatch.setattr(driver_names, "read_driver_nationalities", _empty)
     await _config(sheet_db, prior=None)
     async with get_connection(sheet_db) as db:
         await db.execute("UPDATE driver_round_attendance SET total_points_after = 3")
@@ -439,9 +458,13 @@ async def test_the_sheet_lists_the_most_points_first_then_by_name(sheet_db):
     await _seat(sheet_db, profile_id=3, user_id="333", seat=3, total=3)
     channel = _FakeChannel([])
     guild = _FakeGuild(channel, {111: "Zebra", 222: "Mike", 333: "Alpha"})
+    drawing = _drawing_that_draws_nothing("none")
 
     with in_a_job():
-        await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
+        await post_attendance_sheet(
+            SimpleNamespace(db_path=sheet_db), guild, sheet_db, round_id=3, division_id=7,
+            drawing=drawing,
+        )
 
     listed = [
         line.split(" ")[0]
@@ -449,6 +472,8 @@ async def test_the_sheet_lists_the_most_points_first_then_by_name(sheet_db):
         if line.startswith("<@")
     ]
     assert listed == ["<@222>", "<@333>", "<@111>"]
+    [sheet], _asked = drawing.draw_attendance_sheet.await_args
+    assert [entry.driver_name for entry in sheet.entries] == ["Mike", "Zoe", "Aaron"]
 
 
 @pytest.mark.parametrize(
