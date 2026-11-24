@@ -174,7 +174,7 @@ topic. The table names a service by its file.
 | `sanctions/` | `attendance_sanctions` (who is owed one and its save), `attendance_sync_change` (`/attendance sync`, its cards among its jobs) | none of its own: the sanction is core's placement written on the handed connection |
 | `sheet/` | `attendance_sheet` (the rows, the graphic and its posting), `sheet_posting` (the `post_sheet` job, and the opening and final sheets) | `attendance_division_config` (the sheet's id and its channel) |
 | `settings/` | `attendance_settings` (the eight), `penalty_recalculation` (a penalty changed while a season is ongoing), `channel_settings` and `division_channels` (the two channels), `module_switch_settings` (the switch) | `attendance_config`, `attendance_division_config`; through the sync's save, the recalculation's and the sanctions' tables |
-| `hooks/` | `attendance_hooks` (the deletes, the round's leads, the review's section and lines), `attendance_after_review` (the review's share, below), `cancellation_notice`, `preview_sources` (`AttendancePreviewSources`, the check-in deadline the image module's previews draw), `test_mode_steps`, `fingerprint_areas` | the rows of the delete hooks |
+| `hooks/` | `attendance_hooks` (the deletes, the round's leads, the review's section and lines), `attendance_after_review` (the review's share, below), `cancellation_notice`, `preview_sources` (`AttendancePreviewSources`, the check-in deadline the image module's previews draw and the order its sheet lists drivers in), `test_mode_steps`, `fingerprint_areas` | the rows of the delete hooks |
 
 **The check-in is four changes, each in a file of its own,** with the file that holds the steps an
 amendment plans over them and the file they share:
@@ -611,7 +611,8 @@ can use what it is sent reads the module's stated needs (`division_channels.chan
 and, for the verdicts channel, results' (`channel_needs` in `results.services.module`); both ask the
 same drawing whether the aspect attaches files (`ImageDrawing.aspect_attaches_files`), which the cog
 reads off the bot. It also implements its share of the image module's `PreviewSources`, the check-in
-deadline the previews draw, and the builder joins it with results' share and hands the whole in as
+deadline the previews draw and the order its sheet lists drivers in after a round
+(`after_round_order_key`), and the builder joins it with results' share and hands the whole in as
 `bot.preview_sources`.
 
 ---
