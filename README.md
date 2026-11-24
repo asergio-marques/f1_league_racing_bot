@@ -961,7 +961,7 @@ It reposts in whichever form your configuration calls for: the image where the i
 
 Test mode drives the season's scheduled events on demand, without waiting for their real fire times. Useful for verifying a setup before a live season. See [Testing with test mode](docs/how-to/test-mode.md) for the workflow.
 
-**`toggle`, `nationality`, `set-former-driver` and the roster's `add`, `add-bulk`, `remove` and `clear` are changes on the queue**, as [Slash Commands](#slash-commands) sets out, and so is each step `advance` asks for. Each of the seven answers at once that it is under way and updates that reply once it has run; each is recorded in the log channel and audited, the roster's included; asking the same again while the first waits is refused; and each refusal is judged again when its turn comes. A fault in its save stops the queue until it is retried, or discarded by a league admin, when the reply says nothing was changed and to run the command again — save `nationality`, a setting, which saves nothing and stops nothing. `/test-mode backup` stays off the queue.
+**`toggle`, `nationality`, `set-former-driver` and the roster's `add`, `add-bulk`, `sign-up-bulk`, `remove` and `clear` are changes on the queue**, as [Slash Commands](#slash-commands) sets out, and so is each step `advance` asks for. Each of the eight answers at once that it is under way and updates that reply once it has run; each is recorded in the log channel and audited, the roster's included; asking the same again while the first waits is refused; and each refusal is judged again when its turn comes. A fault in its save stops the queue until it is retried, or discarded by a league admin, when the reply says nothing was changed and to run the command again — save `nationality`, a setting, which saves nothing and stops nothing. `/test-mode backup` stays off the queue.
 
 #### `/test-mode toggle` — Enable or disable test mode
 *Access: League admin*
@@ -1009,7 +1009,7 @@ Manually sets the `former_driver` flag on a driver profile. Only available when 
 | `user` | String | ✅ | The driver whose flag is being updated: a mention or the driver's ID, a fake driver included, offered by name as you type. Text that names no driver is refused, naming what was typed |
 | `value` | Boolean | ✅ | The new value for the `former_driver` flag (`True` / `False`) |
 
-> **The roster changes in any stage of the season.** `/test-mode roster add`, `add-bulk`, `remove` and `clear` run whatever the season's stage, while test mode is on. A fake driver is created at Not Signed Up, with no seat: it signs up through [`/signup start`](#signup-start--start-a-fake-drivers-signup), and `/driver assign` seats it once approved.
+> **The roster changes in any stage of the season, `sign-up-bulk` apart.** `/test-mode roster add`, `add-bulk`, `remove` and `clear` run whatever the season's stage, while test mode is on. A fake driver is created at Not Signed Up, with no seat: it signs up through [`/signup start`](#signup-start--start-a-fake-drivers-signup), or with others through [`sign-up-bulk`](#test-mode-roster-sign-up-bulk--create-sign-up-and-approve-a-list-at-once), and `/driver assign` seats it once approved.
 
 #### `/test-mode roster add` — Add a fake driver
 *Access: League admin · Requires test mode active*
@@ -1020,7 +1020,7 @@ Creates a synthetic driver profile at Not Signed Up — no seat, no signup, no n
 |-----------|------|----------|-------------|
 | `driver_name` | String | ✅ | Display name for the fake driver. Held to the rules a division's name is: no role mention, `@everyone`, `@here`, mention of a member, emoji or formatting |
 
-The roster commands take no nationality: a fake driver's flag is the nationality its signup gave, as any driver's, and none where it gave none. **Held to your templates.** `/driver assign` refuses a fake driver wherever it would refuse a real one: past the reserve slots your lineup template draws, the rows of your attendance sheet, or the rows of your driver standings — each only while that image output is on.
+`roster add` and `add-bulk` take no nationality: a fake driver's flag is the nationality its signup gave, as any driver's, and none where it gave none. **Held to your templates.** `/driver assign` refuses a fake driver wherever it would refuse a real one: past the reserve slots your lineup template draws, the rows of your attendance sheet, or the rows of your driver standings — each only while that image output is on.
 
 #### `/test-mode roster add-bulk` — Create a whole roster at once
 *Access: League admin · Requires test mode active*
@@ -1032,6 +1032,19 @@ No parameters. Opens a box; paste the roster, header row and all, two columns, `
 > **Nothing is created unless everything can be.** An ID below the test range, two rows sharing an ID or a name, or a name held to the rules a division's name is refuses the whole import and names every fault at once. Fix the file and paste it again — nothing landed the first time.
 
 > Discord caps the box at 4000 characters, which is roughly two hundred drivers. A larger roster goes in two passes, the import adding to the fake drivers the season holds.
+
+#### `/test-mode roster sign-up-bulk` — Create, sign up and approve a list at once
+*Access: League admin · Requires test mode active, and signups open*
+
+No parameters. Opens a box; paste the list, header row optional, three columns, `ID,Driver name,Nationality`, the nationality blank for none. Every driver in it is created as `add-bulk` creates one, signed up and approved with default answers, and left Unassigned with no seat: Steam, its name as its platform ID, every availability slot, Full-Time Driver, no preferred teams, teammate, lap times or notes. Seat each with `/driver assign` once signups close, as any approved driver. It is a quick way to build a season's grid, not a way round the signup: to see the wizard, walk a driver through [`/signup start`](#signup-start--start-a-fake-drivers-signup).
+
+It makes no signup channel, wizard or review panel, grants no role and posts nothing. The reply is *"✅ Signed up and approved **N** fake driver(s). Seat each with `/driver assign`."*, one line goes in the log channel, and each driver's addition, the start of its signup and its approval are audited, naming you. The drivers appear in `/signup unassigned list` and the placements review by their test names, and `/test-mode roster list` shows each Unassigned with its nationality, or a dash.
+
+> **Signups must be open**, which is the season in Signups or in Ongoing with signups open, and the signup module enabled, configured and holding an availability slot. Otherwise it is refused, saying which, and writes nothing.
+
+> **Nothing is created unless everything can be**, as with `add-bulk`: an ID below the test range or already held, two rows sharing an ID or a name, a name that breaks a division's rules, an unknown nationality, a row of the wrong width and a nationality while `/test-mode nationality` is off refuse the whole list and name every fault at once. A save discarded after a fault creates no driver, and the reply says to run it again.
+
+> Discord caps the box at 4000 characters. The generator writes the list as `sign_up.csv`, with `--record`.
 
 #### `/test-mode roster remove` — Remove one fake driver
 *Access: League admin · Requires test mode active*
