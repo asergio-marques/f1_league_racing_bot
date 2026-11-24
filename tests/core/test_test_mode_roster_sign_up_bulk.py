@@ -190,7 +190,9 @@ async def test_a_pasted_list_signs_up_and_approves_every_driver_in_one_save(leag
     open window, made at the queue's clock, with the default answers: its nationality (British, or
     none), platform Steam, its name as platform ID, every availability slot, Full-Time Driver, no
     preferred teams, teammate, lap times or notes, and its test name as username and display name.
-    No wizard row is made for either. Each driver has three audit entries in turn, by Admin at the
+    No wizard row is made for either, and nothing reaches Discord but the log line: no channel is
+    created, no channel on the server and no interaction channel is posted to, no role is granted
+    to anyone, and no timer is armed. Each driver has three audit entries in turn, by Admin at the
     queue's clock: its addition, its signup's start (Not Signed Up to Pending Signup Completion)
     and its approval (Pending Admin Approval to Unassigned). The reply reads "✅ Signed up and
     approved **2** fake driver(s). Seat each with `/driver assign`.", and the log channel holds one
@@ -201,6 +203,7 @@ async def test_a_pasted_list_signs_up_and_approves_every_driver_in_one_save(leag
     from leaguebot.framework.db.database import get_connection
 
     interaction = _asks(league)
+    discord_before = _on_discord(league)
 
     await _submit(league, interaction)
     await run_queue(league.bot)
@@ -208,6 +211,7 @@ async def test_a_pasted_list_signs_up_and_approves_every_driver_in_one_save(leag
     assert [row["kind"] for row in await change_rows(league.db_path)] == [
         "core.test_roster_sign_up_bulk"
     ]
+    assert _on_discord(league) == discord_before
     assert await _drivers(league) == [
         {"discord_user_id": uid, "test_display_name": name, "current_state": "UNASSIGNED",
          "team_instance_id": None}
@@ -263,6 +267,22 @@ async def test_a_pasted_list_signs_up_and_approves_every_driver_in_one_save(leag
     await _unassigned_list(league, listing)
     listed = "\n".join(said(listing))
     assert "Mock Alpha" in listed and "Mock Beta" in listed
+
+
+def _on_discord(league) -> dict[str, Any]:
+    """What the league's server has been asked for but the log channel: every channel created,
+    what every channel and the interaction channel were posted, every role granted, and every
+    timer armed."""
+    return {
+        "created": [name for name, *_ in league.guild.mock_calls if "create" in name],
+        "posted": {cid: list(chan.texts) for cid, chan in league.channels.items()},
+        "interaction channel": list(league.bot.interaction_channel.sent),
+        "granted": {uid: list(roles) for uid, roles in league.granted.items()},
+        "armed": [
+            name for name, *_ in league.bot.scheduler_service.mock_calls
+            if name.startswith("arm")
+        ],
+    }
 
 
 async def _unassigned_list(league, interaction) -> None:
