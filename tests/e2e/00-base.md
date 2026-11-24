@@ -407,7 +407,8 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
         `  Results: ✅ Enabled`, `  Attendance: ✅ Enabled`, `  Weather: ✅ Enabled`,
         `  Images: ✅ Enabled`; then `**Roles**` with `  Base role: <@&<Members role id>>` and
         `  Driver role: <@&<Driver role id>>`; then `**Teams**`, one line per team of the form
-        `  <shorthand> → <@&<role id>>`: twelve lines, `ALP` to `KLO` and then `Reserve`. No line reading
+        ``  <full name> — `<shorthand>` → <@&<role id>>``: the eleven teams of the Fixture, in shorthand
+        order (`ALP` to `KLO`), then ``  Reserve — `Reserve` → <@&<Reserve role id>>``. No line reading
         `⚠️ **Reserve team has no role assigned**`.
       - one message per module's settings, and one headed `**Image output**`;
       - no message opening `⛔ **The configuration cannot be confirmed yet.**`;

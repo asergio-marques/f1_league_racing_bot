@@ -613,8 +613,8 @@ def _report_bot(**kwargs) -> MagicMock:
     bot = _bot(**kwargs)
     bot.team_service.get_teams_with_roles = AsyncMock(
         return_value=[
-            {"name": "Alpha", "role_id": 3001, "is_reserve": False},
-            {"name": "Reserve", "role_id": None, "is_reserve": True},
+            {"name": "ALP", "full_name": "Alpha Motorsport", "role_id": 3001, "is_reserve": False},
+            {"name": "Reserve", "full_name": "Reserve", "role_id": None, "is_reserve": True},
         ]
     )
     bot.signup_module_service.get_settings = AsyncMock(
@@ -670,13 +670,13 @@ async def _report(cog, interaction, monkeypatch) -> list[str]:
 
 async def test_a_sound_configuration_is_reported_and_offered_for_confirmation(monkeypatch):
     """Manager runs `/season config-review` in channel 111 on a sound configuration of season 31
-    (test mode on, signup on, results off; teams Alpha with its role, Reserve with none). The
-    command posts nothing itself: it asks the queue to post the review in channel 111, with the
-    manager's interaction, naming season 31, the manager as reviewer and `/season config-review`,
-    and carrying the evidence its report was computed from. The report's first section heads the
-    review and says what is on and off and which role each team has, warning of the reserve
-    team's missing role; the review ends in the question asking to confirm the configuration,
-    open for the next 5 minutes.
+    (test mode on, signup on, results off; teams Alpha Motorsport, shorthand ALP, with its role,
+    Reserve with none). The command posts nothing itself: it asks the queue to post the review in
+    channel 111, with the manager's interaction, naming season 31, the manager as reviewer and
+    `/season config-review`, and carrying the evidence its report was computed from. The report's
+    first section heads the review and says what is on and off and which role each team has, each
+    team named by its full name, warning of the reserve team's missing role; the review ends in
+    the question asking to confirm the configuration, open for the next 5 minutes.
     The command writes no line to the log channel itself, no refusal and no "Review posted": the
     line naming who ran it is written once its question is posted (#482, criterion 6)."""
     bot = _report_bot(signup=True, test_mode=True)
@@ -691,8 +691,9 @@ async def test_a_sound_configuration_is_reported_and_offered_for_confirmation(mo
     assert "Test mode: ✅ On" in report
     assert "Signup: ✅ Enabled" in report
     assert "Results: ❌ Disabled" in report
-    assert "Alpha → <@&3001>" in report
-    assert "Reserve → no role" in report
+    assert "Alpha Motorsport — `ALP` → <@&3001>" in report
+    assert "Reserve — `Reserve` → no role" in report
+    assert "  ALP →" not in report
     assert "Reserve team has no role assigned" in report
     assert "Do you confirm this season's configuration?" in messages[-1]
     assert "for the next 5 minutes" in messages[-1]
