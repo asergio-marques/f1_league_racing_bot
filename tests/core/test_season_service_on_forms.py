@@ -13,13 +13,13 @@ afterwards on a fresh connection is what a failure later in the save would leave
 from __future__ import annotations
 
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import pytest
 
 from leaguebot.framework.db.database import get_connection, run_migrations
-from leaguebot.core.models.round import RoundFormat
+from leaguebot.core.models.round import Round, RoundFormat, RoundStatus
 from leaguebot.core.models.session import SESSIONS_BY_FORMAT
 
 SERVER_ID = 10439
@@ -388,9 +388,6 @@ def test_round_holding_skips_a_cancelled_round_and_the_round_itself():
     judge passes over the cancelled round and names round 2, whether it is asked in UTC or as
     19:00 at +01:00; asked other than round 2, it names round 3; asked other than round 3 with
     round 2 cancelled too, it names nobody, a cancelled round never holding a moment."""
-    from datetime import timedelta
-
-    from leaguebot.core.models.round import Round, RoundStatus
     from leaguebot.core.services.seasons.season_service import round_holding
 
     moment = datetime(2026, 12, 13, 18, 0, tzinfo=timezone.utc)
