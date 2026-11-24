@@ -111,7 +111,11 @@ async def _make_db(
     stage: str | None = None,
     claimed: bool = True,
     drivers: tuple[tuple[str, str], ...] = (),
+    placements: tuple[tuple[str, int], ...] = (),
 ) -> str:
+    """The league's database. Each of *placements*, a driver's user id and whether the placement
+    is confirmed (1) or not (0), seats that driver of *drivers* at Ferrari in Season 4's Pro
+    division, one seat each; it needs *stage*."""
     db_path = os.path.join(str(tmp_path), "league_roles.db")
     await run_migrations(db_path)
     async with get_connection(db_path) as db:
@@ -141,6 +145,28 @@ async def _make_db(
                 "INSERT INTO driver_profiles (discord_user_id, current_state) VALUES (?, ?)",
                 (user_id, state),
             )
+        if placements:
+            division = await db.execute(
+                "INSERT INTO divisions (season_id, name, mention_role_id) "
+                "VALUES ((SELECT id FROM seasons), 'Pro', 801)"
+            )
+            team = await db.execute(
+                "INSERT INTO team_instances (division_id, name, full_name) "
+                "VALUES (?, 'FER', 'Ferrari')",
+                (division.lastrowid,),
+            )
+            for seat_number, (user_id, committed) in enumerate(placements, start=1):
+                seat = await db.execute(
+                    "INSERT INTO team_seats (team_instance_id, seat_number, driver_profile_id) "
+                    "VALUES (?, ?, (SELECT id FROM driver_profiles WHERE discord_user_id = ?))",
+                    (team.lastrowid, seat_number, user_id),
+                )
+                await db.execute(
+                    "INSERT INTO driver_season_assignments (driver_profile_id, season_id, "
+                    "division_id, team_seat_id, committed) VALUES ((SELECT id FROM driver_profiles "
+                    "WHERE discord_user_id = ?), (SELECT id FROM seasons), ?, ?, ?)",
+                    (user_id, division.lastrowid, seat.lastrowid, committed),
+                )
         await db.commit()
     return db_path
 
@@ -609,6 +635,62 @@ async def test_the_replacement_is_given_to_every_driver(tmp_path, column, change
     assert _lines(bot) == [
         f"{NAMED} | {command} | Success\n  role: Drivers (`<@&{NEW_ROLE}>`)\n"
         f"  replaced: a role no longer on the server\n  given to: 2 driver(s)"
+    ]
+
+
+@pytest.mark.parametrize(
+    ("column", "given_to"),
+    [
+        pytest.param("base_role_id", (5001, 5002), id="base"),
+        pytest.param(
+            "driver_role_id", (5001,), id="driver",
+            marks=pytest.mark.xfail(
+                strict=True,
+                reason="#624: with signup off a replaced driver role is still given to a driver "
+                "whose placement is unconfirmed",
+            ),
+        ),
+    ],
+)
+async def test_with_signup_off_a_replaced_driver_role_is_given_to_confirmed_drivers_only(
+    tmp_path, column, given_to
+):
+    """#624. With the signup module off a driver is given the driver role only once a placement
+    of theirs is confirmed, so its replacement goes to them alone. The league runs without the
+    signup module; Season 4 is Ongoing and the stored role 3001 is gone from the server. 5001 is
+    Assigned to Ferrari in Pro, confirmed; 5002 is Assigned to Ferrari in Pro, unconfirmed. The
+    manager sets the role to 3002 and the queue runs it. A replaced driver role is given to 5001
+    alone, the reply and the line saying 1 driver; a replaced base role is given to both, as
+    today, the reply and the line saying 2."""
+    from tests.support.change_queue import run_queue
+
+    db_path = await _make_db(
+        tmp_path, stage="ONGOING", signup_channel=NO_SIGNUP,
+        drivers=(("5001", "ASSIGNED"), ("5002", "ASSIGNED")),
+        placements=(("5001", 1), ("5002", 0)),
+    )
+    command, label = _WORDS[column]
+    role = _role()
+    guild = _server(role, old_role_gone=True)
+    bot = await _league(db_path, guild)
+    asked = _asked(bot, column, guild)
+
+    await _command(column)(BotCog(bot), asked, role)
+    await run_queue(bot)
+
+    for uid, driver in guild.drivers.items():
+        if uid in given_to:
+            driver.add_roles.assert_awaited_once_with(role, reason="League role replaced")
+        else:
+            driver.add_roles.assert_not_awaited()
+    others = _OTHER_MEMBERS if column == "base_role_id" else ""
+    assert _reply(asked) == (
+        f"✅ **{label}** set to <@&{NEW_ROLE}>.\n{_REPLACED}\n"
+        f"It has been given to {len(given_to)} driver(s).{others}"
+    )
+    assert _lines(bot) == [
+        f"{NAMED} | {command} | Success\n  role: Drivers (`<@&{NEW_ROLE}>`)\n"
+        f"  replaced: a role no longer on the server\n  given to: {len(given_to)} driver(s)"
     ]
 
 
