@@ -198,15 +198,9 @@ async def _valtteri_placed(league):
     )
 
 
-async def _signup_off_lewis_confirmed(league):
-    """The signup module off, and Lewis's placement at Ferrari in Pro confirmed."""
-    from tests.support.season_league import LEWIS, profile_id
-
+async def _signup_off(league):
+    """The signup module off."""
     await league.switch("signup", False)
-    await league.write(
-        "UPDATE driver_season_assignments SET committed = 1 WHERE driver_profile_id = ?",
-        profile_id(LEWIS),
-    )
 
 
 def _no_unconfirmed(name: str) -> str:
@@ -284,21 +278,32 @@ async def test_a_driver_rejection_its_withdrawal_audit_entry_and_line_are_one_sa
 
 
 @pytest.mark.parametrize(
-    "setup, user_id, reply",
+    "build, setup, user_id, reply",
     [
-        pytest.param(_season_back_at("CONFIGURATION"), 106, _NOT_PLACING, id="in-configuration"),
-        pytest.param(_season_back_at("SIGNUPS"), 106, _NOT_PLACING, id="in-signups"),
-        pytest.param(_approve_placements, 106, _NOT_PLACING, id="placements-approved"),
-        pytest.param(None, 103, _not_unassigned("Charles"), id="a-placed-driver"),
-        pytest.param(_valtteri_in_review, 106, _not_unassigned(), id="a-signup-in-review"),
-        pytest.param(_valtteri_turned_down, 106, _not_unassigned(), id="not-signed-up"),
         pytest.param(
-            _valtteri_on_an_account_gone_from_the_server, 106, _PAST_ACCOUNT,
+            _in_placements, _season_back_at("CONFIGURATION"), 106, _NOT_PLACING,
+            id="in-configuration",
+        ),
+        pytest.param(
+            _in_placements, _season_back_at("SIGNUPS"), 106, _NOT_PLACING, id="in-signups",
+        ),
+        pytest.param(
+            _in_placements, _approve_placements, 106, _NOT_PLACING, id="placements-approved",
+        ),
+        pytest.param(_in_placements, None, 103, _not_unassigned("Charles"), id="a-placed-driver"),
+        pytest.param(
+            _in_placements, _valtteri_in_review, 106, _not_unassigned(), id="a-signup-in-review",
+        ),
+        pytest.param(
+            _in_placements, _valtteri_turned_down, 106, _not_unassigned(), id="not-signed-up",
+        ),
+        pytest.param(
+            _in_placements, _valtteri_on_an_account_gone_from_the_server, 106, _PAST_ACCOUNT,
             id="a-past-account-whose-current-one-left",
         ),
         pytest.param(
-            _signup_off_lewis_confirmed, 101, _no_unconfirmed("Lewis"),
-            id="signup-off-a-confirmed-driver",
+            _placing_mid_season, _signup_off, 101, _no_unconfirmed("Lewis"),
+            id="signup-off-mid-season-a-confirmed-driver",
             marks=pytest.mark.xfail(
                 strict=True,
                 reason="#624: with signup off a confirmed driver is still refused as not "
@@ -307,7 +312,7 @@ async def test_a_driver_rejection_its_withdrawal_audit_entry_and_line_are_one_sa
         ),
     ],
 )
-async def test_a_driver_rejection_is_refused_at_the_ask(tmp_path, setup, user_id, reply):
+async def test_a_driver_rejection_is_refused_at_the_ask(tmp_path, build, setup, user_id, reply):
     """The season is in Placements; Valtteri is Unassigned and approved, Charles (103) placed at
     McLaren in Am. The league admin runs `/driver reject` where it cannot be done: the season
     still in Configuration or in Signups; the placements approved and the season Ongoing; of
@@ -318,12 +323,13 @@ async def test_a_driver_rejection_is_refused_at_the_ask(tmp_path, setup, user_id
     is written and no role is touched. Takes the place of the mocked "refused outside the placing
     stages" and "only an Unassigned driver" tests.
 
-    #624: with the signup module off, Lewis (101), whose placement at Ferrari in Pro is confirmed,
-    is refused: "**Lewis** holds no unconfirmed placement to turn down."."""
+    #624: mid-season, while the drivers of a closed window are placed, with the signup module off,
+    Lewis (101), whose placement at Ferrari in Pro is confirmed, is refused: "**Lewis** holds no
+    unconfirmed placement to turn down."."""
     from tests.support.change_queue import change_rows
     from tests.support.settings_league import audit_rows, last_said, log_lines
 
-    league = await _with_valtteri(await _in_placements(tmp_path))
+    league = await _with_valtteri(await build(tmp_path))
     if setup is not None:
         await setup(league)
     standing = await _drivers(league)
