@@ -903,7 +903,7 @@ driver has held and inserts only where none names a driver, so a past account ne
 beside its driver's. The switch is read by name through `ModuleService.is_enabled_on` on the
 connection the check or the save already holds, the service handed to the change by the builder and
 never looked up on the bot; it is fixed for the season once its configuration is confirmed, so a read
-in the check and another in the save agree. `PlacementService` and `DriverService` take the answer as
+in the check and another in the save agree. `PlacementService` and `write_transition` take the answer as
 `signup_off` from the change, and the other placement moves follow the same flag.
 `PlacementService.reject_placements_on` removes every unconfirmed placement in the save, so seats free
 with the state and the audit entry in one write. Confirmation plans the driver role onto each driver's
