@@ -807,7 +807,8 @@ class _RosterImportModal(LeagueModal, title="Import a test roster"):
     """The box a `roster.csv` is pasted into.
 
     **4000 characters is the whole of what Discord allows a text input**, which is roughly
-    two hundred drivers at the width a roster takes, `ID,Driver name`. A larger roster is imported in
+    130 drivers at the width a roster takes, `ID,Driver name` (a 19-digit ID, a comma, a name of
+    about ten characters and a line break, some 30 characters a row). A larger roster is imported in
     more than one paste: the import adds to the fake drivers a season already holds.
     """
 
@@ -855,8 +856,8 @@ class _SignUpBulkModal(LeagueModal, title="Sign up fake drivers"):
     """The box a list of fake drivers to sign up is pasted into: `ID,Driver name,Nationality`.
 
     The nationality may be blank, and 4000 characters, the whole of what Discord allows a text
-    input, is a list of some hundred and fifty drivers; a longer list is pasted in more than one
-    go.
+    input, is a list of about a hundred drivers (some 38 characters a row, the nationality
+    included); a longer list is pasted in more than one go.
     """
 
     csv_text: discord.ui.TextInput = discord.ui.TextInput(
