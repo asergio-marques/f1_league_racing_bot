@@ -229,11 +229,6 @@ async def _stage_a_removal_and_an_addition(db_path: str) -> None:
     await _save(db_path, "stage_points_on", SEASON_ID, CONFIG, "FEATURE_RACE", [(3, 5)])
 
 
-#: Why a staged change is not yet shown as the review's diff should show it.
-DIFF_NOT_YET = "#601: the review's diff names sessions by their stored value"
-FASTEST_LAP_NOT_YET = "#601: the review's diff leaves out the staged fastest-lap bonus and limit"
-
-
 async def _stage_for_the_diff(db_path: str, staging: str) -> None:
     """Stage on season 1 what the diff's case names, beyond P1 at 26, which `_season` stages."""
     if staging == "removal and addition":
@@ -257,7 +252,6 @@ async def _stage_for_the_diff(db_path: str, staging: str) -> None:
             "P1 at 26",
             "**1 change staged:**\nStandard, Feature Race, P1: 25 → 26",
             id="P1 at 26",
-            marks=pytest.mark.xfail(strict=True, reason=DIFF_NOT_YET),
         ),
         pytest.param(
             "removal and addition",
@@ -265,19 +259,16 @@ async def _stage_for_the_diff(db_path: str, staging: str) -> None:
             "Standard, Feature Race, P2: 18 → none\n"
             "Standard, Feature Race, P3: none → 5",
             id="removal and addition",
-            marks=pytest.mark.xfail(strict=True, reason=DIFF_NOT_YET),
         ),
         pytest.param(
             "fastest lap at 2",
             "**1 change staged:**\nStandard, Feature Race, fastest lap: 1 → 2",
             id="fastest lap at 2",
-            marks=pytest.mark.xfail(strict=True, reason=FASTEST_LAP_NOT_YET),
         ),
         pytest.param(
             "limit at 8",
             "**1 change staged:**\nStandard, Feature Race, fastest lap position limit: 10 → 8",
             id="limit at 8",
-            marks=pytest.mark.xfail(strict=True, reason=FASTEST_LAP_NOT_YET),
         ),
         pytest.param(
             "P1 at 26 and fastest lap at 2",
@@ -285,7 +276,6 @@ async def _stage_for_the_diff(db_path: str, staging: str) -> None:
             "Standard, Feature Race, P1: 25 → 26\n"
             "Standard, Feature Race, fastest lap: 1 → 2",
             id="P1 at 26 and fastest lap at 2",
-            marks=pytest.mark.xfail(strict=True, reason=FASTEST_LAP_NOT_YET),
         ),
     ],
 )

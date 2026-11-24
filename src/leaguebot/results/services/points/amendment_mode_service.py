@@ -5,8 +5,9 @@ Results owns the mode's tables (`season_amendment_state`, `season_modification_e
 modification store rather than the configurations it scores on. The readers say whether the
 mode is on and whether it is modified, whether a staged table reads out of order
 (`validate_modification_ordering`) and how it differs from the table in force
-(`get_modification_store_diff`). The writers (`set_amendment_mode_on`, `revert_on`,
-`stage_points_on`, `stage_fastest_lap_on`) write on the connection a settings change
+(`get_modification_store_diff`: every staged change, the fastest lap's bonus and limit
+included). The writers (`set_amendment_mode_on`, `revert_on`, `stage_points_on`,
+`stage_fastest_lap_on`) write on the connection a settings change
 hands them, commit nothing, and answer what they did as a `Saved`: whether anything changed and
 the audit entries the queue saves with it. A request for what the store already holds changes
 nothing, leaves the modified flag as it stood and records nothing. That the mode is on, that the
@@ -30,6 +31,7 @@ from leaguebot.results.services.points.points_amendment_faults import (
     ApprovalFaultKind,
     approval_faults,
 )
+from leaguebot.results.services.points.season_points_service import staged_points_changes_on
 from leaguebot.results.services.round_amendment.amendment_writes import open_amendment_in_season
 from leaguebot.results.utils.points_ordering import ordering_message, ordering_violations
 
@@ -129,41 +131,20 @@ async def validate_modification_ordering(db_path: str, season_id: int) -> list[s
 
 
 async def get_modification_store_diff(db_path: str, season_id: int) -> str:
-    """Return a human-readable diff of season_points_entries vs modification store."""
+    """The diff the review shows: every staged change, each value from what to what.
+
+    Built from `season_points_service.staged_points_changes_on`, the comparison an approval
+    reports from, so the diff names each position's points and each session's fastest-lap
+    bonus and position limit that ✅ Approve would install, and none that it would not.
+    """
     async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT config_name, session_type, position, points FROM season_points_entries WHERE season_id = ?",
-            (season_id,),
-        )
-        current_rows = {
-            (r["config_name"], r["session_type"], r["position"]): r["points"]
-            for r in await cursor.fetchall()
-        }
-        cursor = await db.execute(
-            "SELECT config_name, session_type, position, points FROM season_modification_entries WHERE season_id = ?",
-            (season_id,),
-        )
-        mod_rows = {
-            (r["config_name"], r["session_type"], r["position"]): r["points"]
-            for r in await cursor.fetchall()
-        }
+        changes = await staged_points_changes_on(db, season_id)
 
-    all_keys = sorted(set(current_rows) | set(mod_rows))
-    lines = []
-    changed = 0
-    for key in all_keys:
-        old_pts = current_rows.get(key)
-        new_pts = mod_rows.get(key)
-        if old_pts != new_pts:
-            config, session, pos = key
-            lines.append(
-                f"{config}/{session}/P{pos}: {old_pts if old_pts is not None else '?'} → {new_pts if new_pts is not None else '(removed)'}"
-            )
-            changed += 1
-
+    lines = list(changes.lines())
     if not lines:
         return "No changes in modification store."
-    header = f"**{changed} change{'s' if changed != 1 else ''} staged:**"
+    count = len(lines)
+    header = f"**{count} change{'s' if count != 1 else ''} staged:**"
     return header + "\n" + "\n".join(lines)
 
 
