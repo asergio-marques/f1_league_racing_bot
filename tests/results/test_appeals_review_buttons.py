@@ -47,6 +47,7 @@ from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services.review.penalty_review_views import ApprovalView
 from leaguebot.results.services.review.appeals_review_views import AppealsReviewView, _AppealsConfirmClearView
 from leaguebot.results.services.review.penalty_service import StagedPenalty
+from leaguebot.results.services.review.review_prompts import prompt_views_at_start
 from leaguebot.results.services.review.review_state import PenaltyReviewState
 from tests.support.review_league import attendance_after_review_of
 from tests.support.change_queue import (
@@ -628,7 +629,7 @@ _APPEALS_REFUSALS = [
     *(
         _appeals_refusal(f"restarted-{label}", "review", label, _APPEALS_RESTARTED,
                          restarted=True)
-        for label in [*_APPEALS_BUTTONS, "Remove #1"]
+        for label in [*_APPEALS_BUTTONS, "Remove #1", "Remove #20"]
     ),
     *(
         _appeals_refusal(f"not-a-manager-{label}", "review", label, _APPEALS_NOT_A_MANAGER,
@@ -667,7 +668,15 @@ async def test_every_refused_press_of_the_appeals_review_is_recorded(
     else:
         view = AppealsReviewView(state=state)
     if restarted and label.startswith("Remove"):
-        press = view._make_remove_cb(0)
+        # The prompt's own view is lost in a restart; Discord routes the press to the stand-in
+        # registered at start-up for it.
+        custom_id = f"ar_remove_{int(label.rsplit('#', 1)[1]) - 1}"
+        press = next(
+            item
+            for registered in prompt_views_at_start()
+            for item in registered.children
+            if item.custom_id == custom_id
+        ).callback
     else:
         press = next(
             item for item in view.children if getattr(item, "label", None) == label
