@@ -831,7 +831,7 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
       - last, the question, with a **✅ Approve** button:
         ```
         📋 **Do you accept this season configuration?**
-        Reviewed by <@<your id>>. Approval is open to them or to a server administrator for the next 5 minutes, after which this review expires and must be run again.
+        Reviewed by <@<your id>>. Approval is open to them or to a league admin for the next 5 minutes, after which this review expires and must be run again.
         ```
     - **Log:** `<you> | /season placements-review | Review posted`, and, where a picture drew
       with notices, a line naming that picture and its notices.
