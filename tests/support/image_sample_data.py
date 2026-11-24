@@ -461,6 +461,7 @@ def build_attendance_drawing(root, teams, *, limits: bool = True):
     reach are simply not drawn, which is what "insofar as the number of rows declared allows"
     means.
     """
+    from leaguebot.attendance.services.sheet.attendance_sheet import after_round_order_key
     from leaguebot.image.models.image_catalogues import CapacityError, catalogue_for
     from leaguebot.image.services.aspects.image_attendance_service import (
         ATTENDANCE_TEMPLATE_KEY,
@@ -571,7 +572,7 @@ def build_attendance_drawing(root, teams, *, limits: bool = True):
 
     # The drawing keeps the order it is handed, which is attendance's: the textual sheet's
     # after a round, most points first and drivers level on points by name.
-    records.sort(key=lambda record: (-(record.total or 0), display_names[record.key].lower()))
+    records.sort(key=lambda record: after_round_order_key(record.total, display_names[record.key]))
 
     return resolve_drawing(
         division_name="Test Division",
