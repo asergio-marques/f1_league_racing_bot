@@ -15,13 +15,14 @@ league's base and driver roles are fixed from the moment a season's configuratio
 until that season ends (`season_lifecycle_service.configuration_fixed`, `signup_settings.fixed_refusal`,
 `bot_settings.season_fixed_refusal`). The base's Season #1 is past that, so on the base they show
 only their refusals (Part H). To show them working, the spec cancels Season #1 and sets up a
-Season #2, left in configuration with test mode on (Part I), as `02-roster-changes.md` does to reach
-its placements. `/season cancel` keeps the saved backup; completing the season, or switching test
-mode off with `/test-mode toggle`, would delete it, and neither is done here. Part J restores the
-base.
+Season #2, left in configuration with test mode on (Part I), as `02-roster-changes.md` does.
+`/season cancel` keeps the saved backup; completing the season, or switching test mode off with
+`/test-mode toggle`, would delete it, and neither is done here. Part J restores the base.
 
-**Test mode opens no signup window** (`SignupCog.signup_open`), so `/signup open`, `/signup close`
-and the three `/signup close-time` commands are seen only refusing.
+**A signup window opens under test mode as it does for a league.** `/signup open` is judged by the
+season's stage, not by test mode (`window_changes.window_open_change`): Season #1 is ongoing with no
+placements left to confirm, so Part H opens a window on it, arms and clears a close time, and closes
+it again with nobody signed up. Part I shows `/signup open` refused for a season in configuration.
 
 **There is no `/bot sync`.** The command that pushes the slash commands to Discord is the prefix
 command `!sync`, for the bot application's owner alone (Part F).
@@ -97,10 +98,10 @@ them.
    - **Reply:**
      ```
      📦 **Saved backup**
-       Taken: <timestamp: the moment of 00-base.md step 33>
-       Size: <size: as in 00-base.md step 33> KB
+       Taken: <timestamp: the moment of 00-base.md step 38>
+       Size: <size: as in 00-base.md step 38> KB
        Readable: yes
-       Locked: locked by <your display name> at <the moment of 00-base.md step 34, ISO 8601>
+       Locked: locked by <your display name> at <the moment of 00-base.md step 39, ISO 8601>
      ```
      A `Readable:` other than `yes`, or the reply
      ``📭 There is no saved backup. Take one with `/test-mode backup save`.``, means the base must
@@ -113,7 +114,7 @@ them.
    **Expect:**
    - **Reply**, with two buttons, **♻️ Restore** and **Cancel**:
      ```
-     ⚠️ **Restore the backup taken <relative timestamp: when 00-base.md step 33 ran>?**
+     ⚠️ **Restore the backup taken <relative timestamp: when 00-base.md step 38 ran>?**
      Everything the bot holds now — seasons, rounds, drivers, results and every scheduled job — is replaced by what that backup holds. A copy of the current database is kept beside it first.
      **The bot must be restarted afterwards** to pick it up.
      ```
@@ -247,14 +248,21 @@ Each view answers you alone and writes nothing to the log channel.
 13. **Do:** `/signup time-slot list`
 
     **Expect:**
-    - **Reply:** `No availability slots configured.`
+    - **Reply:**
+      ```
+      **Availability Time Slots**
+      #1 — Monday 20:00 UTC
+      ```
+      The Fixture's one slot. The base added it before confirming its configuration: a signup
+      window opens only where a slot is configured, and the base opened one to sign its drivers up.
     - **Log:** nothing.
 
 14. **Do:** `/signup unassigned list`
 
     **Expect:**
-    - **Reply:** `No unsettled signups found.` The fake drivers are seated, so Assigned
-      (`test_roster_service`), and an Assigned driver is not unsettled.
+    - **Reply:** `No unsettled signups found.` The fake drivers were signed up, approved and seated
+      by `/driver assign` in `00-base.md`, so they are Assigned, and an Assigned driver is not
+      unsettled.
     - **Log:** nothing.
 
 15. **Do:** `/signup unassigned export`
@@ -775,7 +783,7 @@ time zone is free text, autocompleted, and checked.
       `<you> | /division calendar-sync | Success` with `division: Division 1` and
       `posted as: image` beneath.
     - **Posts** (`#d1-calendar`): a new calendar, a picture with no text, then the calendar
-      `00-base.md` step 32 posted deleted, where an earlier spec has not already deleted it (a
+      `00-base.md` step 37 posted deleted, where an earlier spec has not already deleted it (a
       calendar already gone is passed over, `standing_posts`). Look at it as a PNG: each round is drawn in Tokyo time,
       nine hours ahead of UTC with no daylight saving, so every round falls on the next day:
       round 1 Silverstone Circuit `<YEAR+1>-03-02` at `05:00 AM JST`, round 2 Hungaroring
@@ -853,7 +861,8 @@ time zone is free text, autocompleted, and checked.
 
 Season #1's configuration is confirmed, so every signup setting and both league roles are fixed
 until it ends. The fixed refusal comes before every other check, so the value a command is given is
-never judged; and it is judged again as the change starts.
+never judged; and it is judged again as the change starts. The signup window is not a setting: it
+opens and closes mid-season (steps 68 to 70).
 
 66. **Do**, one after another: `/signup nationality`, `/signup time-type`, `/signup time-image`.
 
@@ -868,29 +877,109 @@ never judged; and it is judged again as the change starts.
     for `<command>`. Neither the time nor the slot number is judged: the season's refusal comes
     first.
 
-68. **Do:** `/signup open`, then `/signup open close_time:yesterday`
-
-    **Expect**, for each:
-    - **Reply:** ``⛔ Signups cannot be opened while test mode is active. Turn it off with `/test-mode toggle` first.``
-    - **Log:** ``⛔ `/signup open` refused for <you> — Signups cannot be opened while test mode is active. Turn it off with `/test-mode toggle` first.``
-    - Test mode is judged before the close time is read. Do **not** turn test mode off: that
-      deletes the saved backup.
-
-69. **Do:** `/signup close`
+68. **The window opens mid-season.** **Do:** `/signup open close_time:yesterday`, then
+    `/signup open`.
 
     **Expect:**
-    - **Reply:** `❌ Signups are not currently open.`
-    - **Log:** ``⛔ `/signup close` refused for <you> — Signups are not currently open.``
+    - **The first is refused** for its close time, which is read at the ask, before anything else
+      (`signup_commands._parse_close_time`):
+      - **Reply:** ``❌ `close_time` is not a valid ISO 8601 datetime (e.g. `2025-06-15T20:00:00`).``
+      - **Log:** ``⛔ `/signup open` refused for <you> — `close_time` is not a valid ISO 8601 datetime (e.g. `2025-06-15T20:00:00`).``
+    - **The second opens the window.** Season #1 is ongoing with no placements left to confirm, the
+      one stage mid-season a window opens from, and test mode does not stand in the way:
+      - **Ack:** `Opening signups`
+      - **Then:** `✅ Signups opened. Button posted in <#<signup id>>.`
+      - **Posts** (`#signup`): one message, an embed titled `🏁 Driver Signups Are Open!` with a
+        **Sign Up** button, pinging `@Members`, its description:
+        ```
+        **Available time slots:**
+        • Monday 20:00 UTC
 
-70. **Do**, one after another: `/signup close-time add close_time:<YEAR+1>-01-01T20:00:00`,
-    `/signup close-time add close_time:soon`, `/signup close-time modify close_time:<YEAR+1>-01-02T20:00:00`,
-    `/signup close-time cancel`.
+        **Tracks:**
+        No tracks specified
 
-    **Expect**, for each, `<command>` being `/signup close-time add`, `modify` or `cancel`:
-    - **Reply:** ``❌ Signups are not currently open, so there is no auto-close time to manage. Set one when you open the window with `/signup open close_time:`.``
-    - **Log:** ``⛔ `<command>` refused for <you> — Signups are not currently open, so there is no auto-close time to manage. Set one when you open the window with `/signup open close_time:`.``
-    - `close_time:soon` is not a time, and is never judged: a window not open is refused first
-      (`close_time_settings.check_add`). The close-time commands are not fixed by the season.
+        **Time type:** Time Trial
+        **Time image proof:** Required
+        **Nationality:** Required
+
+        <@&<Members role id>> — click below to sign up!
+        ```
+        Then the `🔒 Signups are now closed.` notice the base's close left in `#signup` is
+        deleted.
+      - **Log:** `<you> | /signup open | Success`
+    - The season now stands at Ongoing, signups open. The signup settings stay fixed: step 66's
+      refusals are unchanged. Do **not** press **Sign Up**; step 70 closes the window with nobody
+      signing up.
+
+69. **A close time, armed and cleared.** **Do**, one after another, each once the last has
+    answered: `/signup open`, `/signup close-time add close_time:soon`,
+    `/signup close-time add close_time:<YEAR+1>-01-01T20:00:00`, `/signup close`,
+    `/signup close-time modify close_time:<YEAR+1>-01-02T20:00:00`, `/signup close-time cancel`.
+
+    **Expect**, in turn:
+    - `/signup open`, refused, the window being open:
+      - **Reply:** `❌ Signups are already open.`
+      - **Log:** ``⛔ `/signup open` refused for <you> — Signups are already open.``
+    - `close_time:soon`, refused, the window open and the value no time:
+      - **Reply:** ``❌ `close_time` is not a valid ISO 8601 datetime (e.g. `2025-06-15T20:00:00`).``
+      - **Log:** ``⛔ `/signup close-time add` refused for <you> — `close_time` is not a valid ISO 8601 datetime (e.g. `2025-06-15T20:00:00`).``
+    - The close time armed:
+      - **Ack:** `Setting the signup auto-close time`
+      - **Then:** `✅ Signups will auto-close at <timestamp: 1 January <YEAR+1>, 20:00 UTC, in your Discord time zone> (<relative timestamp>).`
+      - **Log:**
+        ```
+        <you> | /signup close-time add | Success
+          close_time: <YEAR+1>-01-01T20:00:00+00:00
+        ```
+      The close-time commands are not fixed by the season.
+    - `/signup close`, refused while a close time is armed:
+      - **Reply:** ``❌ Signups will auto-close at <timestamp: as above> (<relative timestamp>). Clear the timer with `/signup close-time cancel` if you need to close manually, or move it with `/signup close-time modify`.``
+      - **Log:** ``⛔ `/signup close` refused for <you> — Signups will auto-close at <timestamp: as above> (<relative timestamp>). Clear the timer with `/signup close-time cancel` if you need to close manually, or move it with `/signup close-time modify`.``
+    - The close time moved:
+      - **Ack:** `Changing the signup auto-close time`
+      - **Then:** `✅ Signups will now auto-close at <timestamp: 2 January <YEAR+1>, 20:00 UTC> (<relative timestamp>).`
+      - **Log:**
+        ```
+        <you> | /signup close-time modify | Success
+          was: <YEAR+1>-01-01T20:00:00+00:00
+          close_time: <YEAR+1>-01-02T20:00:00+00:00
+        ```
+    - The close time cleared:
+      - **Ack:** `Clearing the signup auto-close time`
+      - **Then:** ``✅ Auto-close time cleared. Signups stay open until you close them with `/signup close`.``
+      - **Log:**
+        ```
+        <you> | /signup close-time cancel | Success
+          was: <YEAR+1>-01-02T20:00:00+00:00
+        ```
+
+70. **The window closes, and what is refused once it has.** **Do:** `/signup close`; then, once it
+    has answered, `/signup close` again, and one after another
+    `/signup close-time add close_time:<YEAR+1>-01-01T20:00:00`, `/signup close-time add close_time:soon`,
+    `/signup close-time modify close_time:<YEAR+1>-01-02T20:00:00`, `/signup close-time cancel`.
+
+    **Expect:**
+    - **The first close.** Nobody is signing up, so it asks no confirmation:
+      - **Ack:** `Closing signups`
+      - **Then:** `✅ Signups closed.`
+      - **Posts** (`#signup`): the information message of step 68 deleted, and
+        `🔒 Signups are now closed.` posted.
+      - **Log:**
+        ```
+        <you> | /signup close | Success
+          drivers_returned_to_not_signed_up: 0
+        ```
+      No signup was left unsettled, so the season goes back to Ongoing, not to Ongoing,
+      placements (`advance_on_window_close_on`).
+    - **The second close:**
+      - **Reply:** `❌ Signups are not currently open.`
+      - **Log:** ``⛔ `/signup close` refused for <you> — Signups are not currently open.``
+    - **The close-time commands**, for each, `<command>` being `/signup close-time add`, `modify` or
+      `cancel`:
+      - **Reply:** ``❌ Signups are not currently open, so there is no auto-close time to manage. Set one when you open the window with `/signup open close_time:`.``
+      - **Log:** ``⛔ `<command>` refused for <you> — Signups are not currently open, so there is no auto-close time to manage. Set one when you open the window with `/signup open close_time:`.``
+      - `close_time:soon` is not judged here: a window not open is refused first
+        (`close_time_settings.check_add`).
 
 71. **Do:** `/bot base-role role:@Stand-in`, `/bot driver-role role:@Stand-in`, then
     `/bot driver-role role:@everyone`.
@@ -989,22 +1078,36 @@ back is running it again (step 99).
 
 ### The time slots
 
-81. **Do:** `/signup time-slot add day:Wednesday time:8pm`
+The base's slot outlived Season #1: the cancellation keeps the signup module's settings. It is
+taken away first, so the slots below number as written; the restore of Part J brings it back.
+
+81. **Do:** `/signup time-slot remove slot_id:1`, the base's Monday 20:00 slot of step 13, then
+    `/signup time-slot add day:Wednesday time:8pm`
 
     **Expect:**
-    - **Ack:** `Adding the time slot Wednesday 20:00`
-    - **Then:**
-      ```
-      **Availability Time Slots**
-      #1 — Wednesday 20:00 UTC
-      ```
-      `8pm` is read as `20:00` (`time_parsing.parse_time_of_day`).
-    - **Log:**
-      ```
-      <you> | /signup time-slot add | Success
-        day: Wednesday
-        time: 20:00
-      ```
+    - **The removal:**
+      - **Ack:** `Removing time slot #1`
+      - **Then:** `No availability slots configured.`
+      - **Log:**
+        ```
+        <you> | /signup time-slot remove | Success
+          slot_id: 1
+          slot: Monday 20:00 UTC
+        ```
+    - **The addition:**
+      - **Ack:** `Adding the time slot Wednesday 20:00`
+      - **Then:**
+        ```
+        **Availability Time Slots**
+        #1 — Wednesday 20:00 UTC
+        ```
+        `8pm` is read as `20:00` (`time_parsing.parse_time_of_day`).
+      - **Log:**
+        ```
+        <you> | /signup time-slot add | Success
+          day: Wednesday
+          time: 20:00
+        ```
 
 82. **Do:** `/signup time-slot add day:Monday time:19:30`
 
@@ -1065,8 +1168,8 @@ back is running it again (step 99).
     **Expect:**
     - **Ack:** `Removing time slot #1`
     - **Then:** `No availability slots configured.`
-    - **Log:** as step 87, with `slot_id: 1` and `slot: Monday 19:30 UTC`. The slots are as the
-      base had them: none.
+    - **Log:** as step 87, with `slot_id: 1` and `slot: Monday 19:30 UTC`. No slot is left: the
+      base's was taken away at step 81, and Part J's restore brings it back.
 
 89. **Nothing left to remove.** **Do:** `/signup time-slot remove slot_id:1`
 
@@ -1074,14 +1177,20 @@ back is running it again (step 99).
     - **Reply:** `❌ No slots configured.`
     - **Log:** ``⛔ `/signup time-slot remove` refused for <you> — No slots configured.``
 
-### What test mode still refuses
+### What a season in configuration refuses
 
 90. **Do:** `/signup open`, `/signup close`, `/signup close-time add close_time:<YEAR+1>-01-01T20:00:00`
 
-    **Expect:** as steps 68, 69 and 70: the window cannot open under test mode, so it cannot be
-    closed, nor a close time armed. `/signup unassigned list` and `export` answer as steps 14
-    and 15: Season #1's fake drivers were deleted with its cancellation, and nobody else has
-    signed up.
+    **Expect:**
+    - `/signup open`, refused for the season's stage, not for test mode: a window opens only once
+      the configuration is confirmed.
+      - **Reply:** `❌ Signups can only be opened while the season is waiting for its signup window, once its configuration is confirmed, or while it is ongoing with no placements left to confirm.`
+      - **Log:** ``⛔ `/signup open` refused for <you> — Signups can only be opened while the season is waiting for its signup window, once its configuration is confirmed, or while it is ongoing with no placements left to confirm.``
+      The stage is judged before the slots, so the slots step 88 left none of are not named.
+    - `/signup close` and `/signup close-time add`: as the second close and the close-time
+      commands of step 70, no window being open.
+    - `/signup unassigned list` and `export` answer as steps 14 and 15: Season #1's fake drivers
+      were deleted with its cancellation, and nobody else has signed up.
 
 ### The driver role
 
@@ -1199,11 +1308,13 @@ and the cancellation back out of the database, so the next spec starts where `00
      Fixture's teams, the signup configuration and the image presentation as the base had them.
      No log line.
 
-Discord is not restored with the database. Left behind by this spec, for you to delete by hand
-if you wish: the spare channels and `@Stand-in` of step 1; the panel and its permissions in
-`#hub-2`, and the cleared permissions of `#hub`; and the cancellation notices and cancelled
+Discord is not restored with the database. Left behind by this spec, for you to delete by hand if
+you wish: the spare channels and `@Stand-in` of step 1; the panel and its permissions in `#hub-2`,
+and the cleared permissions of `#hub`; the `🔒 Signups are now closed.` notice step 70 posted in
+`#signup`, the base's own having been deleted at step 68; and the cancellation notices and cancelled
 calendars of step 73 in every division channel, as `02-roster-changes.md` leaves them (step 73's
-calendar for Division 1 replaced the one step 65 posted, which replaced step 59's). A later spec that posts a calendar again finds the
-recorded one gone and carries on (`standing_posts` passes over a message already deleted).
+calendar for Division 1 replaced the one step 65 posted, which replaced step 59's). A later spec
+that posts a calendar again finds the recorded one gone and carries on (`standing_posts` passes over
+a message already deleted).
 
 The base is as `00-base.md` left it, its backup still saved and locked.
