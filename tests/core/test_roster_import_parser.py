@@ -233,11 +233,17 @@ def test_a_sign_up_list_is_read_with_each_driver_s_nationality(header):
 @pytest.mark.xfail(strict=True, reason=_SIGN_UP_PARSER)
 @pytest.mark.parametrize(
     "row",
-    [f"{SYNTHETIC_ID_BASE + 1}", f"{SYNTHETIC_ID_BASE + 1},Quicksilver,British,Alpine"],
-    ids=["the ID alone", "four columns"],
+    [
+        f"{SYNTHETIC_ID_BASE + 1}",
+        f"{SYNTHETIC_ID_BASE + 1},Quicksilver",
+        f"{SYNTHETIC_ID_BASE + 1},Quicksilver,British,Alpine",
+    ],
+    ids=["the ID alone", "two columns", "four columns"],
 )
 def test_a_sign_up_row_of_the_wrong_width_is_refused(row):
-    """A row that is not `ID,Driver name,Nationality` is refused, the three columns named."""
+    """A row that is not `ID,Driver name,Nationality` is refused, the three columns named: a row
+    of an ID and a name alone, with no comma for the nationality, is refused rather than read as a
+    driver with none."""
     drivers, errors = _parse_sign_up("\n".join([SIGN_UP_HEADER, row]))
 
     assert drivers == []
