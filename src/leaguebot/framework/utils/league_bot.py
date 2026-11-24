@@ -343,6 +343,19 @@ class LeagueBot(commands.Bot):
     #: joins the answers to the divisions the driver holds a seat in; with no subscriber the
     #: driver raced in none. The builder makes it and hands it to the change.
     divisions_raced_read: AwaitedHook
+    #: What stands in the way of signing fake drivers up (`/test-mode roster sign-up-bulk`'s ask
+    #: and its save), given the connection: each module signing up its own read, handing back the
+    #: faults that stand, in words (signup's: off, unconfigured, signups not open, no availability
+    #: slot). Core gathers them into the refusal; with no subscriber core refuses, nothing being
+    #: able to sign a driver up. The builder makes it and hands it to the change.
+    fake_signups_ready_read: AwaitedHook
+    #: Fake drivers created and signed up (`/test-mode roster sign-up-bulk`'s save), given the
+    #: save's connection, the drivers (`FakeSignUp`) and the queue's clock: each module signing up
+    #: its own signup for them, recording it and moving each driver through the signup to
+    #: Unassigned by core's `transition_on`, handing back the audit records of what it did (signup's
+    #: start and approval). The builder makes it and hands it to the change, which writes them under
+    #: the admin; nothing is turned into a refusal after it.
+    fake_signups_approved: AwaitedHook
     #: A driver's standing in a division for the history written at a season's end (the
     #: completion's and the cancellation's second save), given the connection, the division's id
     #: and the accounts the driver has held: each module signing up its own read, handing back

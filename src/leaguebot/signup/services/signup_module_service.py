@@ -124,23 +124,7 @@ class SignupModuleService:
 
     async def get_config(self) -> SignupModuleConfig | None:
         async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                "SELECT signup_channel_id, "
-                "       signups_open, signup_button_message_id, selected_tracks_json, "
-                "       signup_closed_message_id, close_at "
-                "FROM signup_module_config",
-            )
-            row = await cursor.fetchone()
-        if row is None:
-            return None
-        return SignupModuleConfig(
-            signup_channel_id=row["signup_channel_id"],
-            signups_open=bool(row["signups_open"]),
-            signup_button_message_id=row["signup_button_message_id"],
-            selected_tracks=json.loads(row["selected_tracks_json"] or "[]"),
-            signup_closed_message_id=row["signup_closed_message_id"],
-            close_at=row["close_at"],
-        )
+            return await config_on(db)
 
     async def drivers_mid_signup(
         self, states: Iterable[DriverState]
@@ -418,11 +402,7 @@ class SignupModuleService:
     async def get_window_state(self) -> bool:
         """Return True if signups are currently open."""
         async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                "SELECT signups_open FROM signup_module_config",
-            )
-            row = await cursor.fetchone()
-        return bool(row["signups_open"]) if row else False
+            return await window_state_on(db)
 
     async def set_window_open_on(
         self,
@@ -967,6 +947,35 @@ class SignupModuleService:
                 for s in snapshot.slots
             ],
         }
+
+
+async def config_on(db: aiosqlite.Connection) -> SignupModuleConfig | None:
+    """The module's configuration, read on *db*, or None where it has none (see
+    `SignupModuleService.get_config`)."""
+    cursor = await db.execute(
+        "SELECT signup_channel_id, "
+        "       signups_open, signup_button_message_id, selected_tracks_json, "
+        "       signup_closed_message_id, close_at "
+        "FROM signup_module_config",
+    )
+    row = await cursor.fetchone()
+    if row is None:
+        return None
+    return SignupModuleConfig(
+        signup_channel_id=row["signup_channel_id"],
+        signups_open=bool(row["signups_open"]),
+        signup_button_message_id=row["signup_button_message_id"],
+        selected_tracks=json.loads(row["selected_tracks_json"] or "[]"),
+        signup_closed_message_id=row["signup_closed_message_id"],
+        close_at=row["close_at"],
+    )
+
+
+async def window_state_on(db: aiosqlite.Connection) -> bool:
+    """Whether signups are open, read on *db*: False where the module has no configuration."""
+    cursor = await db.execute("SELECT signups_open FROM signup_module_config")
+    row = await cursor.fetchone()
+    return bool(row["signups_open"]) if row else False
 
 
 async def settings_on(db: aiosqlite.Connection) -> SignupModuleSettings:

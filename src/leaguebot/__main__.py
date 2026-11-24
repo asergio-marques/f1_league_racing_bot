@@ -168,6 +168,8 @@ def _make_hooks(bot: LeagueBot) -> None:
     bot.test_mode_turned_on = AwaitedHook()
     bot.season_approved = AwaitedHook()
     bot.divisions_raced_read = AwaitedHook()
+    bot.fake_signups_ready_read = AwaitedHook()
+    bot.fake_signups_approved = AwaitedHook()
     bot.season_standing_read = AwaitedHook()
     bot.final_round_read = AwaitedHook()
     bot.season_end_refused = AwaitedHook()
