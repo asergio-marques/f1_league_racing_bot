@@ -266,11 +266,19 @@ async def test_two_imported_rounds_may_not_share_a_moment(tmp_path):
     assert await round_rows(league.db_path, "Pro") == []
 
 
-@pytest.mark.parametrize("status", [
-    "NOT_RUN",
-    "CANCELLED",
+_LANDS_ON_A_HELD_MOMENT = _rejected(
+    "Line 1: duplicate datetime 2026-06-14T18:00:00 — already used by a round already in this "
+    "division."
+)
+
+
+@pytest.mark.parametrize("status, refusals, held", [
+    ("NOT_RUN", [_LANDS_ON_A_HELD_MOMENT], 1),
+    ("CANCELLED", [], 2),
 ])
-async def test_an_imported_round_may_not_land_on_an_existing_one(tmp_path, status):
+async def test_an_imported_round_may_land_only_where_no_round_not_cancelled_stands(
+    tmp_path, status, refusals, held
+):
     """The confirmation of placements refuses such a season; catching it here saves finding out
     later. Season #1 in Placements, Pro holding a round on 14 June at 18:00. The manager pastes a
     round at that moment. Where the round Pro holds is not cancelled, they are refused, the moment
@@ -286,15 +294,8 @@ async def test_an_imported_round_may_not_land_on_an_existing_one(tmp_path, statu
 
     asked = await _imported(league, "bulk", _paste(14))
 
-    if status == "CANCELLED":
-        assert not any(line.startswith("❌") for line in said(asked)), said(asked)
-        assert len(await round_rows(league.db_path, "Pro")) == 2
-        return
-    assert said(asked) == [_rejected(
-        "Line 1: duplicate datetime 2026-06-14T18:00:00 — already used by a round already in "
-        "this division."
-    )]
-    assert len(await round_rows(league.db_path, "Pro")) == 1
+    assert [line for line in said(asked) if line.startswith("❌")] == refusals
+    assert len(await round_rows(league.db_path, "Pro")) == held
 
 
 # ── The capacity guard ────────────────────────────────────────────────────
