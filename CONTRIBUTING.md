@@ -45,7 +45,7 @@ The question every level answers: **how much does a league lose, and can they ge
 the system can rely on them, and a rule that holds in most places is not a rule.
 
 **A raise cannot carry a lesser impact into Critical.** Critical is reserved for damage to the
-championship and for the module-output rule. Silence and irrecoverability raise a level within
+championship, for a league that cannot go on at all, and for the module-output rule. Silence and irrecoverability raise a level within
 that ceiling — they do not lift a cosmetic or presentational defect to the top. A forecast
 published at the wrong time is silent and cannot be put right, and is still not Critical, because
 nothing about the championship is wrong.
@@ -55,7 +55,9 @@ nothing about the championship is wrong.
 **Critical** — The championship is wrong and stays wrong. Points, standings, results, attendance
 records or scheduled work are damaged or destroyed, and either the league is never told or
 nothing can put it back inside the season. Also here: a module producing output while switched
-off, or failing to produce it while switched on. Fix before a real season runs.
+off, or failing to produce it while switched on. Also here: the league cannot go on at all — a
+step every season needs cannot be completed, by any means inside the bot. Fix before a real
+season runs.
 
 **High** — A command or a pipeline does not do its job. The league is blocked, or told something
 untrue, but can see that something is wrong, or can put it right by running something again.
