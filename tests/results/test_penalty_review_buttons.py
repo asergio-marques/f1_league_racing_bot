@@ -55,6 +55,7 @@ from leaguebot.results.services.review.penalty_review_views import (
     PenaltyReviewView,
     _ConfirmClearView,
 )
+from leaguebot.results.services.review.review_prompts import prompt_views_at_start
 from leaguebot.results.services.review.review_state import PenaltyReviewState
 from tests.support.change_queue import (
     acknowledgement,
@@ -717,7 +718,21 @@ def _reviewed_state():
     return state
 
 
+def _restarted_remove_view(custom_id: str):
+    """The view the bot registers at start-up that answers *custom_id*: all a Remove button of a
+    prompt posted before a restart has to answer it."""
+    return next(
+        view
+        for view in prompt_views_at_start()
+        if any(item.custom_id == custom_id for item in view.children)
+    )
+
+
 def _view(kind: str, state):
+    if kind == "restarted-remove":
+        return _restarted_remove_view("pw_remove_0")
+    if kind == "restarted-pardon-remove":
+        return _restarted_remove_view("pw_pardon_remove_0")
     return {
         "review": PenaltyReviewView,
         "approval": ApprovalView,
@@ -764,6 +779,12 @@ _REFUSALS = [
         _refusal(f"restarted-approval-{label}", "approval", label, _RESTARTED, restarted=True)
         for label in _APPROVAL_BUTTONS
     ),
+    *(
+        _refusal(f"restarted-{label}", "restarted-remove", label, _RESTARTED, restarted=True)
+        for label in ["Remove #1", "Remove #20"]
+    ),
+    _refusal("restarted-Remove Pardon #1", "restarted-pardon-remove", "Remove Pardon #1",
+             _RESTARTED, restarted=True),
     *(
         _refusal(f"not-a-manager-review-{label}", "review", label, _NOT_A_MANAGER,
                  setup=_not_a_manager)

@@ -893,6 +893,50 @@ def _add_remove_buttons(view: discord.ui.View, buttons: list[tuple]) -> None:
         view.add_item(btn)
 
 
+class _RemoveAfterRestartView(LeagueView):
+    """The stand-in for the Remove buttons of a review prompt that stood over a restart.
+
+    A Remove button exists only on a live prompt's own view, built with the review's state, so
+    the start-up registration of the static buttons does not cover it: a press on one of a
+    prompt posted before the bot stopped matched no registered view, and Discord showed "This
+    interaction failed" with nothing logged. This view carries a button for every id the prompts
+    can give a Remove button (``f"{prefix}{i}"``, up to the most a prompt holds) and refuses
+    each press as every other button of the prompt does after a restart, in the restart reply
+    and one line in the log.
+
+    It is registered with no message, as the static views are. discord.py offers a press first
+    to a view registered for the message, and only then to one registered for no message, so a
+    live prompt's own Remove button, registered for its message, answers first and this view
+    only ever sees a press the live one cannot answer. A ``discord.ui.DynamicItem`` was
+    rejected for the same job: it is matched before that per-message lookup, so a live Remove
+    would be answered by it as well as by its own button.
+    """
+
+    def __init__(self, prefix: str, label: str, review: str) -> None:
+        super().__init__(timeout=None)
+        for index in range(_REMOVE_SLOTS):
+            named = f"{label} #{index + 1}"
+            self.add_item(
+                CallbackButton(
+                    label=named,
+                    style=discord.ButtonStyle.danger,
+                    custom_id=f"{prefix}{index}",
+                    on_press=self._refusal(named, review),
+                )
+            )
+
+    @staticmethod
+    def _refusal(named: str, review: str):
+        async def press(interaction: discord.Interaction) -> None:
+            await refuse(
+                interaction,
+                f"⚠️ The bot was restarted. Please wait for the {review} prompt to refresh.",
+                what=_button(named, None, review),
+            )
+
+        return press
+
+
 async def _ask_reports_approved(
     interaction: discord.Interaction,
     state: PenaltyReviewState,

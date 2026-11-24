@@ -42,7 +42,8 @@ from leaguebot.results.services.review.penalty_review_views import (
     AddPenaltyModal,
 )
 from leaguebot.results.services.review.appeals_review_views import AppealsReviewView
-from leaguebot.results.services.review.review_state import PenaltyReviewState
+from leaguebot.results.services.review.review_prompts import prompt_views_at_start
+from leaguebot.results.services.review.review_state import PenaltyReviewState, StagedPardon
 from leaguebot.results.services.review.penalty_service import StagedPenalty
 from leaguebot.results.models.points_config import SessionType
 
@@ -280,3 +281,66 @@ class TestApprovalView:
     async def test_timeout_is_none(self):
         view = ApprovalView(state=None)
         assert view.timeout is None
+
+
+# ---------------------------------------------------------------------------
+# Start-up registration covers every Remove button a prompt can carry (#623)
+# ---------------------------------------------------------------------------
+
+def _crowded_state(*, penalties=0, pardons=0, corrections=0) -> PenaltyReviewState:
+    """A review state holding as many entries as a prompt has room to show a Remove button for."""
+    state = PenaltyReviewState(
+        round_id=1,
+        division_id=2,
+        submission_channel_id=3,
+        session_types_present=[SessionType.FEATURE_RACE],
+        db_path=":memory:",
+        bot=None,
+        queue=MagicMock(), server_config=AsyncMock(return_value=None), router=MagicMock(), attendance=MagicMock(),
+    )
+    penalty = StagedPenalty(
+        driver_user_id=2, session_type=SessionType.FEATURE_RACE, penalty_type="DSQ", penalty_seconds=None
+    )
+    state.staged = [penalty] * penalties
+    state.staged_appeals = [penalty] * corrections
+    state.staged_pardons = [
+        StagedPardon(
+            driver_user_id=2 + n, driver_profile_id=31 + n, attendance_id=41 + n,
+            pardon_type="ABSENT", justification="Ill", grantor_id=77,
+        )
+        for n in range(pardons)
+    ]
+    return state
+
+
+@pytest.mark.parametrize(
+    "view_type, prefix, state",
+    [
+        pytest.param(PenaltyReviewView, "pw_remove_", _crowded_state(penalties=20), id="penalties"),
+        pytest.param(PenaltyReviewView, "pw_pardon_remove_", _crowded_state(pardons=20), id="pardons"),
+        pytest.param(AppealsReviewView, "ar_remove_", _crowded_state(corrections=20), id="corrections"),
+    ],
+)
+async def test_every_remove_button_a_prompt_can_carry_is_answered_after_a_restart(
+    view_type, prefix, state
+):
+    """A review prompt standing over a restart keeps its Remove buttons on screen, and a press on
+    one is routed by Discord to a view registered at start-up, or to none: the manager then sees
+    "This interaction failed" and the log nothing. Every Remove button a prompt of twenty
+    entries can show must be an item of a persistent view the bot registers at start-up."""
+    live = [
+        item.custom_id
+        for item in view_type(state).children
+        if item.custom_id is not None and item.custom_id.startswith(prefix)
+    ]
+    assert live, "the prompt carries no Remove button, so the check proves nothing"
+
+    registered = {
+        item.custom_id: view
+        for view in prompt_views_at_start()
+        for item in view.children
+    }
+
+    for custom_id in live:
+        assert custom_id in registered, f"{custom_id} is answered by no start-up view"
+        assert registered[custom_id].is_persistent()
