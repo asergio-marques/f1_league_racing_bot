@@ -184,13 +184,12 @@ folder.
 **One judge of a shared moment.** `round_holding` in `season_service` answers whether a round of a
 division holds a moment, and every path that schedules a round asks it: the running season's
 amendment (`judge_amendment`, handed the division's rounds), the amendment of a round being set up,
-`/round add`, `/round import` and approval's duplicate check. Each path reads the rounds it already
-has and hands them in, so the judge is pure; which rounds hold a moment, a cancelled round holding
-none, is core_specification.md's "Rounds" and is written once, in it. Each path keeping its own
-inline check was rejected: a rule written once per path drifts, and a path left to its own
-check can come to judge none.
-`renumber_rounds_on` numbers a cancelled round before a round sharing its moment, so the order does
-not turn on which of them was written first.
+`/round add`, `/round import` and approval's duplicate check. Each path reads the division's rounds
+and hands them in, so the judge is pure; which rounds hold a moment, a cancelled round holding
+none, is core_specification.md's "Rounds" and is written once, in it. *Rejected:* each path keeping
+its own inline check, which lets a rule written once per path drift, and a path left to its own
+check come to judge none. `renumber_rounds_on` breaks a tie of moments as that section asks, then
+by id, so the order does not turn on which round was written first.
 
 The services core runs on, the change queue, the scheduler, posting, the record of what changed
 and the module switches, are the framework's (`framework.md`, "Services, and what each owns").
