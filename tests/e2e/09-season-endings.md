@@ -336,7 +336,7 @@ opened and closed, and two fake drivers: one signed up and approved, one never s
     **Expect:**
     - The sign-up:
       - **Ack:** `Signing up 1 fake driver`
-      - **Then:** ``✅ Signed up and approved **1** fake driver(s). Seat each with `/driver assign`.``
+      - **Then:** ``✅ Signed up and approved **1** fake driver(s). Close signups with `/signup close`, then seat each with `/driver assign`.``
       - **Log:**
         ```
         <you> | /test-mode roster sign-up-bulk | Success

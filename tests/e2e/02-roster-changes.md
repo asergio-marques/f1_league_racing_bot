@@ -992,7 +992,7 @@ at Not Signed Up. Test mode's nationality switch is **on**, as `00-base.md` left
 
     **Expect:**
     - **Ack:** `Signing up 4 fake drivers`
-    - **Then:** ``✅ Signed up and approved **4** fake driver(s). Seat each with `/driver assign`.``
+    - **Then:** ``✅ Signed up and approved **4** fake driver(s). Close signups with `/signup close`, then seat each with `/driver assign`.``
     - **Log:**
       ```
       <you> | /test-mode roster sign-up-bulk | Success
