@@ -878,9 +878,6 @@ async def test_a_moment_taken_by_another_round_while_the_amendment_stood_stopped
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#605: a cancelled round is not numbered first at a moment it shares",
-)
 async def test_a_round_moved_onto_a_cancelled_round_s_moment_is_amended_and_numbered_after_it(
     tmp_path,
 ):

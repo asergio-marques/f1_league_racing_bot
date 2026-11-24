@@ -568,11 +568,7 @@ ROUND_AMEND_REFUSALS = [
     pytest.param("first forecast posted", {"track": NEW_TRACK},
                  "first forecast for this round has already been posted",
                  id="the-first-forecast-stands"),
-    pytest.param("moment held", {}, "already holds round 2", id="the-moment-is-held",
-                 marks=pytest.mark.xfail(
-                     strict=True,
-                     reason="#605: /round amend does not judge the division's other rounds",
-                 )),
+    pytest.param("moment held", {}, "already holds round 2", id="the-moment-is-held"),
     pytest.param("confirm by another", {}, "Not your action", id="confirm-not-your-action"),
     pytest.param("confirm round gone", {}, "no longer exists", id="confirm-round-gone"),
     pytest.param("confirm window passed", {}, "can no longer be amended",
