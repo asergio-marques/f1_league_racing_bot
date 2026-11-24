@@ -949,8 +949,8 @@ and the former-driver flag, and whether it holds a committed seat, never the res
 reads no table another module owns.
 
 **`/test-mode roster sign-up-bulk` creates in core and signs up in signup.** The one roster command
-a stage judges: it is refused unless signups are open, the flow being obeyed and the helper only
-quickening it. Core creates the drivers as `add-bulk` does (`seat_bulk_on`), but what a signup is
+a stage judges, signups being open its condition (core specification, "Fake drivers and rosters").
+Core creates the drivers as `add-bulk` does (`seat_bulk_on`), but what a signup is
 and what moves a driver through it are signup's, so the change reaches signup only through two hooks
 core declares and hands the save's connection: `fake_signups_ready_read`, whose subscriber hands its
 faults back as values for core to gather into one refusal with the roster's own, with no `Refused`
@@ -959,8 +959,8 @@ driver through `transition_on`, handing back the audit records for the change's 
 subscriber to the first, core refuses. Every refusal is judged at the ask, as the change starts and
 in the save before the first write; after the first write a fault in a subscriber raises and rolls
 the save back, the lane stopping. The command is core's and sits in core's `roster` group, because it creates the roster's drivers, which only core does; the architecture
-records it as the exception to a module's test tool sitting in the module's group. It makes no
-channel and no post, and the queue's clock is passed in.
+records it as the exception to a module's test tool sitting in the module's group. Nothing in its
+path posts, and the queue's clock is passed in.
 
 **Fake drivers are seeded, not moved through the state machine.** `test_roster_service` inserts a
 fake driver at Not Signed Up with no seat, flagged as a test driver, with a synthetic id above any
