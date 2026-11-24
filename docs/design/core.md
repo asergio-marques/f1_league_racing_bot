@@ -189,7 +189,7 @@ and hands them in, so the judge is pure; which rounds hold a moment, a cancelled
 none, is core_specification.md's "Rounds" and is written once, in it. *Rejected:* each path keeping
 its own inline check, which lets a rule written once per path drift, and a path left to its own
 check come to judge none. `renumber_rounds_on` breaks a tie of moments as that section asks, then
-by id, so the order does not turn on which round was written first.
+by id, so the order is the same however the rows are read.
 
 The services core runs on, the change queue, the scheduler, posting, the record of what changed
 and the module switches, are the framework's (`framework.md`, "Services, and what each owns").
