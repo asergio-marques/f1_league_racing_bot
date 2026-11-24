@@ -736,6 +736,27 @@ async def write_distribution_on(
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
 
+def roster_embed_teams(
+    roster: Sequence[Mapping[str, Any]], answers: Mapping[int, str]
+) -> list[dict[str, Any]]:
+    """The teams of an RSVP embed drawn from *roster*, each driver showing the answer held for
+    them in *answers* (driver profile id to ``rsvp_status``) and ``NO_RSVP`` where none is."""
+    return [
+        {
+            "name": team["name"],
+            "is_reserve": team["is_reserve"],
+            "drivers": [
+                {
+                    "display_str": _driver_display_str(d),
+                    "rsvp_status": answers.get(d["driver_profile_id"], "NO_RSVP"),
+                }
+                for d in team["drivers"]
+            ],
+        }
+        for team in roster
+    ]
+
+
 async def _rebuild_embed_for_round(
     round_id: int, division_id: int, db_path: str, service: AttendanceService
 ) -> discord.Embed:
@@ -751,21 +772,7 @@ async def _rebuild_embed_for_round(
     status_map: dict[int, str] = {r.driver_profile_id: r.rsvp_status for r in dra_rows}
 
     roster = await query_division_roster(db_path, division_id)
-
-    embed_teams = [
-        {
-            "name": team["name"],
-            "is_reserve": team["is_reserve"],
-            "drivers": [
-                {
-                    "display_str": _driver_display_str(d),
-                    "rsvp_status": status_map.get(d["driver_profile_id"], "NO_RSVP"),
-                }
-                for d in team["drivers"]
-            ],
-        }
-        for team in roster
-    ]
+    embed_teams = roster_embed_teams(roster, status_map)
 
     return build_rsvp_embed(
         season_number=facts.season_number,
