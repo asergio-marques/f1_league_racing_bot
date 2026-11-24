@@ -300,7 +300,8 @@ opened and closed, and two fake drivers: one signed up and approved, one never s
     - **Posts** (`#signup`): the embed `🏁 Driver Signups Are Open!` with its **Sign Up** button,
       pinging `@Members`, its time slot the Fixture's `• Monday 20:00 UTC`, which the cancellation
       kept with the rest of the signup module's settings. The `🔒 Signups are now closed.` notice
-      the base's close left in `#signup` is deleted.
+      the base's close left in `#signup` is deleted, where an earlier spec has not already taken it
+      down (`02-roster-changes.md` step 57 does); a notice already gone is passed over silently.
     - **Log:** `<you> | /signup open | Success`
     - The season moves from waiting to signups.
 
