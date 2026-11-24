@@ -1602,11 +1602,15 @@ async def _lewis_owed_an_autoreserve(league: ReviewLeague) -> None:
         await db.commit()
 
 
+@pytest.mark.xfail(strict=True, reason="#607: a posted lineup carries no channel for the one it "
+                   "replaced, so the review deletes the old lineup from the present channel")
 async def test_a_sanction_posts_each_lineup_it_touches_once(tmp_path):
     """Attendance is on, with its real hook and the real placement service (roles not the
-    subject, so granted and revoked by doubles). Lewis is owed an autoreserve in Pro. Alex
-    approves round 3's reports: Lewis is moved to Pro's Reserve team, and Pro's lineup is posted
-    once, by the review's own job, not by the move as well (core spec: "posted once")."""
+    subject, so granted and revoked by doubles). Lewis is owed an autoreserve in Pro, whose old
+    lineup 9099 stands in 9098, the channel it was posted in. Alex approves round 3's reports:
+    Lewis is moved to Pro's Reserve team, and Pro's lineup is posted once, by the review's own
+    job, not by the move as well (core spec: "posted once"); one `delete_message` job then
+    deletes 9099 from 9098."""
     from leaguebot.attendance.services.hooks.attendance_after_review import AttendanceAfterReview
     from leaguebot.core.services.drivers.lineup_posting import LineupPosted, LineupPoster
     from leaguebot.core.services.drivers.placement_service import PlacementService
@@ -1625,7 +1629,8 @@ async def test_a_sanction_posts_each_lineup_it_touches_once(tmp_path):
         posters.append(poster)
         # Pro has no lineup channel of its own here: the post is stood in for, as one posted.
         poster._refresh_lineup_post = AsyncMock(return_value=LineupPosted(
-            message_id=9100, channel_id=9101, previous=None, division_name="Pro", form="text",
+            message_id=9100, channel_id=9101, previous=9099, previous_channel=9098,
+            division_name="Pro", form="text",
         ))
         placement = PlacementService(db_path, roles=roles)
         return AttendanceAfterReview(bot, placement, roles=roles, lineups=poster)
@@ -1635,6 +1640,10 @@ async def test_a_sanction_posts_each_lineup_it_touches_once(tmp_path):
     # Pro's attendance channel is set, as a missing one now stops the queue at the sheet.
     league.channels[707] = channel(707, league.events)
     league.channels[707].guild = league.guild
+    # Pro's old lineup stands in the channel it was posted in.
+    league.channels[9098] = channel(9098, league.events)
+    league.channels[9098].guild = league.guild
+    league.channel(9098).seed(9099, "Pro's lineup")
     async with get_connection(league.db_path) as db:
         await db.execute(
             "INSERT INTO attendance_division_config (division_id, attendance_channel_id) "
@@ -1659,6 +1668,10 @@ async def test_a_sanction_posts_each_lineup_it_touches_once(tmp_path):
     [poster] = posters
     posted = [call.args[1] for call in poster._refresh_lineup_post.await_args_list]
     assert posted == [DIVISION_ID]
+    deletes = [row for row in await step_rows(league.db_path) if row["name"] == "delete_message"
+               and "9099" in (row["payload"] or "")]
+    assert len(deletes) == 1
+    assert [event for event in league.events if event[1] == 9098] == [("delete", 9098, 9099)]
 
 
 @pytest.mark.parametrize("case", [
