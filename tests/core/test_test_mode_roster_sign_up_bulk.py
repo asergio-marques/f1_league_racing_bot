@@ -158,6 +158,15 @@ def _lines(league) -> list[str]:
     return [unruled(str(line)) for line in league.bot.log_channel.sent]
 
 
+def _refusal_logged(league, refusal: str) -> None:
+    """The log channel holds one line alone: the standard refusal line, naming what was refused,
+    for Admin, and why, in the first line of *refusal*, the reply Admin was given."""
+    [line] = _lines(league)
+    head = line.splitlines()[0]
+    assert head.startswith("⛔ ")
+    assert head.endswith(f" refused for {_NAMED} — {refusal.splitlines()[0][2:]}")
+
+
 async def _nothing_written(league) -> None:
     assert await _drivers(league) == []
     assert await _signups(league) == []
@@ -356,7 +365,8 @@ async def test_a_list_it_cannot_sign_up_is_refused_at_the_ask_writing_nothing(
     naming British. Admin submits Mock Alpha and Mock Beta. They are refused at once, seen by them
     alone, the fault named ("Signups" for the window, "not enabled" for the module off, "not
     configured", "slot", Mock Alpha's ID, `/test-mode nationality`); nothing is queued, no driver,
-    signup or audit entry is written."""
+    signup or audit entry is written, and the log channel takes one line, the refusal's, naming
+    Admin and the reason their reply gives."""
     interaction = _asks(league)
     opening = _asks(league)
     await _command()(league.cog, opening)
@@ -371,6 +381,7 @@ async def test_a_list_it_cannot_sign_up_is_refused_at_the_ask_writing_nothing(
     assert refusal.startswith("⛔") and words in refusal
     assert interaction.followup.send.await_args.kwargs.get("ephemeral") is True
     assert await change_rows(league.db_path) == []
+    _refusal_logged(league, refusal)
     if setup is not _alpha_taken:
         await _nothing_written(league)
     else:
@@ -401,15 +412,16 @@ async def test_a_list_without_nationalities_is_taken_while_the_switch_is_off(lea
     "meanwhile, words",
     [
         pytest.param(_test_mode_off, _NOT_IN_TEST_MODE, id="test mode turned off"),
-        pytest.param(_signups_closed, "⛔", id="signups closed"),
+        pytest.param(_signups_closed, "Signups", id="signups closed"),
     ],
 )
 async def test_it_is_judged_again_as_it_starts(league, meanwhile, words):
     """Signups are open. Admin (77) submits Mock Alpha and Mock Beta and is acknowledged; before
     the queue runs it, test mode is switched off, or the window closes. The change judges again as
-    it starts and is refused: Admin's reply becomes the refusal, naming the fault; no driver,
-    signup or audit entry is written, the log channel takes only the refusal line, and the queue
-    is not stopped."""
+    it starts and is refused: Admin's reply becomes the refusal, naming the fault (that test mode
+    is off, or "Signups" for the window); no driver, signup or audit entry is written, the log
+    channel takes one line, the refusal's, naming Admin and the reason their reply gives, and the
+    queue is not stopped."""
     interaction = _asks(league)
 
     await _submit(league, interaction)
@@ -420,8 +432,7 @@ async def test_it_is_judged_again_as_it_starts(league, meanwhile, words):
     refusal = last_said(interaction)
     assert refusal.startswith("⛔") and words in refusal
     await _nothing_written(league)
-    assert not any("| Success" in line for line in _lines(league))
-    assert len(_lines(league)) == 1
+    _refusal_logged(league, refusal)
     assert await stopped_job(league.db_path) is None
 
 
