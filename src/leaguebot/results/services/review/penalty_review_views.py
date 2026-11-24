@@ -1001,13 +1001,14 @@ class PenaltyReviewView(LeagueView):
     back to this class after a bot restart.
 
     Dynamic Remove buttons are added per staged entry at construction time.
-    They are registered per-message (``bot.add_view(view, message_id=msg.id)``)
-    and are intentionally NOT covered by the global restart registration — the
-    T030 recovery re-posts the prompt with an empty staged list, so there are
-    no dangling Remove buttons to handle after restart.
+    They are registered per-message (``bot.add_view(view, message_id=msg.id)``),
+    and the restart loses them with the state they belong to.
 
-    Registered globally on startup via ``bot.add_view(PenaltyReviewView(state=None))``
-    to catch any leftover Add/Confirm/Approve clicks on old messages after restart.
+    Registered globally on startup via ``prompt_views_at_start()``, to catch any
+    leftover Add/Confirm/Approve clicks on old messages after restart. The Remove
+    buttons of such a message are caught by `_RemoveAfterRestartView`, registered
+    beside it: the restart reply and one line in the log, until the reopened review
+    deletes the old prompt.
     """
 
     def __init__(self, state: PenaltyReviewState | None = None) -> None:
@@ -1047,32 +1048,37 @@ class PenaltyReviewView(LeagueView):
             ]
             _add_remove_buttons(self, buttons)
 
+    def _built_with_state(self) -> PenaltyReviewState:
+        """The state a Remove button is built for: it exists only on a view that has one.
+
+        A prompt that outlived a restart has no such view, and its Remove buttons are answered
+        by `_RemoveAfterRestartView`.
+        """
+        if self.state is None:
+            raise ValueError("a Remove button is built only for a review with a state")
+        return self.state
+
     def _make_remove_cb(self, idx: int):
+        state = self._built_with_state()
+
         async def cb(interaction: discord.Interaction) -> None:
-            if self.state is None:
-                await refuse(
-                    interaction,
-                    "⚠️ The bot was restarted. Please wait for the penalty prompt to refresh.",
-                    what=_button(f"Remove #{idx + 1}", None),
-                )
-                return
             if not await _require_lm(
-                interaction, self.state, what=_button(f"Remove #{idx + 1}", self.state)
+                interaction, state, what=_button(f"Remove #{idx + 1}", state)
             ):
                 return
             if not await _require_current(
-                interaction, self.state, what=_button(f"Remove #{idx + 1}", self.state)
+                interaction, state, what=_button(f"Remove #{idx + 1}", state)
             ):
                 return
-            if idx < len(self.state.staged):
-                removed = self.state.staged[idx]
+            if idx < len(state.staged):
+                removed = state.staged[idx]
                 pl = _pen_label(removed)
-                shown = await _shown(self.state, removed.driver_user_id)
-                what = _button(f"Remove #{idx + 1}", self.state)
+                shown = await _shown(state, removed.driver_user_id)
+                what = _button(f"Remove #{idx + 1}", state)
                 await _ask_stage(
-                    self.state.queue,
+                    state.queue,
                     interaction,
-                    self.state,
+                    state,
                     {"op": "remove", "list": "staged", "entry": removed.to_payload()},
                     appeals=False,
                     doing="Removing a staged penalty from the penalty review",
@@ -1085,37 +1091,32 @@ class PenaltyReviewView(LeagueView):
                 await refuse(
                     interaction,
                     "⚠️ That entry no longer exists (the list may have changed).",
-                    what=_button(f"Remove #{idx + 1}", self.state),
+                    what=_button(f"Remove #{idx + 1}", state),
                 )
         return cb
 
     def _make_pardon_remove_cb(self, idx: int):
+        state = self._built_with_state()
+
         async def cb(interaction: discord.Interaction) -> None:
-            if self.state is None:
-                await refuse(
-                    interaction,
-                    "⚠️ The bot was restarted. Please wait for the penalty prompt to refresh.",
-                    what=_button(f"Remove Pardon #{idx + 1}", None),
-                )
-                return
             if not await _require_lm(
-                interaction, self.state, what=_button(f"Remove Pardon #{idx + 1}", self.state)
+                interaction, state, what=_button(f"Remove Pardon #{idx + 1}", state)
             ):
                 return
             # Once a first pass's reports are approved its pardons are granted, and removing
             # one would change nothing the round carries (#356, #402).
             if not await _require_current(
-                interaction, self.state, what=_button(f"Remove Pardon #{idx + 1}", self.state)
+                interaction, state, what=_button(f"Remove Pardon #{idx + 1}", state)
             ):
                 return
-            if idx < len(self.state.staged_pardons):
-                removed = self.state.staged_pardons[idx]
-                shown = await _shown(self.state, removed.driver_user_id)
-                what = _button(f"Remove Pardon #{idx + 1}", self.state)
+            if idx < len(state.staged_pardons):
+                removed = state.staged_pardons[idx]
+                shown = await _shown(state, removed.driver_user_id)
+                what = _button(f"Remove Pardon #{idx + 1}", state)
                 await _ask_stage(
-                    self.state.queue,
+                    state.queue,
                     interaction,
-                    self.state,
+                    state,
                     {"op": "remove", "list": "pardons", "entry": removed.to_payload()},
                     appeals=False,
                     doing="Removing a staged pardon from the penalty review",
@@ -1128,7 +1129,7 @@ class PenaltyReviewView(LeagueView):
                 await refuse(
                     interaction,
                     "⚠️ That pardon no longer exists (the list may have changed).",
-                    what=_button(f"Remove Pardon #{idx + 1}", self.state),
+                    what=_button(f"Remove Pardon #{idx + 1}", state),
                 )
         return cb
 
