@@ -171,7 +171,7 @@ class SeasonCog(commands.Cog):
                 question = (
                     f"\U0001f4cb **Do you accept this season configuration?**\n"
                     f"Reviewed by <@{interaction.user.id}>. Approval is open to them or to a "
-                    f"server administrator for the next {REVIEW_MINUTES} minutes, "
+                    f"league admin for the next {REVIEW_MINUTES} minutes, "
                     f"after which this review expires and must be run again."
                 )
         await self.bot.change_queue.ask(

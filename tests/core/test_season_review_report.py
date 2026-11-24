@@ -1324,14 +1324,16 @@ async def test_a_calendar_shown_as_a_picture_still_names_a_round_gone_by(db_path
 async def test_the_question_asked_says_who_may_answer(db_path):
     """Public, so a reviewer who cannot approve can put the question to someone who can; so it
     says who may answer, and for how long. A clean season's review asks a question naming the
-    reviewer (<@77>) and a server administrator, open to them for the next 5 minutes."""
+    reviewer (<@77>) and a league admin, open to them for the next 5 minutes. A server
+    administrator holding no league admin role is refused, so the question never invites one."""
     cog = _cog(db_path)
 
     await _review(cog, _interaction())
 
     question = _asked(cog)["question"]
     assert f"<@{USER_ID}>" in question
-    assert "administrator" in question
+    assert "league admin" in question
+    assert "administrator" not in question
     assert "for the next 5 minutes" in question
 
 
