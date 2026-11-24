@@ -75,6 +75,7 @@ RESULTS_CHANNEL = 700
 STANDINGS_CHANNEL = 701
 SUBMISSION_CHANNEL = 702
 NEW_RESULTS_CHANNEL = 703
+NEW_STANDINGS_CHANNEL = 704
 OLD_RESULTS = 8800
 OLD_STANDINGS = 8801
 OLD_LATER_STANDINGS = 8802
@@ -171,7 +172,8 @@ class _League:
         self.bot = league_double(db_path)
         self.channels = {
             cid: _channel(cid, self.events)
-            for cid in (RESULTS_CHANNEL, STANDINGS_CHANNEL, SUBMISSION_CHANNEL, NEW_RESULTS_CHANNEL)
+            for cid in (RESULTS_CHANNEL, STANDINGS_CHANNEL, SUBMISSION_CHANNEL, NEW_RESULTS_CHANNEL,
+                        NEW_STANDINGS_CHANNEL)
         }
         self.channels[RESULTS_CHANNEL].seed(OLD_RESULTS, "provisional results")
         self.channels[STANDINGS_CHANNEL].seed(OLD_STANDINGS, "provisional standings")
@@ -221,10 +223,13 @@ async def _make_db(
     results_channel: int | None = RESULTS_CHANNEL,
     results_message_id: int | None = OLD_RESULTS,
     results_posted_in: int | None = None,
+    standings_channel: int = STANDINGS_CHANNEL,
+    standings_posted_in: int | None = None,
 ) -> str:
     """Division 11 (Pro) of season 1, its round 3 at Silverstone with one Feature Race posted and
     its standings posted, round 4's standings posted and round 5's never; a submission channel.
-    Where *results_posted_in* is given, the race's table is recorded as posted in that channel."""
+    Where *results_posted_in* is given, the race's table is recorded as posted in that channel,
+    and where *standings_posted_in* is given, each round's posted standings in that one."""
     db_path = os.path.join(str(tmp_path), "review_posting.db")
     await run_migrations(db_path)
     await seed_server(db_path)
@@ -252,7 +257,7 @@ async def _make_db(
         await db.execute(
             "INSERT INTO division_results_config (division_id, results_channel_id, "
             "standings_channel_id, reserves_in_standings) VALUES (?, ?, ?, 1)",
-            (DIVISION_ID, results_channel, STANDINGS_CHANNEL),
+            (DIVISION_ID, results_channel, standings_channel),
         )
         await db.execute(
             "INSERT INTO session_results (round_id, division_id, session_type, status, "
@@ -279,6 +284,12 @@ async def _make_db(
                 await set_standings_message_id_on(
                     db, DIVISION_ID, round_id, message_id, message_ids=json.dumps([message_id])
                 )
+        if standings_posted_in is not None:
+            await db.execute(
+                "UPDATE round_standings_posts SET standings_message_channel_id = ? "
+                "WHERE standings_message_id IS NOT NULL",
+                (standings_posted_in,),
+            )
         await db.execute(
             "INSERT INTO round_submission_channels (round_id, channel_id, created_at) "
             "VALUES (?, ?, '2026-02-01T20:00:00+00:00')",
@@ -1553,12 +1564,13 @@ async def test_a_post_planned_with_its_division_names_it_when_discarded(tmp_path
 # A table drawn as a picture is saved and replaced by the jobs, as a text table is
 # ---------------------------------------------------------------------------
 
-async def _built_league(tmp_path: Any) -> _League:
-    """Round 3's league of `_league`, its bot the one the entry point's `build` makes, every
-    service the builder's (the image module's among them), over the same channels and server."""
+async def _built_league(tmp_path: Any, **make: Any) -> _League:
+    """Round 3's league of `_league`, made as *make* asks, its bot the one the entry point's
+    `build` makes, every service the builder's (the image module's among them), over the same
+    channels and server."""
     from tests.support.change_queue import league_bot, set_guilds
 
-    league = await _league(tmp_path)
+    league = await _league(tmp_path, **make)
     double, bot = league.bot, await league_bot(league.db_path)
     bot.log_channel, bot.interaction_channel = double.log_channel, double.interaction_channel
     bot.get_channel, bot.fetch_channel = double.get_channel, double.fetch_channel
@@ -1671,18 +1683,69 @@ async def _standings_ids(db_path: str) -> tuple[int | None, int | None]:
     )
 
 
-async def test_a_standings_picture_s_old_message_is_deleted_by_a_job_of_its_own(tmp_path):
-    """Round 3's standings stand as text, message 8801; they are posted again, both
-    championships drawn as pictures. Once `post_standings` is done the two pictures stand and
-    8801 still stands beside them; then a `delete_message` job deletes 8801, after the
-    pictures were sent."""
-    league = await _built_league(tmp_path)
+#: Why a moved standings channel's case fails until standings keep the channel they were posted in.
+STANDINGS_POSTED_IN = (
+    "#645: posted standings keep no channel they were posted in, so the old ones are looked for "
+    "in the present standings channel"
+)
+
+
+async def _standings_posted_in(db_path: str) -> int | None:
+    """The channel round 3's drivers' standings are recorded as posted in."""
+    async with get_connection(db_path) as db:
+        row = await (await db.execute(
+            "SELECT standings_message_channel_id FROM round_standings_posts WHERE round_id = ?",
+            (ROUND_ID,),
+        )).fetchone()
+    return row[0]
+
+
+@pytest.mark.xfail(strict=True, reason=STANDINGS_POSTED_IN)
+async def test_standings_whose_channel_moved_are_posted_afresh_and_the_old_deleted_where_they_stand(
+    tmp_path,
+):
+    """Round 3's standings stand as text in channel 701, message 8801, recorded as posted there,
+    short enough to be edited in place; the division's standings channel has since moved to 704.
+    They are posted again: not edited in 701, but posted afresh in 704 with 704 recorded beside
+    the new id, and 8801 is deleted from 701 after the new standings were sent."""
+    league = await _league(tmp_path, standings_channel=NEW_STANDINGS_CHANNEL,
+                           standings_posted_in=STANDINGS_CHANNEL)
+    await _ask(league)
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    new = league.sent_to(NEW_STANDINGS_CHANNEL)
+    assert new
+    assert ("edit", STANDINGS_CHANNEL, OLD_STANDINGS) not in league.events
+    assert league.events.index(("send", NEW_STANDINGS_CHANNEL, new[0])) < league.events.index(
+        ("delete", STANDINGS_CHANNEL, OLD_STANDINGS)
+    )
+    assert OLD_STANDINGS not in league.channel(STANDINGS_CHANNEL).messages
+    assert await get_standings_message_id(league.db_path, DIVISION_ID, ROUND_ID) == new[0]
+    assert await _standings_posted_in(league.db_path) == NEW_STANDINGS_CHANNEL
+
+
+@pytest.mark.parametrize("present, posted_in", [
+    pytest.param(STANDINGS_CHANNEL, None, id="kept"),
+    pytest.param(NEW_STANDINGS_CHANNEL, STANDINGS_CHANNEL, id="moved",
+                 marks=pytest.mark.xfail(strict=True, reason=STANDINGS_POSTED_IN)),
+])
+async def test_a_standings_picture_s_old_message_is_deleted_by_a_job_of_its_own(
+    tmp_path, present, posted_in,
+):
+    """Round 3's standings stand as text in channel 701, message 8801; they are posted again in
+    the division's present standings channel, both championships drawn as pictures. Once
+    `post_standings` is done the two pictures stand and 8801 still stands; then a
+    `delete_message` job deletes 8801 from 701, after the pictures were sent. Where the standings
+    channel has since moved to 704, the pictures go to 704 and 8801 still comes down from 701."""
+    league = await _built_league(tmp_path, standings_channel=present,
+                                 standings_posted_in=posted_in)
     standings = league.channel(STANDINGS_CHANNEL)
     with await _drawn(league, tmp_path, "standings"):
         await _ask(league)
         await _run_until_done(league, "post_standings")
 
-        pictures = league.sent_to(STANDINGS_CHANNEL)
+        pictures = league.sent_to(present)
         assert len(pictures) == 2
         assert OLD_STANDINGS in standings.messages, (
             "the picture deleted the message it replaces itself"
@@ -1691,11 +1754,13 @@ async def test_a_standings_picture_s_old_message_is_deleted_by_a_job_of_its_own(
         await run_queue(league.bot)
 
     assert await stopped_job(league.db_path) is None
-    assert set(standings.messages) == {*pictures, OLD_LATER_STANDINGS}
+    assert set(standings.messages) | set(league.channel(present).messages) == {
+        *pictures, OLD_LATER_STANDINGS,
+    }
     deletes = [row for row in await step_rows(league.db_path) if row["name"] == "delete_message"
                and json.loads(row["payload"])["message_id"] == OLD_STANDINGS]
     assert len(deletes) == 1 and deletes[0]["done_at"] is not None
-    assert league.events.index(("send", STANDINGS_CHANNEL, pictures[0])) < league.events.index(
+    assert league.events.index(("send", present, pictures[0])) < league.events.index(
         ("delete", STANDINGS_CHANNEL, OLD_STANDINGS)
     )
 
