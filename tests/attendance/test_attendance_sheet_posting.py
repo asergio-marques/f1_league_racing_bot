@@ -398,8 +398,11 @@ async def test_a_missing_channel_is_reported_by_the_divisions_name(sheet_db):
 # ── What the sheet says (FR-017–FR-019) ──────────────────────────────────
 
 
-async def _seat(db_path, *, profile_id: int, user_id: str, seat: int, total: int) -> None:
-    """Seat another driver in Apex Racing with *total* attendance points after round 3."""
+async def _seat(
+    db_path, *, profile_id: int, user_id: str, seat: int, total: int, team: int = 100
+) -> None:
+    """Seat another driver in the team *team* (Apex Racing unless said) with *total* attendance
+    points after round 3."""
     async with get_connection(db_path) as db:
         await db.execute(
             "INSERT INTO driver_profiles (id, discord_user_id, current_state) "
@@ -408,8 +411,8 @@ async def _seat(db_path, *, profile_id: int, user_id: str, seat: int, total: int
         )
         cursor = await db.execute(
             "INSERT INTO team_seats (team_instance_id, seat_number, driver_profile_id) "
-            "VALUES (100, ?, ?)",
-            (seat, profile_id),
+            "VALUES (?, ?, ?)",
+            (team, seat, profile_id),
         )
         await db.execute(
             "INSERT INTO driver_season_assignments "
@@ -942,3 +945,54 @@ async def test_the_sheet_is_drawn_and_named_for_its_season_division_and_occasion
     [sheet], asked = drawing.draw_attendance_sheet.await_args
     assert asked["what"] == named
     assert (sheet.season_number, sheet.division_tier, sheet.race_name) == ("3", "2", grand_prix)
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#640: the picture re-sorts the opening sheet's rows by name"
+)
+@pytest.mark.asyncio
+async def test_the_opening_sheet_and_its_picture_list_drivers_by_team_then_name(
+    sheet_db, monkeypatch
+):
+    """Division 1's opening sheet, the images module on: Zane (111) seated in Apex Racing and
+    Aaron (222) in Bravo GP, both on nought. The text lists Zane before Aaron, team first, and the
+    picture draws its rows in that same order rather than by name (attendance spec, Updating
+    attendance sheets; image spec, Attendance, Generation and posting)."""
+    from types import SimpleNamespace
+
+    from leaguebot.core.services.drivers import driver_names
+
+    async def _names(*_args, **_kwargs):
+        return {111: "Zane", 222: "Aaron"}
+
+    async def _empty(*_args, **_kwargs):
+        return {}
+
+    monkeypatch.setattr(driver_names, "read_driver_names", _names)
+    monkeypatch.setattr(driver_names, "read_driver_nationalities", _empty)
+    async with get_connection(sheet_db) as db:
+        await db.execute(
+            "INSERT INTO team_instances (id, division_id, name, full_name) "
+            "VALUES (101, 7, 'Bravo', 'Bravo GP')"
+        )
+        await db.commit()
+    await _seat(sheet_db, profile_id=2, user_id="222", seat=1, total=0, team=101)
+    await _config(sheet_db, prior=None)
+    channel = _FakeChannel([])
+    guild = _FakeGuild(channel, {111: "Zane", 222: "Aaron"})
+    drawing = _drawing_that_draws_nothing("none")
+
+    with in_a_job():
+        await post_attendance_sheet(
+            SimpleNamespace(db_path=sheet_db), guild, sheet_db, round_id=3, division_id=7,
+            occasion=_occasion("SEASON_OPENING"), drawing=drawing,
+        )
+
+    listed = [
+        line.split(" ")[0]
+        for line in channel.sent_content.splitlines()
+        if line.startswith("<@")
+    ]
+    assert listed == ["<@111>", "<@222>"]
+    [sheet], _asked = drawing.draw_attendance_sheet.await_args
+    assert [entry.driver_name for entry in sheet.entries] == ["Zane", "Aaron"]
