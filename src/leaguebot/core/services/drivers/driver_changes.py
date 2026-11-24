@@ -97,7 +97,8 @@ from leaguebot.framework.services.queue.change_types import (
     StepView,
 )
 from leaguebot.core.services.drivers.driver_service import (
-    DriverService, profile_for_placement_on, write_transition,
+    DriverService, existing_profile_for_placement_on, profile_for_placement_on,
+    write_transition,
 )
 from leaguebot.core.services.drivers.lineup_posting import LineupPoster
 from leaguebot.core.services.drivers.placement_service import PlacementService
@@ -693,17 +694,23 @@ def driver_assign_change(
         payload = ctx.payload
         season_id = int(payload["season_id"])
         division_id = int(payload["division_id"])
-        async with get_connection(ctx.db_path) as db:
-            signup_off = not await modules.is_enabled_on(db, "signup")
         raw_profile_id = payload["driver_profile_id"]
         driver_profile_id = None if raw_profile_id is None else int(raw_profile_id)
+        async with get_connection(ctx.db_path) as db:
+            signup_off = not await modules.is_enabled_on(db, "signup")
+            if driver_profile_id is None and signup_off:
+                # A profile made since the ask (a placement ahead of this one on the queue) is
+                # the one the save will find, so it is the one to judge.
+                driver_profile_id = await existing_profile_for_placement_on(
+                    db, str(payload["discord_user_id"])
+                )
         refused = (
             await placing_refusal(ctx.db_path, season_id, ASSIGN_COMMAND)
             or await division_refusal(
                 ctx.db_path, season_id, [(division_id, payload["division"])]
             )
             or (
-                None if driver_profile_id is None and signup_off
+                None if raw_profile_id is None and signup_off
                 else await profile_refusal(ctx.db_path, payload)
             )
         )
