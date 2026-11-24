@@ -31,9 +31,6 @@ from tests.support.season_league import SEASON_ID, ongoing_league, setup_league
 from tests.support.settings_league import audit_rows, last_said, said, unruled
 from tests.support.settings_league import interaction as member_asks
 
-#: Why each test here fails until the helper is built.
-_NOT_BUILT = "#600: /test-mode roster sign-up-bulk is not yet built"
-
 ACTOR_ID = 77
 _NAMED = f"Admin (`<@{ACTOR_ID}>`)"
 _COMMAND = "test-mode roster sign-up-bulk"
@@ -175,7 +172,6 @@ async def _nothing_written(league) -> None:
     assert await audit_rows(league.db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_BUILT)
 @pytest.mark.parametrize(
     "league",
     [pytest.param("SIGNUPS", id="signups"),
@@ -271,7 +267,6 @@ async def test_a_pasted_list_signs_up_and_approves_every_driver_in_one_save(leag
     assert "Mock Alpha" in listed and "Mock Beta" in listed
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_BUILT)
 async def test_its_drivers_are_placed_as_any_approved_driver_is(league):
     """The core specification's test mode: a fake driver is placed by `/driver assign` once
     approved, indistinguishable thereafter from a real one. Signups are open, the season at
@@ -433,7 +428,6 @@ _REFUSALS = [
 ]
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_BUILT)
 @pytest.mark.parametrize("setup, text, words", _REFUSALS)
 async def test_a_list_it_cannot_sign_up_is_refused_at_the_ask_writing_nothing(
     league, setup, text, words
@@ -472,7 +466,6 @@ async def test_a_list_it_cannot_sign_up_is_refused_at_the_ask_writing_nothing(
         assert await audit_rows(league.db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_BUILT)
 async def test_a_list_without_nationalities_is_taken_while_the_switch_is_off(league):
     """The test-mode nationality switch is off and signups are open. Admin (77) submits Mock Alpha
     and Mock Beta with their nationality column blank, and the queue runs: both end Unassigned,
@@ -490,7 +483,6 @@ async def test_a_list_without_nationalities_is_taken_while_the_switch_is_off(lea
     assert last_said(interaction) == _SIGNED_UP
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_BUILT)
 @pytest.mark.parametrize(
     "meanwhile, words",
     [
@@ -520,7 +512,6 @@ async def test_it_is_judged_again_as_it_starts(league, meanwhile, words):
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_BUILT)
 async def test_a_fault_in_the_save_creates_and_signs_up_nobody(league):
     """Signups are open. Admin (77) submits Mock Alpha and Mock Beta, and an audit entry's write
     fails on the database as the queue runs the change. Nothing is saved: no fake driver, no

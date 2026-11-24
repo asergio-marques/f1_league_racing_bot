@@ -10,7 +10,9 @@ APScheduler triggers:
   /test-mode advance           — immediately execute the next pending phase
   /test-mode review            — show season/round/phase status summary (ephemeral)
   /test-mode set-former-driver — set or clear a driver's former-driver flag
-  /test-mode roster …          — create, list and remove fake drivers
+  /test-mode roster …          — create, list and remove fake drivers; `sign-up-bulk` also signs
+                                 a pasted list up and approves it, the one place a fake driver's
+                                 signup is made for it, and only while signups are open
   /test-mode backup …          — save the whole database, and put it back
 
 A module's own test tool sits under that module's group, not here, and is test mode's all the
@@ -40,6 +42,10 @@ from leaguebot.core.services.drivers.driver_reference import (
     resolve_driver,
 )
 from leaguebot.core.services.test_mode.test_mode_settings import NOT_IN_TEST_MODE
+from leaguebot.core.services.test_mode.test_roster_sign_up_change import (
+    TEST_ROSTER_SIGN_UP_BULK,
+    sign_up_payload,
+)
 from leaguebot.core.services.test_mode.test_roster_changes import (
     TEST_ROSTER_ADD,
     TEST_ROSTER_ADD_BULK,
@@ -66,7 +72,11 @@ from leaguebot.utils.messages import chunk_message, paginate_fenced
 from leaguebot.framework.utils.league_server import LeagueModal, LeagueView
 from leaguebot.framework.utils.log_lines import record_abandoned, refuse
 from leaguebot.core.utils.roster_import import format_roster_errors as _format_roster_errors
-from leaguebot.core.utils.roster_import import parse_roster_csv
+from leaguebot.core.utils.roster_import import (
+    format_sign_up_errors as _format_sign_up_errors,
+    parse_roster_csv,
+    parse_sign_up_csv,
+)
 
 #: What the typed text is clipped to where a refusal names it.
 _TEXT_SHOWN = 100
@@ -627,6 +637,32 @@ class TestModeCog(commands.Cog):
 
         await interaction.response.send_modal(_RosterImportModal(self))
 
+    # /test-mode roster sign-up-bulk ---------------------------------------
+
+    @roster.command(
+        name="sign-up-bulk",
+        description="Add fake drivers from a pasted list, signed up and approved, while signups are open.",
+    )
+    @league_admin_only
+    async def roster_sign_up_bulk(self, interaction: discord.Interaction) -> None:
+        """Open the box a list of fake drivers to sign up is pasted into.
+
+        **Does not defer**, for the reason `roster_add_bulk` gives: `send_modal` has to be the
+        interaction's first response. Whether signups are open, and everything else the database
+        must answer, is judged by the change, as it is asked and as it starts
+        (`test_roster_sign_up_change`).
+        """
+        config = await self.bot.config_service.get_server_config()
+        if config is None or not config.test_mode_active:
+            await refuse(
+                interaction,
+                NOT_IN_TEST_MODE,
+                what=describe(interaction),
+            )
+            return
+
+        await interaction.response.send_modal(_SignUpBulkModal(self))
+
     # /test-mode roster remove --------------------------------------------
 
     @roster.command(
@@ -807,6 +843,52 @@ class _RosterImportModal(LeagueModal, title="Import a test roster"):
         await self._cog.bot.change_queue.ask(
             TEST_ROSTER_ADD_BULK,
             bulk_payload(drivers),
+            interaction=interaction,
+            what=describe_form(self),
+        )
+
+
+class _SignUpBulkModal(LeagueModal, title="Sign up fake drivers"):
+    """The box a list of fake drivers to sign up is pasted into: `ID,Driver name,Nationality`.
+
+    The nationality may be blank, and 4000 characters, the whole of what Discord allows a text
+    input, is a list of some hundred and fifty drivers; a longer list is pasted in more than one
+    go.
+    """
+
+    csv_text: discord.ui.TextInput = discord.ui.TextInput(
+        label="Paste ID,Driver name,Nationality",
+        style=discord.TextStyle.paragraph,
+        placeholder="ID,Driver name,Nationality",
+        required=True,
+        max_length=4000,
+    )
+
+    def __init__(self, cog: "TestModeCog") -> None:
+        super().__init__()
+        self._cog = cog
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        """Ask the change that signs the list up, once the list reads on its own.
+
+        What the text shows wrong by itself is refused here, before the ask. Test mode, whether
+        signups are open and everything the database must answer are judged by the change, as it
+        is asked and as it starts (`test_roster_sign_up_change`).
+        """
+        await interaction.response.defer(ephemeral=True)
+
+        drivers, errors = parse_sign_up_csv(str(self.csv_text.value))
+        if errors:
+            await refuse(
+                interaction,
+                _format_sign_up_errors(errors),
+                what=describe_form(self),
+            )
+            return
+
+        await self._cog.bot.change_queue.ask(
+            TEST_ROSTER_SIGN_UP_BULK,
+            sign_up_payload(drivers),
             interaction=interaction,
             what=describe_form(self),
         )

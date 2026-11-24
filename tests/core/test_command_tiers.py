@@ -103,10 +103,6 @@ LEAGUE_ADMIN_COMMANDS: dict[str, str] = {
 }
 
 
-#: Why the register's tests fail until `/test-mode roster sign-up-bulk` is declared.
-_SIGN_UP_BULK = "#600: /test-mode roster sign-up-bulk is not yet declared"
-
-
 #: The commands only the Discord server's owner may run, from any channel. The one exception to
 #: every tier being a role the league configures (issue #247).
 SERVER_OWNER_COMMANDS: frozenset[str] = frozenset({"bot factory-reset"})
@@ -184,7 +180,6 @@ def test_every_command_sits_at_the_tier_the_register_gives_it(name):
             )
 
 
-@pytest.mark.xfail(strict=True, reason=_SIGN_UP_BULK)
 def test_the_register_names_no_command_that_does_not_exist():
     """A renamed or withdrawn command leaves its entry behind, and the entry says nothing."""
     missing = sorted((set(LEAGUE_ADMIN_COMMANDS) | SERVER_OWNER_COMMANDS) - set(COMMANDS))
@@ -209,7 +204,6 @@ def test_only_the_setup_commands_and_the_factory_reset_run_outside_the_interacti
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=_SIGN_UP_BULK)
 def test_the_tiers_divide_as_the_register_says():
     """The headline split, so a wholesale drift shows up as one failure rather than many.
 
