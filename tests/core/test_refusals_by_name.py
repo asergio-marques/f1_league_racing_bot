@@ -185,6 +185,7 @@ def _reassign_change(driver, profiles_merged=None):
 
     return driver_reassign_change(
         driver=driver, placement=MagicMock(), roles=MagicMock(), drawing=MagicMock(),
+        modules=MagicMock(is_enabled_on=AsyncMock(return_value=True)),
         profiles_merged=profiles_merged or AwaitedHook(), divisions_raced_read=AwaitedHook(),
         driver_account_changed=AwaitedHook(), driver_account_changed_steps=MagicMock(),
         now=lambda: datetime(2026, 9, 17, 12, tzinfo=timezone.utc),

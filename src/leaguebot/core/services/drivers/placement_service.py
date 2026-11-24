@@ -974,20 +974,25 @@ class PlacementService:
     # A driver's roles follow their current account
     # ------------------------------------------------------------------
 
-    async def driver_role_ids(self, driver_profile_id: int) -> set[int]:
+    async def driver_role_ids(
+        self, driver_profile_id: int, *, signup_off: bool = False
+    ) -> set[int]:
         """`driver_role_ids_on` on a connection of its own."""
         async with get_connection(self._db_path) as db:
-            return await self.driver_role_ids_on(db, driver_profile_id)
+            return await self.driver_role_ids_on(db, driver_profile_id, signup_off=signup_off)
 
     async def driver_role_ids_on(
-        self, db: aiosqlite.Connection, driver_profile_id: int
+        self, db: aiosqlite.Connection, driver_profile_id: int, *, signup_off: bool = False
     ) -> set[int]:
         """The roles the driver's standing entitles them to, read from state, not from Discord.
 
         The driver role while they are Unassigned or Assigned, and the division and team
         roles of every confirmed placement in the live season — exactly what approval and
-        confirming placements grant. A test-mode driver holds no roles. Read from the league's
-        own record so that it answers even when the account holding the roles has left.
+        confirming placements grant. With the signup module off (*signup_off*) approval grants
+        nothing, and the driver role is given with the confirmed placements: it counts only
+        for a driver holding one, so that no role runs ahead of a placement not yet
+        confirmed. A test-mode driver holds no roles. Read from the league's own record so
+        that it answers even when the account holding the roles has left.
         """
         cursor = await db.execute(
             "SELECT current_state, is_test_driver FROM driver_profiles WHERE id = ?",
@@ -997,13 +1002,9 @@ class PlacementService:
         if profile is None or profile["is_test_driver"]:
             return set()
         roles: set[int] = set()
-        if profile["current_state"] in (
+        in_standing = profile["current_state"] in (
             DriverState.UNASSIGNED.value, DriverState.ASSIGNED.value
-        ):
-            cursor = await db.execute("SELECT driver_role_id FROM server_configs")
-            row = await cursor.fetchone()
-            if row is not None and row["driver_role_id"]:
-                roles.add(int(row["driver_role_id"]))
+        )
         cursor = await db.execute(
             """
             SELECT d.mention_role_id AS division_role, trc.role_id AS team_role
@@ -1018,10 +1019,16 @@ class PlacementService:
             """,
             (driver_profile_id,),
         )
-        for row in await cursor.fetchall():
+        confirmed = await cursor.fetchall()
+        for row in confirmed:
             for role_id in (row["division_role"], row["team_role"]):
                 if role_id:
                     roles.add(int(role_id))
+        if in_standing and (confirmed or not signup_off):
+            cursor = await db.execute("SELECT driver_role_id FROM server_configs")
+            config = await cursor.fetchone()
+            if config is not None and config["driver_role_id"]:
+                roles.add(int(config["driver_role_id"]))
         return roles
 
     # ------------------------------------------------------------------

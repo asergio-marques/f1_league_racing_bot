@@ -731,6 +731,7 @@ def register_change_types(bot: LeagueBot) -> None:
         driver_reassign_change(
             driver=bot.driver_service,
             placement=bot.placement_service,
+            modules=bot.module_service,
             roles=bot.team_role_service,
             profiles_merged=bot.profiles_merged,
             divisions_raced_read=bot.divisions_raced_read,

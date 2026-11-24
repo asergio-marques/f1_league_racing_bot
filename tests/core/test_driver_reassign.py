@@ -1060,14 +1060,7 @@ async def test_a_role_discord_refuses_in_a_reassign_is_reported_and_the_queue_go
 @pytest.mark.parametrize(
     ("user_id", "held", "moves"),
     [
-        pytest.param(
-            103, set(), False, id="unconfirmed",
-            marks=pytest.mark.xfail(
-                strict=True,
-                reason="#624: with signup off a reassign still moves the driver role of a driver "
-                "whose placements are unconfirmed",
-            ),
-        ),
+        pytest.param(103, set(), False, id="unconfirmed"),
         pytest.param(101, {801, 811, 820}, True, id="confirmed"),
     ],
 )

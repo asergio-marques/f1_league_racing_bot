@@ -1027,6 +1027,7 @@ def driver_reassign_change(
     *,
     driver: DriverService,
     placement: PlacementService,
+    modules: ModuleService,
     roles: TeamRoleService,
     profiles_merged: AwaitedHook,
     divisions_raced_read: AwaitedHook,
@@ -1037,7 +1038,8 @@ def driver_reassign_change(
 ) -> ChangeType:
     """The `core.driver_reassign` change type, for the builder to register: *driver* is what the
     check judges the reassignment through and the save writes it through, *placement* what the
-    roles are read and given through, *profiles_merged* the hook a merge of two drivers calls
+    roles are read and given through, *modules* what the signup module's switch is read through
+    in the save (with it off the driver role moves only with a confirmed placement), *profiles_merged* the hook a merge of two drivers calls
     inside the save, *divisions_raced_read* the hook the modules are asked which divisions each
     side raced in, in the check and in the save, *driver_account_changed* the hook each module's
     part of the change is planned through, called inside the save with the save's connection and
@@ -1090,7 +1092,8 @@ def driver_reassign_change(
                 + ", and given that account"
             )
         steps: list[PlannedStep] = []
-        roles = sorted(await placement.driver_role_ids_on(db, profile.id))
+        roles = sorted(await placement.driver_role_ids_on(
+            db, profile.id, signup_off=not await modules.is_enabled_on(db, "signup")))
         if roles:
             steps.append(PlannedStep(MOVE_ROLES, {"user_id": int(new_user_id), "grant": roles}))
             steps.append(PlannedStep(MOVE_ROLES, {"user_id": int(replaced), "revoke": roles}))
