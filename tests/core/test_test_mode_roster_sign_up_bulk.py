@@ -50,7 +50,10 @@ NO_NATIONALITY = (
     f"{BETA},Mock Beta,\n"
 )
 
-_SIGNED_UP = "✅ Signed up and approved **2** fake driver(s). Seat each with `/driver assign`."
+_SIGNED_UP = (
+    "✅ Signed up and approved **2** fake driver(s). "
+    "Close signups with `/signup close`, then seat each with `/driver assign`."
+)
 _DISCARDED = (
     "Nothing was added: no fake driver was created. Run `/test-mode roster sign-up-bulk` again."
 )
@@ -193,7 +196,8 @@ async def test_a_pasted_list_signs_up_and_approves_every_driver_in_one_save(leag
     to anyone, and no timer is armed. Each driver has three audit entries in turn, by Admin at the
     queue's clock: its addition, its signup's start (Not Signed Up to Pending Signup Completion)
     and its approval (Pending Admin Approval to Unassigned). The reply reads "✅ Signed up and
-    approved **2** fake driver(s). Seat each with `/driver assign`.", and the log channel holds one
+    approved **2** fake driver(s). Close signups with `/signup close`, then seat each with
+    `/driver assign`.", and the log channel holds one
     line, counting the two drivers signed up. Afterwards they read as any approved driver: Admin's
     `/signup unassigned list` names Mock Alpha and Mock Beta by their test names."""
     from leaguebot.core.utils.input_validator import parse_nationality
