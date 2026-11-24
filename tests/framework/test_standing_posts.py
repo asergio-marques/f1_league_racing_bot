@@ -30,8 +30,6 @@ CALENDAR_CHANNEL = 601
 OTHER_CHANNEL = 607
 OLD, NEW = 6001, 7001
 
-NO_OLD_CHANNEL = "#607: replaced takes no old_channel_id; the delete aims at the present channel"
-
 
 def _server(env, *, channel_standing: bool = True) -> Any:
     """The league's server, holding the calendar channel with its old calendar (6001) and the
@@ -62,10 +60,8 @@ def _deleting(env) -> Any:
 
 
 @pytest.mark.parametrize("recorded, deleted_in", [
-    pytest.param(OTHER_CHANNEL, OTHER_CHANNEL, id="the channel recorded",
-                 marks=pytest.mark.xfail(strict=True, reason=NO_OLD_CHANNEL)),
-    pytest.param(None, CALENDAR_CHANNEL, id="none recorded: the present one",
-                 marks=pytest.mark.xfail(strict=True, reason=NO_OLD_CHANNEL)),
+    pytest.param(OTHER_CHANNEL, OTHER_CHANNEL, id="the channel recorded"),
+    pytest.param(None, CALENDAR_CHANNEL, id="none recorded: the present one"),
 ])
 def test_replaced_plans_one_delete_of_the_old_message_in_the_channel_it_was_posted_in(
     recorded, deleted_in,
