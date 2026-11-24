@@ -33,6 +33,7 @@ from tests.support.change_queue import (
     stopped_job,
     updated_reply,
 )
+from tests.support.review_league import channel
 from tests.support.season_league import (
     DIVISIONS,
     LEWIS,
@@ -228,6 +229,44 @@ async def test_the_new_sheet_is_posted_before_the_old_one_is_deleted_by_a_job(tm
             if job["name"] in ("post_sheet", "delete_replaced")] == ["post_sheet",
                                                                      "delete_replaced"]
     assert str(await _sheet_id(league)) == str(new)
+
+
+#: The channel Pro's sheet moves to: one the league's server holds and no division uses.
+MOVED_SHEET = 608
+
+
+@pytest.mark.xfail(strict=True, reason="#607: no channel is recorded beside a sheet's id, so the "
+                   "old sheet is looked for in the division's present channel")
+async def test_a_sheet_is_deleted_from_the_channel_it_was_posted_in_after_the_channel_moves(
+    tmp_path,
+):
+    """Pro's sheet (6200) was posted in 604, and its attendance channel then moved to 608. Alex
+    runs `/attendance sync` for Pro from round 1: the new sheet goes to 608 and the old one is
+    deleted from 604, where it stands; the channel recorded beside the sheet's id is now 608."""
+    league = await _scored_league(tmp_path)
+    await _old_sheet_standing(league)
+    moved = league._recording(channel(MOVED_SHEET, league.events))
+    moved.guild = league.guild
+    league.channels[MOVED_SHEET] = moved
+    await league.write(
+        "UPDATE attendance_division_config SET attendance_channel_id = ?, "
+        "attendance_message_channel_id = ? WHERE division_id = ?",
+        str(MOVED_SHEET), str(SHEET), PRO,
+    )
+
+    await _sync_pro(league)
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    [new] = [mid for kind, cid, mid in league.events if kind == "send" and cid == MOVED_SHEET]
+    assert _sheet_events(league) == [("delete", OLD_SHEET)]
+    assert OLD_SHEET not in league.channel(SHEET).messages
+    [row] = await league.rows(
+        "SELECT attendance_message_id, attendance_message_channel_id "
+        "FROM attendance_division_config WHERE division_id = ?", PRO,
+    )
+    assert (str(row["attendance_message_id"]), int(row["attendance_message_channel_id"])) == (
+        str(new), MOVED_SHEET)
 
 
 async def test_a_sheet_s_id_is_saved_with_its_post_and_the_final_sheet_saves_none(tmp_path):
