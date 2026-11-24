@@ -45,17 +45,19 @@ The question every level answers: **how much does a league lose, and can they ge
 the system can rely on them, and a rule that holds in most places is not a rule.
 
 **A raise cannot carry a lesser impact into Critical.** Critical is reserved for damage to the
-championship and for the module-output rule. Silence and irrecoverability raise a level within
-that ceiling — they do not lift a cosmetic or presentational defect to the top. A forecast
-published at the wrong time is silent and cannot be put right, and is still not Critical, because
-nothing about the championship is wrong.
+championship, for a league that cannot go on at all, and for the module-output rule. Silence and
+irrecoverability raise a level within that ceiling — they do not lift a cosmetic or presentational
+defect to the top. A forecast published at the wrong time is silent and cannot be put right, and
+is still not Critical, because nothing about the championship is wrong.
 
 ### The levels
 
 **Critical** — The championship is wrong and stays wrong. Points, standings, results, attendance
 records or scheduled work are damaged or destroyed, and either the league is never told or
 nothing can put it back inside the season. Also here: a module producing output while switched
-off, or failing to produce it while switched on. Fix before a real season runs.
+off, or failing to produce it while switched on. Also here: the league cannot go on at all — a
+step every season needs cannot be completed, by any means inside the bot. Fix before a real
+season runs.
 
 **High** — A command or a pipeline does not do its job. The league is blocked, or told something
 untrue, but can see that something is wrong, or can put it right by running something again.
@@ -80,6 +82,7 @@ Real cases, and why each landed where it did.
 |---|---|---|
 | [#113](https://github.com/asergio-marques/f1_league_racing_bot/issues/113) | Critical | Breaks a stated rule, and marks work done that can never be redone |
 | [#114](https://github.com/asergio-marques/f1_league_racing_bot/issues/114) | Critical | Charges penalties in a switched-off module, with no way back inside the season |
+| [#627](https://github.com/asergio-marques/f1_league_racing_bot/issues/627) | Critical | No season can be approved on the host; nothing the league runs gets past it |
 | [#110](https://github.com/asergio-marques/f1_league_racing_bot/issues/110) | High | A configured setting is silently discarded, and the pipeline runs on the wrong one |
 | [#112](https://github.com/asergio-marques/f1_league_racing_bot/issues/112) | Medium | Right outcome, wrong self-description |
 | [#115](https://github.com/asergio-marques/f1_league_racing_bot/issues/115) | Low | The damage self-cleans; a duplicated notice is all that survives |
