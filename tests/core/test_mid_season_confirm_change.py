@@ -264,6 +264,8 @@ async def test_a_stop_after_the_save_finishes_the_roles_and_lineups_on_restart(
     assert league.granted == {MAX: [PRO_ROLE, FERRARI_ROLE], CHARLES: [AM_ROLE, MCLAREN_ROLE]}
     assert len(league.texts(PRO_CH.lineup)) == 1
     assert len(league.texts(AM_CH.lineup)) == 1
+    assert await _stage(league) == "ONGOING"
+    assert len(_confirmed_lines(league)) == 1
 
 
 @pytest.mark.parametrize(
@@ -300,8 +302,6 @@ async def test_the_driver_role_is_given_at_a_mid_season_confirmation_only_with_s
         MAX: sorted([PRO_ROLE, FERRARI_ROLE, *extra]),
         CHARLES: sorted([AM_ROLE, MCLAREN_ROLE, *extra]),
     }
-    assert await _stage(league) == "ONGOING"
-    assert len(_confirmed_lines(league)) == 1
 
 
 async def test_the_placements_and_the_season_s_move_are_saved_in_one_save(
