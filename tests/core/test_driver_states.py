@@ -69,18 +69,13 @@ def test_every_state_is_named_as_the_core_specification_names_it():
     }
 
 
-_NO_SIGNUP_OFF = "#624: the transition table takes no signup_off widening yet"
-
-
 @pytest.mark.parametrize(
     "keywords, target, allowed",
     [
-        pytest.param({"signup_off": True}, DriverState.ASSIGNED, True, id="signup-off-to-assigned",
-                     marks=pytest.mark.xfail(strict=True, reason=_NO_SIGNUP_OFF)),
+        pytest.param({"signup_off": True}, DriverState.ASSIGNED, True, id="signup-off-to-assigned"),
         pytest.param({}, DriverState.ASSIGNED, False, id="signup-on-to-assigned"),
         pytest.param({"signup_off": True}, DriverState.UNASSIGNED, False,
-                     id="signup-off-to-unassigned",
-                     marks=pytest.mark.xfail(strict=True, reason=_NO_SIGNUP_OFF)),
+                     id="signup-off-to-unassigned"),
     ],
 )
 async def test_not_signed_up_to_assigned_is_allowed_only_with_signup_off(

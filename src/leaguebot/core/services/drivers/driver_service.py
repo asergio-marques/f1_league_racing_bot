@@ -60,6 +60,8 @@ async def write_transition(
     profile_id: int,
     current: DriverState,
     new_state: DriverState,
+    *,
+    signup_off: bool = False,
 ) -> None:
     """Write *profile_id*'s move from *current* to *new_state*, within the caller's transaction.
 
@@ -68,8 +70,14 @@ async def write_transition(
     same transaction, the driver pass ending a season — calls this rather than issuing the UPDATE
     itself, so the transition table governs every route alike. Raises InvalidDriverTransition for a
     transition the table does not allow, having written nothing. Does not commit.
+
+    *signup_off* is the one exception to the table: with the signup module off, an approved signup
+    is no way to a seat, so a driver who is Not Signed Up is placed straight to Assigned. It
+    widens that one move and no other, and a caller passes it only where it has read the switch.
     """
     allowed = set(ALLOWED_TRANSITIONS.get(current, set()))
+    if signup_off and current == DriverState.NOT_SIGNED_UP:
+        allowed.add(DriverState.ASSIGNED)
     if new_state not in allowed:
         raise InvalidDriverTransition(
             f"Transition from {current.value} to {new_state.value} is not allowed. "
