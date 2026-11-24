@@ -245,7 +245,7 @@ are never judged.
 
 Nothing has run yet: no forecast is drawn and no check-in call posted, so an amendment costs no
 round anything it has already been given. The refusals come first, then the confirmation's two
-ways out, then the amendments: two go through, and one the bot should refuse is cancelled.
+ways out, then the amendments: two go through, and one is refused for the moment it asks for.
 
 ### What the command refuses
 
@@ -418,20 +418,17 @@ ways out, then the amendments: two go through, and one the bot should refuse is 
 
     **Expect:** by the core specification, *"Two rounds of one division shall not be scheduled at
     the same moment. This shall be refused by every command that would create one"*, a refusal
-    naming round 2, as `/round add` and the amendment of a round being set up give it:
-    ``❌ **Division 1** already holds round 2 at <t:<…>:F>. Two rounds of one division cannot share a moment …``.
-    The running season's amendment has no such check (`amendment_rules_service.judge_amendment`,
-    `round_cog.round_amend`), and offers the confirmation instead:
-    ```
-    **Amend Round 3** in division **Division 1**:
-      • `scheduled_at` → `<YEAR+1>-03-15 20:00:00`
-    ```
-    Believed a bot defect: record it, press **❌ Cancel**, and carry on.
-    - **Log**, on Cancel:
+    naming round 2:
+    - **Reply:**
       ```
-      ↩️ `/round amend` of round 3 cancelled by <you>
-        Nothing was changed. Run `/round amend` again to start over.
+      ⛔ **Round 3** in **Division 1** cannot be amended:
+      • This division already holds round 2 at <t:<…>:F>. Two rounds of one division cannot share a moment.
+
+      **Nothing has been changed.**
       ```
+      The running season's amendment judges it beside the division's other rounds
+      (`amendment_rules_service.judge_amendment`, handed them by `round_cog.round_amend`).
+    - **Log:** ``⛔ `/round amend` of round 3 in Division 1 refused for <you> — This division already holds round 2 at <t:<…>:F>. Two rounds of one division cannot share a moment.``
 
 28. **The format.** **Do:** `/round amend division_name:Division 2 round_number:1 format:SPRINT`
 

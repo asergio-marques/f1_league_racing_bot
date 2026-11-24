@@ -11,6 +11,7 @@ Commands:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime, timezone
 from typing import Any
 
@@ -415,7 +416,7 @@ class RoundCog(commands.Cog):
         # amendment the rules refuse never reaches a confirmation at all.
         _verdict = await _judge_round_amendment(
             self.bot, rnd, amendments,
-            now=self.bot.change_queue.now(),
+            now=self.bot.change_queue.now(), held=rounds,
         )
         if not _verdict.allowed:
             await refuse(
@@ -613,6 +614,7 @@ async def _judge_round_amendment(
     amendments: list[tuple[str, object]],
     *,
     now: datetime,
+    held: Sequence[RoundModel],
 ):
     """Judge *amendments* against *rnd*, each module reading the league's own windows itself.
 
@@ -622,14 +624,15 @@ async def _judge_round_amendment(
     to prevent.
 
     A module that is switched off has nothing refused on its account — a league without
-    attendance has no check-in to lose.
+    attendance has no check-in to lose. *held* is the division's rounds, which the amendment may
+    not take a moment from.
     """
     from leaguebot.core.services.rounds.amendment_rules_service import judged_with_the_modules
 
     # Each module's part of the judgement is asked through `LeagueBot.amendment_judged`, outside
     # any save, as the change on the queue asks it; each reads its own windows there.
     return await judged_with_the_modules(
-        bot.amendment_judged, rnd, dict(amendments), now=now, db=None,
+        bot.amendment_judged, rnd, dict(amendments), now=now, db=None, held=held,
     )
 
 

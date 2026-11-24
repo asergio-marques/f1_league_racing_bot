@@ -46,7 +46,12 @@ from leaguebot.framework.models.change import (
     Verdict,
 )
 from leaguebot.core.models.division import Division
-from leaguebot.core.models.round import Round, RoundFormat, stored_scheduled_at, utc_text
+from leaguebot.core.models.round import (
+    Round,
+    RoundFormat,
+    stored_scheduled_at,
+    utc_text,
+)
 from leaguebot.core.services.rounds import track_service
 from leaguebot.framework.services.queue.change_types import (
     ChangeType,
@@ -56,7 +61,7 @@ from leaguebot.framework.services.queue.change_types import (
     StepContext,
 )
 from leaguebot.framework.services.switches.module_service import SwitchNotSignedUp
-from leaguebot.core.services.seasons.season_service import renumber_rounds_on
+from leaguebot.core.services.seasons.season_service import renumber_rounds_on, round_holding
 from leaguebot.core.utils.formatting import format_round_list
 from leaguebot.utils.messages import discord_ts
 from leaguebot.core.utils.input_validator import parse_datetime
@@ -203,7 +208,7 @@ def _add_check(
         # Two rounds of one division may not share a moment: the confirmation of placements
         # refuses a season that holds such a pair, and it is refused here instead, at the change
         # that would cause it, rather than at an approval days later.
-        clash = next((r for r in held if r.scheduled_at == moment), None)
+        clash = round_holding(held, moment)
         if clash is not None:
             return Verdict.refuse(
                 f"❌ **{division.name}** already holds round {clash.round_number} at "
@@ -352,9 +357,12 @@ def import_payload(source: str, parsed: list[ParsedDivisionRounds]) -> dict[str,
 
 
 def _duplicate_datetime_errors(
-    existing: list[datetime], incoming: list[dict[str, Any]]
+    existing: list[Round], incoming: list[dict[str, Any]]
 ) -> list[str]:
     """Every incoming round whose datetime is already taken, within the batch or before it.
+
+    *existing* is the division's rounds, and `round_holding` says which of them holds a moment: a
+    cancelled round holds none.
 
     The confirmation of placements refuses a season holding two rounds of one division at the same
     moment, and it does so long after the calendar has been built and possibly posted. A repeated
@@ -362,10 +370,14 @@ def _duplicate_datetime_errors(
     moment the whole batch can be seen.
     """
     errors: list[str] = []
-    seen: dict[datetime, str] = {at: "a round already in this division" for at in existing}
+    seen: dict[datetime, str] = {}
     for parsed in incoming:
         at = datetime.fromisoformat(parsed["scheduled_at"])
-        previous = seen.get(at)
+        previous = (
+            "a round already in this division"
+            if round_holding(existing, at) is not None
+            else seen.get(at)
+        )
         if previous is not None:
             errors.append(
                 f"{parsed['location']}: duplicate datetime {utc_text(at)} — already used "
@@ -424,9 +436,9 @@ def _import_check(
                             continue
                     added += 1
 
-                errors += _duplicate_datetime_errors(
-                    [r.scheduled_at for r in held], entry["rounds"]
-                )
+                # A cancelled round holds no moment (core specification, "Rounds"), though it
+                # still takes a place on the calendar, so it counts for the overflow below.
+                errors += _duplicate_datetime_errors(held, entry["rounds"])
 
                 # Last, because it loads and parses the calendar template. Asked of the whole
                 # batch: each round of a dozen can clear a `+ 1` check while the dozen together

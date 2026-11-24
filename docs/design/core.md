@@ -174,12 +174,22 @@ folder.
 | A round's timed work | `round_jobs` (`RoundJobs`) | nothing: it is handed the rounds it arms, and reads the live seasons' rounds only to cancel their jobs (`cancel_live_rounds`) |
 | Channels | `channel_registry_service` | nothing: it reads core's channel columns, and the modules' through a hook, and asks Discord, through `judged_presence`, whether a channel being set can be used as its needs ask (`unusable_refusal`) |
 | The image module | `image_drawing` (the `ImageDrawing` protocol) | nothing: it declares what core asks |
-| Amending a round | `amendment_rules_service`, `round_steps` | nothing: the first judges core's own rules of what an amendment may do (the fields, the round's status, the moment and a mystery round given a circuit alone) and gathers each module's part of the judgement through `amendment_judged`; the second names a round in an amendment's step by the number it bears when read |
+| Amending a round | `amendment_rules_service`, `round_steps` | nothing: the first judges core's own rules of what an amendment may do (the fields, the round's status, the moment, whether another round of its division holds the new moment, and a mystery round given a circuit alone) and gathers each module's part of the judgement through `amendment_judged`; the second names a round in an amendment's step by the number it bears when read |
 | Season reviews and confirmations | `approval_checks`, `approval_window_service` (`calendar_faults`, what is already behind a season on the day it is approved), `review_sections`, `confirmation_refusals`, `season_fingerprint_service`, `season_review_changes`, `season_review_views`, `season_review_workflows` | `season_review_prompts` |
 | The hub | `hub_service`, `about_service` | `server_configs.hub_message_id` |
 | A module or an output switched on | `kept_channels` (`kept_channels_check`), `picture_channels` (`picture_channels_check`, `core_picture_channels`) | nothing: the first reads the channels a module kept through the reader its switch-on hands it, asks the registry, through the bot's `channel_uses_read` hook that every module holding channels answers, which are taken, and Discord which are gone or unusable; the second reads, through the `picture_channels_read` hook, the channels an output switched to a picture posts to, and asks Discord which are gone or lack what a picture needs |
 | Test mode | `test_mode_service`, `test_roster_service`, `backup_service`, `driver_commands` (`swap_test_mode_commands`) | `server_configs.test_mode_active`; nothing for `driver_commands`, which reads the flag and is handed the (member, test-mode) group pairs of `/driver` and `/signup` |
 | Starting over | `pack_service`, `factory_reset_service`, `in_memory_state` | — |
+
+**One judge of a shared moment.** `round_holding` in `season_service` answers whether a round of a
+division holds a moment, and every path that schedules a round asks it: the running season's
+amendment (`judge_amendment`, handed the division's rounds), the amendment of a round being set up,
+`/round add`, `/round import` and approval's duplicate check. Each path reads the division's rounds
+and hands them in, so the judge is pure; which rounds hold a moment, a cancelled round holding
+none, is core_specification.md's "Rounds" and is written once, in it. *Rejected:* each path keeping
+its own inline check, which lets a rule written once per path drift, and a path left to its own
+check come to judge none. `renumber_rounds_on` breaks a tie of moments as that section asks, then
+by id, so the order is the same however the rows are read.
 
 The services core runs on, the change queue, the scheduler, posting, the record of what changed
 and the module switches, are the framework's (`framework.md`, "Services, and what each owns").
@@ -481,8 +491,9 @@ recur:
 
 - **A save that judges again.** A change whose state may move between its check and its save judges
   again on the save's connection; a refusal found there writes nothing and ends the change rather
-  than stopping the lane (`core.round_amend`, `core.driver_reassign`). An approval or a mid-season
-  confirmation retried after a fault plans its judgement again before it saves.
+  than stopping the lane (`core.round_amend`, `core.driver_reassign`, `season.round.amend`). An
+  approval or a mid-season confirmation retried after a fault plans its judgement again before it
+  saves.
 - **An amendment is judged by core and by each module.** `judged_with_the_modules` asks
   `amendment_judged` of each module, handing no module's windows: each reads and keeps its own in
   its `AmendmentPart`. The `judge` job's record is `{judged, kept}`, the parts' `kept` merged and

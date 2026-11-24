@@ -375,7 +375,7 @@ Four things to know:
 
 `/round delete` removes one while the season is in placements, and renumbers what remains. `/round amend` changes one's track, time or format, and its reply names the round by its number after any renumbering.
 
-> **Two rounds in the same division cannot share a date and time.** The command refuses the second one and names the round already sitting there, and `/round amend` likewise refuses moving a round onto another's time. Confirming placements refuses such a season too, so this only saves you finding out later — duplicating a division with an offset of zero is the usual way it happens.
+> **Two rounds in the same division cannot share a date and time.** The command refuses the second one and names the round already sitting there, and `/round amend` likewise refuses moving a round onto another's time. A cancelled round does not hold its time: you can move a round onto it, and the cancelled round keeps the lower number. Confirming placements refuses such a season too, so this only saves you finding out later — duplicating a division with an offset of zero is the usual way it happens.
 
 ### Or paste the whole calendar at once
 

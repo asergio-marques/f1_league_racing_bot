@@ -851,7 +851,7 @@ At least one optional field must be provided. Amending `scheduled_at` automatica
 | `division_name` | String | ✅ | Name of the division containing the round |
 | `round_number` | Integer | ✅ | The round number to amend |
 | `track` | String | — | New track — track ID or circuit name, use the autocomplete dropdown (e.g. `4` or `Bahrain International Circuit`). What the dropdown displays (`04 – Bahrain International Circuit`) is accepted too, and names are matched regardless of case. Refused while a forecast drawn for the current circuit still stands, or once the round has started. |
-| `scheduled_at` | String | — | New race datetime in ISO format `YYYY-MM-DDTHH:MM:SS` (UTC); a time given with a zone is converted to UTC. Amending re-triggers the scheduler and renumbers rounds. Refused if the moment has already passed. |
+| `scheduled_at` | String | — | New race datetime in ISO format `YYYY-MM-DDTHH:MM:SS` (UTC); a time given with a zone is converted to UTC. Amending re-triggers the scheduler and renumbers rounds. Refused if the moment has already passed, or if another round of the division holds it; a cancelled round holds none. |
 | `format` | String | — | New format: `NORMAL`, `SPRINT`, `MYSTERY`, or `ENDURANCE`. Refused while the second forecast, drawn for the current sessions, still stands, or once the round has started. |
 
 **An amendment is one change.** Whatever combination of the three fields you give, the round is judged and amended once. If any rule refuses any part of it, none of it happens and the round is left exactly as it was — so amending a circuit and a date together is a single decision, and a circuit that could not be changed on its own often can be when the round moves with it.

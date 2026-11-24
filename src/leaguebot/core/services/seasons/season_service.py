@@ -802,14 +802,43 @@ class SeasonService:
         return [_row_to_session(r) for r in rows]
 
 
+def round_holding(
+    rounds: Iterable[Round], moment: datetime, *, other_than: Round | None = None
+) -> Round | None:
+    """The first of *rounds* holding *moment*, other than *other_than*, or ``None``.
+
+    A cancelled round holds no moment, so it is never returned.
+
+    The one judge of a shared moment for every path that schedules a round of a division (core
+    specification, "Rounds": two rounds of one division shall not be scheduled at the same
+    moment). Pure: it reads what it is handed and decides nothing about what to refuse, so each
+    path keeps its own wording. Moments are compared as instants, so one written with another
+    offset still clashes. *other_than* is the round being moved, which never clashes with itself.
+    """
+    skipped = None if other_than is None else other_than.id
+    return next(
+        (
+            r
+            for r in rounds
+            if r.scheduled_at == moment
+            and (skipped is None or r.id != skipped)
+            and r.status != RoundStatus.CANCELLED.value
+        ),
+        None,
+    )
+
+
 async def renumber_rounds_on(db: aiosqlite.Connection, division_id: int) -> None:
     """Rewrite ``round_number`` for all rounds in a division on *db*, committing nothing.
 
-    Sorted ascending by ``scheduled_at``. A change's save calls it, so the renumbering outlasts
+    Sorted ascending by ``scheduled_at``. A cancelled round holds no moment (`round_holding`), so
+    another round may be scheduled at the one it held; where the two share a moment, the cancelled
+    round is numbered first, then by id. A change's save calls it, so the renumbering outlasts
     nothing the save does not (a round amendment writes the round and renumbers in one save).
     """
     cursor = await db.execute(
-        "SELECT id FROM rounds WHERE division_id = ? ORDER BY scheduled_at",
+        "SELECT id FROM rounds WHERE division_id = ? "
+        "ORDER BY scheduled_at, status = 'CANCELLED' DESC, id",
         (division_id,),
     )
     rows = await cursor.fetchall()

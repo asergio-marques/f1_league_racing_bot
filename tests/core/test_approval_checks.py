@@ -290,10 +290,10 @@ def _division(division_id: int, name: str):
     return SimpleNamespace(id=division_id, name=name)
 
 
-def _round(at):
+def _round(at, status="NOT_RUN"):
     from types import SimpleNamespace
 
-    return SimpleNamespace(scheduled_at=at)
+    return SimpleNamespace(scheduled_at=at, status=status)
 
 
 def test_the_divisions_with_no_rounds_are_named_in_order():
@@ -316,7 +316,8 @@ def test_the_divisions_with_no_rounds_are_named_in_order():
 def test_a_division_holding_two_rounds_at_one_moment_is_named_once():
     """No two rounds of a division may share a moment. Pro holds three rounds, two at 19:00 on
     20 November, and Am two at different moments; the check names Pro once, with the moment
-    repeated as Discord shows it, and Am not at all."""
+    repeated as Discord shows it, and Am not at all. A cancelled round holds no moment: where Pro
+    holds a cancelled round and a round still to be run at 19:00, the check names no division."""
     from datetime import datetime, timedelta, timezone
 
     from leaguebot.core.services.seasons import approval_checks
@@ -329,6 +330,9 @@ def test_a_division_holding_two_rounds_at_one_moment_is_named_once():
     assert approval_checks.duplicate_round_times(
         divisions, {1: [_round(at), _round(at), _round(later)], 2: [_round(at), _round(later)]}
     ) == [f"**Pro** has multiple rounds scheduled at {discord_ts(at)}"]
+    assert approval_checks.duplicate_round_times(
+        divisions[:1], {1: [_round(at, "CANCELLED"), _round(at), _round(later)]}
+    ) == []
 
 
 #: The refusal signup gives a season's approval while it is on and its signup channel unset: the

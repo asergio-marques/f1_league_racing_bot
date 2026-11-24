@@ -306,6 +306,7 @@ def _round_change(
             return Verdict.refuse(ROUND_GONE)
         verdict = await judged_with_the_modules(
             amendment_judged, rnd, amended_values(payload["changes"]), now=now(), db=None,
+            held=await seasons.get_division_rounds(rnd.division_id),
         )
         if not verdict.allowed:
             return Verdict.refuse(
@@ -405,6 +406,7 @@ def _round_change(
         )
         return await judged_with_the_modules(
             amendment_judged, rnd, amended_values(changes), now=now(), db=db,
+            held=await seasons.get_division_rounds_on(db, rnd.division_id),
         )
 
     async def apply(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:

@@ -13,13 +13,13 @@ afterwards on a fresh connection is what a failure later in the save would leave
 from __future__ import annotations
 
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import pytest
 
 from leaguebot.framework.db.database import get_connection, run_migrations
-from leaguebot.core.models.round import RoundFormat
+from leaguebot.core.models.round import Round, RoundFormat, RoundStatus
 from leaguebot.core.models.session import SESSIONS_BY_FORMAT
 
 SERVER_ID = 10439
@@ -359,6 +359,59 @@ async def test_renumbering_on_the_connection_handed_commits_nothing(tmp_path):
 
     async with get_connection(db_path) as db:
         assert await _round_numbers(db) == {ROUND_ID: 1, ROUND_ID + 1: 2, ROUND_ID + 2: 3}
+
+
+async def test_a_cancelled_round_is_numbered_before_a_round_sharing_its_moment(tmp_path):
+    """Pro's round 1 (id 21) is not run and round 2 (id 22) is cancelled, both at 18:00 on 13
+    December; round 3 (id 23) is not run, a week later. Renumbering Pro numbers the cancelled
+    round first at the moment they share: it becomes round 1, the round still to be run round 2,
+    and round 3 stays round 3."""
+    from leaguebot.core.services.seasons.season_service import renumber_rounds_on
+
+    db_path = await _ongoing_db(tmp_path, ("NOT_RUN", "CANCELLED", "NOT_RUN"))
+    async with get_connection(db_path) as db:
+        for round_id, moment in (
+            (ROUND_ID, "2026-12-13T18:00:00+00:00"),
+            (ROUND_ID + 1, "2026-12-13T18:00:00+00:00"),
+            (ROUND_ID + 2, "2026-12-20T18:00:00+00:00"),
+        ):
+            await db.execute(
+                "UPDATE rounds SET scheduled_at = ? WHERE id = ?", (moment, round_id)
+            )
+        await renumber_rounds_on(db, DIVISION_ID)
+        assert await _round_numbers(db) == {ROUND_ID: 2, ROUND_ID + 1: 1, ROUND_ID + 2: 3}
+
+
+def test_round_holding_skips_a_cancelled_round_and_the_round_itself():
+    """Three rounds of Pro at 18:00 UTC on 13 December: round 1 cancelled (id 21), round 2 not run
+    (id 22), and round 3 not run (id 23), the round being moved. Asked who holds that moment, the
+    judge passes over the cancelled round and names round 2, whether it is asked in UTC or as
+    19:00 at +01:00; asked other than round 2, it names round 3; asked other than round 3 with
+    round 2 cancelled too, it names nobody, a cancelled round never holding a moment."""
+    from leaguebot.core.services.seasons.season_service import round_holding
+
+    moment = datetime(2026, 12, 13, 18, 0, tzinfo=timezone.utc)
+
+    def _at(round_id: int, number: int, status: RoundStatus) -> Round:
+        return Round(
+            id=round_id, division_id=DIVISION_ID, round_number=number,
+            format=RoundFormat.NORMAL, track_name=None, scheduled_at=moment,
+            status=status.value,
+        )
+
+    cancelled = _at(ROUND_ID, 1, RoundStatus.CANCELLED)
+    live = _at(ROUND_ID + 1, 2, RoundStatus.NOT_RUN)
+    moved = _at(ROUND_ID + 2, 3, RoundStatus.NOT_RUN)
+    rounds = [cancelled, live, moved]
+    at_plus_one = moment.astimezone(timezone(timedelta(hours=1)))
+
+    assert round_holding(rounds, moment, other_than=moved) is live
+    assert round_holding(rounds, at_plus_one, other_than=moved) is live
+    assert round_holding(rounds, moment, other_than=live) is moved
+    assert round_holding(
+        [cancelled, _at(ROUND_ID + 1, 2, RoundStatus.CANCELLED), moved], moment,
+        other_than=moved,
+    ) is None
 
 
 # ---------------------------------------------------------------------------
