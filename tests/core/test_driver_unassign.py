@@ -255,23 +255,51 @@ async def test_a_driver_unassignment_is_judged_again_as_it_starts(
     assert await stopped_job(league.db_path) is None
 
 
-async def test_a_driver_unassignment_is_refused_at_the_ask(tmp_path):
-    """The season is in Placements, and Charles holds no seat in Am. The league admin runs
-    `/driver unassign` of Charles from Am. They are refused at once, in today's words: "Driver is
-    not assigned to any team in **Am**.", and the log channel takes the refusal as its one line.
-    Nothing is asked of the queue, no audit entry is written and no role touched. Takes the place
-    of `test_driver_cog_refusals.py`'s "unassign refused by the service" case and
-    `test_driver_cog.py`'s `test_a_refused_unassignment_is_reported_not_raised`, which mocked the
-    service."""
+async def _valtteri_unassigned(league):
+    """Valtteri (106) is approved and never placed, Unassigned, with the signup module on."""
+    from tests.support.season_league import approved_unplaced
+
+    await league.switch("signup", True)
+    await approved_unplaced(league)
+
+
+_NOT_ASSIGNED = (
+    "⛔ Driver must be in Assigned state to be unassigned (current state: Unassigned)."
+)
+
+
+@pytest.mark.parametrize(
+    ("setup", "user_id", "reply"),
+    [
+        pytest.param(_take_charles_out_of_am, 103, _NOT_THERE, id="no-seat-in-am"),
+        pytest.param(
+            _valtteri_unassigned, 106, _NOT_ASSIGNED, id="an-unassigned-driver",
+            marks=pytest.mark.xfail(
+                strict=True,
+                reason="#624: the refusal does not yet name the state by its label",
+            ),
+        ),
+    ],
+)
+async def test_a_driver_unassignment_is_refused_at_the_ask(tmp_path, setup, user_id, reply):
+    """The season is in Placements. Either Charles holds no seat in Am, or Valtteri, approved
+    with the signup module on and never placed, is Unassigned. The league admin runs `/driver
+    unassign` of him from Am. They are refused at once: "Driver is not assigned to any team in
+    **Am**." for Charles, and for Valtteri "Driver must be in Assigned state to be unassigned
+    (current state: Unassigned).", the state named by its own name (#624); the log channel takes
+    the refusal as its one line. Nothing is asked of the queue, no audit entry is written and no
+    role touched. Takes the place of `test_driver_cog_refusals.py`'s "unassign refused by the
+    service" case and `test_driver_cog.py`'s `test_a_refused_unassignment_is_reported_not_raised`,
+    which mocked the service."""
     from tests.support.change_queue import change_rows
     from tests.support.settings_league import audit_rows, last_said, log_lines
 
     league = await _in_placements(tmp_path)
-    await _take_charles_out_of_am(league)
-    asked = await _ask_unassign(league, 103)
+    await setup(league)
+    asked = await _ask_unassign(league, user_id)
 
-    assert last_said(asked) == _NOT_THERE
-    assert _unassign_lines(await log_lines(league)) == [_unassign_refusal(_NOT_THERE)]
+    assert last_said(asked) == reply
+    assert _unassign_lines(await log_lines(league)) == [_unassign_refusal(reply)]
     assert await change_rows(league.db_path) == []
     assert await audit_rows(league.db_path) == []
     assert league.granted == {} and league.revoked == {}
