@@ -520,3 +520,53 @@ async def test_with_signup_off_a_member_not_signed_up_is_placed(tmp_path, build)
     assert _assign_lines(await log_lines(league)) == [_assign_line("Oscar", NEWCOMER)]
     assert league.granted == {} and league.revoked == {}
     assert last_said(asked) == "✅ Assigned **Oscar** to **McLaren F1 Team** in **Am**."
+
+
+async def test_with_signup_off_a_second_assign_of_a_member_with_no_profile_is_refused_at_its_check(
+    tmp_path,
+):
+    """#624. The season is in Placements and its configuration was confirmed with the signup
+    module off; test mode is off. Am holds McLaren, its second seat free, and Williams, a seat
+    free. Oscar is a member of the server who holds no driver profile. Before the queue runs, the
+    league admin runs `/driver assign` of Oscar to McLaren in Am, then of Oscar to Williams in Am;
+    both are acknowledged. The queue runs them in turn. The first places Oscar at McLaren in Am,
+    not confirmed, and makes his profile; the second, judged as it starts against the profile the
+    first made, is refused, its acknowledgement updated to "⛔ Driver is already assigned to a
+    team in **Am**.". Oscar holds one profile and the one placement, at McLaren; one
+    `DRIVER_ASSIGN` audit entry is written; the log channel holds the success line and then the
+    refusal; and the queue is not stopped."""
+    from tests.support.change_queue import run_queue, stopped_job
+    from tests.support.season_league import AM, NEWCOMER
+    from tests.support.settings_league import audit_rows, last_said, log_lines
+
+    league = await _placing(tmp_path)
+    await league.write(
+        "INSERT INTO team_instances (id, division_id, name, full_name, max_seats, is_reserve) "
+        "VALUES (33, ?, 'Williams', 'Williams Racing', 3, 0)", AM,
+    )
+    await league.write("INSERT INTO team_seats (team_instance_id, seat_number) VALUES (33, 1)")
+    first = await _ask_assign(league, NEWCOMER)
+    second = await _ask_assign(league, NEWCOMER, team="Williams")
+    await run_queue(league.bot)
+
+    refusal = "⛔ Driver is already assigned to a team in **Am**."
+    assert last_said(first) == "✅ Assigned **Oscar** to **McLaren F1 Team** in **Am**."
+    assert last_said(second) == refusal
+    [profile] = await league.rows(
+        "SELECT id, current_state FROM driver_profiles WHERE discord_user_id = ?", str(NEWCOMER)
+    )
+    assert profile["current_state"] == "ASSIGNED"
+    placed = await league.rows(
+        "SELECT ti.name AS team, dsa.committed FROM driver_season_assignments dsa "
+        "JOIN team_seats ts ON ts.id = dsa.team_seat_id "
+        "JOIN team_instances ti ON ti.id = ts.team_instance_id "
+        "WHERE dsa.driver_profile_id = ?", profile["id"],
+    )
+    assert [(r["team"], bool(r["committed"])) for r in placed] == [("McLaren", False)]
+    assert [
+        row["change_type"] for row in await audit_rows(league.db_path)
+    ] == ["DRIVER_ASSIGN"]
+    assert _assign_lines(await log_lines(league)) == [
+        _assign_line("Oscar", NEWCOMER), _assign_refusal(refusal),
+    ]
+    assert await stopped_job(league.db_path) is None
