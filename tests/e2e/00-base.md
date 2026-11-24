@@ -518,7 +518,7 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
 
     **Expect:**
     - **Ack:** `Signing up 45 fake drivers`
-    - **Then:** ``✅ Signed up and approved **45** fake driver(s). Seat each with `/driver assign`.``
+    - **Then:** ``✅ Signed up and approved **45** fake driver(s). Close signups with `/signup close`, then seat each with `/driver assign`.``
     - **Posts:** nothing.
     - **Log:**
       ```

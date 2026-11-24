@@ -190,7 +190,7 @@ def test_roster_sign_up_bulk_change(
             return NOBODY_SIGNED_UP
         return (
             f"✅ Signed up and approved **{saved['signed_up']}** fake driver(s). "
-            "Seat each with `/driver assign`."
+            "Close signups with `/signup close`, then seat each with `/driver assign`."
         )
 
     return ChangeType(

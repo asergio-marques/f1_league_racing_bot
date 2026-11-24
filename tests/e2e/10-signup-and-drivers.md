@@ -707,7 +707,7 @@ Every answer in this part is given in `#wade-walsh-signup`, as you.
 
     **Expect:**
     - **Ack:** `Signing up 2 fake drivers`
-    - **Then:** ``✅ Signed up and approved **2** fake driver(s). Seat each with `/driver assign`.``
+    - **Then:** ``✅ Signed up and approved **2** fake driver(s). Close signups with `/signup close`, then seat each with `/driver assign`.``
     - **Posts:** nothing; no channel is made.
     - **Log:**
       ```
