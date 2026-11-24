@@ -55,6 +55,18 @@ OPENING_SHEET = "opening_sheet"
 FINAL_SHEET = "final_sheet"
 
 
+def _sheet_replaced(result: dict[str, Any], division_name: str) -> tuple[PlannedStep, ...]:
+    """The job that deletes the sheet a posted one replaces, from the channel it was posted in
+    (`standing_posts.replaced`), or none where the sheet takes no live slot or nothing was due."""
+    if not result.get("takes_slot"):
+        return ()
+    return standing_posts.replaced(
+        result.get("channel_id"), result.get("old"), result.get("new"),
+        what="attendance sheet", division_name=division_name,
+        old_channel_id=result.get("old_channel_id"),
+    )
+
+
 def sheet_step(
     modules: ModuleService, drawing: ImageDrawing, driver_names_read: AwaitedHook | None = None
 ) -> Step:
@@ -87,13 +99,7 @@ def sheet_step(
             drawing=drawing, driver_names_read=driver_names_read, earlier_lines=earlier,
         )
         result = attendance_sheet.sheet_result(posted)
-        then: tuple[PlannedStep, ...] = ()
-        if posted is not None and posted.takes_slot:
-            then = standing_posts.replaced(
-                posted.channel_id, posted.previous, posted.message_id,
-                what="attendance sheet",
-                division_name=str(payload.get("division_name", "the division")),
-            )
+        then = _sheet_replaced(result, str(payload.get("division_name", "the division")))
         return StepResult(result=result, then=then, lines=attendance_sheet.sheet_lines(result))
 
     async def record(db: aiosqlite.Connection, ctx: StepContext, result: StepResult) -> None:
@@ -190,13 +196,7 @@ def opening_steps(
             as_text=ctx.tries > 0, drawing=drawing, driver_names_read=driver_names_read,
             earlier_lines=earlier,
         )
-        then: tuple[PlannedStep, ...] = ()
-        if result.get("takes_slot"):
-            then = standing_posts.replaced(
-                result.get("channel_id"), result.get("old"), result.get("new"),
-                what="attendance sheet",
-                division_name=str(ctx.step_payload.get("division_name", "the division")),
-            )
+        then = _sheet_replaced(result, str(ctx.step_payload.get("division_name", "the division")))
         return StepResult(result=result, then=then, lines=attendance_sheet.sheet_lines(result))
 
     async def record(db: aiosqlite.Connection, ctx: StepContext, result: StepResult) -> None:

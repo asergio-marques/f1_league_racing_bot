@@ -581,7 +581,8 @@ CREATE TABLE "attendance_division_config" (
                                REFERENCES divisions(id),
     rsvp_channel_id        TEXT,
     attendance_channel_id  TEXT,
-    attendance_message_id  TEXT
+    attendance_message_id  TEXT,
+    attendance_message_channel_id TEXT
 );
 
 -- image_aspect_toggles

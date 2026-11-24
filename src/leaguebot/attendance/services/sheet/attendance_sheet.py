@@ -132,6 +132,7 @@ async def post_attendance_sheet(
 
     channel_id = int(row["attendance_channel_id"])
     prior_msg_id = row["attendance_message_id"]
+    prior_channel_id = row["attendance_message_channel_id"]
 
     channel = as_text_channel(guild.get_channel(channel_id))
     if channel is None:
@@ -283,6 +284,7 @@ async def post_attendance_sheet(
     return PostedSheet(
         message_id=new_message_id, channel_id=channel_id, previous=prior_msg_id,
         takes_slot=occasion.takes_the_live_slot,
+        previous_channel=int(prior_channel_id) if prior_channel_id else None,
         faults=(
             *earlier_lines,
             *await _fault_lines(db_path, division_id, round_id, occasion, faults),
@@ -343,26 +345,29 @@ def _sheet_label(
 class PostedSheet:
     """What `post_attendance_sheet` posted: *message_id* in *channel_id*, replacing *previous*
     (the id recorded as the division's live sheet when it ran, or None), and whether the
-    occasion *takes_slot*, that is, replaces the live sheet and is recorded as it. *faults* are the
-    lines for a fault the graphic fell back from, the sheet going out as text or drawn without a
-    part (none where it was drawn whole or not asked for)."""
+    occasion *takes_slot*, that is, replaces the live sheet and is recorded as it.
+    *previous_channel* is the channel *previous* was recorded as posted in (None for a sheet
+    posted before it was recorded; the division's attendance channel may have moved since).
+    *faults* are the lines for a fault the graphic fell back from, the sheet going out as text or
+    drawn without a part (none where it was drawn whole or not asked for)."""
 
     message_id: int
     channel_id: int
     previous: str | None
     takes_slot: bool
+    previous_channel: int | None = None
     faults: tuple[str, ...] = ()
 
 
 def sheet_result(posted: PostedSheet | None) -> dict[str, Any]:
-    """A sheet job's result: the sheet posted (`new`, `old`, `channel_id`, `takes_slot`, and
-    `faults` where the graphic fell back from any), or an empty result where nothing was due (a
+    """A sheet job's result: the sheet posted (`new`, `old`, `old_channel_id`, `channel_id`,
+    `takes_slot`, and `faults` where the graphic fell back from any), or an empty result where nothing was due (a
     cancelled round, a division with no opening round)."""
     if posted is None:
         return {}
     result: dict[str, Any] = {
-        "new": posted.message_id, "old": posted.previous, "channel_id": posted.channel_id,
-        "takes_slot": posted.takes_slot,
+        "new": posted.message_id, "old": posted.previous, "old_channel_id": posted.previous_channel,
+        "channel_id": posted.channel_id, "takes_slot": posted.takes_slot,
     }
     if posted.faults:
         result["faults"] = list(posted.faults)
@@ -375,7 +380,8 @@ def sheet_lines(result: Mapping[str, Any]) -> tuple[str, ...]:
 
 
 async def record_sheet_on(db: aiosqlite.Connection, division_id: int, posted: Mapping[str, Any]) -> None:
-    """Save the sheet posted as the division's live one, on *db*, committing nothing.
+    """Save the sheet posted as the division's live one, and the channel it was posted in, on
+    *db*, committing nothing.
 
     Only a sheet that takes the live slot is saved: the final sheet of a season stands beside the
     last round's and leaves the live sheet as it was.
@@ -383,8 +389,9 @@ async def record_sheet_on(db: aiosqlite.Connection, division_id: int, posted: Ma
     if not posted.get("takes_slot") or posted.get("new") is None:
         return
     await db.execute(
-        "UPDATE attendance_division_config SET attendance_message_id = ? WHERE division_id = ?",
-        (str(posted["new"]), division_id),
+        "UPDATE attendance_division_config SET attendance_message_id = ?, "
+        "attendance_message_channel_id = ? WHERE division_id = ?",
+        (str(posted["new"]), str(posted["channel_id"]), division_id),
     )
 
 

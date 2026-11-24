@@ -235,8 +235,6 @@ async def test_the_new_sheet_is_posted_before_the_old_one_is_deleted_by_a_job(tm
 MOVED_SHEET = 608
 
 
-@pytest.mark.xfail(strict=True, reason="#607: no channel is recorded beside a sheet's id, so the "
-                   "old sheet is looked for in the division's present channel")
 async def test_a_sheet_is_deleted_from_the_channel_it_was_posted_in_after_the_channel_moves(
     tmp_path,
 ):
