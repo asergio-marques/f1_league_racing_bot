@@ -24,16 +24,12 @@ from tests.support.driver_records_hooks import divisions_raced_read
 REASSIGNED_AT = datetime(2026, 9, 17, 12, 0, tzinfo=timezone.utc)
 
 
-async def transitioned(
-    db_path: str, discord_user_id: str, new_state: DriverState, *, test_mode_active: bool = False,
-) -> DriverProfile:
+async def transitioned(db_path: str, discord_user_id: str, new_state: DriverState) -> DriverProfile:
     """Move the driver holding *discord_user_id* to *new_state* through `transition_on`, in a save
     that commits; gives the profile as moved. Raises the state machine's refusal where the
     table refuses."""
     async with get_connection(db_path) as db:
-        profile = await DriverService(db_path).transition_on(
-            db, discord_user_id, new_state, test_mode_active=test_mode_active
-        )
+        profile = await DriverService(db_path).transition_on(db, discord_user_id, new_state)
         await db.commit()
     return profile
 
