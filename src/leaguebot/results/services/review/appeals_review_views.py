@@ -187,24 +187,12 @@ class AppealsReviewView(LeagueView):
             _add_remove_buttons(
                 self,
                 [
-                    (f"Remove #{idx + 1}", f"ar_remove_{idx}", self._make_remove_cb(idx))
+                    (f"Remove #{idx + 1}", f"ar_remove_{idx}", self._make_remove_cb(idx, state))
                     for idx in range(len(state.staged_appeals))
                 ],
             )
 
-    def _built_with_state(self) -> PenaltyReviewState:
-        """The state a Remove button is built for: it exists only on a view that has one.
-
-        A prompt that outlived a restart has no such view, and its Remove buttons are answered
-        by the stand-in `_RemoveAfterRestartView` registered at start-up.
-        """
-        if self.state is None:
-            raise ValueError("a Remove button is built only for a review with a state")
-        return self.state
-
-    def _make_remove_cb(self, idx: int):
-        state = self._built_with_state()
-
+    def _make_remove_cb(self, idx: int, state: PenaltyReviewState):
         async def cb(interaction: discord.Interaction) -> None:
             if not await _require_lm(
                 interaction, state, what=_button(f"Remove #{idx + 1}", state, "appeals")

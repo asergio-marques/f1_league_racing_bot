@@ -416,7 +416,7 @@ async def test_removing_a_correction_takes_it_off_the_list(tmp_path):
     with _manager(), patch(
         "leaguebot.results.services.review.appeals_review_views._refresh_appeals_prompt", new=AsyncMock()
     ) as refresh:
-        await view._make_remove_cb(0)(interaction)
+        await view._make_remove_cb(0, state)(interaction)
         await run_queue(state.bot)
 
     assert [p.driver_user_id for p in state.staged_appeals] == [102]
@@ -434,7 +434,7 @@ async def test_removing_a_correction_says_which_one_went(tmp_path):
     with _manager(), patch(
         "leaguebot.results.services.review.appeals_review_views._refresh_appeals_prompt", new=AsyncMock()
     ):
-        await view._make_remove_cb(0)(interaction)
+        await view._make_remove_cb(0, state)(interaction)
         await run_queue(state.bot)
 
     assert "101" in _answered(interaction)
@@ -451,7 +451,7 @@ async def test_a_remove_button_past_the_end_is_answered(tmp_path):
     with _manager(), patch(
         "leaguebot.results.services.review.appeals_review_views._refresh_appeals_prompt", new=AsyncMock()
     ):
-        await view._make_remove_cb(3)(interaction)
+        await view._make_remove_cb(3, state)(interaction)
         await run_queue(state.bot)
 
     assert "no longer exists" in _answered(interaction)
