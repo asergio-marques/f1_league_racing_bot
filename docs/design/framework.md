@@ -343,10 +343,12 @@ A replaced standing post is deleted by a job after the new one, built by `standi
 (`remove_kept`). Its docstring holds the shape.
 
 The old post is looked for in the channel it was posted in, not the division's present one, which
-may have moved since: each module keeps that channel beside the id (`*_message_channel_id`),
-hands it back as `old_channel_id` and `replaced` plans the delete in `posted_in` of it. Where none
-was recorded the delete falls back to the present channel, as weather's does, and no constraint
-pairs an id with its channel; `posted_in`'s docstring holds the reasons, and
+may have moved since. The calendar, the lineup and the attendance sheet keep that channel beside
+the id (`*_message_channel_id`), their post jobs hand it back as `old_channel_id` and `replaced`
+plans the delete in `posted_in` of it. Weather's forecast (`forecast_messages.channel_id`) and a
+review's sheet and lineup call `posted_in` themselves. Where none was recorded the delete falls
+back to the present channel, and no constraint pairs an id with its channel; `posted_in`'s
+docstring holds the reasons, and
 `test_replaced_plans_one_delete_of_the_old_message_in_the_channel_it_was_posted_in` pins the
 fallback.
 
