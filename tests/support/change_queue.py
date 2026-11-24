@@ -278,8 +278,10 @@ def acknowledgement(interaction: Any) -> str:
 
 
 def followup_edits(interaction: Any) -> list[str]:
-    """The edits of the follow-up that acknowledged a deferred press, which is what the queue
-    updates in place of the response the deferral took; none where no follow-up was edited."""
+    """The edits of the follow-ups of a deferred press, which is how the queue updates the
+    acknowledgement in place of the response the deferral took; none where none was edited.
+    Every follow-up of the double is one message, so these are its edits, whichever follow-up
+    they meant: today the bot edits no follow-up but the acknowledgement."""
     edit = getattr(interaction.followup.send.return_value, "edit", None)
     if not isinstance(edit, AsyncMock):
         return []
