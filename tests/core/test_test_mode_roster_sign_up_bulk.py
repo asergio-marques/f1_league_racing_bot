@@ -278,7 +278,7 @@ async def test_its_drivers_are_placed_as_any_approved_driver_is(league):
     sign-up-bulk` and the queue runs it. Admin's `/signup unassigned list` lists Valtteri first,
     seeded by his time, then Mock Alpha and Mock Beta, who hold none; and the placements review's
     list of unsettled signups names Mock Alpha and Mock Beta by their test names, each not yet
-    placed. Signups then close, the season moving to Placements with McLaren's second seat in Am
+    placed. Signups then close, the season moving on to Placements, with McLaren's second seat in Am
     free, and Admin runs the test-mode `/driver assign` of Mock Alpha, by ID, to McLaren in Am, and
     the queue runs it: Mock Alpha is Assigned, seated at McLaren, and the review's list no longer
     names him, Mock Beta still unplaced."""
@@ -303,7 +303,6 @@ async def test_its_drivers_are_placed_as_any_approved_driver_is(league):
     assert "**Mock Beta** — not yet placed" in unsettled
 
     await _signups_closed(league)
-    await league.write("UPDATE seasons SET stage = 'PLACEMENTS' WHERE id = ?", SEASON_ID)
     await league.write(
         "INSERT INTO team_seats (team_instance_id, seat_number) VALUES (?, 2)", MCLAREN
     )
@@ -354,7 +353,14 @@ async def _test_mode_off(league) -> None:
 
 
 async def _signups_closed(league) -> None:
+    """Signups close as a league closes them: the window closes and the season moves on, from
+    Signups to Placements, or from Ongoing, signups open to Ongoing, placements."""
     await league.write("UPDATE signup_module_config SET signups_open = 0")
+    await league.write(
+        "UPDATE seasons SET stage = CASE stage WHEN 'ONGOING_SIGNUPS' "
+        "THEN 'ONGOING_PLACEMENTS' ELSE 'PLACEMENTS' END WHERE id = ?",
+        SEASON_ID,
+    )
     await league.write(
         "UPDATE signup_windows SET closed_at = ? WHERE closed_at IS NULL",
         league.clock.now.isoformat(),
@@ -432,7 +438,8 @@ async def test_a_list_it_cannot_sign_up_is_refused_at_the_ask_writing_nothing(
     league, setup, text, words
 ):
     """Admin (77) opens `/test-mode roster sign-up-bulk`'s box while signups are open, then, before
-    submitting it: test mode is turned off; the window closes; the signup module is switched off;
+    submitting it: test mode is turned off; signups close, the season moving on to Placements; the
+    signup module is switched off;
     its configuration is gone; its availability slots are gone; the signup module is signed up to
     no hook, as where it is not wired into the bot; a fake driver Mock Zero comes to
     hold Mock Alpha's ID; or the test-mode nationality switch is turned off, Mock Alpha's line
@@ -492,7 +499,8 @@ async def test_a_list_without_nationalities_is_taken_while_the_switch_is_off(lea
 )
 async def test_it_is_judged_again_as_it_starts(league, meanwhile, words):
     """Signups are open. Admin (77) submits Mock Alpha and Mock Beta and is acknowledged; before
-    the queue runs it, test mode is switched off, or the window closes. The change judges again as
+    the queue runs it, test mode is switched off, or signups close, the season moving on to
+    Placements. The change judges again as
     it starts and is refused: Admin's reply becomes the refusal, naming the fault (that test mode
     is off, or "Signups" for the window); no driver, signup or audit entry is written, the log
     channel takes one line, the refusal's, naming Admin and the reason their reply gives, and the
