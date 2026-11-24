@@ -8,6 +8,7 @@ the answer out.
 
 **Core judges its own rules and gathers each module's.** What it refuses itself: a field that
 cannot be amended, an empty change, a round whose results are in, a round moved into the past, a
+round moved onto a moment another round of its division holds (a cancelled round holds none), a
 round that has already started and a mystery round given a track alone. What it costs a module's
 own work (the check-in's windows, the forecast phases, the forecasts already posted) is that
 module's to judge, behind core's `amendment_judged` hook, each answering an `AmendmentPart` of
@@ -28,6 +29,13 @@ not at the round's moment, its start (`results.submission.open`) being the only 
 submission channel. The refusal is stated in its own right so that the answer does not depend on
 which modules a league runs. Moving a round *forward* is untouched, and remains the remedy for a
 circuit or a format that must be corrected late.
+
+**Two rounds of one division never share a moment** (core specification, "Rounds"), so a round is
+refused a move onto the moment another of the division's rounds holds, however the moment is
+written. The rules are handed the division's rounds (*held*) and ask `round_holding`, the one judge
+of a shared moment every path that schedules a round uses; a round never clashes with itself, and a
+change that leaves the round at the moment it holds is not judged by it. The caller reads the
+rounds, so this module still reads no database.
 
 **An amendment is one change.** However many of the three fields it alters, it is judged once,
 against the round as it will stand once every change is in, and where any rule refuses any part of
@@ -65,7 +73,9 @@ from leaguebot.core.models.round import (
     read_scheduled_at,
 )
 from leaguebot.core.services.rounds.round_moments import as_utc
+from leaguebot.core.services.seasons.season_service import round_holding
 from leaguebot.framework.utils.hooks import AwaitedHook
+from leaguebot.utils.messages import discord_ts
 
 #: The fields of a round a league may amend.
 AMENDABLE_FIELDS = frozenset({"track_name", "format", "scheduled_at"})
@@ -150,6 +160,7 @@ def judge_amendment(
     *,
     now: datetime,
     parts: Sequence[AmendmentPart] = (),
+    held: Sequence[Round] = (),
 ) -> AmendmentVerdict:
     """Judge *changes* against *rnd* as it will stand once they are in, with the modules' *parts*.
 
@@ -159,6 +170,8 @@ def judge_amendment(
         now:     The moment to judge against. Required, and never the wall clock.
         parts:   What each module answered of the amendment (`judged_with_the_modules`), in the
                  order they signed up; none where no module is signed up.
+        held:    The rounds of the round's division, itself among them or not, which hold the
+                 moments a move may not take. None where the caller has not read them.
 
     Returns:
         An `AmendmentVerdict`. The refusals run core's head rules, then each module's, then core's
@@ -200,6 +213,18 @@ def judge_amendment(
             "A round cannot be moved into the past. Its result submission would open late, at "
             "once, and not at the round's moment. Give it a moment still to come."
         )
+
+    # Two rounds of one division never share a moment. Judged on the moment asked for even beside
+    # a field that cannot be amended, so that every core rule refuses at once. A change leaving the
+    # round where it stands asks for no move, and the round never clashes with itself.
+    if "scheduled_at" in changes:
+        asked = _amended_moment(rnd, changes)
+        clash = None if asked == rnd.scheduled_at else round_holding(held, asked, other_than=rnd)
+        if clash is not None:
+            refusals.append(
+                f"This division already holds round {clash.round_number} at "
+                f"{discord_ts(asked)}. Two rounds of one division cannot share a moment."
+            )
 
     # ── What each module refuses, warns of and keeps, in the order they signed up ──────────
     warnings: list[str] = []
@@ -247,6 +272,7 @@ async def judged_with_the_modules(
     *,
     now: datetime,
     db: aiosqlite.Connection | None,
+    held: Sequence[Round] = (),
 ) -> AmendmentVerdict:
     """`judge_amendment`, with each module's part asked through the *amendment_judged* hook.
 
@@ -254,7 +280,8 @@ async def judged_with_the_modules(
     outside a save), the round, the changes, the round's moment once amended and the one clock
     core judges by, both in UTC, and nothing else: core names no module's windows, each module
     reads its own and keeps them in its part's ``kept``. It answers an `AmendmentPart`, or None for
-    a part of none.
+    a part of none. *held* is the division's rounds, handed on to `judge_amendment` and to no
+    subscriber.
     """
     now = as_utc(now).astimezone(timezone.utc)
     moment = (
@@ -264,5 +291,9 @@ async def judged_with_the_modules(
     )
     handed = await amendment_judged.call(db, rnd, changes, moment=moment, now=now)
     return judge_amendment(
-        rnd, changes, now=now, parts=tuple(part for part in handed if part is not None)
+        rnd,
+        changes,
+        now=now,
+        parts=tuple(part for part in handed if part is not None),
+        held=held,
     )

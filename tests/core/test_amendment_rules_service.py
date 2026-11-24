@@ -208,9 +208,6 @@ def _held_refusal(number: int, moment: datetime) -> str:
     )
 
 
-_NO_HELD_YET = "#605: judge_amendment takes no held rounds yet"
-
-
 @pytest.mark.parametrize(
     "changes,sibling_status,sibling_at,refusals",
     [
@@ -218,40 +215,30 @@ _NO_HELD_YET = "#605: judge_amendment takes no held rounds yet"
             {"scheduled_at": SIBLING_AT}, RoundStatus.NOT_RUN.value, SIBLING_AT,
             [_held_refusal(2, SIBLING_AT)],
             id="the_sibling_s_moment",
-            marks=pytest.mark.xfail(
-                strict=True, reason="#605: a moment another round holds is not refused"
-            ),
         ),
         pytest.param(
             {"scheduled_at": SIBLING_AT.astimezone(timezone(timedelta(hours=1)))},
             RoundStatus.NOT_RUN.value, SIBLING_AT,
             [_held_refusal(2, SIBLING_AT)],
             id="the_same_instant_at_plus_one_hour",
-            marks=pytest.mark.xfail(
-                strict=True, reason="#605: a moment another round holds is not refused"
-            ),
         ),
         pytest.param(
             {"scheduled_at": SIBLING_AT}, RoundStatus.CANCELLED.value, SIBLING_AT, [],
             id="a_cancelled_sibling_s_moment",
-            marks=pytest.mark.xfail(strict=True, reason=_NO_HELD_YET),
         ),
         pytest.param(
             {"scheduled_at": OWN_AT, "track_name": "Silverstone Circuit"},
             RoundStatus.NOT_RUN.value, SIBLING_AT, [],
             id="its_own_moment_restated_beside_a_track_change",
-            marks=pytest.mark.xfail(strict=True, reason=_NO_HELD_YET),
         ),
         pytest.param(
             {"track_name": "Silverstone Circuit"}, RoundStatus.NOT_RUN.value, OWN_AT, [],
             id="a_track_change_alone",
-            marks=pytest.mark.xfail(strict=True, reason=_NO_HELD_YET),
         ),
         pytest.param(
             {"scheduled_at": SIBLING_AT + timedelta(minutes=1)},
             RoundStatus.NOT_RUN.value, SIBLING_AT, [],
             id="one_minute_off",
-            marks=pytest.mark.xfail(strict=True, reason=_NO_HELD_YET),
         ),
     ],
 )
@@ -444,9 +431,6 @@ async def test_with_no_module_signed_up_nothing_module_specific_is_refused():
     assert verdict.kept == {}
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#605: the rules are not judged beside the division's rounds"
-)
 async def test_refusals_run_core_s_head_then_each_module_in_sign_up_order_then_core_s_tail():
     """Every one of core's rules refusing at once, beside two modules': the field that cannot be
     amended, the round's status, the move into the past and the moment round 2 of the division
