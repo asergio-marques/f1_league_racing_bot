@@ -418,7 +418,7 @@ ways out, then the amendments: two go through, and one is refused for the moment
 
     **Expect:** by the core specification, *"Two rounds of one division shall not be scheduled at
     the same moment. This shall be refused by every command that would create one"*, a refusal
-    naming round 2, as `/round add` and the amendment of a round being set up refuse it:
+    naming round 2:
     - **Reply:**
       ```
       ⛔ **Round 3** in **Division 1** cannot be amended:
