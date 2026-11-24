@@ -6,6 +6,8 @@ module's: a graphic works out no ordering (image spec, What a graphic works out)
 """
 from __future__ import annotations
 
+import pytest
+
 
 def test_the_previews_are_handed_the_sheet_s_order(tmp_path):
     """Three drivers: Zoe (1) on 2 points, Mike (2) on 9 and Alice (3) on 2. The previews are
