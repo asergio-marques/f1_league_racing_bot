@@ -959,8 +959,8 @@ driver through `transition_on`, handing back the audit records for the change's 
 subscriber to the first, core refuses. Every refusal is judged at the ask, as the change starts and
 in the save before the first write; after the first write a fault in a subscriber raises and rolls
 the save back, the lane stopping. The command is core's and sits in core's `roster` group, because it creates the roster's drivers, which only core does; the architecture
-records it as the exception to a module's test tool sitting in the module's group. Nothing in its
-path posts, and the queue's clock is passed in.
+records it as the exception to a module's test tool sitting in the module's group. It posts nothing
+but its log line, and the queue's clock is passed in.
 
 **Fake drivers are seeded, not moved through the state machine.** `test_roster_service` inserts a
 fake driver at Not Signed Up with no seat, flagged as a test driver, with a synthetic id above any
