@@ -3,12 +3,12 @@ mid-season review and the Confirm configuration of `/season config-review`.
 
 A review's question carries one of these views, and a press is the whole of what it does: answered
 at once, deferred privately (`ApproveView._answer_at_once`), then who may press, whether the review
-still stands and has its five minutes, the claim on the button, whether the season has changed
-since the report, and then the workflow of `season_review_workflows`. Each view is handed the services it reads, by keyword and named as the
-bot carries them, with the queue's clock (`now`) that the five minutes are judged on; it holds no
-cog and looks nothing up on the bot. The entry point's factory builds them for the review's post
-change and for the restart sweep (`recover_expired_review_prompts`), as `queue_stop_view` is built
-for the stop notice.
+still stands and has its five minutes, the claim on the button, whether the season has changed since
+the report, and then the workflow of `season_review_workflows`. Each view is handed the services it
+reads, by keyword and named as the bot carries them, with the queue's clock (`now`) that the five
+minutes are judged on; it holds no cog and looks nothing up on the bot. The entry point's factory
+builds them for the review's post change and for the restart sweep
+(`recover_expired_review_prompts`), as `queue_stop_view` is built for the stop notice.
 
 The views are persistent with fixed custom ids, so that a question posted before a restart is
 routed again by the id of its message: the review itself is its row in `season_review_prompts`.
