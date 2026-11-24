@@ -17,6 +17,7 @@ from __future__ import annotations
 import pytest
 
 from tests.core.test_driver_move import _ADMIN, _as_logged
+from tests.core.test_driver_unassign import _charles_also_in_pro
 
 _NOT_PLACING = (
     "⛔ `/driver reject` is available only while the season is in placements, or mid-season "
@@ -176,6 +177,49 @@ async def _valtteri_turned_down(league):
     )
 
 
+async def _valtteri_placed(league):
+    """Valtteri takes McLaren's second seat in Am, unconfirmed, as `/driver assign` would leave
+    him: Assigned."""
+    from tests.support.season_league import AM, MCLAREN, SEASON_ID, UNASSIGNED, profile_id
+
+    await league.write(
+        "UPDATE driver_profiles SET current_state = 'ASSIGNED' WHERE id = ?",
+        profile_id(UNASSIGNED),
+    )
+    await league.write(
+        "INSERT INTO team_seats (team_instance_id, seat_number, driver_profile_id) "
+        "VALUES (?, 2, ?)", MCLAREN, profile_id(UNASSIGNED),
+    )
+    await league.write(
+        "INSERT INTO driver_season_assignments (driver_profile_id, season_id, division_id, "
+        "team_seat_id, committed) SELECT ?, ?, ?, id, 0 FROM team_seats "
+        "WHERE team_instance_id = ? AND seat_number = 2",
+        profile_id(UNASSIGNED), SEASON_ID, AM, MCLAREN,
+    )
+
+
+async def _signup_off_lewis_confirmed(league):
+    """The signup module off, and Lewis's placement at Ferrari in Pro confirmed."""
+    from tests.support.season_league import LEWIS, profile_id
+
+    await league.switch("signup", False)
+    await league.write(
+        "UPDATE driver_season_assignments SET committed = 1 WHERE driver_profile_id = ?",
+        profile_id(LEWIS),
+    )
+
+
+def _no_unconfirmed(name: str) -> str:
+    """`/driver reject`'s refusal, with the signup module off, of a driver holding a confirmed
+    placement."""
+    return f"⛔ **{name}** holds no unconfirmed placement to turn down."
+
+
+_REJECT_SIGNUP_OFF_UNBUILT = (
+    "#624: with signup off a driver holding only unconfirmed placements cannot yet be turned down"
+)
+
+
 async def _valtteri_on_an_account_gone_from_the_server(league):
     """Valtteri's current account becomes 9999, which is not in the server; 106 is then a past
     account of his."""
@@ -252,6 +296,15 @@ async def test_a_driver_rejection_its_withdrawal_audit_entry_and_line_are_one_sa
             _valtteri_on_an_account_gone_from_the_server, 106, _PAST_ACCOUNT,
             id="a-past-account-whose-current-one-left",
         ),
+        pytest.param(
+            _signup_off_lewis_confirmed, 101, _no_unconfirmed("Lewis"),
+            id="signup-off-a-confirmed-driver",
+            marks=pytest.mark.xfail(
+                strict=True,
+                reason="#624: with signup off a confirmed driver is still refused as not "
+                "Unassigned",
+            ),
+        ),
     ],
 )
 async def test_a_driver_rejection_is_refused_at_the_ask(tmp_path, setup, user_id, reply):
@@ -263,7 +316,10 @@ async def test_a_driver_rejection_is_refused_at_the_ask(tmp_path, setup, user_id
     They are refused at once, in today's words, and the log channel takes the refusal as its one
     line. Nothing is asked of the queue, every driver's state and approvals stand, no audit entry
     is written and no role is touched. Takes the place of the mocked "refused outside the placing
-    stages" and "only an Unassigned driver" tests."""
+    stages" and "only an Unassigned driver" tests.
+
+    #624: with the signup module off, Lewis (101), whose placement at Ferrari in Pro is confirmed,
+    is refused: "**Lewis** holds no unconfirmed placement to turn down."."""
     from tests.support.change_queue import change_rows
     from tests.support.settings_league import audit_rows, last_said, log_lines
 
@@ -328,6 +384,9 @@ async def test_a_failed_driver_rejection_changes_nothing(tmp_path):
             _valtteri_on_an_account_gone_from_the_server, _PAST_ACCOUNT, _STANDING,
             id="now-a-past-account-whose-current-one-left",
         ),
+        pytest.param(
+            _valtteri_placed, _not_unassigned(), ("ASSIGNED", 1, 1), id="placed-meanwhile",
+        ),
     ],
 )
 async def test_a_driver_rejection_is_judged_again_as_it_starts(
@@ -335,8 +394,9 @@ async def test_a_driver_rejection_is_judged_again_as_it_starts(
 ):
     """The season is in Placements; Valtteri is Unassigned and approved. The league admin runs
     `/driver reject` of Valtteri and is acknowledged; before the queue runs it, the placements are
-    approved and the season is Ongoing, Valtteri's signup is put back in review, or Valtteri's
-    current account becomes another that has left the server. The queue runs. The rejection is
+    approved and the season is Ongoing, Valtteri's signup is put back in review, Valtteri's
+    current account becomes another that has left the server, or, the signup module being on,
+    Valtteri is placed at McLaren in Am, unconfirmed, and Assigned. The queue runs. The rejection is
     refused as it starts, in the words it would meet at the ask, its acknowledgement updated to
     them. Valtteri stands as the meanwhile left him, his signup still approved, no audit entry is
     written, the log channel holds the refusal alone, no role is touched, and the queue is not
@@ -459,4 +519,106 @@ async def test_a_fake_driver_rejection_takes_no_role(tmp_path):
     assert league.revoked == {} and league.granted == {}
 
 
+
 _GHOST = 9000000000000000001
+
+
+async def _charles_twice_placed(build, tmp_path):
+    """*build*'s season, the signup module off and the league's driver role set, Charles at
+    McLaren in Am and at Ferrari in Pro, neither placement confirmed."""
+    from tests.support.season_league import DRIVER_ROLE
+
+    league = await build(tmp_path)
+    await league.write("UPDATE server_configs SET driver_role_id = ?", DRIVER_ROLE)
+    await _charles_also_in_pro(league)
+    return league
+
+
+async def _charles_state(league):
+    """Charles's placements, as (division id, confirmed), the seats he holds, and his state."""
+    from tests.support.season_league import CHARLES, profile_id
+
+    placements = await league.rows(
+        "SELECT division_id, committed FROM driver_season_assignments "
+        "WHERE driver_profile_id = ? ORDER BY division_id", profile_id(CHARLES),
+    )
+    seats = await league.rows(
+        "SELECT team_instance_id, seat_number FROM team_seats WHERE driver_profile_id = ? "
+        "ORDER BY team_instance_id", profile_id(CHARLES),
+    )
+    [state] = await league.rows(
+        "SELECT current_state FROM driver_profiles WHERE id = ?", profile_id(CHARLES)
+    )
+    return (
+        [(row["division_id"], bool(row["committed"])) for row in placements],
+        [(row["team_instance_id"], row["seat_number"]) for row in seats],
+        state["current_state"],
+    )
+
+
+@pytest.mark.xfail(strict=True, reason=_REJECT_SIGNUP_OFF_UNBUILT)
+@pytest.mark.parametrize(
+    "build",
+    [
+        pytest.param(_in_placements, id="in-placements"),
+        pytest.param(_placing_mid_season, id="mid-season-placements"),
+    ],
+)
+async def test_with_signup_off_a_rejection_removes_every_unconfirmed_placement(tmp_path, build):
+    """#624. The season is in Placements, or placing drivers mid-season, and its configuration was
+    confirmed with the signup module off; the league's driver role is set. Charles (103) sits at
+    McLaren in Am and at Ferrari in Pro, neither placement confirmed, and is Assigned. The league
+    admin Admin (77) runs `/driver reject` of Charles, and the queue runs it. Both placements are
+    removed and both seats freed; Charles is Not Signed Up and keeps his profile; one audit entry,
+    `DRIVER_REJECT`, by Admin, on no division, records him Assigned before and Not Signed Up
+    after; the log channel holds the usual success line once; no role is taken from or given to
+    anyone, none having been granted for an unconfirmed placement; and the reply is the usual "✅
+    Turned down **Charles**. They are no longer signed up."."""
+    from tests.support.change_queue import run_queue
+    from tests.support.season_league import CHARLES
+    from tests.support.settings_league import last_said, log_lines
+
+    league = await _charles_twice_placed(build, tmp_path)
+    asked = await _ask_reject(league, CHARLES)
+    await run_queue(league.bot)
+
+    assert await _charles_state(league) == ([], [], "NOT_SIGNED_UP")
+    [entry] = await _reject_audits(league)
+    assert (entry["actor_id"], entry["division_id"]) == (77, None)
+    assert entry["old_value"]["state"] == "ASSIGNED"
+    assert entry["new_value"]["new_state"] == "NOT_SIGNED_UP"
+    assert _reject_lines(await log_lines(league)) == [_reject_line("Charles", CHARLES)]
+    assert league.revoked == {} and league.granted == {}
+    assert last_said(asked) == _turned_down("Charles")
+
+
+@pytest.mark.xfail(strict=True, reason=_REJECT_SIGNUP_OFF_UNBUILT)
+async def test_with_signup_off_a_failed_rejection_keeps_every_placement(tmp_path):
+    """#624. The season is in Placements, the signup module off; Charles sits at McLaren in Am and
+    at Ferrari in Pro, neither confirmed. The league admin runs `/driver reject` of Charles, and
+    as the queue runs it the database fails writing the audit entry. Nothing is saved: Charles
+    keeps both placements and seats and is Assigned, no audit entry is written and the log channel
+    holds no success line. The lane stops at the job; once a league admin discards it, the reply
+    says "Nothing was turned down: **Charles** keeps their placements. Run `/driver reject`
+    again."."""
+    from tests.support.change_queue import discard_job, run_queue, stopped_job
+    from tests.support.season_league import AM, CHARLES, FERRARI, MCLAREN, PRO
+    from tests.support.settings_league import fault_in, last_said, log_lines
+
+    league = await _charles_twice_placed(_in_placements, tmp_path)
+    asked = await _ask_reject(league, CHARLES)
+    with fault_in("leaguebot.framework.services.queue.change_queue.record_change_on"):
+        await run_queue(league.bot)
+
+    assert await _charles_state(league) == (
+        [(PRO, False), (AM, False)], [(FERRARI, 3), (MCLAREN, 1)], "ASSIGNED"
+    )
+    assert await _reject_audits(league) == []
+    assert not any("| Success" in line for line in await log_lines(league))
+    assert await stopped_job(league.db_path) is not None
+
+    await discard_job(league.bot)
+
+    assert last_said(asked) == (
+        "Nothing was turned down: **Charles** keeps their placements. Run `/driver reject` again."
+    )
