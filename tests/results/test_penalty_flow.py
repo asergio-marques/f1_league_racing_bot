@@ -569,7 +569,10 @@ async def test_dsq_reorders_race_session_results(tmp_path):
 
 
 async def _insert_qualifying_and_new_tables(db_path: str, round_id: int, division_id: int) -> int:
-    """Insert a 2-driver FEATURE_QUALIFYING into both legacy and new tables. Returns sr_id."""
+    """Insert a five-driver FEATURE_QUALIFYING into both legacy and new tables. Returns sr_id.
+
+    P1 and P2 are classified with a lap, P3 a DNF, P4 a DNS and P5 a pasted DSQ.
+    """
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "INSERT INTO session_results (round_id, division_id, session_type, status) "
@@ -577,28 +580,33 @@ async def _insert_qualifying_and_new_tables(db_path: str, round_id: int, divisio
             (round_id, division_id),
         )
         sr_id = cursor.lastrowid
-        # New qualifying table
-        await db.execute(
-            "INSERT INTO qualifying_session_results "
-            "(session_result_id, driver_user_id, team_instance_id, finishing_position, "
-            "outcome, tyre, best_lap, points_awarded) "
-            "VALUES (?, 1, 100, 1, 'CLASSIFIED', 'Soft', '1:20.000', 0)",
-            (sr_id,),
-        )
-        await db.execute(
-            "INSERT INTO qualifying_session_results "
-            "(session_result_id, driver_user_id, team_instance_id, finishing_position, "
-            "outcome, tyre, best_lap, points_awarded) "
-            "VALUES (?, 2, 200, 2, 'CLASSIFIED', 'Medium', '1:22.000', 0)",
-            (sr_id,),
-        )
+        # New qualifying table: a driver without a lap carries the outcome literal as the best lap
+        rows = [
+            (1, 100, 1, "CLASSIFIED", "Soft", "1:20.000"),
+            (2, 200, 2, "CLASSIFIED", "Medium", "1:22.000"),
+            (3, 300, 3, "DNF", None, "DNF"),
+            (4, 100, 4, "DNS", None, "DNS"),
+            (5, 200, 5, "DSQ", None, "DSQ"),
+        ]
+        for driver, team, position, outcome, tyre, best_lap in rows:
+            await db.execute(
+                "INSERT INTO qualifying_session_results "
+                "(session_result_id, driver_user_id, team_instance_id, finishing_position, "
+                "outcome, tyre, best_lap, points_awarded) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, 0)",
+                (sr_id, driver, team, position, outcome, tyre, best_lap),
+            )
         await db.commit()
     return sr_id
 
 
 @pytest.mark.asyncio
 async def test_dsq_reorders_qualifying_session_results(tmp_path):
-    """DSQ on P1 qualifier; qualifying_session_results must promote P2 to P1, DSQ driver to last."""
+    """DSQ on the polesitter; the disqualified are ranked last, after the DNF and DNS entries.
+
+    P2 is promoted to pole and stays CLASSIFIED; the DNF and the DNS each move up a place; the
+    polesitter is placed with the pasted DSQ, last of all.
+    """
     db_path = str(tmp_path / "test.db")
     await run_migrations(db_path)
     _, division_id, round_id = await _bootstrap(db_path)
@@ -625,9 +633,10 @@ async def test_dsq_reorders_qualifying_session_results(tmp_path):
         )
         rows = await cursor.fetchall()
 
-    assert rows[0]["driver_user_id"] == 2
-    assert rows[0]["finishing_position"] == 1
-    assert rows[0]["outcome"] == "CLASSIFIED"
-    assert rows[1]["driver_user_id"] == 1
-    assert rows[1]["finishing_position"] == 2
-    assert rows[1]["outcome"] == "DSQ"
+    assert [(r["driver_user_id"], r["finishing_position"], r["outcome"]) for r in rows] == [
+        (2, 1, "CLASSIFIED"),
+        (3, 2, "DNF"),
+        (4, 3, "DNS"),
+        (1, 4, "DSQ"),
+        (5, 5, "DSQ"),
+    ]

@@ -374,7 +374,8 @@ async def apply_penalties_on(
                         "WHERE session_result_id = ? AND driver_user_id = ?",
                         (session_result_id, sp.driver_user_id),
                     )
-            # Re-sort qualifying_session_results: CLASSIFIED by best_lap_ms, then fixed last
+            # Re-sort qualifying_session_results: CLASSIFIED by best lap, then the rest in their old
+            # order, the disqualified last of all
             qr_cursor = await db.execute(
                 "SELECT id, driver_user_id, outcome, best_lap, finishing_position "
                 "FROM qualifying_session_results WHERE session_result_id = ? "
@@ -394,7 +395,9 @@ async def apply_penalties_on(
                     if lap_ms is not None:
                         sortable_qsr.append({"id": qr["id"], "lap_ms": lap_ms})
                         continue
-                fixed_qsr.append({"id": qr["id"], "fp": qr["finishing_position"]})
+                fixed_qsr.append(
+                    {"id": qr["id"], "outcome": qr["outcome"], "fp": qr["finishing_position"]}
+                )
             sortable_qsr.sort(key=lambda r: r["lap_ms"])
             next_pos = 1
             for item in sortable_qsr:
@@ -403,7 +406,7 @@ async def apply_penalties_on(
                     (next_pos, item["id"]),
                 )
                 next_pos += 1
-            fixed_qsr.sort(key=lambda r: r["fp"])
+            fixed_qsr.sort(key=_after_the_disqualified)
             for item in fixed_qsr:
                 await db.execute(
                     "UPDATE qualifying_session_results SET finishing_position = ? WHERE id = ?",
