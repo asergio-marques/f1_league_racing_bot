@@ -344,12 +344,9 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
       ```
       ✅ Season setup started. **Season #1 (F1 25)** is being configured.
 
-      Use `/division add` for each division, then `/round add` for each round.
-      When done, run `/season placements-review` to review and approve.
+      Settle its team list, its modules and their settings, and test mode, then run `/season config-review` to confirm the configuration.
+      Its divisions and rounds are added once it reaches placements.
       ```
-      (The reply's next steps are not this spec's order: `/division add` is refused until the
-      season is in placements, which it reaches once its signup window closes (step 26). Follow
-      the spec.)
     - **Log:**
       ```
       <you> | /season setup | Success
