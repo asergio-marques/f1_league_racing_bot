@@ -1327,7 +1327,7 @@ Turns down a driver who was approved but has not been placed — one in the Unas
 #### `/driver sack` — Sack a driver
 *Access: League admin · Ongoing only*
 
-Revokes all placement roles and the driver role, removes the driver's placements in the season, and returns them to Not Signed Up. The lineup of each division they sat in is posted again on the change queue once the sack is made; a lineup whose text Discord refuses stops the queue until it is retried or discarded. Available only while the season is ongoing, and only for a driver whose placement is confirmed — an unconfirmed placement is removed with `/driver unassign`, and an Unassigned driver turned down with `/driver reject`.
+Revokes all placement roles and the driver role, removes the driver's placements in the season, and returns them to Not Signed Up. The lineup of each division they sat in is posted again on the change queue once the sack is made; a lineup whose text Discord refuses stops the queue until it is retried or discarded. Available only while the season is ongoing, and only for a driver whose placement is confirmed — an unconfirmed placement is removed with `/driver unassign`, and an Unassigned driver, or with the signup module off a driver holding only unconfirmed placements, is turned down with `/driver reject`.
 
 **Nobody is deleted by a sack.** The profile stays at Not Signed Up with its attendance, results and signups, and the driver may sign up again in a later window. A driver who has never raced is *pending deletion*, and is deleted when the season ends.
 
