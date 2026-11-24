@@ -46,6 +46,7 @@ from tests.support.season_league import (
     ADMIN_ID,
     AM,
     CHARLES,
+    DRIVER_ROLE,
     FERRARI_ROLE,
     LEWIS,
     MAX,
@@ -898,6 +899,48 @@ async def test_a_seat_with_no_team_role_grants_the_division_role_alone(tmp_path,
 
     assert await _stopped_at(league) is None
     assert league.granted[CHARLES] == [AM_ROLE]
+
+
+@pytest.mark.parametrize(
+    ("signup", "driver_role", "extra"),
+    [
+        pytest.param(
+            False, True, [DRIVER_ROLE], id="signup-off-driver-role-set",
+            marks=pytest.mark.xfail(
+                strict=True,
+                reason="#624: with signup off confirmation does not yet give the driver role",
+            ),
+        ),
+        pytest.param(False, False, [], id="signup-off-no-driver-role"),
+        pytest.param(True, True, [], id="signup-on"),
+    ],
+)
+async def test_the_driver_role_is_given_at_approval_only_with_signup_off(
+    tmp_path, monkeypatch, signup, driver_role, extra,
+):
+    """#624. With the signup module off a driver is placed straight from Not Signed Up, and is
+    given the league's driver role, where one is set, when the placements are confirmed, beside
+    their division's and team's; with it on, the driver role was given at signup approval and the
+    approval gives none. The season is in Placements: Lewis and Max at Ferrari in Pro, Charles and
+    a fake driver (104) at McLaren in Am. The signup module is off or on, and the league's driver
+    role (820) set or not. A league admin presses Approve and the queue runs. Lewis and Max are
+    given Pro's and Ferrari's roles, Charles Am's and McLaren's, each with the driver role only
+    where the signup module is off and a driver role set; the fake driver is given nothing."""
+    from tests.support.season_league import driver_role_set
+
+    league = await _league_for(tmp_path, monkeypatch, signup=signup, extra_drivers=True)
+    if driver_role:
+        await driver_role_set(league)
+    await _pressed(league)
+
+    await run_queue(league.bot)
+
+    assert await _stopped_at(league) is None
+    assert {user: sorted(roles) for user, roles in league.granted.items()} == {
+        LEWIS: sorted([PRO_ROLE, FERRARI_ROLE, *extra]),
+        MAX: sorted([PRO_ROLE, FERRARI_ROLE, *extra]),
+        CHARLES: sorted([AM_ROLE, MCLAREN_ROLE, *extra]),
+    }
 
 
 @pytest.mark.parametrize(

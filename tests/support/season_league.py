@@ -1357,6 +1357,17 @@ async def approved_unplaced(league: SeasonLeague, user_id: int = UNASSIGNED) -> 
     league.roles_held.setdefault(user_id, set()).add(DRIVER_ROLE)
 
 
+async def driver_role_set(league: SeasonLeague) -> None:
+    """The league's driver role (820) stored, on the server and one the bot can grant, the signup
+    module left as it stands."""
+    await league.write("UPDATE server_configs SET driver_role_id = ?", DRIVER_ROLE)
+    driver_role = league._role(DRIVER_ROLE)
+    driver_role.managed = False
+    driver_role.is_default.return_value = False
+    driver_role.guild.me.guild_permissions.manage_roles = True
+    driver_role.guild.me.top_role.__gt__ = lambda _self, _other: True
+
+
 async def wizard_state(league: SeasonLeague, user_id: int) -> str | None:
     """The state of driver *user_id*'s signup wizard, or None where they have none."""
     rows = await league.rows(
