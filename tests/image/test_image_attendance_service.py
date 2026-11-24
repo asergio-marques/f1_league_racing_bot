@@ -114,7 +114,6 @@ def test_one_driver_against_a_ten_row_template_draws_with_no_error():
 # ── Ordering, and the ordinal that is not a datum ─────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason="#640: the drawing still re-sorts the rows it is handed")
 def test_rows_are_drawn_in_the_order_they_are_handed():
     """The order is attendance's, the textual sheet's: the image module never re-orders."""
     drawing = resolve_drawing(

@@ -427,10 +427,6 @@ async def _seat(
         await db.commit()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#640: the picture re-sorts the sheet's rows by the names it draws",
-)
 @pytest.mark.asyncio
 async def test_the_sheet_lists_the_most_points_first_then_by_name(sheet_db, monkeypatch):
     """FR-017/FR-018. Division 1's sheet after round 3, the images module on: Mike (222) on 5,
@@ -972,9 +968,6 @@ async def test_the_sheet_is_drawn_and_named_for_its_season_division_and_occasion
     assert (sheet.season_number, sheet.division_tier, sheet.race_name) == ("3", "2", grand_prix)
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#640: the picture re-sorts the opening sheet's rows by name"
-)
 @pytest.mark.asyncio
 async def test_the_opening_sheet_and_its_picture_list_drivers_by_team_then_name(
     sheet_db, monkeypatch

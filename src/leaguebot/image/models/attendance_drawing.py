@@ -259,6 +259,10 @@ def resolve_drawing(
     upon this posting. Composing them is the caller's, as it is the textual sheet's; a driver
     sacked at an earlier round holds no seat and never reaches here.
 
+    The rows are drawn in the order *records* are handed, ordinals ``1..n``. That order is
+    attendance's, the textual sheet's for the occasion, and the drawing never re-orders it: an
+    order is a rule, and a graphic works out no rule (XIV.7).
+
     Raises :class:`AttendanceDataError` where the division holds no driver at all — the floor
     of XIV.12, raised here against the data and before any template is in view.
 
@@ -285,14 +289,8 @@ def resolve_drawing(
         autosack_threshold=autosack_threshold,
     )
 
-    def order(record: DriverRecord) -> tuple[int, str]:
-        # The textual sheet's own order: total descending, then alphabetical on the name
-        # actually resolved — so the tie-break reads the same string the graphic draws.
-        name = display_names.get(record.key, str(record.key))
-        return (-(record.total or 0), name.lower())
-
     entries: list[SheetEntry] = []
-    for record in sorted(records, key=order):
+    for record in records:
         entries.append(
             SheetEntry(
                 ordinal=len(entries) + 1,
