@@ -905,7 +905,8 @@ opens and closes mid-season (steps 68 to 70).
         <@&<Members role id>> — click below to sign up!
         ```
         Then the `🔒 Signups are now closed.` notice the base's close left in `#signup` is
-        deleted.
+        deleted, where an earlier spec has not already taken it down (`02-roster-changes.md` step 57 does); a
+        notice already gone is passed over silently.
       - **Log:** `<you> | /signup open | Success`
     - The season now stands at Ongoing, signups open. The signup settings stay fixed: step 66's
       refusals are unchanged. Do **not** press **Sign Up**; step 70 closes the window with nobody
@@ -1311,7 +1312,7 @@ and the cancellation back out of the database, so the next spec starts where `00
 Discord is not restored with the database. Left behind by this spec, for you to delete by hand if
 you wish: the spare channels and `@Stand-in` of step 1; the panel and its permissions in `#hub-2`,
 and the cleared permissions of `#hub`; the `🔒 Signups are now closed.` notice step 70 posted in
-`#signup`, the base's own having been deleted at step 68; and the cancellation notices and cancelled
+`#signup`, the base's own having been taken down by step 68 or an earlier spec; and the cancellation notices and cancelled
 calendars of step 73 in every division channel, as `02-roster-changes.md` leaves them (step 73's
 calendar for Division 1 replaced the one step 65 posted, which replaced step 59's). A later spec
 that posts a calendar again finds the recorded one gone and carries on (`standing_posts` passes over
