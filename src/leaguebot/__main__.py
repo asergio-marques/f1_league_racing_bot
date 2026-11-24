@@ -645,6 +645,9 @@ def register_change_types(bot: LeagueBot) -> None:
     from leaguebot.core.services.test_mode.test_mode_former_driver_change import (
         test_mode_former_driver_change,
     )
+    from leaguebot.core.services.test_mode.test_roster_sign_up_change import (
+        test_roster_sign_up_bulk_change,
+    )
     from leaguebot.core.services.test_mode.test_roster_changes import (
         test_roster_add_bulk_change,
         test_roster_add_change,
@@ -938,6 +941,13 @@ def register_change_types(bot: LeagueBot) -> None:
     bot.change_queue.register(test_mode_former_driver_change())
     bot.change_queue.register(test_roster_add_change())
     bot.change_queue.register(test_roster_add_bulk_change())
+    bot.change_queue.register(
+        test_roster_sign_up_bulk_change(
+            fake_signups_ready_read=bot.fake_signups_ready_read,
+            fake_signups_approved=bot.fake_signups_approved,
+            now=lambda: bot.change_queue.now(),
+        )
+    )
     bot.change_queue.register(
         test_roster_remove_change(
             profiles_deleted=bot.profiles_deleted,

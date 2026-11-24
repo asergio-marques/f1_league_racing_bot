@@ -170,11 +170,24 @@ def format_roster_errors(errors: list[str]) -> str:
     exceed Discord's 2000-character limit — which refuses the whole message rather than
     truncating it, leaving the manager with no reply at all.
     """
+    return _format(
+        errors,
+        f"⛔ The roster was not imported — {len(errors)} problem(s). **No drivers were added.**",
+    )
+
+
+def format_sign_up_errors(errors: list[str]) -> str:
+    """`format_roster_errors` for a sign-up list: the same shape and cap, its headline saying
+    nobody was signed up."""
+    return _format(
+        errors,
+        f"⛔ The list was not signed up — {len(errors)} problem(s). **No drivers were added.**",
+    )
+
+
+def _format(errors: list[str], headline: str) -> str:
     shown = errors[:15]
-    lines = [
-        f"⛔ The roster was not imported — {len(errors)} problem(s). "
-        f"**No drivers were added.**"
-    ]
+    lines = [headline]
     lines += [f"• {problem}" for problem in shown]
     if len(errors) > len(shown):
         lines.append(f"…and {len(errors) - len(shown)} more.")
