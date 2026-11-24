@@ -1279,6 +1279,17 @@ async def _measure(config_service, module_service, colour):
     )
 
 
+#: Why the contrast tests of #616 fail until the check finds the background by its class.
+_NOT_YET_BY_CLASS = (
+    "#616: the contrast check does not yet find the background by the "
+    "fastest-lap-background class"
+)
+
+
+#: Why the reply's wording fails until it names the background behind the fastest lap.
+_NOT_YET_WORDED = "#616: the reply still measures against the template's plate"
+
+
 def _race_template(background_markup: str) -> bytes:
     """A sound race results template carrying *background_markup* behind the field.
 
@@ -1309,6 +1320,7 @@ def _race_template(background_markup: str) -> bytes:
     ).encode()
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_BY_CLASS)
 async def test_contrast_is_measured_against_the_declared_background(
     module_service, config_service, template_dir, monkeypatch
 ):
@@ -1317,7 +1329,7 @@ async def test_contrast_is_measured_against_the_declared_background(
     await saves.set_field(config_service, "template_directory", "templates")
 
     (template_dir / "templates" / "results_race_template.svg").write_bytes(
-        _race_template('<rect id="fastest_lap_background" fill="#FFFFFF"/>')
+        _race_template('<rect class="fastest-lap-background" fill="#FFFFFF"/>')
     )
 
     reading = await _measure(config_service, module_service, "#000000")
@@ -1327,6 +1339,7 @@ async def test_contrast_is_measured_against_the_declared_background(
     assert reading.ratio == pytest.approx(21.0, abs=0.01)
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_BY_CLASS)
 async def test_contrast_reads_the_stylesheet_not_just_the_attribute(
     module_service, config_service, template_dir, monkeypatch
 ):
@@ -1338,8 +1351,8 @@ async def test_contrast_reads_the_stylesheet_not_just_the_attribute(
     # must be the black the template actually paints, not the white attribute.
     (template_dir / "templates" / "results_race_template.svg").write_bytes(
         _race_template(
-            "<style>#fastest_lap_background { fill: #000000; }</style>"
-            '<rect id="fastest_lap_background" fill="#FFFFFF"/>'
+            "<style>.fastest-lap-background { fill: #000000; }</style>"
+            '<rect class="fastest-lap-background" fill="#FFFFFF"/>'
         )
     )
 
@@ -1364,6 +1377,7 @@ async def test_contrast_unmeasurable_when_template_is_invalid(
     assert "invalid" in reading.problem.lower()
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_BY_CLASS)
 async def test_contrast_unmeasurable_when_background_element_is_absent(
     module_service, config_service, template_dir, monkeypatch
 ):
@@ -1378,7 +1392,10 @@ async def test_contrast_unmeasurable_when_background_element_is_absent(
     reading = await _measure(config_service, module_service, "#A020F0")
 
     assert reading.ratio is None and reading.background is None
-    assert "fastest_lap_background" in reading.problem
+    assert reading.problem == (
+        "the race results template marks no shape with the class "
+        "`fastest-lap-background` to measure against."
+    )
     # It must be reported as unmeasurable, not as a template validity failure.
     from leaguebot.image.services.validity.image_validity_service import evaluate_all_templates
 
@@ -1387,6 +1404,7 @@ async def test_contrast_unmeasurable_when_background_element_is_absent(
     assert reports["results_race_template"].valid
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_BY_CLASS)
 async def test_contrast_unmeasurable_when_fill_is_a_gradient(
     module_service, config_service, template_dir, monkeypatch
 ):
@@ -1395,23 +1413,25 @@ async def test_contrast_unmeasurable_when_fill_is_a_gradient(
     await saves.set_field(config_service, "template_directory", "templates")
 
     (template_dir / "templates" / "results_race_template.svg").write_bytes(
-        _race_template('<rect id="fastest_lap_background" fill="url(#grad)"/>')
+        _race_template('<rect class="fastest-lap-background" fill="url(#grad)"/>')
     )
 
     reading = await _measure(config_service, module_service, "#A020F0")
 
     assert reading.ratio is None and reading.background is None
     assert "not" in reading.problem.lower() and "plain colour" in reading.problem.lower()
+    assert "`fastest-lap-background`" in reading.problem
 
 
-async def test_contrast_unmeasurable_when_the_plate_has_no_fill(
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_BY_CLASS)
+async def test_contrast_unmeasurable_when_the_background_has_no_fill(
     module_service, config_service, template_dir, monkeypatch
 ):
-    """A plate declaring no fill was reported as having a fill of `None`.
+    """A background declaring no fill was reported as having a fill of `None`.
 
     `None` is Python's, not the league's, and the likeliest way to reach it is a slotted
-    plate authored without a default — which the image how-to warns draws black in an
-    editor. Whether to measure such a plate as black is a decision, not this fix:
+    background authored without a default — which the image how-to warns draws black in an
+    editor. Whether to measure such a background as black is a decision, not this fix:
     `computed_style` reads only simple selectors, so "none the bot can read" is not quite
     "none", and FR-027 forbids guessing.
     """
@@ -1420,7 +1440,7 @@ async def test_contrast_unmeasurable_when_the_plate_has_no_fill(
     await saves.set_field(config_service, "template_directory", "templates")
 
     (template_dir / "templates" / "results_race_template.svg").write_bytes(
-        _race_template('<rect id="fastest_lap_background"/>')
+        _race_template('<rect class="fastest-lap-background"/>')
     )
 
     reading = await _measure(config_service, module_service, "#A020F0")
@@ -1428,13 +1448,7 @@ async def test_contrast_unmeasurable_when_the_plate_has_no_fill(
     assert reading.ratio is None and reading.background is None
     assert "None" not in reading.problem
     assert "no fill" in reading.problem
-
-
-#: Why the contrast tests of #616 fail until the check finds the background by its class.
-_NOT_YET_BY_CLASS = (
-    "#616: the contrast check does not yet find the background by the "
-    "fastest-lap-background class"
-)
+    assert "`fastest-lap-background`" in reading.problem
 
 
 @pytest.mark.xfail(strict=True, reason=_NOT_YET_BY_CLASS)
@@ -1525,7 +1539,7 @@ async def _seed_season(db_path, divisions, *, status="ACTIVE"):
 def _slotted_plate(authored: str) -> bytes:
     return _race_template(
         f"<style>.colour-fill-plate {{ fill:{authored} }}</style>"
-        '<rect id="fastest_lap_background" class="colour-fill-plate"/>'
+        '<rect class="colour-fill-plate fastest-lap-background"/>'
     )
 
 
@@ -1539,6 +1553,7 @@ async def _per_tier(config_service, template_dir, monkeypatch, markup: bytes, pa
         await saves.set_tier_colours(config_service, division, colours)
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_BY_CLASS)
 async def test_fastest_lap_colour_warns_on_the_tier_hardest_to_read(
     tmp_path, template_dir, monkeypatch
 ):
@@ -1577,6 +1592,7 @@ async def test_fastest_lap_colour_warns_on_the_tier_hardest_to_read(
     assert "Division 1" not in reply
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_BY_CLASS)
 async def test_contrast_with_per_tier_colours_is_the_lowest_tier(
     db_path, module_service, config_service, template_dir, monkeypatch
 ):
@@ -1598,6 +1614,7 @@ async def test_contrast_with_per_tier_colours_is_the_lowest_tier(
     assert reading.divisions == ("Division 2",)
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_BY_CLASS)
 async def test_contrast_with_per_tier_colours_off_ignores_stored_palettes(
     db_path, module_service, config_service, template_dir, monkeypatch
 ):
@@ -1620,6 +1637,7 @@ async def test_contrast_with_per_tier_colours_off_ignores_stored_palettes(
     assert reading.divisions == ()
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_BY_CLASS)
 async def test_each_tier_is_measured_on_its_own_copy_of_the_template(
     db_path, module_service, config_service, template_dir, monkeypatch
 ):
@@ -1645,6 +1663,7 @@ async def test_each_tier_is_measured_on_its_own_copy_of_the_template(
     assert reading.ratio == pytest.approx(1.662, abs=0.001)
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_BY_CLASS)
 async def test_contrast_reads_a_slot_declared_on_the_plates_group(
     db_path, module_service, config_service, template_dir, monkeypatch
 ):
@@ -1657,7 +1676,7 @@ async def test_contrast_reads_a_slot_declared_on_the_plates_group(
         monkeypatch,
         _race_template(
             "<style>.colour-fill-plate { fill:#000000 }</style>"
-            '<g class="colour-fill-plate"><rect id="fastest_lap_background"/></g>'
+            '<g class="colour-fill-plate"><rect class="fastest-lap-background"/></g>'
         ),
         {"Division 1": {"plate": "#777777"}},
     )
@@ -1670,6 +1689,7 @@ async def test_contrast_reads_a_slot_declared_on_the_plates_group(
     assert reading.every_division is False
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_BY_CLASS)
 async def test_contrast_reads_the_tiers_colour_whichever_order_the_plates_classes_are_written(
     db_path, module_service, config_service, template_dir, monkeypatch
 ):
@@ -1688,7 +1708,7 @@ async def test_contrast_reads_the_tiers_colour_whichever_order_the_plates_classe
         monkeypatch,
         _race_template(
             "<style>.plate { fill:#000000 }</style>"
-            '<rect id="fastest_lap_background" class="colour-fill-plate plate"/>'
+            '<rect class="colour-fill-plate plate fastest-lap-background"/>'
         ),
         {"Division 1": {"plate": "#777777"}},
     )
@@ -1699,6 +1719,7 @@ async def test_contrast_reads_the_tiers_colour_whichever_order_the_plates_classe
     assert reading.divisions == ("Division 1",)
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_BY_CLASS)
 async def test_the_contrast_check_paints_each_tier_through_the_render_path(
     db_path, module_service, config_service, template_dir, monkeypatch
 ):
@@ -1753,6 +1774,7 @@ async def test_the_contrast_check_paints_each_tier_through_the_render_path(
     [[], [("SETUP", [])]],
     ids=["no season", "a season with no division"],
 )
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_BY_CLASS)
 async def test_no_season_under_way_measures_as_authored_and_says_so(
     db_path, module_service, config_service, template_dir, monkeypatch, seasons
 ):
@@ -1774,12 +1796,13 @@ async def test_no_season_under_way_measures_as_authored_and_says_so(
     assert reading.divisions == ()
     assert reading.no_season is True
     assert _lines(reading) == [
-        "Contrast against the template's plate (`#000000`): **21.00:1**",
+        "Contrast against the background behind the fastest lap (`#000000`): **21.00:1**",
         "ℹ️ There is no division of a season under way to measure, so no tier was "
         "measured: this is the drawing as authored.",
     ]
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_BY_CLASS)
 async def test_per_tier_colours_off_say_nothing_of_a_season(
     db_path, module_service, config_service, template_dir, monkeypatch
 ):
@@ -1792,10 +1815,12 @@ async def test_per_tier_colours_off_say_nothing_of_a_season(
 
     reading = await _measure(config_service, module_service, "#FFFFFF")
 
+    assert reading.problem is None
     assert reading.no_season is False
     assert len(_lines(reading)) == 1
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_BY_CLASS)
 async def test_contrast_names_every_tier_sharing_the_lowest(
     db_path, module_service, config_service, template_dir, monkeypatch
 ):
@@ -1819,11 +1844,12 @@ async def test_contrast_names_every_tier_sharing_the_lowest(
     assert reading.divisions == ("Division 1", "Division 3")
     assert reading.every_division is False
     assert _lines(reading)[0] == (
-        "Contrast against the template's plate is lowest for **Division 1** and "
+        "Contrast against the background behind the fastest lap is lowest for **Division 1** and "
         "**Division 3** (`#777777`): **4.48:1**"
     )
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_BY_CLASS)
 async def test_contrast_says_it_is_the_same_for_every_division(
     db_path, module_service, config_service, template_dir, monkeypatch
 ):
@@ -1834,7 +1860,7 @@ async def test_contrast_says_it_is_the_same_for_every_division(
         config_service,
         template_dir,
         monkeypatch,
-        _race_template('<rect id="fastest_lap_background" fill="#000000"/>'),
+        _race_template('<rect class="fastest-lap-background" fill="#000000"/>'),
         {"Division 1": {"accent": "#A78BFA"}, "Division 2": {"accent": "#3DD6F5"}},
     )
 
@@ -1842,11 +1868,12 @@ async def test_contrast_says_it_is_the_same_for_every_division(
 
     assert reading.every_division is True
     assert _lines(reading) == [
-        "Contrast against the template's plate (`#000000`) is the same for every "
+        "Contrast against the background behind the fastest lap (`#000000`) is the same for every "
         "division: **21.00:1**"
     ]
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_WORDED)
 def test_three_tiers_sharing_the_lowest_are_listed_as_a_sentence():
     from leaguebot.image.services.config.image_setting_advice import FastestLapContrast
 
@@ -1855,11 +1882,12 @@ def test_three_tiers_sharing_the_lowest_are_listed_as_a_sentence():
     )
 
     assert _lines(reading)[0] == (
-        "Contrast against the template's plate is lowest for **A**, **B** and **C** "
-        "(`#777777`): **4.48:1**"
+        "Contrast against the background behind the fastest lap is lowest for **A**, **B** "
+        "and **C** (`#777777`): **4.48:1**"
     )
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_WORDED)
 def test_tiers_tied_on_different_colours_are_named_without_one():
     """Two plates can differ and still read at the same figure; neither colour is *the* one."""
     from leaguebot.image.services.config.image_setting_advice import FastestLapContrast
@@ -1867,10 +1895,12 @@ def test_tiers_tied_on_different_colours_are_named_without_one():
     reading = FastestLapContrast(ratio=21.0, background=None, divisions=("A", "B"))
 
     assert _lines(reading)[0] == (
-        "Contrast against the template's plate is lowest for **A** and **B**: **21.00:1**"
+        "Contrast against the background behind the fastest lap is lowest for **A** and "
+        "**B**: **21.00:1**"
     )
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_BY_CLASS)
 async def test_a_tier_whose_plate_cannot_be_measured_is_named_with_the_reason(
     db_path, module_service, config_service, template_dir, monkeypatch
 ):
@@ -1886,18 +1916,20 @@ async def test_a_tier_whose_plate_cannot_be_measured_is_named_with_the_reason(
         template_dir,
         monkeypatch,
         _race_template(
-            '<rect id="fastest_lap_background" class="colour-fill-plate" fill="url(#grad)"/>'
+            '<rect class="colour-fill-plate fastest-lap-background" fill="url(#grad)"/>'
         ),
         {"Division 1": {"plate": "#777777"}},
     )
 
     reading = await _measure(config_service, module_service, "#FFFFFF")
 
-    why = "the `fastest_lap_background` element's fill (`url(#grad)`) is not a plain colour."
     assert reading.divisions == ("Division 1",)
+    assert [division for division, _why in reading.unmeasured] == ["Division 2", "Division 3"]
+    why = reading.unmeasured[0][1]
+    assert "`fastest-lap-background`" in why and "plain colour" in why
     assert reading.unmeasured == (("Division 2", why), ("Division 3", why))
     assert _lines(reading)[0] == (
-        "Contrast against the template's plate is lowest for **Division 1** "
+        "Contrast against the background behind the fastest lap is lowest for **Division 1** "
         "(`#777777`): **4.48:1**"
     )
     assert _lines(reading)[-1] == (
@@ -1920,6 +1952,7 @@ def test_unmeasured_tiers_with_different_reasons_share_one_line():
     )
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_BY_CLASS)
 async def test_every_tier_unmeasurable_is_reported_once(
     db_path, module_service, config_service, template_dir, monkeypatch
 ):
@@ -1929,7 +1962,7 @@ async def test_every_tier_unmeasurable_is_reported_once(
         config_service,
         template_dir,
         monkeypatch,
-        _race_template('<rect id="fastest_lap_background" fill="url(#grad)"/>'),
+        _race_template('<rect class="fastest-lap-background" fill="url(#grad)"/>'),
         {"Division 1": {"accent": "#A78BFA"}},
     )
 
@@ -1940,12 +1973,15 @@ async def test_every_tier_unmeasurable_is_reported_once(
     assert _lines(reading) == [f"ℹ️ Contrast could not be measured: {reading.problem}"]
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_WORDED)
 def test_the_reply_warns_below_the_legibility_threshold():
     from leaguebot.image.services.config.image_setting_advice import FastestLapContrast, fastest_lap_contrast_lines
 
     lines = fastest_lap_contrast_lines(FastestLapContrast(ratio=3.0, background="#777777"))
 
-    assert lines[0] == "Contrast against the template's plate (`#777777`): **3.00:1**"
+    assert lines[0] == (
+        "Contrast against the background behind the fastest lap (`#777777`): **3.00:1**"
+    )
     assert lines[1].startswith("⚠️ That is below 4.5:1")
 
 
