@@ -1031,7 +1031,7 @@ No parameters. Opens a box; paste the roster, header row and all, two columns, `
 
 > **Nothing is created unless everything can be.** An ID below the test range, two rows sharing an ID or a name, or a name held to the rules a division's name is refuses the whole import and names every fault at once. Fix the file and paste it again — nothing landed the first time.
 
-> Discord caps the box at 4000 characters, which is roughly two hundred drivers. A larger roster goes in two passes, the import adding to the fake drivers the season holds.
+> Discord caps the box at 4000 characters, which is roughly 130 drivers. A larger roster goes in two passes, the import adding to the fake drivers the season holds.
 
 #### `/test-mode roster sign-up-bulk` — Create, sign up and approve a list at once
 *Access: League admin · Requires test mode active, and signups open*
