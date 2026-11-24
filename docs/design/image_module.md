@@ -291,8 +291,8 @@ results asks to be drawn. The aspect a results or a standings picture is switche
 beside its model, for results to ask the gate about. Results reads a verdict's team name and key
 from core's team readers itself. Attendance hands in a check-in call's deadline. The attendance
 sheet's rows are drawn in the order attendance hands them: the sheet's own order is attendance's
-(most points first after a round and on the final sheet, team then driver on the opening sheet), and
-the picture adds none of its own (`attendance_drawing.resolve_drawing`). A resolution kept
+(the attendance specification, "Updating attendance sheets"), and the picture adds none of its own
+(`attendance_drawing.resolve_drawing`). A resolution kept
 among the models is pure, as the models are, and holds the picture's own rules (the attendance
 sheet's limit plate and marks); the projection onto a template stays in the aspect's service.
 
