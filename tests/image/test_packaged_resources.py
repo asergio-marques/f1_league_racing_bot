@@ -561,6 +561,43 @@ def test_a_shipped_template_paints_the_shared_ground_and_accent(path):
     assert ACCENT in text, path.stem
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#616: the shipped race template marks no shape with the class fastest-lap-background",
+)
+def test_the_race_template_marks_the_ground_behind_every_fastest_lap_cell():
+    """The fastest-lap colour paints `row_<x>_fastest_lap`, which sits on the canvas in a row
+    with no band and on the band in a row that has one; the contrast check measures every shape
+    marked `fastest-lap-background`, so the canvas and every band are marked. The plate behind
+    the fastest-lap block at the top right holds no row's cell, so nothing in it is."""
+    def marked(element) -> bool:
+        return "fastest-lap-background" in (element.get("class") or "").split()
+
+    root = etree.parse(str(RESOURCES / "templates" / "results_race_template.svg")).getroot()
+    rect = f"{{{SVG_NS}}}rect"
+    canvas = [
+        shape for shape in root.findall(rect)
+        if (shape.get("x"), shape.get("y"), shape.get("width"), shape.get("height"))
+        == ("0", "0", root.get("width"), root.get("height"))
+    ]
+    assert len(canvas) == 1
+    assert marked(canvas[0])
+
+    rows = [
+        group for group in root.iter(f"{{{SVG_NS}}}g")
+        if re.fullmatch(r"row_\d+_group", group.get("id") or "")
+    ]
+    bands = [
+        shape for group in rows for shape in group.findall(rect)
+        if shape.get("fill") not in (None, "none")
+    ]
+    assert bands
+    assert [band for band in bands if not marked(band)] == []
+
+    plate = root.find(f".//{{{SVG_NS}}}g[@id='fastest_lap_group']")
+    assert [element for element in plate.iter() if marked(element)] == []
+
+
 @pytest.mark.parametrize("path", _template_paths(), ids=lambda p: p.stem)
 def test_a_shipped_template_strokes_its_plates_alike(path):
     """One stroke for a plate on a card, and one fill under it."""

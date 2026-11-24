@@ -1430,6 +1430,71 @@ async def test_contrast_unmeasurable_when_the_plate_has_no_fill(
     assert "no fill" in reading.problem
 
 
+#: Why the contrast tests of #616 fail until the check finds the background by its class.
+_NOT_YET_BY_CLASS = (
+    "#616: the contrast check does not yet find the background by the "
+    "fastest-lap-background class"
+)
+
+
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_BY_CLASS)
+async def test_contrast_unmeasurable_where_one_marked_background_cannot_be_read(
+    module_service, config_service, template_dir, monkeypatch
+):
+    """Two shapes are marked as the background behind the fastest lap: one white, one a
+    gradient. A figure taken from the white alone could tell a league a colour reads well
+    where it is drawn over the gradient, so nothing is measured, and the reason names the
+    class (decided at Gate 1 of #616: one unreadable marked shape makes the reading
+    unmeasurable)."""
+    monkeypatch.setattr("leaguebot.framework.utils.paths.PROJECT_ROOT", template_dir, raising=False)
+    await _enable(module_service, config_service)
+    await saves.set_field(config_service, "template_directory", "templates")
+
+    (template_dir / "templates" / "results_race_template.svg").write_bytes(
+        _race_template(
+            '<rect class="fastest-lap-background" fill="#FFFFFF"/>'
+            '<rect class="fastest-lap-background" fill="url(#grad)"/>'
+        )
+    )
+
+    reading = await _measure(config_service, module_service, "#000000")
+
+    assert reading.ratio is None and reading.background is None
+    assert "`fastest-lap-background`" in reading.problem
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#616: the shipped race template marks no background behind the fastest lap",
+)
+@pytest.mark.parametrize(
+    ("colour", "background", "figure"),
+    [("#FFFFFF", "#14171C", "17.96"), ("#000000", "#0B0D10", "1.08"),
+     ("#A020F0", "#14171C", "3.39")],
+    ids=["white, lowest on a row band", "black, lowest on the canvas",
+         "the default purple"],
+)
+async def test_the_shipped_race_template_is_measured_against_what_lies_behind_the_fastest_lap(
+    module_service, config_service, colour, background, figure
+):
+    """The race template the bot ships, per-tier colours off: the fastest-lap cells of odd
+    rows sit on the canvas (`#0B0D10`) and those of even rows on a band (`#14171C`), and the
+    lowest of the two is the figure. White reads worst on the lighter band and black on the
+    darker canvas, so the two together prove both grounds are marked; the plate behind the
+    fastest-lap block at the top right, also `#14171C`, is not what the colour is drawn on.
+    The default purple warns at 3.39:1, which the owner accepted (#616, 2026-11-24)."""
+    await _enable(module_service, config_service)
+
+    reading = await _measure(config_service, module_service, colour)
+
+    assert reading.problem is None
+    assert reading.background == background
+    assert _lines(reading)[0] == (
+        f"Contrast against the background behind the fastest lap (`{background}`): "
+        f"**{figure}:1**"
+    )
+
+
 # ── #165 — the contrast is measured in every tier's colours ───────────────
 
 
