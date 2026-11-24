@@ -49,7 +49,6 @@ from leaguebot.core.models.division import Division
 from leaguebot.core.models.round import (
     Round,
     RoundFormat,
-    RoundStatus,
     stored_scheduled_at,
     utc_text,
 )
@@ -358,11 +357,12 @@ def import_payload(source: str, parsed: list[ParsedDivisionRounds]) -> dict[str,
 
 
 def _duplicate_datetime_errors(
-    existing: list[datetime], incoming: list[dict[str, Any]]
+    existing: list[Round], incoming: list[dict[str, Any]]
 ) -> list[str]:
     """Every incoming round whose datetime is already taken, within the batch or before it.
 
-    *existing* holds the moments of the division's rounds that are not cancelled.
+    *existing* is the division's rounds, and `round_holding` says which of them holds a moment: a
+    cancelled round holds none.
 
     The confirmation of placements refuses a season holding two rounds of one division at the same
     moment, and it does so long after the calendar has been built and possibly posted. A repeated
@@ -370,10 +370,14 @@ def _duplicate_datetime_errors(
     moment the whole batch can be seen.
     """
     errors: list[str] = []
-    seen: dict[datetime, str] = {at: "a round already in this division" for at in existing}
+    seen: dict[datetime, str] = {}
     for parsed in incoming:
         at = datetime.fromisoformat(parsed["scheduled_at"])
-        previous = seen.get(at)
+        previous = (
+            "a round already in this division"
+            if round_holding(existing, at) is not None
+            else seen.get(at)
+        )
         if previous is not None:
             errors.append(
                 f"{parsed['location']}: duplicate datetime {utc_text(at)} — already used "
@@ -434,10 +438,7 @@ def _import_check(
 
                 # A cancelled round holds no moment (core specification, "Rounds"), though it
                 # still takes a place on the calendar, so it counts for the overflow below.
-                errors += _duplicate_datetime_errors(
-                    [r.scheduled_at for r in held if r.status != RoundStatus.CANCELLED.value],
-                    entry["rounds"],
-                )
+                errors += _duplicate_datetime_errors(held, entry["rounds"])
 
                 # Last, because it loads and parses the calendar template. Asked of the whole
                 # batch: each round of a dozen can clear a `+ 1` check while the dozen together
