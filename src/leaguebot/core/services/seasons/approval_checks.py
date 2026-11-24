@@ -406,9 +406,12 @@ def duplicate_round_times(
     for division in divisions:
         earlier: list[Round] = []
         for round_ in rounds_of[division.id]:
-            if round_.status == RoundStatus.CANCELLED.value:
-                continue
-            if round_holding(earlier, round_.scheduled_at) is not None:
+            # A cancelled round holds no moment, so it is not itself refused; `round_holding`
+            # passes over it where it stands among the earlier rounds.
+            if (
+                round_.status != RoundStatus.CANCELLED.value
+                and round_holding(earlier, round_.scheduled_at) is not None
+            ):
                 problems.append(
                     f"**{division.name}** has multiple rounds scheduled at "
                     f"{discord_ts(round_.scheduled_at)}"
