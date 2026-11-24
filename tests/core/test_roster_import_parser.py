@@ -196,9 +196,6 @@ def test_a_roster_line_naming_a_driver_with_a_member_mention_is_refused():
 
 # ── The three-column form `/test-mode roster sign-up-bulk` takes (#600) ───
 
-#: Why each test of the three-column form fails until the parser is written.
-_SIGN_UP_PARSER = "#600: the three-column sign-up-bulk parser is not yet written"
-
 #: The form sign-up-bulk takes: a fake driver's ID, its name and its nationality, which may be
 #: blank.
 SIGN_UP_HEADER = "ID,Driver name,Nationality"
@@ -210,7 +207,6 @@ def _parse_sign_up(text: str):
     return parse_sign_up_csv(text)
 
 
-@pytest.mark.xfail(strict=True, reason=_SIGN_UP_PARSER)
 @pytest.mark.parametrize("header", [True, False], ids=["with the header", "without it"])
 def test_a_sign_up_list_is_read_with_each_driver_s_nationality(header):
     """A row naming a nationality the bot knows is read with it, as the signup wizard reads the
@@ -230,7 +226,6 @@ def test_a_sign_up_list_is_read_with_each_driver_s_nationality(header):
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=_SIGN_UP_PARSER)
 @pytest.mark.parametrize(
     "row",
     [
@@ -250,7 +245,6 @@ def test_a_sign_up_row_of_the_wrong_width_is_refused(row):
     assert errors[0].startswith("Line 2: expected 3 columns")
 
 
-@pytest.mark.xfail(strict=True, reason=_SIGN_UP_PARSER)
 def test_a_sign_up_row_naming_a_nationality_the_bot_does_not_know_is_refused():
     """A nationality the wizard would refuse is refused on its line, the text named."""
     drivers, errors = _parse_sign_up("\n".join([SIGN_UP_HEADER, _row() + ",Martian"]))
@@ -261,7 +255,6 @@ def test_a_sign_up_row_naming_a_nationality_the_bot_does_not_know_is_refused():
     assert "Martian" in errors[0] and "nationality" in errors[0].lower()
 
 
-@pytest.mark.xfail(strict=True, reason=_SIGN_UP_PARSER)
 @pytest.mark.parametrize(
     "rows",
     [
