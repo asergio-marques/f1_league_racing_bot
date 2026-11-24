@@ -103,6 +103,7 @@ if TYPE_CHECKING:
     from leaguebot.core.services.modules.image_drawing import ImageDrawing
     from leaguebot.core.services.settings.config_service import ConfigService
     from leaguebot.core.services.drivers.team_role_service import TeamRoleService
+    from leaguebot.framework.services.switches.module_service import ModuleService
 
 _UNCONFIGURED = "⛔ This server is not configured yet — run `/bot init` first."
 
@@ -399,6 +400,16 @@ def _replaced_role_id(ctx: StepContext) -> int | None:
     )
 
 
+def _confirmed_only(ctx: StepContext) -> bool:
+    """Whether a league role's grant goes to confirmed drivers only, as the save judged it
+    (`confirmed_only` in *its* `Saved.result`): the driver role with the signup module off."""
+    return next(
+        bool((view.result or {}).get("confirmed_only"))
+        for view in ctx.steps
+        if view.name == _SAVE_STEP
+    )
+
+
 def _replaced_reply(season_number: int) -> str:
     return (
         f"\nThe role it replaces is no longer on the server, so it could be replaced although "
@@ -437,7 +448,7 @@ async def _season_fixed_on(db: aiosqlite.Connection) -> int | None:
 
 def _league_role_setting(
     column: str, *, config: "ConfigService", roles: "TeamRoleService",
-    base_role_changed: "AwaitedHook | None" = None,
+    base_role_changed: "AwaitedHook | None" = None, modules: "ModuleService | None" = None,
 ) -> Setting:
     """`/bot base-role` or `/bot driver-role` on *column*: a league manager's own command,
     neither one of the four that let a league back into the bot nor a channel setting, so it
@@ -475,9 +486,20 @@ def _league_role_setting(
     role to every driver (`GRANT_TO_DRIVERS`), which `carries_line` (`setting_change`) so that its
     given/not-given detail sits beneath the save's own line, one post, and a fault there leaves
     the role saved with only the failure line.
+
+    **The driver role's grant narrows with the signup module off.** The switch is read through
+    *modules* (the driver role's setting is built with it, the base role's with none) on the
+    save's own connection and kept in its result (`confirmed_only`), for the grant to read: with
+    signup off the driver role belongs to a driver only once a placement of theirs is confirmed,
+    so its replacement goes to those drivers alone. The base role's grant is unchanged.
     """
     command, label, change_type = _LEAGUE_ROLE_WORDS[column]
     is_base_role = column == "base_role_id"
+    if not is_base_role and modules is None:
+        raise TypeError(
+            "the driver role's setting reads the signup switch for its grant, so it is built "
+            "with modules"
+        )
 
     async def check(ctx: CheckContext) -> Verdict:
         from leaguebot.core.services.seasons.season_lifecycle_service import configuration_fixed
@@ -519,6 +541,8 @@ def _league_role_setting(
         if season_number is not None:
             details.append("replaced: a role no longer on the server")
             result["season_number"] = season_number
+            if modules is not None:
+                result["confirmed_only"] = not await modules.is_enabled_on(db, "signup")
             then.append(PlannedStep(GRANT_TO_DRIVERS))
         return Saved(
             changed=True,
@@ -598,7 +622,9 @@ def _grant_to_drivers(roles: "TeamRoleService", *, is_base_role: bool) -> After:
         guild, role = _guild_and_role(ctx)
         if role.is_default():
             return StepResult(result={"given": "everyone"}, lines=(_GIVEN_TO_EVERYONE,))
-        outcome = await roles.grant_to_every_driver(guild, role.id)
+        outcome = await roles.grant_to_every_driver(
+            guild, role.id, confirmed_only=_confirmed_only(ctx)
+        )
         return StepResult(
             result={"granted": outcome.granted, "not_granted": outcome.not_granted},
             lines=(
@@ -650,9 +676,12 @@ def base_role_setting(
     )
 
 
-def driver_role_setting(*, config: "ConfigService", roles: "TeamRoleService") -> Setting:
-    """`/bot driver-role`: the role granted when a signup is approved."""
-    return _league_role_setting("driver_role_id", config=config, roles=roles)
+def driver_role_setting(
+    *, config: "ConfigService", roles: "TeamRoleService", modules: "ModuleService"
+) -> Setting:
+    """`/bot driver-role`: the role granted when a signup is approved, or, with the signup
+    module off, when a driver's placement is confirmed."""
+    return _league_role_setting("driver_role_id", config=config, roles=roles, modules=modules)
 
 
 # ----------------------------------------------------------------------------

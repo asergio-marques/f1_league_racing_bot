@@ -642,14 +642,7 @@ async def test_the_replacement_is_given_to_every_driver(tmp_path, column, change
     ("column", "given_to"),
     [
         pytest.param("base_role_id", (5001, 5002), id="base"),
-        pytest.param(
-            "driver_role_id", (5001,), id="driver",
-            marks=pytest.mark.xfail(
-                strict=True,
-                reason="#624: with signup off a replaced driver role is still given to a driver "
-                "whose placement is unconfirmed",
-            ),
-        ),
+        pytest.param("driver_role_id", (5001,), id="driver"),
     ],
 )
 async def test_with_signup_off_a_replaced_driver_role_is_given_to_confirmed_drivers_only(

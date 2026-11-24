@@ -980,7 +980,9 @@ def register_change_types(bot: LeagueBot) -> None:
             config=bot.config_service, roles=bot.team_role_service,
             base_role_changed=bot.base_role_changed,
         ),
-        driver_role_setting(config=bot.config_service, roles=bot.team_role_service),
+        driver_role_setting(
+            config=bot.config_service, roles=bot.team_role_service, modules=bot.module_service
+        ),
         hub_channel_setting(config=bot.config_service, channel_uses_read=bot.channel_uses_read),
         *division_channel_settings(
             seasons=bot.season_service,
