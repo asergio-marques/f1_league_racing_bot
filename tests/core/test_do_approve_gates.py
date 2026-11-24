@@ -646,6 +646,7 @@ async def _attach(db_path, config_name: str, points: list[tuple[int, int]]) -> N
     )
 
 
+@pytest.mark.xfail(strict=True, reason="#601: the ordering error names the session by its stored value")
 async def test_a_wrongly_ordered_points_table_refuses_a_first_approval(db_path):
     """The regression. Before the fix this season was approved without a word."""
     await _attach(db_path, "BROKEN", [(1, 10), (2, 25)])
@@ -657,7 +658,7 @@ async def test_a_wrongly_ordered_points_table_refuses_a_first_approval(db_path):
     # In full: the refusal moves into results with no word changed (#283).
     assert _replies(interaction) == (
         "\u274c Season cannot be approved \u2014 points configuration violates monotonic "
-        "ordering:\n\u2022 Config 'BROKEN', FEATURE_RACE: position 1 (10 pts) < "
+        "ordering:\n\u2022 Config 'BROKEN', Feature Race: position 1 (10 pts) < "
         "position 2 (25 pts)"
     )
     cog.bot.change_queue.ask.assert_not_awaited()

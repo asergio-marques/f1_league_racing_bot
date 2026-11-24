@@ -89,7 +89,7 @@ MODE_OFF = (
 NOT_PUBLISHED = "⛔ Amendment not approved — the result could not be published:"
 OUT_OF_ORDER = "❌ Amendment not approved — the points would be out of order:"
 #: The ordering error for P2 staged at 30 over P1 staged at 26.
-ORDERING_ERROR = "Config 'Standard', FEATURE_RACE: position 1 (26 pts) < position 2 (30 pts)"
+ORDERING_ERROR = "Config 'Standard', Feature Race: position 1 (26 pts) < position 2 (30 pts)"
 NOTHING_CHANGED = (
     "Nothing was changed: the season keeps its points, the staged changes stay staged and "
     "amendment mode stays on. Run `/results amend review` again."
@@ -486,7 +486,8 @@ async def _out_of_order_and_undeliverable(league: Any) -> None:
     pytest.param(_round_amended, {},
                  "⏸️ Not approved yet. Round 3 of **Pro** is being amended in <#706>.", None,
                  id="round-amendment-open"),
-    pytest.param(_out_of_order, {}, OUT_OF_ORDER, ORDERING_ERROR, id="out-of-order"),
+    pytest.param(_out_of_order, {}, OUT_OF_ORDER, ORDERING_ERROR, id="out-of-order",
+                 marks=pytest.mark.xfail(strict=True, reason="#601: the ordering error names the session by its stored value")),
     pytest.param(_undeliverable, {}, NOT_PUBLISHED,
                  "**Pro** — the results channel (id 700) is not in the server.",
                  id="undeliverable"),
@@ -500,7 +501,8 @@ async def _out_of_order_and_undeliverable(league: Any) -> None:
                  "**Pro** — the attendance channel (id 705)", id="live-attendance-lost"),
     pytest.param(_cannot_post, {}, NOT_PUBLISHED, "Send Messages", id="cannot-post"),
     pytest.param(_out_of_order_and_undeliverable, {}, OUT_OF_ORDER, ORDERING_ERROR,
-                 id="out-of-order-and-undeliverable"),
+                 id="out-of-order-and-undeliverable",
+                 marks=pytest.mark.xfail(strict=True, reason="#601: the ordering error names the session by its stored value")),
 ])
 async def test_the_press_is_refused_at_once_in_today_s_words(
     tmp_path, setup, options, expected, detail,

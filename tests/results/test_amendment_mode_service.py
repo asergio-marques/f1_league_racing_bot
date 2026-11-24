@@ -191,9 +191,12 @@ async def test_validate_modification_ordering_passes_a_table_running_down(tmp_pa
     assert await validate_modification_ordering(db_path, SEASON_ID) == []
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#601: the ordering error names the session by its stored value"
+)
 async def test_validate_modification_ordering_names_a_staged_inversion(tmp_path):
     """Season 1 in amendment mode with the Feature Race's P2 staged at 30, above P1's 25: one
-    ordering error, naming the configuration and the session."""
+    ordering error, naming the configuration and the session as a league reads it."""
     from leaguebot.results.services.points.amendment_mode_service import validate_modification_ordering
 
     db_path = await _season(tmp_path, amend=True)
@@ -201,14 +204,18 @@ async def test_validate_modification_ordering_names_a_staged_inversion(tmp_path)
 
     errors = await validate_modification_ordering(db_path, SEASON_ID)
 
-    assert len(errors) == 1
-    assert CONFIG in errors[0]
-    assert "FEATURE_RACE" in errors[0]
+    assert errors == [
+        "Config 'Standard', Feature Race: position 1 (25 pts) < position 2 (30 pts)"
+    ]
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#601: the ordering error names the session by its stored value"
+)
 async def test_validate_modification_ordering_judges_each_session_on_its_own(tmp_path):
     """A qualifying table staged worth 1 for P1 and 3 for P2 is wrong; it does not make the
-    race table, still 25 and 18, wrong: one error, naming the qualifying session."""
+    race table, still 25 and 18, wrong: one error, naming the qualifying session as a league
+    reads it."""
     from leaguebot.results.services.points.amendment_mode_service import validate_modification_ordering
 
     db_path = await _season(tmp_path, amend=True)
@@ -217,7 +224,7 @@ async def test_validate_modification_ordering_judges_each_session_on_its_own(tmp
     errors = await validate_modification_ordering(db_path, SEASON_ID)
 
     assert len(errors) == 1
-    assert "FEATURE_QUALIFYING" in errors[0]
+    assert "Feature Qualifying" in errors[0]
 
 
 async def _stage_a_removal_and_an_addition(db_path: str) -> None:
@@ -228,26 +235,76 @@ async def _stage_a_removal_and_an_addition(db_path: str) -> None:
     await _save(db_path, "stage_points_on", SEASON_ID, CONFIG, "FEATURE_RACE", [(3, 5)])
 
 
+#: Why a staged change is not yet shown as the review's diff should show it.
+DIFF_NOT_YET = "#601: the review's diff names sessions by their stored value"
+FASTEST_LAP_NOT_YET = "#601: the review's diff leaves out the staged fastest-lap bonus and limit"
+
+
+async def _stage_for_the_diff(db_path: str, staging: str) -> None:
+    """Stage on season 1 what the diff's case names, beyond P1 at 26, which `_season` stages."""
+    if staging == "removal and addition":
+        await _stage_a_removal_and_an_addition(db_path)
+    if staging in ("fastest lap at 2", "P1 at 26 and fastest lap at 2"):
+        await _save(
+            db_path, "stage_fastest_lap_on", SEASON_ID, CONFIG, "FEATURE_RACE", fl_points=2
+        )
+    if staging == "limit at 8":
+        await _save(
+            db_path, "stage_fastest_lap_on", SEASON_ID, CONFIG, "FEATURE_RACE",
+            fl_position_limit=8,
+        )
+
+
 @pytest.mark.parametrize(
-    ("staged", "expected"),
+    ("staging", "expected"),
     [
-        (False, "No changes in modification store."),
-        (True, "**1 change staged:**\nStandard/FEATURE_RACE/P1: 25 → 26"),
-        ("removal and addition",
-         "**2 changes staged:**\n"
-         "Standard/FEATURE_RACE/P2: 18 → (removed)\n"
-         "Standard/FEATURE_RACE/P3: ? → 5"),
+        pytest.param("nothing", "No changes in modification store.", id="nothing staged"),
+        pytest.param(
+            "P1 at 26",
+            "**1 change staged:**\nStandard, Feature Race, P1: 25 → 26",
+            id="P1 at 26",
+            marks=pytest.mark.xfail(strict=True, reason=DIFF_NOT_YET),
+        ),
+        pytest.param(
+            "removal and addition",
+            "**2 changes staged:**\n"
+            "Standard, Feature Race, P2: 18 → none\n"
+            "Standard, Feature Race, P3: none → 5",
+            id="removal and addition",
+            marks=pytest.mark.xfail(strict=True, reason=DIFF_NOT_YET),
+        ),
+        pytest.param(
+            "fastest lap at 2",
+            "**1 change staged:**\nStandard, Feature Race, fastest lap: 1 → 2",
+            id="fastest lap at 2",
+            marks=pytest.mark.xfail(strict=True, reason=FASTEST_LAP_NOT_YET),
+        ),
+        pytest.param(
+            "limit at 8",
+            "**1 change staged:**\nStandard, Feature Race, fastest lap position limit: 10 → 8",
+            id="limit at 8",
+            marks=pytest.mark.xfail(strict=True, reason=FASTEST_LAP_NOT_YET),
+        ),
+        pytest.param(
+            "P1 at 26 and fastest lap at 2",
+            "**2 changes staged:**\n"
+            "Standard, Feature Race, P1: 25 → 26\n"
+            "Standard, Feature Race, fastest lap: 1 → 2",
+            id="P1 at 26 and fastest lap at 2",
+            marks=pytest.mark.xfail(strict=True, reason=FASTEST_LAP_NOT_YET),
+        ),
     ],
 )
-async def test_the_modification_store_diff_lists_each_staged_change(tmp_path, staged, expected):
+async def test_the_modification_store_diff_lists_each_staged_change(tmp_path, staging, expected):
     """What `/results amend review` shows of season 1's staged table against the points it
-    scores on (P1 25, P2 18): nothing staged says so; P1 staged at 26 is one change, counted in
-    the singular; P2 taken out and P3 staged at 5 are two, in position order, a position the
-    season lacks shown as "?" and one the store lacks as "(removed)"."""
+    scores on (P1 25, P2 18, a fastest-lap bonus of 1 to the top ten): nothing staged says so;
+    each staged value is one change, counted in the singular for one, named "Standard, Feature
+    Race, ..." and shown from what to what, a value one side lacks shown as "none"; positions
+    come in order, then the fastest-lap bonus, then its position limit, every one of which
+    Approve installs."""
     from leaguebot.results.services.points.amendment_mode_service import get_modification_store_diff
 
-    db_path = await _season(tmp_path, amend=True, staged=staged is True)
-    if staged == "removal and addition":
-        await _stage_a_removal_and_an_addition(db_path)
+    db_path = await _season(tmp_path, amend=True, staged=staging.startswith("P1 at 26"))
+    await _stage_for_the_diff(db_path, staging)
 
     assert await get_modification_store_diff(db_path, SEASON_ID) == expected
