@@ -380,14 +380,7 @@ async def _nothing_else(league):
 @pytest.mark.parametrize(
     "elsewhere, left, state",
     [
-        pytest.param(
-            _nothing_else, [], "NOT_SIGNED_UP", id="last-placement",
-            marks=pytest.mark.xfail(
-                strict=True,
-                reason="#624: with signup off a driver unassigned from their last placement "
-                "still becomes Unassigned",
-            ),
-        ),
+        pytest.param(_nothing_else, [], "NOT_SIGNED_UP", id="last-placement"),
         pytest.param(
             _charles_also_in_pro, [("Pro", "Ferrari", False)], "ASSIGNED", id="another-left"
         ),

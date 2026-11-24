@@ -714,7 +714,10 @@ def register_change_types(bot: LeagueBot) -> None:
         )
     )
     bot.change_queue.register(
-        driver_unassign_change(placement=bot.placement_service, now=lambda: bot.change_queue.now())
+        driver_unassign_change(
+            placement=bot.placement_service, modules=bot.module_service,
+            now=lambda: bot.change_queue.now(),
+        )
     )
     bot.change_queue.register(
         driver_reject_change(

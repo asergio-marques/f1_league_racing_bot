@@ -272,7 +272,12 @@ CATCHES = [
         ),
         id="driver assign check",
     ),
-    pytest.param(_placement_check("driver_unassign_change"), id="driver unassign check"),
+    pytest.param(
+        _placement_check(
+            "driver_unassign_change", modules=MagicMock(is_enabled_on=AsyncMock(return_value=True))
+        ),
+        id="driver unassign check",
+    ),
     pytest.param(_team_check("team_add_change", _TEAM_ADDED), id="team add check"),
     pytest.param(_team_save("team_add_change", _TEAM_ADDED), id="team add save"),
     pytest.param(_team_check("team_remove_change", _TEAM_REMOVED), id="team remove check"),

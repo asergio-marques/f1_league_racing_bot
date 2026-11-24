@@ -753,6 +753,7 @@ class PlacementService:
         division_id: int,
         season_id: int,
         uncommitted_only: bool = False,
+        signup_off: bool = False,
     ) -> dict:
         """Remove a driver's assignment from one division on *db*, leaving the audit entry to the
         caller.
@@ -762,6 +763,9 @@ class PlacementService:
         the queue's clock (*audit*). It awaits nothing but *db*: no member is fetched and no role
         asked of Discord. Roles and the lineup are owed only where the placement was committed,
         and a test driver holds no roles. Refused as `judge_unassign_on` refuses.
+
+        A driver left holding no placement goes back to Unassigned, or with *signup_off*, where no
+        signup ever made them Unassigned, to Not Signed Up, as they were before they were placed.
 
         Returns the summary (division_name, has_remaining_assignments, team_name, lineups), the
         audit entry's *audit* (its old and new values and the division), the driver's account
@@ -831,9 +835,10 @@ class PlacementService:
                 "UPDATE team_seats SET driver_profile_id = NULL WHERE id = ?", (seat_id,)
             )
         await db.execute("DELETE FROM driver_season_assignments WHERE id = ?", (asgn_id,))
+        left_as = DriverState.NOT_SIGNED_UP if signup_off else DriverState.UNASSIGNED
         if not has_remaining:
             await write_transition(
-                db, driver_profile_id, DriverState.ASSIGNED, DriverState.UNASSIGNED
+                db, driver_profile_id, DriverState.ASSIGNED, left_as, signup_off=signup_off
             )
 
         revoke: list[int] = []
@@ -852,9 +857,7 @@ class PlacementService:
             "audit": {
                 "old_value": {"team": team_name, "seat_id": seat_id},
                 "new_value": {
-                    "new_state": (
-                        DriverState.ASSIGNED if has_remaining else DriverState.UNASSIGNED
-                    ).value,
+                    "new_state": (DriverState.ASSIGNED if has_remaining else left_as).value,
                     "has_remaining": has_remaining,
                 },
                 "division_id": division_id,

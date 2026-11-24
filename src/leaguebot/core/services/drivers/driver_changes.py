@@ -765,10 +765,12 @@ def driver_assign_change(
 
 
 def driver_unassign_change(
-    *, placement: PlacementService, now: Callable[[], datetime]
+    *, placement: PlacementService, modules: ModuleService, now: Callable[[], datetime]
 ) -> ChangeType:
     """The `core.driver_unassign` change type, for the builder to register: *placement* is what
-    the check judges the unassignment through and the save removes the placement through.
+    the check judges the unassignment through and the save removes the placement through, and
+    *modules* is read for the signup module's switch on the save's connection: with it off, a
+    driver left holding no placement goes back to Not Signed Up, not Unassigned.
 
     The payload names the driver (`driver_profile_id`, `discord_user_id`, `driver_name`), the
     season (`season_id`) and the division (`division_id`, with its name as typed, `division`).
@@ -805,7 +807,7 @@ def driver_unassign_change(
         removed = await placement.unassign_on(
             db, driver_profile_id=int(payload["driver_profile_id"]),
             division_id=int(payload["division_id"]), season_id=int(payload["season_id"]),
-            uncommitted_only=True,
+            uncommitted_only=True, signup_off=not await modules.is_enabled_on(db, "signup"),
         )
         audit = removed["audit"]
         return _Saved(
