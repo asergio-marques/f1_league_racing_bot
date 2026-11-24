@@ -46,7 +46,13 @@ from leaguebot.framework.models.change import (
     Verdict,
 )
 from leaguebot.core.models.division import Division
-from leaguebot.core.models.round import Round, RoundFormat, stored_scheduled_at, utc_text
+from leaguebot.core.models.round import (
+    Round,
+    RoundFormat,
+    RoundStatus,
+    stored_scheduled_at,
+    utc_text,
+)
 from leaguebot.core.services.rounds import track_service
 from leaguebot.framework.services.queue.change_types import (
     ChangeType,
@@ -356,6 +362,8 @@ def _duplicate_datetime_errors(
 ) -> list[str]:
     """Every incoming round whose datetime is already taken, within the batch or before it.
 
+    *existing* holds the moments of the division's rounds that are not cancelled.
+
     The confirmation of placements refuses a season holding two rounds of one division at the same
     moment, and it does so long after the calendar has been built and possibly posted. A repeated
     line is the likeliest fault in a pasted calendar, so it is caught here instead, at the first
@@ -424,8 +432,11 @@ def _import_check(
                             continue
                     added += 1
 
+                # A cancelled round holds no moment (core specification, "Rounds"), though it
+                # still takes a place on the calendar, so it counts for the overflow below.
                 errors += _duplicate_datetime_errors(
-                    [r.scheduled_at for r in held], entry["rounds"]
+                    [r.scheduled_at for r in held if r.status != RoundStatus.CANCELLED.value],
+                    entry["rounds"],
                 )
 
                 # Last, because it loads and parses the calendar template. Asked of the whole

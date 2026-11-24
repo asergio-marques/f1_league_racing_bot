@@ -268,9 +268,7 @@ async def test_two_imported_rounds_may_not_share_a_moment(tmp_path):
 
 @pytest.mark.parametrize("status", [
     "NOT_RUN",
-    pytest.param("CANCELLED", marks=pytest.mark.xfail(
-        strict=True, reason="#605: a cancelled round still holds its moment against an import",
-    )),
+    "CANCELLED",
 ])
 async def test_an_imported_round_may_not_land_on_an_existing_one(tmp_path, status):
     """The confirmation of placements refuses such a season; catching it here saves finding out
