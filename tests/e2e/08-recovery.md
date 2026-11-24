@@ -83,7 +83,7 @@ online in the member list earlier, while the catch-up is still running.
 
 1. **Do:** `/test-mode backup status`
 
-   **Expect:** as `01-full-season.md` step 1: taken at `00-base.md` step 33, `Readable: yes`,
+   **Expect:** as `01-full-season.md` step 1: taken at `00-base.md` step 38, `Readable: yes`,
    locked. Anything else means the base must be built again: run `00-base.md`. No log line.
 
 2. **Do:** `/test-mode backup restore`, and within two minutes press **♻️ Restore**.
@@ -724,10 +724,10 @@ bot was down, so its five minutes cannot have been served.
 
 **The base has no review to stand.** Season #1 is ongoing, where `/season config-review` is for a
 season in configuration and `/season placements-review` refuses an ongoing season outside a
-mid-season placements window, which test mode never opens. So this part ends Season #1 the one
-way that keeps the saved backup, `/season cancel`, and sets up Season #2 to configuration, as
-`02-roster-changes.md` does. It restores the base first, so that the cancellation reads as that
-spec gives it.
+mid-season placements window, which only a signup window closed with a signup still unsettled
+opens. So this part ends Season #1 the one way that keeps the saved backup, `/season cancel`, and
+sets up Season #2 to configuration, as `02-roster-changes.md` does. It restores the base first, so
+that the cancellation reads as that spec gives it.
 
 40. **Do:** steps 1 to 3 again: `/test-mode backup status`, `/test-mode backup restore` and
     **♻️ Restore**, and restart the bot.
@@ -755,7 +755,7 @@ spec gives it.
     **Expect:** as `02-roster-changes.md` step 50: the review in `#bot-commands`, headed
     `**Configuration Review (Season #2 — F1 25)**`, its question last with
     **✅ Confirm configuration**, and `<you> | /season config-review | Review posted`. The
-    acknowledgement stands unchanged, as `00-base.md` step 20 records.
+    acknowledgement stands unchanged, as `00-base.md` step 21 records.
 
 44. **Do:** with the question standing, stop the bot **within five minutes of the question** (at
     once is best), then wait until six minutes have passed since the question, and **start the
@@ -811,13 +811,15 @@ spec gives it.
 
     **Expect:** as `02-roster-changes.md` step 51:
     - **Ack:** `Confirming season 2's configuration`
-    - **Then:** ``✅ Season #2's configuration is confirmed. The season is now in placements — build its divisions and calendar, place its drivers, then run `/season placements-review`.``
+    - **Then:** ``✅ Season #2's configuration is confirmed. The season now waits for its signup window — open it with `/signup open`.``
+      The signup module is on, so the season waits for its window, test mode or not
+      (`configuration_confirm_change`).
     - **Posts:** every message of step 45's review deleted from `#bot-commands`.
     - **Log:**
       ```
       <you> | /season config-review | Confirmed
         season: Season #2
-        stage: PLACEMENTS
+        stage: WAITING
       ```
 
     In (a), skip this step: Season #2 stays in configuration, which the restore below does not
@@ -827,9 +829,9 @@ spec gives it.
 
 ## Part I — Restoring the base
 
-Season #2 is left in configuration or placements, test mode on. A restore is itself a restart:
-the staged files are swapped in as the bot starts, before the catch-up, so the catch-up runs on
-the base, which has nothing to catch up.
+Season #2 is left in configuration or waiting for its signup window, test mode on. A restore is
+itself a restart: the staged files are swapped in as the bot starts, before the catch-up, so the
+catch-up runs on the base, which has nothing to catch up.
 
 47. **Do:** steps 1 to 3 again: `/test-mode backup status`, `/test-mode backup restore` and
     **♻️ Restore**, and restart the bot.
@@ -849,7 +851,7 @@ the results and standings pictures of Division 1's round 1 (Parts C to G), Rafae
 in `#d1-verdicts`, the attendance sheet in `#d1-attendance`, and any accepted second copy; the
 `⏱️ … your review expired while the bot was restarting …` notice of step 44 in `#bot-commands`; and the cancellation notices and cancelled
 calendars of step 41 in every division channel, as `02-roster-changes.md` leaves them. The
-calendars `00-base.md` step 32 posted, which the base still records, were deleted at step 41; a
+calendars `00-base.md` step 37 posted, which the base still records, were deleted at step 41; a
 later spec that posts a calendar again finds the recorded one gone and carries on
 (`standing_posts` passes over a message already deleted).
 
