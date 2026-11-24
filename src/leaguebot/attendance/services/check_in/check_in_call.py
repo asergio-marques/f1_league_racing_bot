@@ -292,10 +292,10 @@ def check_in_steps(
         round_id = int(ctx.payload["round_id"])
         async with get_connection(ctx.db_path) as db:
             row = await call_row(db, round_id)
-            # The answers already held are drawn on the call, as a press redraws them. A press on
-            # the call this one replaces, between this read and the new call's record, leaves that
-            # driver's previous answer on the new call until the next press; the saved answer is
-            # right, and nothing guards the gap.
+            # The answers already held are drawn on the call, as a press redraws them. No answer can
+            # be saved between this read and the new call's record: a press only asks for an answer
+            # change, whose save is a job on the league lane, and this post is a job of the change
+            # running on that same lane, which nothing overtakes.
             answers = (
                 {} if row is None
                 else await rsvp_service.recorded_answers_on(db, round_id, row["division_id"])
