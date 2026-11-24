@@ -26,7 +26,7 @@ what a review uses for its tables, its sheet and its lineup, and weather's `dele
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, overload
 
 import discord
 
@@ -46,6 +46,10 @@ from leaguebot.framework.utils.league_server import league_guild
 DELETE_REPLACED = "delete_replaced"
 
 
+@overload
+def posted_in(recorded: int | str | None, present: int) -> int: ...
+@overload
+def posted_in(recorded: int | str | None, present: int | None) -> int | None: ...
 def posted_in(recorded: int | str | None, present: int | None) -> int | None:
     """The channel a replaced post is looked for in: the one recorded beside its id, else *present*.
 

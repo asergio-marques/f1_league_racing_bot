@@ -443,9 +443,7 @@ async def test_the_sheet_is_not_put_on_the_old_retry_queue(tmp_path):
 
 @pytest.mark.parametrize("sheet_channel, posted_in", [
     pytest.param(707, None, id="channel kept"),
-    pytest.param(708, 707, id="channel moved", marks=pytest.mark.xfail(
-        strict=True, reason="#607: the review deletes the old sheet from the division's present "
-        "channel, not the one it was posted in")),
+    pytest.param(708, 707, id="channel moved"),
 ])
 async def test_the_sheet_after_a_review_replaces_the_old_one_by_a_delete_job(
     tmp_path, sheet_channel, posted_in,
@@ -1602,8 +1600,6 @@ async def _lewis_owed_an_autoreserve(league: ReviewLeague) -> None:
         await db.commit()
 
 
-@pytest.mark.xfail(strict=True, reason="#607: a posted lineup carries no channel for the one it "
-                   "replaced, so the review deletes the old lineup from the present channel")
 async def test_a_sanction_posts_each_lineup_it_touches_once(tmp_path):
     """Attendance is on, with its real hook and the real placement service (roles not the
     subject, so granted and revoked by doubles). Lewis is owed an autoreserve in Pro, whose old
