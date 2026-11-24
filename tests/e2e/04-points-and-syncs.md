@@ -452,9 +452,9 @@ starts from. `Test Ladder` is built here and removed at the end of the part.
     - **Reply:**
       ```
       ❌ Points ordering validation failed:
-        • [Sprint Race] Points are not monotonically non-increasing: position 1 has 5 pts but position 2 has 6 pts.
+        • Config 'Test Ladder', Sprint Race: position 1 (5 pts) < position 2 (6 pts)
       ```
-    - **Log:** ``⛔ `/results config xml-import` into configuration Test Ladder refused for <you> — points ordering validation failed: [Sprint Race] Points are not monotonically non-increasing: position 1 has 5 pts but position 2 has 6 pts.``
+    - **Log:** ``⛔ `/results config xml-import` into configuration Test Ladder refused for <you> — points ordering validation failed: Config 'Test Ladder', Sprint Race: position 1 (5 pts) < position 2 (6 pts)``
     - Nothing imported. Unlike `/results config session` (step 13), an import out of order is
       refused outright.
 
