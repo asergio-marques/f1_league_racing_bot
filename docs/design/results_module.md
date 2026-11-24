@@ -227,8 +227,9 @@ docstring says), `points_ordering` (the ordering rule, held once for its four ca
 `tyre_compound` (the compounds a session's rows name, which the image module's preview takes through
 `PreviewSources`) and `xml_import`. `results/models/` holds plain data: a session's result, a points
 configuration, a standings snapshot, the amendment mode's state, `PointsChanged` (what a points
-amendment changes: read by the review's diff, and formed by its approval, from one comparison), `RecoveryFailed` (below, "Errors and failures"), and `SWITCH_KEY`
-(`switch.py`), the key results' switch is read by.
+amendment changes: read by the review's diff, and formed by its approval, from one comparison),
+`RecoveryFailed` (below, "Errors and failures"), and `SWITCH_KEY` (`switch.py`), the key results'
+switch is read by.
 
 ---
 
