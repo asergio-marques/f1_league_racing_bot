@@ -116,7 +116,7 @@ async def confirm_configuration(
     judges them again when the confirmation runs, and the season no longer in Configuration with
     them: a season changed while it waited must not be confirmed. Everything after the request, the
     stage, signup's settings, the audit entry and the line, is the change's one save, to Waiting
-    where the signup module is enabled and test mode is off, or to Placements otherwise.
+    where the signup module is enabled, test mode or not, or to Placements otherwise.
 
     The review comes down ahead of the confirmation, but only for a request the queue
     accepts: one it refuses at once leaves the review standing.
