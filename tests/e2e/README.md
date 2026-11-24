@@ -19,7 +19,7 @@ league admin role.
 
 | Spec | What it does |
 |---|---|
-| [00-base.md](00-base.md) | Builds the base from no database file: the server's roles and channels, every module on, teams, a two-division test season with its calendar and seated fake drivers, approved. Ends by saving that state as a **locked backup**. |
+| [00-base.md](00-base.md) | Builds the base from no database file: the server's roles and channels, every module on, teams, and a two-division test season taken through its signup window — fake drivers signed up in bulk, then seated with `/driver assign` — with its calendar, approved. Ends by saving that state as a **locked backup**. |
 | `01-full-season.md` | Restores the base and runs the season to completion. |
 | `02-roster-changes.md` | Restores the base and makes roster and team changes in test mode. |
 | `03-calendar-changes.md` | Restores the base and changes the calendar and the divisions mid-season. |
@@ -28,10 +28,14 @@ league admin role.
 | `06-settings.md` | Restores the base and works the bot's settings, its views and the signup configuration in test mode. |
 | `07-image-config.md` | Restores the base and works the image configuration — templates, asset folders, colours and driver portraits — checking each change by preview, then puts the base's settings back. |
 | `08-recovery.md` | Restores the base and restarts the bot at awkward moments, checking what resumes. |
+| `10-signup-and-drivers.md` | Restores the base, opens signups mid-season, signs fake drivers up through the real wizard with a league admin answering for them, reviews them, seats them with `/driver assign`, and works the `/driver` commands on fake drivers. |
 | `09-season-endings.md` | Restores the base, cancels its season, aborts a season set up after it, packs the bot and factory-resets it. **Run last: it erases everything.** |
 
 Run **`00-base.md` first**, from no database file. It fixes, in its **Fixture** table, every
 name and value the other specs reuse: channels, roles, divisions, teams and drivers.
+
+`10-signup-and-drivers.md` is listed before `09-season-endings.md` because `09` erases
+everything: run it before `09`.
 
 Run **`09-season-endings.md` last of all.** It ends with a factory reset, which erases the
 bot's database and its messages on the server, the base with them: after it, run `00-base.md`
@@ -103,10 +107,13 @@ as the Fixture says, put the server right and run the step again.
 
 ## Not covered
 
-**The `/driver` commands, and everything that needs a real driver.** The specs run in test mode, on
-fake drivers who have no Discord account. Under test mode every `/driver` command takes a fake
-driver by mention or ID, but no spec walks them yet. The signup flow is left out: test mode opens no
-signup window.
+**Everything that needs a real driver.** The specs run in test mode, on fake drivers who have no
+Discord account, so no driver presses a button, receives a role or is pinged: a step that would
+grant a real driver a role, or need one to act for themselves, is not walked. Test mode keeps the
+signup flow, and the specs walk it on fake drivers instead: `00-base.md` signs its drivers up in
+bulk while its window is open, and `10-signup-and-drivers.md` takes fake drivers through the real
+signup wizard, with a league admin answering each question for them, and works the `/driver`
+commands, each taking a fake driver by mention or ID.
 
 ## Keeping them true
 
