@@ -93,9 +93,10 @@ async def test_a_fake_driver_named_by_id_is_asked_for_as_a_real_driver_is(
 
     ongoing, real, fake, params = _COMMANDS[name]
     league = await _league(tmp_path, ongoing=ongoing)
-    # The turn-down of an Unassigned driver is the signup module's: with it off a driver is
-    # turned down for holding only unconfirmed placements.
-    await league.switch("signup", True)
+    if name == "reject":
+        # The turn-down of an Unassigned driver is the signup module's: with it off a driver is
+        # turned down for holding only unconfirmed placements.
+        await league.switch("signup", True)
     ask = AsyncMock()
     monkeypatch.setattr(league.bot.change_queue, "ask", ask)
 
