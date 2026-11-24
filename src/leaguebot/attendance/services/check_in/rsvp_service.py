@@ -406,6 +406,23 @@ async def _answers_kept(db_path: str, round_id: int) -> bool:
         return await cursor.fetchone() is not None
 
 
+async def recorded_answers_on(
+    db: aiosqlite.Connection, round_id: int, division_id: int
+) -> dict[int, str]:
+    """The answers held for *round_id* of *division_id*, a driver profile id to its
+    ``rsvp_status``, read on the handed-in connection `db`.
+
+    The call about to be posted draws these (`roster_embed_teams`): an answer kept from an earlier
+    call, or from one taken down, is carried over (attendance spec, a repost), so the call must
+    show it as the redraw of a press does."""
+    cursor = await db.execute(
+        "SELECT driver_profile_id, rsvp_status FROM driver_round_attendance "
+        "WHERE round_id = ? AND division_id = ?",
+        (round_id, division_id),
+    )
+    return {r["driver_profile_id"]: r["rsvp_status"] for r in await cursor.fetchall()}
+
+
 # ── reopen_check_in_on ────────────────────────────────────────────────────────
 
 

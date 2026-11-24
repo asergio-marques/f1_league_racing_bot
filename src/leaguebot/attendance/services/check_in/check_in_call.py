@@ -292,6 +292,14 @@ def check_in_steps(
         round_id = int(ctx.payload["round_id"])
         async with get_connection(ctx.db_path) as db:
             row = await call_row(db, round_id)
+            # The answers already held are drawn on the call, as a press redraws them. A press on
+            # the call this one replaces, between this read and the new call's record, leaves that
+            # driver's previous answer on the new call until the next press; the saved answer is
+            # right, and nothing guards the gap.
+            answers = (
+                {} if row is None
+                else await rsvp_service.recorded_answers_on(db, round_id, row["division_id"])
+            )
         if row is None:
             raise LookupError(f"round {round_id} is no longer there")
         division_id: int = row["division_id"]
@@ -352,18 +360,7 @@ def check_in_steps(
             track_name=row["track_name"],
             scheduled_at=scheduled_at_of(row),
             round_format=RoundFormat(row["format"]),
-            teams=[
-                {
-                    "name": team["name"],
-                    "is_reserve": team["is_reserve"],
-                    "drivers": [
-                        {"display_str": rsvp_service._driver_display_str(d),
-                         "rsvp_status": "NO_RSVP"}
-                        for d in team["drivers"]
-                    ],
-                }
-                for team in roster
-            ],
+            teams=rsvp_service.roster_embed_teams(roster, answers),
         )
         role = row["mention_role_id"]
         # The check-in graphic is drawn once, on the first try (Constitution XIV r8): a retry

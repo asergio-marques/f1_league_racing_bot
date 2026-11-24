@@ -269,22 +269,38 @@ def _logged(bot: MagicMock) -> str:
     return "\n".join(bot.log_channel.sent)
 
 
-async def test_a_repost_keeps_every_answer_already_given(tmp_path):
+def _roster_lines(bot: MagicMock) -> list[str]:
+    """The lines of the Driver Roster the call sent to the check-in channel showed."""
+    [sent] = bot.channels[RSVP_CHANNEL_ID].send.await_args_list
+    [field] = [f for f in sent.kwargs["embed"].fields if "Driver Roster" in f.name]
+    return field.value.splitlines()
+
+
+@pytest.mark.parametrize("earlier_standing", [True, False], ids=["replacing", "after-a-take-down"])
+async def test_a_repost_keeps_every_answer_already_given(tmp_path, earlier_standing):
     """The rule this file exists for. A driver who said they were racing has not unsaid it
     because the round moved; clearing the answers here would make every amendment look to
-    the league like nobody had replied. The call posted in the earlier one's place keeps both."""
+    the league like nobody had replied. The call posted in the earlier one's place keeps both,
+    and shows both: the posted call draws the answers kept (#608), whether an earlier call still
+    stands or a take-down left only the answers."""
     db_path = await _make_db(tmp_path)
-    await _seed_embed_row(db_path)
+    if earlier_standing:
+        await _seed_embed_row(db_path)
     await _seed_answers(db_path, {FULL_TIME_PROFILE: "ACCEPTED", RESERVE_PROFILE: "DECLINED"})
     bot = await _queue_bot(db_path, RSVP_CHANNEL_ID)
 
-    await _ask(bot, replacing=True)
+    await _ask(bot, replacing=earlier_standing)
 
     assert len(_sent(bot)) == 1
     assert await _answers(db_path) == {
         FULL_TIME_PROFILE: "ACCEPTED",
         RESERVE_PROFILE: "DECLINED",
     }
+    lines = _roster_lines(bot)
+    [full_timer] = [line for line in lines if f"<@{FULL_TIME_PROFILE}>" in line]
+    [reserve] = [line for line in lines if f"<@{RESERVE_PROFILE}>" in line]
+    assert full_timer.endswith("(✅)")
+    assert reserve.endswith("(❌)")
 
 
 async def test_a_repost_discards_an_answer_from_a_driver_who_has_left(tmp_path):
