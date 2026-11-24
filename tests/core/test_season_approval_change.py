@@ -436,10 +436,35 @@ async def test_the_opening_standings_are_posted_in_each_division_s_standings_cha
         assert recorded[division]["constructor_standings_message_id"] is None
 
 
+@pytest.mark.parametrize(
+    ("signup", "driver_role", "give"),
+    [
+        pytest.param(False, False, "their division's and team's roles", id="signup-off"),
+        pytest.param(
+            False, True, "the driver role and their division's and team's roles",
+            id="signup-off-driver-role-set",
+            marks=pytest.mark.xfail(
+                strict=True,
+                reason="#624: with signup off the line does not yet name the driver role",
+            ),
+        ),
+        pytest.param(True, True, "their division's and team's roles", id="signup-on"),
+    ],
+)
 async def test_a_role_discord_refuses_stops_the_queue_and_once_discarded_is_named(
-    tmp_path, monkeypatch,
+    tmp_path, monkeypatch, signup, driver_role, give,
 ):
-    league = await _league_for(tmp_path, monkeypatch)
+    """The season is in Placements, the signup module off or on and the league's driver role
+    (820) set or not. Discord refuses Lewis's roles. A league admin presses Approve and the queue
+    runs: it stops at Lewis's grant. Once the admin discards the job, the reply and the log line
+    tell the league to give Lewis his roles by hand: with the signup module off and a driver role
+    set, "the driver role and their division's and team's roles" (#624); otherwise their
+    division's and team's, as today. Max's roles are granted."""
+    from tests.support.season_league import driver_role_set
+
+    league = await _league_for(tmp_path, monkeypatch, signup=signup)
+    if driver_role:
+        await driver_role_set(league)
     league.grant_fails[LEWIS] = http_error(discord.Forbidden, status=403, text="Missing Permissions")
     press = await _pressed(league)
 
@@ -448,7 +473,7 @@ async def test_a_role_discord_refuses_stops_the_queue_and_once_discarded_is_name
     assert f"granting `<@{LEWIS}>` the roles of **Pro** and Ferrari" in league.log()
     await discard_job(league.bot)
 
-    line = f"<@{LEWIS}> — their roles could not be granted. Give them their division's and team's roles by hand."
+    line = f"<@{LEWIS}> — their roles could not be granted. Give them {give} by hand."
     assert line in _not_done(reply(press))
     logged = line.replace(f"<@{LEWIS}>", f"`<@{LEWIS}>`")
     assert f"not done: {logged}" in league.log()
