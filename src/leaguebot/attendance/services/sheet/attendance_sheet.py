@@ -361,8 +361,8 @@ class PostedSheet:
 
 def sheet_result(posted: PostedSheet | None) -> dict[str, Any]:
     """A sheet job's result: the sheet posted (`new`, `old`, `old_channel_id`, `channel_id`,
-    `takes_slot`, and `faults` where the graphic fell back from any), or an empty result where nothing was due (a
-    cancelled round, a division with no opening round)."""
+    `takes_slot`, and `faults` where the graphic fell back from any), or an empty result where
+    nothing was due (a cancelled round, a division with no opening round)."""
     if posted is None:
         return {}
     result: dict[str, Any] = {
