@@ -315,7 +315,6 @@ _PAST_ACCOUNT_GONE = (
     f"⛔ <@{_NICO_PAST}> is a past account of a driver whose current account, <@{_NICO}>, is not "
     "in the server."
 )
-_SIGNUP_OFF_UNBUILT = "#624: with signup off a member not signed up cannot yet be placed"
 _LABEL_UNBUILT = "#624: a refusal still names the state by its stored value"
 
 
@@ -375,10 +374,7 @@ async def _placing_past_account_gone(tmp_path):
             marks=pytest.mark.xfail(strict=True, reason=_LABEL_UNBUILT),
         ),
         pytest.param(_placing_signup_on, 108, _NO_PROFILE, id="signup-on-no-profile"),
-        pytest.param(
-            _placing_test_mode, 108, _TEST_MODE, id="signup-off-test-mode-no-profile",
-            marks=pytest.mark.xfail(strict=True, reason=_SIGNUP_OFF_UNBUILT),
-        ),
+        pytest.param(_placing_test_mode, 108, _TEST_MODE, id="signup-off-test-mode-no-profile"),
         pytest.param(
             _placing_past_account_gone, _NICO_PAST, _PAST_ACCOUNT_GONE,
             id="signup-off-past-account-gone",
@@ -474,7 +470,6 @@ async def _signup_off_not_signed_up(tmp_path):
     return league
 
 
-@pytest.mark.xfail(strict=True, reason=_SIGNUP_OFF_UNBUILT)
 @pytest.mark.parametrize(
     "build",
     [

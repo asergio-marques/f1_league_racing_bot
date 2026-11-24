@@ -94,12 +94,15 @@ from leaguebot.framework.services.queue.change_types import (
     StepContext,
     StepView,
 )
-from leaguebot.core.services.drivers.driver_service import DriverService, write_transition
+from leaguebot.core.services.drivers.driver_service import (
+    DriverService, profile_for_placement_on, write_transition,
+)
 from leaguebot.core.services.drivers.lineup_posting import LineupPoster
 from leaguebot.core.services.drivers.placement_service import PlacementService
 from leaguebot.core.services.drivers.role_moves import MOVE_ROLES, PLACEMENT_REASON, role_move_step
 from leaguebot.core.services.seasons.season_approval_change import unposted_lineup_line
 from leaguebot.core.services.drivers.team_role_service import TeamRoleService
+from leaguebot.framework.services.switches.module_service import ModuleService
 from leaguebot.framework.utils.hooks import AwaitedHook, Hook
 from leaguebot.framework.utils.league_server import league_guild
 from leaguebot.framework.utils.log_lines import refusal_line, reply_reason
@@ -252,12 +255,15 @@ async def placing_refusal(db_path: str, season_id: int, command: str) -> Verdict
 
 
 async def profile_refusal(db_path: str, payload: dict[str, Any]) -> Verdict | None:
-    """The refusal of a driver with no profile, else None."""
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT 1 FROM driver_profiles WHERE id = ?", (int(payload["driver_profile_id"]),)
-        )
-        found = await cursor.fetchone()
+    """The refusal of a driver with no profile, else None: a payload naming no profile
+    (`driver_profile_id` None) is a member the command found none for."""
+    found = None
+    if payload["driver_profile_id"] is not None:
+        async with get_connection(db_path) as db:
+            cursor = await db.execute(
+                "SELECT 1 FROM driver_profiles WHERE id = ?", (int(payload["driver_profile_id"]),)
+            )
+            found = await cursor.fetchone()
     if found is None:
         return Verdict.refuse(f"⛓ No driver profile found for **{payload['driver_name']}**.")
     return None
@@ -653,15 +659,18 @@ def driver_release_change(
 
 
 def driver_assign_change(
-    *, placement: PlacementService, now: Callable[[], datetime]
+    *, placement: PlacementService, modules: ModuleService, now: Callable[[], datetime]
 ) -> ChangeType:
     """The `core.driver_assign` change type, for the builder to register: *placement* is what the
-    check judges the assignment through and the save assigns the driver through.
+    check judges the assignment through and the save assigns the driver through, and *modules*
+    is read for the signup module's switch, on the connection the check or the save holds.
 
     The payload names the driver (`driver_profile_id`, `discord_user_id`, `driver_name`), the
     season (`season_id`), the division (`division_id`, with its name as typed, `division`) and
-    the team (`team_name`, the shorthand, and `team_full_name`). The placement is written
-    unconfirmed, so the save plans no role and no lineup.
+    the team (`team_name`, the shorthand, and `team_full_name`). With the signup module off the
+    driver may be a member holding no profile (`driver_profile_id` None), who is given one, Not
+    Signed Up, by the save that places them; with it on, such a member is refused as one with no
+    profile. The placement is written unconfirmed, so the save plans no role and no lineup.
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -669,23 +678,30 @@ def driver_assign_change(
         payload = ctx.payload
         season_id = int(payload["season_id"])
         division_id = int(payload["division_id"])
+        async with get_connection(ctx.db_path) as db:
+            signup_off = not await modules.is_enabled_on(db, "signup")
+        raw_profile_id = payload["driver_profile_id"]
+        driver_profile_id = None if raw_profile_id is None else int(raw_profile_id)
         refused = (
             await placing_refusal(ctx.db_path, season_id, ASSIGN_COMMAND)
             or await division_refusal(
                 ctx.db_path, season_id, [(division_id, payload["division"])]
             )
-            or await profile_refusal(ctx.db_path, payload)
+            or (
+                None if driver_profile_id is None and signup_off
+                else await profile_refusal(ctx.db_path, payload)
+            )
         )
         if refused is not None:
             return refused
         team_name = str(payload["team_name"])
-        driver_profile_id = int(payload["driver_profile_id"])
         try:
             await placement.guard_assign(division_id, season_id, team_name, driver_profile_id)
             async with get_connection(ctx.db_path) as db:
                 await placement.judge_assign_on(
                     db, driver_profile_id=driver_profile_id, division_id=division_id,
                     team_name=team_name, season_id=season_id, uncommitted_only=True,
+                    signup_off=signup_off,
                 )
         except Refused as refusal:
             return Verdict.refuse(f"⛔ {refusal}")
@@ -693,10 +709,19 @@ def driver_assign_change(
 
     async def apply(db: aiosqlite.Connection, ctx: StepContext) -> _Saved:
         payload = ctx.payload
+        signup_off = not await modules.is_enabled_on(db, "signup")
+        if payload["driver_profile_id"] is not None:
+            driver_profile_id = int(payload["driver_profile_id"])
+        elif signup_off:
+            driver_profile_id = await profile_for_placement_on(
+                db, str(payload["discord_user_id"])
+            )
+        else:
+            raise Refused(f"No driver profile found for **{payload['driver_name']}**.")
         assigned = await placement.assign_on(
-            db, driver_profile_id=int(payload["driver_profile_id"]),
+            db, driver_profile_id=driver_profile_id,
             division_id=int(payload["division_id"]), team_name=str(payload["team_name"]),
-            season_id=int(payload["season_id"]), uncommitted_only=True,
+            season_id=int(payload["season_id"]), uncommitted_only=True, signup_off=signup_off,
         )
         audit = assigned["audit"]
         return _Saved(

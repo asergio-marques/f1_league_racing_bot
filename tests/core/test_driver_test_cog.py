@@ -157,9 +157,6 @@ async def test_a_seated_fake_driver_is_given_a_seat_in_a_second_division(tmp_pat
     assert league.granted == {}
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#624: with signup off a fake driver Not Signed Up cannot yet be placed"
-)
 async def test_with_signup_off_a_fake_driver_not_signed_up_is_placed(tmp_path):
     """#624. Test mode is on, the season is in Placements, and its configuration was confirmed
     with the signup module off. Ghost, a fake driver, is Not Signed Up, and McLaren in Am has a

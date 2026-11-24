@@ -114,6 +114,32 @@ async def resolve_driver_profile_id(discord_user_id: int, db) -> int | None:
     return row[0] if row else None
 
 
+async def profile_for_placement_on(db, discord_user_id: str) -> int:
+    """The id of the driver *discord_user_id* names, given a profile of their own, Not Signed Up,
+    where the member holds none: how a league that runs without signups places a member.
+
+    The one place a profile is made for a placement, within the caller's transaction, committing
+    nothing. Any account the driver has held names them, so an account that is a past one of a
+    driver finds that driver's profile and is never given another. Its state is written by
+    `write_transition` as the placement moves it (`signup_off`).
+    """
+    cursor = await db.execute(
+        "SELECT id FROM driver_profiles WHERE discord_user_id = ?", (discord_user_id,)
+    )
+    row = await cursor.fetchone()
+    if row is not None:
+        return int(row["id"])
+    named = await resolve_driver_profile_id(int(discord_user_id), db)
+    if named is not None:
+        return named
+    cursor = await db.execute(
+        "INSERT INTO driver_profiles (discord_user_id, current_state, former_driver) "
+        "VALUES (?, ?, 0)",
+        (discord_user_id, DriverState.NOT_SIGNED_UP.value),
+    )
+    return inserted_id(cursor)
+
+
 # ---------------------------------------------------------------------------
 # A driver's accounts
 # ---------------------------------------------------------------------------

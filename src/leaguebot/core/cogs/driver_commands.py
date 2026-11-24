@@ -150,9 +150,10 @@ async def assign(
         await refuse(interaction, f"⛔ {reference.refusal}", what=describe(interaction))
         return
 
-    # Fetch the driver profile
+    # Fetch the driver profile. With the signup module off a member holding none is placed all
+    # the same, and given one as the save places them.
     profile = await bot.driver_service.get_profile(driver.account)
-    if profile is None:
+    if profile is None and await bot.module_service.is_enabled("signup"):
         await refuse(
             interaction,
             f"⛓ No driver profile found for **{driver.name}**.",
@@ -165,7 +166,7 @@ async def assign(
     await bot.change_queue.ask(
         DRIVER_ASSIGN,
         {
-            "driver_profile_id": profile.id,
+            "driver_profile_id": None if profile is None else profile.id,
             "discord_user_id": driver.account,
             "driver_name": driver.name,
             "season_id": season.id,
