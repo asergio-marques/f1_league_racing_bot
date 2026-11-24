@@ -316,24 +316,37 @@ def test_parse_multiple_errors_collected():
 def test_validate_monotonic_pass(payload):
     """A non-increasing sequence passes validation; trailing zeros after a positive value do
     not trigger a violation; an empty payload has no violations."""
-    assert validate_payload(payload) == []
+    assert validate_payload(payload, "Test") == []
 
 
 @pytest.mark.parametrize(
-    ("session_type", "positions", "label"),
+    ("session_type", "positions", "expected"),
     [
-        (SessionType.FEATURE_RACE, {1: 10, 2: 20}, "Feature Race"),
-        (SessionType.SPRINT_RACE, {1: 8, 2: 8}, "Sprint Race"),
+        (
+            SessionType.FEATURE_RACE,
+            {1: 10, 2: 20},
+            ["Config 'Test', Feature Race: position 1 (10 pts) < position 2 (20 pts)"],
+        ),
+        (
+            SessionType.SPRINT_RACE,
+            {1: 8, 2: 8},
+            ["Config 'Test', Sprint Race: position 1 (8 pts) < position 2 (8 pts)"],
+        ),
+        (
+            SessionType.FEATURE_RACE,
+            {1: 25, 3: 18, 5: 20},
+            ["Config 'Test', Feature Race: position 3 (18 pts) < position 5 (20 pts)"],
+        ),
     ],
-    ids=["increasing", "equal-positive"],
+    ids=["increasing", "equal-positive", "gapped-ids"],
 )
-def test_validate_monotonic_fail(session_type, positions, label):
+def test_validate_monotonic_fail(session_type, positions, expected):
     """An increasing sequence produces an error, and so do equal adjacent positive values
-    (non-strictly-decreasing); the error names the session."""
+    (non-strictly-decreasing). The error is the shared ordering sentence: it names the config
+    and the session, and the positions at fault by their ids, not by their place in the sorted
+    list, so ids with gaps send the manager to the right rows."""
     payload = XmlImportPayload(positions={session_type: positions})
-    errors = validate_payload(payload)
-    assert len(errors) == 1
-    assert label in errors[0]
+    assert validate_payload(payload, "Test") == expected
 
 
 # ---------------------------------------------------------------------------
