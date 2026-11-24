@@ -70,7 +70,7 @@ __all__ = ["ApproveView", "ConfirmConfigurationView", "ConfirmMidSeasonPlacement
 class ApproveView(LeagueView):
     """The standing question at the end of a review, and the button that answers it.
 
-    **Who may press.** The member who ran the review, or a server administrator. A league
+    **Who may press.** The member who ran the review, or a league admin. A league
     manager holding only the interaction role may run `/season placements-review` — that is what the
     report is for — but approving somebody else's review is not theirs to do. The message
     is public, so this check is what stops a bystander answering it; the refusal is
