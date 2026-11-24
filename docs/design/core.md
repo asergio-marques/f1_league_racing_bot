@@ -323,7 +323,7 @@ declares every attribute the builder attaches (`framework.md`, "How the code is 
 | `/driver` | `driver_cog` (the member's), `driver_test_cog` (test mode's) | `reassign`, `assign`, `unassign`, `move`, `release`, `reject`, `sack`, in each |
 | `/team` | `team_cog` | `add`, `modify`, `remove`, `list`, `lineup`, `reserve-role` |
 | `/module` | `module_cog` | `enable`, `disable` |
-| `/test-mode` | `test_mode_cog` | `toggle`, `nationality`, `advance`, `review`, `set-former-driver`; `backup` (`save`, `lock`, `status`, `restore`); `roster` (`add`, `add-bulk`, `remove`, `list`, `clear`) |
+| `/test-mode` | `test_mode_cog` | `toggle`, `nationality`, `advance`, `review`, `set-former-driver`; `backup` (`save`, `lock`, `status`, `restore`); `roster` (`add`, `add-bulk`, `sign-up-bulk`, `remove`, `list`, `clear`) |
 | `/track` | `track_cog` | `list` |
 | — | `clean_cog` | `/clean-bot`, a top-level command |
 
@@ -437,6 +437,7 @@ Every core change type runs on the league lane; none is a conversation's. Each i
 | `core.test_mode_former_driver` | `/test-mode set-former-driver` | the flag and the audit entry | — |
 | `core.test_roster_add` | `/test-mode roster add` | the fake driver at Not Signed Up, with no seat, and the audit entry | — |
 | `core.test_roster_add_bulk` | `/test-mode roster add-bulk` | every driver of the file at Not Signed Up, with no seat, and an audit entry for each | — |
+| `core.test_roster_sign_up_bulk` | `/test-mode roster sign-up-bulk` | every driver of the list created as `add-bulk` creates one, signed up and approved by signup's hook, and left Unassigned with no seat; an audit entry for its addition, and signup's for its start and approval | — |
 | `core.test_roster_remove` | `/test-mode roster remove` | the fake driver deleted, their history kept, and the audit entry | — |
 | `core.test_roster_clear` | `/test-mode roster clear` | every fake driver of the division deleted, their history kept, and an audit entry for each | — |
 | `hub.refresh` | the bot, wherever what the panel offers may change | none: the panel's id is its job's `record` | the old panel deleted where the hub moved |
@@ -719,6 +720,8 @@ which each `_sign_up_to_*` docstring states where it matters.
 | `driver_turned_down` | A | signup | `driver_changes`, `season_lifecycle_service` |
 | `driver_account_changed`, `driver_account_changed_steps` | A, P | signup | `driver_changes` (`/driver reassign`) |
 | `divisions_raced_read` | A | results | `driver_service`, `test_roster_changes` (the roster's removal and clear) |
+| `fake_signups_ready_read` | A | signup | `test_roster_sign_up_change` (the faults standing in the way of signing fake drivers up, gathered into the refusal) |
+| `fake_signups_approved` | A | signup | `test_roster_sign_up_change` (signup's record of each driver's signup, and its passage to Unassigned, in the save) |
 | `final_round_read` | A | results | `season_end_changes` |
 | `season_completed`, `season_completed_steps` | A, P | results, attendance | `season_end_changes` |
 | `season_standing_read` | A | results | `season_end_service` |
@@ -929,20 +932,35 @@ its own `end` save. After the save of the toggle and of a season's end the swap 
 `/signup` commands is the first job (`swap_test_mode_commands_step`). Whether a real driver stands
 in the way is counted by `count_live_real_drivers`. `/test-mode nationality` is a `Setting`.
 
-**Five more test-mode commands are each a change of their own, in one shape:**
-`/test-mode set-former-driver` (`core.test_mode_former_driver`) and the four roster commands of
+**Six more test-mode commands are each a change of their own, in one shape:**
+`/test-mode set-former-driver` (`core.test_mode_former_driver`), the four roster commands of
 `test_roster_changes` (`core.test_roster_add`, `core.test_roster_add_bulk`,
-`core.test_roster_remove`, `core.test_roster_clear`). Each carries what the command was given, is
+`core.test_roster_remove`, `core.test_roster_clear`) and `/test-mode roster sign-up-bulk`
+(`core.test_roster_sign_up_bulk`, `test_roster_sign_up_change`). Each carries what the command was given, is
 judged without a write at the ask and again as it starts, and is one save of its rows and their
 audit entries, the roster's writers taking the connection of the save and committing nothing. What
 the reply of a discarded save needs is read into the payload at the ask (`fill`), and a fault in a
 save stops the lane. What each kind judges and writes is its docstring's. A roster the file shows
 wrong on its own is refused by the form before the ask. A roster command is judged in no stage of
 the season, only on test mode being on and a season standing: a fake driver is created unsigned, and
-the signup and `/driver assign` after it carry every rule of the stage. Removal asks whether the
+the signup and `/driver assign` after it carry every rule of the stage (`sign-up-bulk`, which makes the signup, being the exception, below). Removal asks whether the
 driver has raced through core's reader of the divisions a driver raced in (`divisions_raced_read`)
 and the former-driver flag, and whether it holds a committed seat, never the results tables, so core
 reads no table another module owns.
+
+**`/test-mode roster sign-up-bulk` creates in core and signs up in signup.** The one roster command
+a stage judges: it is refused unless signups are open, the flow being obeyed and the helper only
+quickening it. Core creates the drivers as `add-bulk` does (`seat_bulk_on`), but what a signup is
+and what moves a driver through it are signup's, so the change reaches signup only through two hooks
+core declares and hands the save's connection: `fake_signups_ready_read`, whose subscriber hands its
+faults back as values for core to gather into one refusal with the roster's own, with no `Refused`
+caught round the hook, and `fake_signups_approved`, whose subscriber writes the signup and moves each
+driver through `transition_on`, handing back the audit records for the change's result. With no
+subscriber to the first, core refuses. Every refusal is judged at the ask, as the change starts and
+in the save before the first write; after the first write a fault in a subscriber raises and rolls
+the save back, the lane stopping. The command is core's and sits in core's `roster` group, because it creates the roster's drivers, which only core does; the architecture
+records it as the exception to a module's test tool sitting in the module's group. It makes no
+channel and no post, and the queue's clock is passed in.
 
 **Fake drivers are seeded, not moved through the state machine.** `test_roster_service` inserts a
 fake driver at Not Signed Up with no seat, flagged as a test driver, with a synthetic id above any
