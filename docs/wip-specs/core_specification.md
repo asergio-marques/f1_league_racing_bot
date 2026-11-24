@@ -66,13 +66,13 @@ it only to place it; the rules governing it belong to its own specification.
 ### The league's roles
 - Two roles shall describe a member's standing in the league, whichever modules are enabled: the **base role**, held by the league's members, and the **driver role**, held by its drivers.
     - The base role shall be granted by the league and never by the bot, save where it is replaced as set out below. A module that reads it states what it governs.
-    - The driver role shall be granted when a driver's signup is approved, and revoked whenever the driver returns to Not Signed Up.
+    - The driver role shall be granted when a driver's signup is approved, and revoked whenever the driver returns to Not Signed Up. With the signup module off no signup is approved, and the driver role shall be granted instead when the driver's placement is confirmed, where the league has set one. Decided 2026-11-24 (#624).
 - Each shall be set by a command of its own, a league manager's. The command shall acknowledge at once that the change is under way, then update that reply once it has run.
     - The driver role shall be one the bot can grant. The command setting it shall refuse `@everyone`, a role managed by an integration, a role at or above the bot's own highest, and any role while the bot lacks the permission to manage roles, saying why.
 - Neither shall be required unless a module requires it. The signup module requires both, as its own specification sets out.
 - Either set to the role it already holds shall change nothing: it shall be answered that nothing changed, recorded in the log channel as nothing changed, with no audit entry, and neither the hub's permissions nor, for the base role, the signup channel's shall be set again. Decided 2026-11-06 (#283).
 - Confirming a season's configuration shall fix both until the season ends. A driver role changed mid-season would leave every driver holding the old one, the season's end revoking only the new.
-    - A role no longer on the server may nonetheless be replaced while it is fixed. The replacement shall be granted to every driver — every driver who is not a test driver and is Unassigned or Assigned — the base role included, and every driver it could not be given to shall be named. A replaced base role shall remind the league that its other members need it too. Decided 2026-09-22.
+    - A role no longer on the server may nonetheless be replaced while it is fixed. The replacement shall be granted to every driver — every driver who is not a test driver and is Unassigned or Assigned — the base role included, and every driver it could not be given to shall be named. With the signup module off, a replaced driver role shall be granted only to the drivers holding a committed placement in the live season, a driver not yet confirmed being given it as their placement is confirmed. Decided 2026-11-24 (#624). A replaced base role shall remind the league that its other members need it too. Decided 2026-09-22.
         - Where the grant itself cannot be carried out, the role shall still be saved, its failure alone recorded in the log channel, and the reply shall say that the role is saved but could not be given to the drivers, to give it to them by hand; a replaced base role's reply shall still remind the league that its other members need it too. Decided 2026-11-06 (#283).
     - A role never set shall stay unset until the season ends.
 - Disabling a module shall clear neither. A pack shall clear both, a role belonging to its server.
@@ -354,14 +354,14 @@ it only to place it; the rules governing it belong to its own specification.
     - The sessions of every round, the commitment of the placements, the points configurations attached to the season, recorded upon it as they stand, and the season's state shall be saved together, or none of them.
     - The season shall move to Ongoing and take its number, before any role is granted or anything posted. Every command shall treat it as ongoing from then on, while the grants and postings below are still under way: a round may be amended, and nothing added. Decided 2026-09-22.
     - The season's scheduled work shall be armed as a job of its own once the season is saved as Ongoing. Arming that fails stops the queue and leaves the season Ongoing until it is retried, and shall not be discarded (see How a change is carried out). Decided 2026-10-06, "After the season is saved"; 2026-10-08, "Both undiscardable". Each round's result submission shall be armed whatever the modules, as for an amended round, save where the results module is on and the weather module off under test mode, whose advance then opens it by hand. Decided 2026-10-06, "Fold them in".
-    - Every placed driver shall be granted their division's role and their team's role; a driver whose team has no role set is granted their division's role alone. Each driver's grant shall be a job of its own. A driver Discord reports absent from the server is passed over.
+    - Every placed driver shall be granted their division's role and their team's role; a driver whose team has no role set is granted their division's role alone. With the signup module off, and a driver role set, a driver who is not a test driver shall be granted the driver role besides. Each driver's grant shall be a job of its own. A driver Discord reports absent from the server is passed over.
     - Each division's lineup, calendar and opening classification shall be posted.
     - Each grant and each posting shall be a job on the queue: one that fails stops the queue until it is retried or discarded, never undoing the confirmation, and one discarded is named in the reply and the log channel with what puts it right.
     - The member's reply cannot be updated once fourteen minutes have passed since it was acknowledged, nor after the bot has restarted while the confirmation was carried out; the notice in the channel below shall then say how the confirmation ended, approved or not, and shall be a job on the queue, which stops it where Discord refuses the notice. A confirmation refused as it comes up to run or as its save is tried again, its state, its dates, its channels or the program that draws its graphics having changed while it waited, shall be told there too, with the reason it was refused; so shall one a league admin discards before it began, which is told as not approved. Decided 2026-10-06, "Keep the public notice" and "Tell the review's channel too"; 2026-10-07, "Tell the review's channel".
 - Where the season is in Ongoing, placements, the confirmation shall be carried out on the change queue as a season's approval is, and the press shall be acknowledged at once, naming the confirmation's first job, the acknowledgement updated with the outcome:
     - Every placement not yet committed and the season's return to Ongoing shall be saved together, or none of them, as a job of its own, and the confirmation audited. A confirmation refused or discarded at that job commits nothing: the season is still placing drivers, and the member is told to run the review again.
     - A press, and the confirmation when it is carried out, shall be refused where every division of the season is already done, there being nothing left to place drivers into: the member shall be told so, that nothing has been confirmed and that the season's completion winds the season down, as set out under Pending completion. Decided 2026-10-23.
-    - Every driver whose placement is committed by it shall be granted their division's role and their team's role, or their division's alone where their team has no role set, each driver's grant a job of its own. A driver Discord reports absent from the server is passed over; one it cannot fetch for any other reason stops the queue.
+    - Every driver whose placement is committed by it shall be granted their division's role and their team's role, or their division's alone where their team has no role set, each driver's grant a job of its own. With the signup module off, and a driver role set, a driver who is not a test driver shall be granted the driver role besides. A driver Discord reports absent from the server is passed over; one it cannot fetch for any other reason stops the queue.
     - The lineup of each division holding such a driver shall be posted once, each a job of its own.
     - A job that fails stops the queue until it is retried or discarded, never undoing the confirmation, and one discarded is named in the reply and the log channel with what puts it right. None of these jobs is one that shall not be discarded: a discarded save leaves the season to be reviewed again, and the roles are given by hand and a lineup is posted with the next change to its division's drivers, none of them being able to stop a season from being started or completed.
     - One line in the log channel shall record the confirmation, naming the season, the placements confirmed and each job discarded.
@@ -603,26 +603,27 @@ Decided 2026-09-22 (#381). Each name has one job, and no name does another's.
     - Assigned: placed in at least one team.
 - No state shall bar a driver from signing up. A driver shall not be banned: sanctions belong to the stewarding module, which shall bring the bar together with the commands that impose and lift it.
 - The permitted transitions shall be:
-    - Not Signed Up to Pending Signup Completion.
+    - Not Signed Up to Pending Signup Completion, or, while the signup module is off, to Assigned.
     - Pending Signup Completion to Pending Admin Approval, or to Not Signed Up.
     - Pending Admin Approval to Awaiting Correction Parameter, to Unassigned, or to Not Signed Up.
     - Awaiting Correction Parameter to Pending Driver Correction, back to Pending Admin Approval where no answer is named in time or the bot restarts, or to Not Signed Up.
     - Pending Driver Correction to Pending Admin Approval, or to Not Signed Up.
     - Unassigned to Assigned, or to Not Signed Up.
     - Assigned to Unassigned, or to Not Signed Up.
-- A driver created by test mode shall come into being Not Signed Up, with no seat and no signup, and shall reach every other state as any driver does, through a signup of its own. Decided 2026-11-23 (#600).
+- With the signup module off no signup is approved, so no driver is Unassigned, and a driver is placed straight from Not Signed Up. A member holding no profile is treated as Not Signed Up, and is given a profile by being placed. No other move out of Not Signed Up is widened, and Unassigned is still not reached. Decided 2026-11-24 (#624).
+- A driver created by test mode shall come into being Not Signed Up, with no seat and no signup, and shall reach every other state as any driver does, through a signup of its own, or, with the signup module off, by being placed. Decided 2026-11-23 (#600), 2026-11-24 (#624).
 
 ### Leaving the league
 - The former-driver flag shall be false by default and shall be set once a driver has raced a round. A driver so marked shall not be deleted, only amended.
     - A driver shall be held to have raced a round only once that round is final, and only by its final results. Results still awaiting report or appeal verdicts shall mark nobody.
     - An entry recording that the driver did not start shall not count as having raced. A driver whose only entries in a round are did-not-start entries has not raced that round.
     - An amendment of a final round's results that leaves a driver no longer having raced that round shall clear the flag, unless another final round marks them.
-- A driver whose flag is false and who reaches Not Signed Up, by any route — a sack, a rejection of their signup, a withdrawal, a signup cancelled or timed out, or the reject command — shall be **pending deletion**.
+- A driver whose flag is false and who reaches Not Signed Up, by any route — a sack, a rejection of their signup, a withdrawal, a signup cancelled or timed out, the reject command, or, with the signup module off, the removal of a driver's last placement — shall be **pending deletion**.
     - A driver pending deletion shall not be deleted at once. They shall be deleted by the driver pass of the season's completion, cancellation or abort.
     - A driver so deleted shall have discarded with them every portrait obtained for an account of theirs, current or past. A portrait the league placed itself shall be left.
     - Until then the profile shall stand at Not Signed Up and may sign up again. Whether to accept them is the league's to decide.
 - A driver whose flag is true and who reaches Not Signed Up shall be retained, with nothing of their profile or their signups cleared, so that the results they raced for remain attributed.
-- A committed driver may be sacked, only while the season is in one of the three ongoing states. A driver who is not committed shall not be sacked: an uncommitted placement is removed by the command removing a driver from a division, and an Unassigned driver is turned down by the reject command. Sacking shall free every seat they hold, revoke every division and team role and the driver role, and return them to Not Signed Up.
+- A committed driver may be sacked, only while the season is in one of the three ongoing states. A driver who is not committed shall not be sacked: an uncommitted placement is removed by the command removing a driver from a division, and an Unassigned driver, or with the signup module off a driver holding only uncommitted placements, is turned down by the reject command. Sacking shall free every seat they hold, revoke every division and team role and the driver role, and return them to Not Signed Up.
 
 ### Placement into a division and team
 - A placement shall be **committed** once placements have been confirmed with it standing, and uncommitted until then. A driver holding a committed placement is a **committed driver**; a driver placed or awaiting placement who holds none is an **uncommitted driver**.
@@ -632,15 +633,15 @@ Decided 2026-09-22 (#381). Each name has one job, and no name does another's.
     - It shall be derived from the seats the driver holds as they stand, and shall never be stored nor set by a command. A placement, a move, a release or a sacking changes it as a consequence.
     - It is a driver's principal division within one season, a seat being held within a season.
 - A command shall place a driver, taking the driver, a division named by its tier or by its name, and a team of that division.
-    - The driver shall be Unassigned or Assigned.
+    - The driver shall be Unassigned or Assigned. With the signup module off the driver shall be Not Signed Up or Assigned, a member holding no profile being treated as Not Signed Up. Decided 2026-11-24 (#624).
     - The season shall stand in Placements, or in Ongoing, placements where the driver is uncommitted.
     - The driver shall hold at most one seat in any one division, and may hold a seat in more than one division.
     - The team shall have a seat free. The Reserve team shall always have one.
-    - A driver who was Unassigned shall become Assigned.
+    - A driver who was Unassigned shall become Assigned, and so shall one who was Not Signed Up, with the signup module off.
 - A command shall remove a driver from a division.
     - The driver shall be Assigned and shall hold a seat in the division named.
     - The season shall stand in Placements, or in Ongoing, placements where the placement is uncommitted.
-    - A driver holding no other placement shall return to Unassigned.
+    - A driver holding no other placement shall return to Unassigned, or, with the signup module off, to Not Signed Up.
 - A command shall move a committed driver from their seat in one division to a team of the same division or of another: from a full-time seat to Reserve, from one team to another, or from one division to another.
     - The season shall stand in one of the three ongoing states.
     - A driver shall not be moved into a division other than the one they leave where they already hold a seat.
@@ -651,9 +652,9 @@ Decided 2026-09-22 (#381). Each name has one job, and no name does another's.
     - The season shall stand in one of the three ongoing states.
     - The command shall be refused for a driver's only committed seat, a placement not yet committed elsewhere not counting as one. Sacking or moving the driver applies there.
     - The division's role shall be revoked. The team's role shall be revoked only where the driver holds no other seat, across all divisions, mapping to that role. The division's lineup shall be posted again.
-- A command shall reject a driver who is Unassigned.
+- A command shall reject a driver who is Unassigned. With the signup module off it shall reject a driver holding only uncommitted placements instead, a driver holding none, or any committed one, being refused.
     - The season shall stand in Placements or in Ongoing, placements.
-    - The driver shall return to Not Signed Up and lose the driver role.
+    - The driver shall return to Not Signed Up and lose the driver role. With the signup module off every uncommitted placement of theirs shall be removed, their seats freed, and no role taken, none having been granted for them. Decided 2026-11-24 (#624).
 - A placement or a move shall be refused where it would carry a division beyond what its lineup, its attendance sheet or its standings graphic can draw, and nothing shall be changed by the refusal.
 - Every successful move, release and sacking shall cause the lineup of each division it touches to be posted again in its lineup channel, once, and the lineup it replaces deleted after it. The lineup is asked of the change queue once the move, release or sacking is saved; a sanction applied in a round's review posts each lineup it touches once, as a job of the review. Decided 2026-10-10.
 
@@ -666,7 +667,7 @@ Decided 2026-09-22 (#381). Each name has one job, and no name does another's.
 - Any account of the driver's shall name them wherever a driver is named: a result submitted or resubmitted, a penalty, a pardon, an appeal, an amendment, a command, a check-in. It is read at the moment of use, so a submission or a review already open when the account changes accepts both.
 - The driver may be named to the command by any of their accounts, and one of their own past accounts may be made current again.
 - Only a member of the server may be made current.
-- The driver's roles shall belong to their current account. Making an account current shall give it the signed-up, division and team roles the driver holds, and take them from the account it replaces where that account is still in the server. A role Discord will not move shall be reported to the league manager; the change of account stands.
+- The driver's roles shall belong to their current account. Making an account current shall give it the signed-up, division and team roles the driver holds, and take them from the account it replaces where that account is still in the server. With the signup module off the driver role is held only by a driver with a committed placement, and moves only for one. A role Discord will not move shall be reported to the league manager; the change of account stands.
 - A signup channel held open after an approval or a rejection shall move to the new current account, and shall still be deleted when it was already due. Where the new account holds a held channel of its own, that one is kept and the replaced account's is deleted when the queue reaches it. Permissions on the held channel that Discord will not set shall be reported to the league manager in plain words; the change of account stands.
 - An account shall belong to one driver in a league. An account that is a past account of another driver shall be refused.
 - The change shall be refused while either the driver or the new account has a signup in progress — collecting, in review, or in correction — and the league manager told to finish or withdraw it first.
@@ -713,7 +714,7 @@ section states the rules it holds to.
 - Test mode shall not be enabled while the server holds a real driver whose state is anything other than Not Signed Up. A driver profile at Not Signed Up is a former driver or pending deletion, and shall not stand in the way.
     - The refusal shall name how many real drivers the server holds, and the state of test mode shall be left unchanged.
 - While test mode is enabled:
-    - A real driver shall not be placed in a team. A driver created by test mode shall be placed as any driver is, once its signup is approved.
+    - A real driver shall not be placed in a team, nor shall a member holding no profile, who is a real driver once placed. A driver created by test mode shall be placed as any driver is, once its signup is approved, or with the signup module off straight from Not Signed Up. Decided 2026-11-24 (#624).
     - The season shall open its signup windows as any other season does, and a driver created by test mode shall sign up through them as set out under Fake drivers and rosters. A real member pressing Sign Up shall be refused: "Signups are closed while this server is in test mode. Ask an admin to turn it off." Decided 2026-11-23 (#600).
 - Enabling test mode shall create two ordinary points configurations, "Standard" and "Half Points", and attach them to the season in Configuration, but only where the server holds no points configuration of any name and none is attached to the season. Where it holds any, test mode shall create, change and attach nothing, and the manager attaches the league's own. The two shall be created together or not at all, as ordinary configurations of the server indistinguishable from ones a league made itself, and each creation, its points and its attachment shall be recorded with an audit entry as `/results config` records them, so that a test season on a new server passes the points requirement of confirming placements without one being built by hand. Decided 2026-11-17 (#547).
     - Test mode shall attach them at no other moment. A season in test mode with no points configuration attached shall be named as a fault by both reviews and refused by the confirmation of the configuration and of placements, as any other season is. Decided 2026-09-23.
@@ -723,7 +724,7 @@ section states the rules it holds to.
     - The history entries of a driver so deleted shall be kept, identified by the driver's identifier, whether or not the driver had raced. A driver created by test mode in a later season under the same identifier shall hold that history as its own.
 
 ### Fake drivers and rosters
-- A driver created by test mode shall be created at Not Signed Up from a name alone, with no seat, no signup and no nationality, in any state of the season. It shall then go through the signup as any driver does, a league admin starting its signup and answering its wizard for it, or be signed up and approved together with others by the command below, and be placed by `/driver assign` once approved, indistinguishable thereafter from a real one. Decided 2026-11-23 (#600), 2026-11-24.
+- A driver created by test mode shall be created at Not Signed Up from a name alone, with no seat, no signup and no nationality, in any state of the season. It shall then go through the signup as any driver does, a league admin starting its signup and answering its wizard for it, or be signed up and approved together with others by the command below, and be placed by `/driver assign` once approved, indistinguishable thereafter from a real one. With the signup module off there is no signup, and it shall be placed by `/driver assign` from Not Signed Up. Decided 2026-11-23 (#600), 2026-11-24 (#624).
 - A driver created by test mode shall be refused a seat wherever a real driver placed in the same team would be refused for carrying the division past the capacity of a configured template, and nothing shall be written.
 - The identifiers of such drivers shall be drawn from a range above any identifier a real Discord account can hold.
 - A driver created by test mode shall never be granted or revoked a Discord role.
