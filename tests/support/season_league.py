@@ -1174,6 +1174,9 @@ SIGNUP_CHANNEL_BASE = 6300
 #: A driver approved for the season but never placed (`approved_unplaced`): Unassigned.
 UNASSIGNED = 106
 NAMES[UNASSIGNED] = "Valtteri"
+#: A member of the server holding no driver profile, never signed up.
+NEWCOMER = 108
+NAMES[NEWCOMER] = "Oscar"
 
 
 async def season_end_extras(league: SeasonLeague, tmp_path: Any, *, test_mode: bool = False,
