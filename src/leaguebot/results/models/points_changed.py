@@ -44,7 +44,7 @@ def _shown(value: int | None) -> str:
 
 @dataclass(frozen=True)
 class PointsChanged:
-    """Every value an approval changed, in table order: by configuration and session, each
+    """Every value a points amendment changes, in table order: by configuration and session, each
     position then the session's fastest-lap bonus and its position limit."""
 
     changes: tuple[ValueChange, ...] = ()
