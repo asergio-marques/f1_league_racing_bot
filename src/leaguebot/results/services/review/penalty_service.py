@@ -218,6 +218,21 @@ def _apply_time_penalty(total_time_str: str, penalty_seconds: int) -> str:
     return _ms_to_time(ms)
 
 
+def _after_the_disqualified(row: dict) -> tuple[bool, int]:
+    """Sort key for the rows a review leaves in place: the disqualified come last.
+
+    A driver disqualified at a penalty review is "ranked last in that session"
+    (results specification, penalty review): after the lapped, retired and
+    non-starting drivers as well as the classified finishers. The old finishing
+    position alone is not enough, because the driver was ranked above them
+    before the review and would keep that place. The disqualified are ordered by
+    ``(outcome == "DSQ", finishing_position)``, so several of them keep their
+    order among themselves. *row* carries ``outcome`` and ``fp``, the old
+    finishing position.
+    """
+    return (row["outcome"] == "DSQ", row["fp"])
+
+
 # ---------------------------------------------------------------------------
 # Application
 # ---------------------------------------------------------------------------
@@ -301,7 +316,8 @@ async def apply_penalties_on(
                             "WHERE session_result_id = ? AND driver_user_id = ?",
                             (penalty_ms, session_result_id, sp.driver_user_id),
                         )
-            # Re-sort race_session_results by total_time_ms for CLASSIFIED non-lapped
+            # Re-sort race_session_results: CLASSIFIED lead-lap drivers by total time, then the rest
+            # in their old order, the disqualified last of all
             rr_cursor = await db.execute(
                 "SELECT id, driver_user_id, outcome, base_time_ms, laps_behind, "
                 "ingame_time_penalties_ms, postrace_time_penalties_ms, "
@@ -331,7 +347,9 @@ async def apply_penalties_on(
                     )
                     sortable_rsr.append({"id": rr["id"], "total_ms": total_ms})
                 else:
-                    fixed_rsr.append({"id": rr["id"], "fp": rr["finishing_position"]})
+                    fixed_rsr.append(
+                        {"id": rr["id"], "outcome": rr["outcome"], "fp": rr["finishing_position"]}
+                    )
             sortable_rsr.sort(key=lambda r: r["total_ms"])
             next_pos = 1
             for item in sortable_rsr:
@@ -340,7 +358,7 @@ async def apply_penalties_on(
                     (next_pos, item["id"]),
                 )
                 next_pos += 1
-            fixed_rsr.sort(key=lambda r: r["fp"])
+            fixed_rsr.sort(key=_after_the_disqualified)
             for item in fixed_rsr:
                 await db.execute(
                     "UPDATE race_session_results SET finishing_position = ? WHERE id = ?",
