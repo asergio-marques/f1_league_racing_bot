@@ -295,6 +295,8 @@ async def test_an_imported_round_may_land_only_where_no_round_not_cancelled_stan
     asked = await _imported(league, "bulk", _paste(14))
 
     assert [line for line in said(asked) if line.startswith("❌")] == refusals
+    if refusals:
+        assert said(asked) == refusals  # the refusal is all the manager is told
     assert len(await round_rows(league.db_path, "Pro")) == held
 
 
