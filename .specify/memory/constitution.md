@@ -1,6 +1,26 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-11-24 — v14.18.1 → v14.19.0: MINOR — a fake driver is placed straight from Not Signed Up while the signup module is off (issue #624)]
+  Version change    : 14.18.1 → 14.19.0
+  Bump rationale    : MINOR, sized by how much it matters: the owner's decision of 2026-11-24
+                      on #624 (D4) widens a rule within Principle VIII — with the season's
+                      signup module off, a driver created by test mode reaches Assigned by being
+                      placed, as a real driver then does, rather than through a signup. No
+                      principle is added or removed.
+
+  Modified sections :
+    - Principle VIII, Test-mode overrides: a driver created by test mode reaches every other
+      state through a signup of its own and a placement after its approval, or, where the
+      season's signup module is off, by being placed straight from Not Signed Up.
+
+  Added sections    : none.
+  Removed sections  : none.
+  Templates checked : .specify/templates/*.md cite principles by number only — no change needed.
+  Documents to follow: none; the core specification already says so ("The states of a driver";
+                      "Fake drivers and rosters").
+  Deferred / TODO   : none.
+
 [2026-11-24 — v14.18.0 → v14.18.1: PATCH — a team's shorthand is no longer typed in a test roster (issue #600)]
   Version change    : 14.18.0 → 14.18.1
   Bump rationale    : PATCH: a stale example corrected. A test roster carries no team since fake
@@ -6042,7 +6062,8 @@ stewarding module, which will bring the bar together with the commands that impo
   `former_driver` to `true` or `false`. Such an override MUST produce an audit log entry. A
   driver created by test mode MUST come into being *Not Signed Up*, with no seat and no signup,
   and MUST reach every other state as any driver does: through a signup of its own and a
-  placement after its approval.
+  placement after its approval, or, where the season's signup module is off, by being placed
+  straight from *Not Signed Up*.
 - **Absent profile semantics**: A Discord user with no database record is treated as
   *Not Signed Up*. The bot MUST NOT error or warn on absence — absence is the canonical
   default.
@@ -9184,4 +9205,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 14.18.1 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-11-24
+**Version**: 14.19.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-11-24
