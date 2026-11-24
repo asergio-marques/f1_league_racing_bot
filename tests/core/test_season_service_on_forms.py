@@ -382,6 +382,41 @@ async def test_a_cancelled_round_is_numbered_before_a_round_sharing_its_moment(t
         assert await _round_numbers(db) == {ROUND_ID: 2, ROUND_ID + 1: 1, ROUND_ID + 2: 3}
 
 
+def test_round_holding_skips_a_cancelled_round_and_the_round_itself():
+    """Three rounds of Pro at 18:00 UTC on 13 December: round 1 cancelled (id 21), round 2 not run
+    (id 22), and round 3 not run (id 23), the round being moved. Asked who holds that moment, the
+    judge passes over the cancelled round and names round 2, whether it is asked in UTC or as
+    19:00 at +01:00; asked other than round 2, it names round 3; asked other than round 3 with
+    round 2 cancelled too, it names nobody, a cancelled round never holding a moment."""
+    from datetime import timedelta
+
+    from leaguebot.core.models.round import Round, RoundStatus
+    from leaguebot.core.services.seasons.season_service import round_holding
+
+    moment = datetime(2026, 12, 13, 18, 0, tzinfo=timezone.utc)
+
+    def _at(round_id: int, number: int, status: RoundStatus) -> Round:
+        return Round(
+            id=round_id, division_id=DIVISION_ID, round_number=number,
+            format=RoundFormat.NORMAL, track_name=None, scheduled_at=moment,
+            status=status.value,
+        )
+
+    cancelled = _at(ROUND_ID, 1, RoundStatus.CANCELLED)
+    live = _at(ROUND_ID + 1, 2, RoundStatus.NOT_RUN)
+    moved = _at(ROUND_ID + 2, 3, RoundStatus.NOT_RUN)
+    rounds = [cancelled, live, moved]
+    at_plus_one = moment.astimezone(timezone(timedelta(hours=1)))
+
+    assert round_holding(rounds, moment, other_than=moved) is live
+    assert round_holding(rounds, at_plus_one, other_than=moved) is live
+    assert round_holding(rounds, moment, other_than=live) is moved
+    assert round_holding(
+        [cancelled, _at(ROUND_ID + 1, 2, RoundStatus.CANCELLED), moved], moment,
+        other_than=moved,
+    ) is None
+
+
 # ---------------------------------------------------------------------------
 # A season's end (#439, slice 5)
 #
