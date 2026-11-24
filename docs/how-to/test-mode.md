@@ -133,7 +133,7 @@ A fake driver is created at **Not Signed Up**, from a name alone: no seat, no si
 
 **So do the template capacities.** `/driver assign` refuses a fake driver wherever it would refuse a real one for outgrowing a configured image template — the lineup's reserve slots, the attendance sheet's rows, the driver standings' rows — each only while that image output is on. A roster that seats cleanly has verified the templates hold it, rather than leaving the overflow to show at the first posting.
 
-**Placing and changing a fake driver's seat.** `/driver` seats a fake driver once its signup is approved, and changes it afterwards, as it does a real one: name the driver by ID (the one `roster list` prints) or pick it by its test name from the list the field offers.
+**Placing and changing a fake driver's seat.** `/driver` seats a fake driver once its signup is approved (or, with the signup module off, straight from Not Signed Up), and changes it afterwards, as it does a real one: name the driver by ID (the one `roster list` prints) or pick it by its test name from the list the field offers.
 
 While placements are open, `/driver assign` gives a seated fake driver a seat in a second division, which a real driver may hold as well. Once the season is ongoing, `/driver move` changes a confirmed seat:
 
