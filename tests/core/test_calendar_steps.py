@@ -34,6 +34,7 @@ from tests.support.change_queue import (
     stopped_job,
     typed_message,
 )
+from tests.support.review_league import channel
 from tests.support.season_league import (
     ADMIN_ID,
     CALENDAR_MESSAGE,
@@ -55,6 +56,8 @@ from tests.support.season_league import (
 
 
 PRO_CALENDAR = DIVISIONS[PRO][3].calendar
+#: The channel Pro's calendar moves to: one the league's server holds and no division uses.
+MOVED_CALENDAR = 608
 #: The link Discord gives Pro's old calendar, which a discarded deletion names.
 OLD_LINK = f"https://discord.test/{PRO_CALENDAR}/{CALENDAR_MESSAGE}"
 
@@ -126,6 +129,35 @@ async def test_the_new_calendar_is_posted_before_the_old_one_is_deleted_by_a_job
     assert names.index("delete_replaced") == names.index("post_calendar") + 1
     [delete] = [job for job in await _jobs(league) if job["name"] == "delete_replaced"]
     assert delete["payload"]["message_id"] == CALENDAR_MESSAGE
+
+
+async def test_a_calendar_is_deleted_from_the_channel_it_was_posted_in_after_the_channel_moves(
+    tmp_path,
+):
+    """Pro's calendar (6001) was posted in 601, and its calendar channel then moved to 608. When
+    round 3 is cancelled the new calendar goes to 608 and the old one is deleted from 601, where
+    it stands; the channel recorded beside the calendar's id is now 608."""
+    league = await ongoing_league(tmp_path)
+    moved = league._recording(channel(MOVED_CALENDAR, league.events))
+    moved.guild = league.guild
+    league.channels[MOVED_CALENDAR] = moved
+    await league.write(
+        "UPDATE divisions SET calendar_channel_id = ?, calendar_message_channel_id = ? "
+        "WHERE id = ?", MOVED_CALENDAR, PRO_CALENDAR, PRO,
+    )
+    await _cancel(league)
+
+    await run_queue(league.bot)
+
+    [new] = [mid for kind, cid, mid in league.events if kind == "send" and cid == MOVED_CALENDAR]
+    assert ("delete", PRO_CALENDAR, CALENDAR_MESSAGE) in league.events
+    assert CALENDAR_MESSAGE not in league.channel(PRO_CALENDAR).messages
+    [delete] = [job for job in await _jobs(league) if job["name"] == "delete_replaced"]
+    assert delete["payload"]["channel_id"] == PRO_CALENDAR
+    [row] = await league.rows(
+        "SELECT calendar_message_id, calendar_message_channel_id FROM divisions WHERE id = ?", PRO)
+    assert (row["calendar_message_id"], int(row["calendar_message_channel_id"])) == (
+        str(new), MOVED_CALENDAR)
 
 
 async def test_a_calendar_post_refused_leaves_the_old_calendar_and_plans_no_delete(tmp_path):

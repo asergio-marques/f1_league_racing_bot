@@ -441,16 +441,23 @@ async def test_the_sheet_is_not_put_on_the_old_retry_queue(tmp_path):
     assert await one(league.db_path, "SELECT COUNT(*) FROM pending_messages") == 0
 
 
-async def test_the_sheet_after_a_review_replaces_the_old_one_by_a_delete_job(tmp_path):
+@pytest.mark.parametrize("sheet_channel, posted_in", [
+    pytest.param(707, None, id="channel kept"),
+    pytest.param(708, 707, id="channel moved"),
+])
+async def test_the_sheet_after_a_review_replaces_the_old_one_by_a_delete_job(
+    tmp_path, sheet_channel, posted_in,
+):
     """Attendance is on, with its real hook (the placement service and the lineup poster
-    doubles: no sanction is owed). Pro's attendance channel 707 holds its sheet 8805, recorded as
-    the live one. Alex approves round 3's reports: the `attendance_sheet` job posts the new sheet
-    and its save records it, the old one still standing; then a `delete_message` job of the
-    review deletes the old sheet."""
+    doubles: no sanction is owed). Pro's sheet 8805 stands in channel 707, recorded as the live
+    one. Pro's attendance channel is still 707, or has moved to 708 with 8805 recorded as posted
+    in 707. Alex approves round 3's reports: the `attendance_sheet` job posts the new sheet in
+    Pro's attendance channel and its save records it, the old one still standing; then a
+    `delete_message` job of the review deletes the old sheet from 707, where it stands."""
     from leaguebot.attendance.services.hooks.attendance_after_review import AttendanceAfterReview
     from tests.support.review_league import channel
 
-    sheet_channel, old_sheet = 707, 8805
+    old_channel, old_sheet = 707, 8805
     placement = MagicMock()
     for name in ("sack_driver", "move_driver"):
         setattr(placement, name, AsyncMock(return_value=None))
@@ -461,22 +468,28 @@ async def test_the_sheet_after_a_review_replaces_the_old_one_by_a_delete_job(tmp
         attendance_hook=lambda bot, _db_path: AttendanceAfterReview(
             bot, placement, lineups=lineups),
     )
-    league.channels[sheet_channel] = channel(sheet_channel, league.events)
-    league.channels[sheet_channel].guild = league.guild
-    league.channel(sheet_channel).seed(old_sheet, "Pro's attendance sheet")
+    for cid in {old_channel, sheet_channel}:
+        league.channels[cid] = channel(cid, league.events)
+        league.channels[cid].guild = league.guild
+    league.channel(old_channel).seed(old_sheet, "Pro's attendance sheet")
     async with get_connection(league.db_path) as db:
         await db.execute(
             "INSERT INTO attendance_division_config (division_id, attendance_channel_id, "
             "attendance_message_id) VALUES (?, ?, ?)",
             (DIVISION_ID, str(sheet_channel), str(old_sheet)),
         )
+        if posted_in is not None:
+            await db.execute(
+                "UPDATE attendance_division_config SET attendance_message_channel_id = ? "
+                "WHERE division_id = ?", (str(posted_in), DIVISION_ID),
+            )
         await db.commit()
 
     await _approve(league, staged=[penalty(LEWIS)])
     await run_until_done(league, "attendance_sheet")
 
     [new] = league.sent_to(sheet_channel)
-    assert old_sheet in league.channel(sheet_channel).messages, "the old sheet went too soon"
+    assert old_sheet in league.channel(old_channel).messages, "the old sheet went too soon"
     assert await one(
         league.db_path,
         "SELECT attendance_message_id FROM attendance_division_config WHERE division_id = ?",
@@ -486,8 +499,8 @@ async def test_the_sheet_after_a_review_replaces_the_old_one_by_a_delete_job(tmp
     await run_queue(league.bot)
 
     assert await stopped_at(league) is None
-    assert [(kind, mid) for kind, cid, mid in league.events if cid == sheet_channel] == [
-        ("send", new), ("delete", old_sheet),
+    assert [event for event in league.events if event[1] in (old_channel, sheet_channel)] == [
+        ("send", sheet_channel, new), ("delete", old_channel, old_sheet),
     ]
     deletes = [row for row in await step_rows(league.db_path) if row["name"] == "delete_message"
                and str(old_sheet) in (row["payload"] or "")]
@@ -1589,9 +1602,11 @@ async def _lewis_owed_an_autoreserve(league: ReviewLeague) -> None:
 
 async def test_a_sanction_posts_each_lineup_it_touches_once(tmp_path):
     """Attendance is on, with its real hook and the real placement service (roles not the
-    subject, so granted and revoked by doubles). Lewis is owed an autoreserve in Pro. Alex
-    approves round 3's reports: Lewis is moved to Pro's Reserve team, and Pro's lineup is posted
-    once, by the review's own job, not by the move as well (core spec: "posted once")."""
+    subject, so granted and revoked by doubles). Lewis is owed an autoreserve in Pro, whose old
+    lineup 9099 stands in 9098, the channel it was posted in. Alex approves round 3's reports:
+    Lewis is moved to Pro's Reserve team, and Pro's lineup is posted once, by the review's own
+    job, not by the move as well (core spec: "posted once"); one `delete_message` job then
+    deletes 9099 from 9098."""
     from leaguebot.attendance.services.hooks.attendance_after_review import AttendanceAfterReview
     from leaguebot.core.services.drivers.lineup_posting import LineupPosted, LineupPoster
     from leaguebot.core.services.drivers.placement_service import PlacementService
@@ -1610,7 +1625,8 @@ async def test_a_sanction_posts_each_lineup_it_touches_once(tmp_path):
         posters.append(poster)
         # Pro has no lineup channel of its own here: the post is stood in for, as one posted.
         poster._refresh_lineup_post = AsyncMock(return_value=LineupPosted(
-            message_id=9100, channel_id=9101, previous=None, division_name="Pro", form="text",
+            message_id=9100, channel_id=9101, previous=9099, previous_channel=9098,
+            division_name="Pro", form="text",
         ))
         placement = PlacementService(db_path, roles=roles)
         return AttendanceAfterReview(bot, placement, roles=roles, lineups=poster)
@@ -1620,6 +1636,10 @@ async def test_a_sanction_posts_each_lineup_it_touches_once(tmp_path):
     # Pro's attendance channel is set, as a missing one now stops the queue at the sheet.
     league.channels[707] = channel(707, league.events)
     league.channels[707].guild = league.guild
+    # Pro's old lineup stands in the channel it was posted in.
+    league.channels[9098] = channel(9098, league.events)
+    league.channels[9098].guild = league.guild
+    league.channel(9098).seed(9099, "Pro's lineup")
     async with get_connection(league.db_path) as db:
         await db.execute(
             "INSERT INTO attendance_division_config (division_id, attendance_channel_id) "
@@ -1644,6 +1664,10 @@ async def test_a_sanction_posts_each_lineup_it_touches_once(tmp_path):
     [poster] = posters
     posted = [call.args[1] for call in poster._refresh_lineup_post.await_args_list]
     assert posted == [DIVISION_ID]
+    deletes = [row for row in await step_rows(league.db_path) if row["name"] == "delete_message"
+               and "9099" in (row["payload"] or "")]
+    assert len(deletes) == 1
+    assert [event for event in league.events if event[1] == 9098] == [("delete", 9098, 9099)]
 
 
 @pytest.mark.parametrize("case", [

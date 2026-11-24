@@ -736,7 +736,10 @@ async def _attendance_sheet(ctx: StepContext, hook: AttendanceAfterReview) -> St
         return StepResult(result=result or {}, lines=lines)
     old = result.get("old")
     then = (
-        _deletes(int(result["channel_id"]), [int(old)], "attendance sheet")
+        _deletes(
+            standing_posts.posted_in(result.get("old_channel_id"), int(result["channel_id"])),
+            [int(old)], "attendance sheet",
+        )
         if result.get("takes_slot") and old is not None and int(old) != int(result["new"])
         else ()
     )
@@ -1010,7 +1013,10 @@ async def _refresh_lineup(ctx: StepContext, hook: AttendanceAfterReview) -> Step
         return StepResult(result=result or {}, lines=earlier)
     old = result.get("old")
     then = (
-        _deletes(int(result["channel_id"]), [int(old)], "lineup")
+        _deletes(
+            standing_posts.posted_in(result.get("old_channel_id"), int(result["channel_id"])),
+            [int(old)], "lineup",
+        )
         if old is not None and int(old) != int(result["new"]) else ()
     )
     return StepResult(

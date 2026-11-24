@@ -569,6 +569,7 @@ def calendar_steps(seasons: "SeasonService", drawing: ImageDrawing) -> dict[str,
                 "posted_as_image": posting.posted_as_image,
                 "new": posting.message_id,
                 "old": division.calendar_message_id,
+                "old_channel_id": division.calendar_message_channel_id,
                 "channel_id": posting.channel_id,
             },
             lines=lines,
@@ -577,6 +578,7 @@ def calendar_steps(seasons: "SeasonService", drawing: ImageDrawing) -> dict[str,
             then=standing_posts.replaced(
                 posting.channel_id, division.calendar_message_id, posting.message_id,
                 what="calendar", division_name=division.name,
+                old_channel_id=division.calendar_message_channel_id,
             ) if posting.message_id is not None else (),
         )
 
@@ -584,8 +586,9 @@ def calendar_steps(seasons: "SeasonService", drawing: ImageDrawing) -> dict[str,
         new = result.result.get("new")
         if new is not None:
             await db.execute(
-                "UPDATE divisions SET calendar_message_id = ? WHERE id = ?",
-                (str(new), int(value_of(ctx, "division_id"))),
+                "UPDATE divisions SET calendar_message_id = ?, calendar_message_channel_id = ? "
+                "WHERE id = ?",
+                (str(new), result.result.get("channel_id"), int(value_of(ctx, "division_id"))),
             )
 
     async def describe(ctx: StepContext) -> str:

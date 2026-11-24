@@ -4,10 +4,11 @@ A standing post (a calendar, a lineup, an attendance sheet, a results table, a f
 jobs of a change (architecture.md, "How a change is carried out", "Posts are remembered", and
 "Posting to Discord"). The *post* job reads, as it runs, the message it replaces from the place
 the owning module keeps it, posts (the picture on the first try alone, text on every later one)
-and returns `{"new": <id>, "old": <id or None>, "channel_id": <id>, ...}`. Its `record` saves the
-new id in the save that marks the job done, and it plans, through `StepResult.then`, the
-`delete_replaced` job that `replaced` builds for the old message. A post discarded plans nothing,
-so nothing is deleted; a deletion discarded leaves both messages standing, and `not_deleted` names
+and returns `{"new": <id>, "old": <id or None>, "old_channel_id": <id or None>, "channel_id": <id>,
+...}`. Its `record` saves the new id, with the channel it was posted in, in the save that marks the
+job done, and it plans, through `StepResult.then`, the `delete_replaced` job that `replaced` builds
+for the old message, in the channel the old one was posted in. A post discarded plans nothing, so
+nothing is deleted; a deletion discarded leaves both messages standing, and `not_deleted` names
 the earlier one for deletion by hand. No function under these flows commits its own id.
 
 A try after a `record` that failed removes the copy it sent first: each post job begins with
@@ -25,7 +26,7 @@ what a review uses for its tables, its sheet and its lineup, and weather's `dele
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, overload
 
 import discord
 
@@ -45,17 +46,37 @@ from leaguebot.framework.utils.league_server import league_guild
 DELETE_REPLACED = "delete_replaced"
 
 
+@overload
+def posted_in(recorded: int | str | None, present: int) -> int: ...
+@overload
+def posted_in(recorded: int | str | None, present: int | None) -> int | None: ...
+def posted_in(recorded: int | str | None, present: int | None) -> int | None:
+    """The channel a replaced post is looked for in: the one recorded beside its id, else *present*.
+
+    A division's channel can move after a post is made, and the next post goes to the new one; the
+    old post stands in the channel it was posted in, so that is where its delete is aimed. Where no
+    channel is recorded the delete falls back to the division's present channel, as weather's
+    does, and no database constraint pairs a message id with its channel. A NULL comes only from a
+    row written before the column existed; a channel left beside a cleared id is never read, since
+    no id is looked for there, and the next record overwrites both. Pinned by
+    `test_replaced_plans_one_delete_of_the_old_message_in_the_channel_it_was_posted_in`, whose
+    "none recorded" case is this fallback."""
+    return present if recorded is None else int(recorded)
+
+
 def replaced(
     channel_id: int | None, old: int | str | None, new: int | None, *, what: str,
-    division_name: str, name: str = DELETE_REPLACED,
+    division_name: str, name: str = DELETE_REPLACED, old_channel_id: int | str | None = None,
 ) -> tuple[PlannedStep, ...]:
     """The job that deletes *old*, the message a post replaced, or none where there is nothing to
-    delete: no old message, the old one being the new one, or no channel to look in. A module
-    whose deletion wears a name of its own (weather's `delete_forecast_part`) plans it as *name*."""
+    delete: no old message, the old one being the new one, or no channel to look in. *channel_id*
+    is the division's present channel and *old_channel_id* the one *old* was posted in (see
+    `posted_in`). A module whose deletion wears a name of its own (weather's
+    `delete_forecast_part`) plans it as *name*."""
     if old is None or channel_id is None or (new is not None and int(old) == int(new)):
         return ()
     return (PlannedStep(name, {
-        "channel_id": channel_id, "message_id": int(old), "what": what,
+        "channel_id": posted_in(old_channel_id, channel_id), "message_id": int(old), "what": what,
         "division_name": division_name,
     }),)
 

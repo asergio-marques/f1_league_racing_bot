@@ -620,8 +620,8 @@ files; this section says what core posts through them.
 
 | Post | Kind | Channel | Posted by | Found again by |
 |---|---|---|---|---|
-| A division's lineup | standing post | `divisions.lineup_channel_id` | `lineup_posting.lineup_step` → `LineupPoster.refresh_lineup` | `divisions.lineup_message_id`, saved in the job's `record` |
-| A division's calendar | standing post | `divisions.calendar_channel_id` | `calendar_post_service.calendar_steps` | `divisions.calendar_message_id`, saved in the job's `record` |
+| A division's lineup | standing post | `divisions.lineup_channel_id` | `lineup_posting.lineup_step` → `LineupPoster.refresh_lineup` | `divisions.lineup_message_id` with `lineup_message_channel_id`, saved in the job's `record` |
+| A division's calendar | standing post | `divisions.calendar_channel_id` | `calendar_post_service.calendar_steps` | `divisions.calendar_message_id` with `calendar_message_channel_id`, saved in the job's `record` |
 | The hub's panel | standing post | `server_configs.hub_channel_id` | `hub_service.refresh_panel`, which edits in place or posts again where gone | `server_configs.hub_message_id`, saved in the job's `record` |
 | A season review's report, pictures and drawing notice | notice | the channel the review was run in | `season.review.post`'s jobs | the question's row (`season_review_prompts.report_message_ids`) |
 | A season review's question | notice | as above | `post_question` | `season_review_prompts.message_id` |

@@ -115,9 +115,9 @@ class AttendanceAfterReview(Protocol):
         refused.
 
         Saves and deletes nothing (#439). Gives the sheet posted and the one it replaces (`new`,
-        `old`, `channel_id`, `takes_slot`) for the job to save and to plan the old one's
-        deletion, or an empty result where nothing was due; None while attendance is off. Raises
-        where the division has no attendance channel, for the job to stop the queue."""
+        `old`, `old_channel_id`, `channel_id`, `takes_slot`) for the job to save and to plan the
+        old one's deletion, or an empty result where nothing was due; None while attendance is
+        off. Raises where the division has no attendance channel, for the job to stop the queue."""
 
     async def record_sheet_on(
         self, db: aiosqlite.Connection, division_id: int, posted: Mapping[str, Any]
@@ -184,9 +184,9 @@ class AttendanceAfterReview(Protocol):
         """Post the division's lineup afresh, as text where *as_text* (a job tried again, #439).
         Raises where it could not post.
 
-        Gives the message posted and the one it replaces (`new`, `old`, `channel_id`,
-        `division_name`, `form`), for the job to save and to plan the old one's deletion; None
-        while attendance is off."""
+        Gives the message posted and the one it replaces (`new`, `old`, `old_channel_id`,
+        `channel_id`, `division_name`, `form`), for the job to save and to plan the old one's
+        deletion; None while attendance is off."""
 
     async def check_in_read_on(
         self, db: aiosqlite.Connection, target: dict[str, Any]

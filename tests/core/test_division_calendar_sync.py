@@ -79,7 +79,7 @@ def _season(stage: SeasonStage = SeasonStage.ONGOING, *, season_number: int = 7)
 
 def _division(*, name="Pro", calendar=700):
     return SimpleNamespace(id=11, name=name, tier=1, calendar_channel_id=calendar,
-                           calendar_message_id=None)
+                           calendar_message_id=None, calendar_message_channel_id=None)
 
 
 _UNSET = object()

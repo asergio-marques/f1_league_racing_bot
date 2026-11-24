@@ -33,6 +33,7 @@ from tests.support.change_queue import (
     stopped_job,
     updated_reply,
 )
+from tests.support.review_league import channel
 from tests.support.season_league import (
     AM,
     DIVISIONS,
@@ -270,6 +271,39 @@ async def test_the_text_lineup_is_posted_before_the_old_one_is_deleted(tmp_path)
     assert names == ["post_lineup", "delete_replaced"]
     assert await _lineup_id(league) == new
     assert "Lineup posted as text" not in await _said(league), "the text is no fallback here"
+
+
+#: The channel Pro's lineup moves to: one the league's server holds and no division uses.
+MOVED_LINEUP = 608
+
+
+async def test_a_lineup_is_deleted_from_the_channel_it_was_posted_in_after_the_channel_moves(
+    tmp_path,
+):
+    """Pro's lineup (6100) was posted in 600, and its lineup channel then moved to 608. When the
+    lineup is posted again the new one goes to 608 and the old one is deleted from 600, where it
+    stands; the channel recorded beside the lineup's id is now 608."""
+    league = await ongoing_league(tmp_path)
+    await _old_lineup_standing(league)
+    moved = league._recording(channel(MOVED_LINEUP, league.events))
+    moved.guild = league.guild
+    league.channels[MOVED_LINEUP] = moved
+    await league.write(
+        "UPDATE divisions SET lineup_channel_id = ?, lineup_message_channel_id = ? WHERE id = ?",
+        MOVED_LINEUP, LINEUP[PRO], PRO,
+    )
+
+    await _ask(league, PRO)
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    [new] = [mid for kind, cid, mid in league.events if kind == "send" and cid == MOVED_LINEUP]
+    assert _lineup_events(league) == [("delete", OLD_LINEUP)]
+    assert OLD_LINEUP not in league.channel(LINEUP[PRO]).messages
+    [row] = await league.rows(
+        "SELECT lineup_message_id, lineup_message_channel_id FROM divisions WHERE id = ?", PRO)
+    assert (row["lineup_message_id"], int(row["lineup_message_channel_id"])) == (
+        new, MOVED_LINEUP)
 
 
 async def test_a_refused_text_lineup_leaves_the_old_lineup_standing(tmp_path):

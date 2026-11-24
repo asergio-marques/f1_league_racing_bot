@@ -547,12 +547,8 @@ channel. This part needs one channel the Fixture does not hold.
     - **Then:** `✅ Calendar for **Division 1** reposted as image.`, and any notices section.
     - **Posts** (`#d1-calendar-new`): the calendar of step 31, a picture with no text.
     - **Log:** as step 31.
-    - **`#d1-calendar` keeps step 31's calendar.** The deletion of the calendar it replaces
-      looks for that message in the channel the new one went to (`standing_posts.replaced` is
-      handed the new posting's channel in `calendar_post_service`), finds nothing there, and
-      counts it gone. So after a change of channel the old calendar is never deleted, where
-      README's `/division calendar-sync` says the old one is deleted once the new one is up.
-      Believed a bot defect: record it, and carry on.
+    - **Deleted:** step 31's calendar, from `#d1-calendar`, the channel it was posted in, once
+      the new one is up.
 
 37. **Do:** `/division calendar-channel name:Division 1 channel:#d1-calendar`
 
@@ -566,13 +562,12 @@ channel. This part needs one channel the Fixture does not hold.
     **Expect:**
     - **Ack:** `Posting the calendar of **Division 1** again`
     - **Then:** `✅ Calendar for **Division 1** reposted as image.`, and any notices section.
-    - **Posts** (`#d1-calendar`): the calendar again. By the fault of step 36, step 36's
-      calendar stays in `#d1-calendar-new`, and `#d1-calendar` now holds step 31's calendar and
-      this one.
+    - **Posts** (`#d1-calendar`): the calendar again.
+    - **Deleted:** step 36's calendar, from `#d1-calendar-new`, the channel it was posted in.
+      `#d1-calendar` holds one calendar.
     - **Log:** as step 31.
 
-39. **Tidy up by hand.** In Discord, delete step 31's calendar from `#d1-calendar`, leaving
-    step 38's, and delete the channel `#d1-calendar-new`.
+39. **Tidy up by hand.** In Discord, delete the channel `#d1-calendar-new`, which is empty.
 
     **Expect:** nothing from the bot. `#d1-calendar` holds one calendar, the one the bot
     records, which the cancellation of Part F replaces.

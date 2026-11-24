@@ -391,9 +391,7 @@ def forecast_steps(*, now: Callable[[], datetime], drawing: ImageDrawing) -> dic
             or (wanted is not None and int(found["message_id"]) != int(wanted))
         ):
             return StepResult(result={"none": True})
-        channel_id = (
-            found["channel_id"] if found["channel_id"] is not None else channels.get(division.id)
-        )
+        channel_id = standing_posts.posted_in(found["channel_id"], channels.get(division.id))
         message_id = int(found["message_id"])
         if channel_id is None:
             return StepResult(result={"none": True, "message_id": message_id})
@@ -463,7 +461,9 @@ def forecast_steps(*, now: Callable[[], datetime], drawing: ImageDrawing) -> dic
                 )
                 found = await cursor.fetchone()
                 recorded = None if found is None else found["channel_id"]
-        channel = recorded or (None if rnd is None else rnd.forecast_channel_id)
+        channel = standing_posts.posted_in(
+            recorded, None if rnd is None else rnd.forecast_channel_id
+        )
         where = "the forecast channel" if not channel else f"<#{channel}>"
         number = _value(ctx, "round_number", None) or (None if rnd is None
                                                        else rnd.facts.round_number)

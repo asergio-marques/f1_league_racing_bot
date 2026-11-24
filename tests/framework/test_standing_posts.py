@@ -27,6 +27,7 @@ from tests.support.change_queue import http_error, in_a_job, run_queue, step_row
 from tests.support.review_league import channel
 
 CALENDAR_CHANNEL = 601
+OTHER_CHANNEL = 607
 OLD, NEW = 6001, 7001
 
 
@@ -58,15 +59,25 @@ def _deleting(env) -> Any:
 # ---------------------------------------------------------------------------
 
 
-def test_replaced_plans_one_delete_of_the_old_message():
+@pytest.mark.parametrize("recorded, deleted_in", [
+    pytest.param(OTHER_CHANNEL, OTHER_CHANNEL, id="the channel recorded"),
+    pytest.param(None, CALENDAR_CHANNEL, id="none recorded: the present one"),
+])
+def test_replaced_plans_one_delete_of_the_old_message_in_the_channel_it_was_posted_in(
+    recorded, deleted_in,
+):
+    """The old calendar is deleted from the channel it was posted in, though the division's
+    calendar channel is now another. Where no channel was recorded beside the old message (a row
+    written before the column existed), the delete falls back to the present channel, as
+    weather's does: the named pin of `standing_posts.posted_in`'s fallback."""
     from leaguebot.framework.models.change import PlannedStep
     from leaguebot.framework.services.posting import standing_posts
 
-    planned = standing_posts.replaced(CALENDAR_CHANNEL, OLD, NEW, what="calendar",
-                                      division_name="Pro")
+    planned = standing_posts.replaced(CALENDAR_CHANNEL, OLD, NEW, old_channel_id=recorded,
+                                      what="calendar", division_name="Pro")
 
     assert planned == (PlannedStep(standing_posts.DELETE_REPLACED, {
-        "channel_id": CALENDAR_CHANNEL, "message_id": OLD, "what": "calendar",
+        "channel_id": deleted_in, "message_id": OLD, "what": "calendar",
         "division_name": "Pro",
     }),)
     assert standing_posts.DELETE_REPLACED == "delete_replaced"
