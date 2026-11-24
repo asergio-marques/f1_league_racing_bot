@@ -26,8 +26,8 @@ so; the drivers are its own, below.
 season once its configuration is confirmed, so a member placed without a profile, and the driver
 role granted when placements are confirmed, would need a second season with test mode off, its
 points configurations made by hand, and a second real account. Both are left to the unit tests
-(`test_driver_assign.py`, `test_season_approval_change.py`, `test_driver_reassign.py`), which hold
-them. A fake driver has no account, so this spec grants no role at all, as every other does not.
+(`test_driver_assign.py`, `test_season_approval_change.py`,
+`test_mid_season_confirm_change.py`, `test_driver_reassign.py`), which hold them. A fake driver has no account, so this spec grants no role at all, as every other does not.
 
 ## The drivers of this spec
 
