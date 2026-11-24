@@ -6,8 +6,9 @@ is a workflow, run here: it runs every gate the confirmation rests on, in its or
 the member through the interaction it is handed where one refuses, **in the words the change's own
 check uses** (the change judges them again when it runs). Where every gate passes, it asks the
 change queue for the confirmation, the review taken down ahead of it (`take_review_down_before`).
-The button has already deferred the press, privately (`ApproveView._answer_at_once`), so a refusal
-or the queue's acknowledgement is the first follow-up, taking the deferral's place.
+The button has already deferred the press, privately (`ApproveView._answer_at_once`), so every
+answer is a follow-up, the first taking the deferral's place: a refusal, the queue's
+acknowledgement, or, for an approval under test mode, the backup question ahead of it.
 
 Each workflow takes the interaction pressed, the services it reads as keywords, named as the bot
 carries them, and the press's own particulars (*what*, the button as the log channel names it, and
