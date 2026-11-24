@@ -192,3 +192,89 @@ def test_a_roster_line_naming_a_driver_with_a_member_mention_is_refused():
 
     assert drivers == []
     assert any(e.startswith("Line 2:") and "member" in e for e in errors)
+
+
+# ── The three-column form `/test-mode roster sign-up-bulk` takes (#600) ───
+
+#: Why each test of the three-column form fails until the parser is written.
+_SIGN_UP_PARSER = "#600: the three-column sign-up-bulk parser is not yet written"
+
+#: The form sign-up-bulk takes: a fake driver's ID, its name and its nationality, which may be
+#: blank.
+SIGN_UP_HEADER = "ID,Driver name,Nationality"
+
+
+def _parse_sign_up(text: str):
+    from leaguebot.core.utils.roster_import import parse_sign_up_csv
+
+    return parse_sign_up_csv(text)
+
+
+@pytest.mark.xfail(strict=True, reason=_SIGN_UP_PARSER)
+@pytest.mark.parametrize("header", [True, False], ids=["with the header", "without it"])
+def test_a_sign_up_list_is_read_with_each_driver_s_nationality(header):
+    """A row naming a nationality the bot knows is read with it, as the signup wizard reads the
+    answer; a row whose nationality is blank is read with none. The header is skipped, and a
+    list without one is read from its first line, its line numbers counting the header."""
+    from leaguebot.core.utils.input_validator import parse_nationality
+
+    rows = [_row(1) + ",British", _row(2, name="Badger") + ","]
+    drivers, errors = _parse_sign_up("\n".join([SIGN_UP_HEADER, *rows] if header else rows))
+
+    assert errors == []
+    assert [
+        (d.line, d.discord_user_id, d.driver_name, d.nationality) for d in drivers
+    ] == [
+        (2 if header else 1, SYNTHETIC_ID_BASE + 1, "Quicksilver", parse_nationality("British")),
+        (3 if header else 2, SYNTHETIC_ID_BASE + 2, "Badger", None),
+    ]
+
+
+@pytest.mark.xfail(strict=True, reason=_SIGN_UP_PARSER)
+@pytest.mark.parametrize(
+    "row",
+    [f"{SYNTHETIC_ID_BASE + 1}", f"{SYNTHETIC_ID_BASE + 1},Quicksilver,British,Alpine"],
+    ids=["the ID alone", "four columns"],
+)
+def test_a_sign_up_row_of_the_wrong_width_is_refused(row):
+    """A row that is not `ID,Driver name,Nationality` is refused, the three columns named."""
+    drivers, errors = _parse_sign_up("\n".join([SIGN_UP_HEADER, row]))
+
+    assert drivers == []
+    assert errors[0].startswith("Line 2: expected 3 columns")
+
+
+@pytest.mark.xfail(strict=True, reason=_SIGN_UP_PARSER)
+def test_a_sign_up_row_naming_a_nationality_the_bot_does_not_know_is_refused():
+    """A nationality the wizard would refuse is refused on its line, the text named."""
+    drivers, errors = _parse_sign_up("\n".join([SIGN_UP_HEADER, _row() + ",Martian"]))
+
+    assert drivers == []
+    assert len(errors) == 1
+    assert errors[0].startswith("Line 2:")
+    assert "Martian" in errors[0] and "nationality" in errors[0].lower()
+
+
+@pytest.mark.xfail(strict=True, reason=_SIGN_UP_PARSER)
+@pytest.mark.parametrize(
+    "rows",
+    [
+        [f"{SYNTHETIC_ID_BASE - 1},Quicksilver"],
+        ["not-an-id,Quicksilver"],
+        [_row(), _row(1, name="Badger")],
+        [_row(), _row(2, name="QUICKSILVER")],
+        [f"{SYNTHETIC_ID_BASE + 1},"],
+        [_row(name="**Quicksilver**")],
+    ],
+    ids=["an ID below the range", "not an ID", "a repeated ID", "a repeated name",
+         "no name", "a name breaking the name rule"],
+)
+def test_a_sign_up_list_is_refused_for_each_fault_a_roster_is(rows):
+    """Each fault the text shows in a roster's ID or name is refused in a sign-up list in the same
+    words, on the same line, a blank nationality column added to every row."""
+    roster_drivers, roster_errors = parse_roster_csv(_csv(*rows))
+    drivers, errors = _parse_sign_up("\n".join([SIGN_UP_HEADER, *(f"{row}," for row in rows)]))
+
+    assert roster_errors
+    assert errors == roster_errors
+    assert [d.discord_user_id for d in drivers] == [d.discord_user_id for d in roster_drivers]
