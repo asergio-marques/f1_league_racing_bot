@@ -211,8 +211,8 @@ point, which would then hold every module's registrations and grow with each mod
   named for what the roster asks of signing up, not for a moment of core's, and with nothing signed
   up to the first core refuses; that is the price, accepted for this command alone, and core still
   holds none of signup's rules. It is the one command under `/test-mode` whose work is chiefly a
-  module's, rather than a moment of core's the modules join as `/test-mode advance` and `toggle` are;
-  a further one needs the same reasons.
+  module's, rather than a moment of core's the modules join as `/test-mode advance` and `toggle`
+  are; a further one needs the same reasons.
 - **A service** holds the league's rules and all the database code. It may use discord.py: it can
   post to a channel and build the buttons it posts, and a workflow, to which a cog hands a button's
   press, takes the pressed interaction and answers the member through it, while the gates it walks

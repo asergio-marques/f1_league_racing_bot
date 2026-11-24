@@ -345,9 +345,10 @@ class LeagueBot(commands.Bot):
     divisions_raced_read: AwaitedHook
     #: What stands in the way of signing fake drivers up (`/test-mode roster sign-up-bulk`'s ask
     #: and its save), given the connection: each module signing up its own read, handing back the
-    #: faults that stand, in words (signup's: off, or else unconfigured, or else signups not open and
-    #: no availability slot). Core gathers them into the refusal; with no subscriber core refuses, nothing being
-    #: able to sign a driver up. The builder makes it and hands it to the change.
+    #: faults that stand, in words (signup's: off, or else unconfigured, or else signups not open
+    #: and no availability slot). Core gathers them into the refusal; with no subscriber core
+    #: refuses, nothing being able to sign a driver up. The builder makes it and hands it to the
+    #: change.
     fake_signups_ready_read: AwaitedHook
     #: Fake drivers created and signed up (`/test-mode roster sign-up-bulk`'s save), given the
     #: save's connection, the drivers (`FakeSignUp`) and the queue's clock: each module signing up
