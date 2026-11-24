@@ -657,7 +657,7 @@ async def test_a_wrongly_ordered_points_table_refuses_a_first_approval(db_path):
     # In full: the refusal moves into results with no word changed (#283).
     assert _replies(interaction) == (
         "\u274c Season cannot be approved \u2014 points configuration violates monotonic "
-        "ordering:\n\u2022 Config 'BROKEN', FEATURE_RACE: position 1 (10 pts) < "
+        "ordering:\n\u2022 Config 'BROKEN', Feature Race: position 1 (10 pts) < "
         "position 2 (25 pts)"
     )
     cog.bot.change_queue.ask.assert_not_awaited()

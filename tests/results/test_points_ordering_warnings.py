@@ -484,7 +484,8 @@ def _sent(interaction) -> str:
 
 @pytest.mark.asyncio
 async def test_the_review_panel_shows_the_ordering_problem_with_the_diff(db_path, season):
-    """A manager deciding whether to approve should see the fault while deciding."""
+    """A manager deciding whether to approve should see the fault while deciding, the
+    session named as a league reads it."""
     await saves.modify_session_points(
         db_path, season, "100%", "FEATURE_RACE", [(2, 30)],
         actor_id=USER_ID, actor_name="Manager#0001", now=NOW,
@@ -497,7 +498,7 @@ async def test_the_review_panel_shows_the_ordering_problem_with_the_diff(db_path
 
     panel = _sent(interaction)
     assert "the points would be out of order" in panel
-    assert "Config '100%'" in panel
+    assert "Config '100%', Feature Race:" in panel
     assert "could not be published" not in panel, (
         "the deliverability refusal fired too, so this test no longer proves the ordering "
         "one is shown"

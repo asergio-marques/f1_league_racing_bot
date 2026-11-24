@@ -1,9 +1,10 @@
-"""What approving a points amendment changed, value by value (#439).
+"""What a points amendment changes, value by value (#439).
 
-Formed by `season_points_service.install_staged_points_on` from the season's points as they
-stood and the staged table that replaced them, and read by the approval for the success line it
-writes and the audit record it keeps: only the values that changed are named, a value staged
-unchanged is not.
+Formed by `season_points_service` from the season's points as they stand and the staged
+table that would replace them (`staged_points_changes_on`) or has (`install_staged_points_on`),
+from one comparison. The amend review reads it for its diff, and the approval for the success
+line it writes and the audit record it keeps: only the values that differ are named, a value
+staged unchanged is not.
 """
 from __future__ import annotations
 
@@ -43,7 +44,7 @@ def _shown(value: int | None) -> str:
 
 @dataclass(frozen=True)
 class PointsChanged:
-    """Every value an approval changed, in table order: by configuration and session, each
+    """Every value a points amendment changes, in table order: by configuration and session, each
     position then the session's fastest-lap bonus and its position limit."""
 
     changes: tuple[ValueChange, ...] = ()

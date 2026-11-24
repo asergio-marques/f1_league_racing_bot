@@ -89,7 +89,7 @@ MODE_OFF = (
 NOT_PUBLISHED = "⛔ Amendment not approved — the result could not be published:"
 OUT_OF_ORDER = "❌ Amendment not approved — the points would be out of order:"
 #: The ordering error for P2 staged at 30 over P1 staged at 26.
-ORDERING_ERROR = "Config 'Standard', FEATURE_RACE: position 1 (26 pts) < position 2 (30 pts)"
+ORDERING_ERROR = "Config 'Standard', Feature Race: position 1 (26 pts) < position 2 (30 pts)"
 NOTHING_CHANGED = (
     "Nothing was changed: the season keeps its points, the staged changes stay staged and "
     "amendment mode stays on. Run `/results amend review` again."

@@ -665,6 +665,20 @@ async def install_staged_points_on(db: aiosqlite.Connection, season_id: int) -> 
     return _changed(current, staged)
 
 
+async def staged_points_changes_on(db: aiosqlite.Connection, season_id: int) -> PointsChanged:
+    """What approving the season's staged points would change, on *db*: the review's diff.
+
+    Every value the staged table holds differently from the season's own, each position's
+    points and each session's fastest-lap bonus and position limit, in the order an approval
+    names them and from the same comparison, so that the review shows what ✅ Approve then
+    reports. It only reads, on the connection handed, and commits nothing; it does not judge
+    whether the amendment mode is on or the table in order.
+    """
+    current = await _points_table(db, "season_points_entries", "season_points_fl", season_id)
+    staged = await _points_table(db, "season_modification_entries", "season_modification_fl", season_id)
+    return _changed(current, staged)
+
+
 _Table = dict[tuple[str, str], tuple[dict[int, int], tuple[int | None, int | None] | None]]
 
 

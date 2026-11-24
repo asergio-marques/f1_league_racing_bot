@@ -345,7 +345,7 @@ async def test_attached_ordering_catches_a_table_the_season_has_not_copied_yet(d
 
     assert len(errors) == 1
     assert "BAD" in errors[0]
-    assert "FEATURE_RACE" in errors[0]
+    assert "Feature Race" in errors[0]
 
 
 @pytest.mark.asyncio
@@ -409,7 +409,7 @@ async def test_attached_ordering_judges_each_session_type_on_its_own(db_path):
     )
 
     assert len(errors) == 1
-    assert "FEATURE_QUALIFYING" in errors[0]
+    assert "Feature Qualifying" in errors[0]
 
 
 @pytest.mark.asyncio
@@ -618,7 +618,7 @@ async def test_installing_refuses_writing_nothing_where_amendment_mode_is_off_or
     if case == "mode off":
         assert refused.value.reply == MODE_OFF_REPLY
     else:
-        error = "Config 'Standard', FEATURE_RACE: position 1 (10 pts) < position 2 (18 pts)"
+        error = "Config 'Standard', Feature Race: position 1 (10 pts) < position 2 (18 pts)"
         assert refused.value.reply == (
             "❌ Amendment not approved — the points would be out of order:\n"
             f"• {error}\n"
