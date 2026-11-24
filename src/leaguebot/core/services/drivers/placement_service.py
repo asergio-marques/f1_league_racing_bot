@@ -867,6 +867,57 @@ class PlacementService:
         }
 
     # ------------------------------------------------------------------
+    # Reject: every unconfirmed placement removed
+    # ------------------------------------------------------------------
+
+    async def can_reject_on(self, db, *, driver_profile_id: int, season_id: int) -> bool:
+        """Whether a driver can be turned down with the signup module off, on *db*: they are
+        Assigned and hold no confirmed placement in the season, only unconfirmed ones, of which
+        at least one."""
+        cursor = await db.execute(
+            "SELECT dp.current_state, "
+            "COALESCE(SUM(dsa.committed = 1), 0) AS confirmed, "
+            "COALESCE(SUM(dsa.committed = 0), 0) AS unconfirmed "
+            "FROM driver_profiles dp "
+            "LEFT JOIN driver_season_assignments dsa "
+            "ON dsa.driver_profile_id = dp.id AND dsa.season_id = ? "
+            "WHERE dp.id = ? GROUP BY dp.id",
+            (season_id, driver_profile_id),
+        )
+        row = await cursor.fetchone()
+        return (
+            row is not None
+            and DriverState(row["current_state"]) is DriverState.ASSIGNED
+            and row["confirmed"] == 0
+            and row["unconfirmed"] > 0
+        )
+
+    async def can_reject(self, *, driver_profile_id: int, season_id: int) -> bool:
+        """`can_reject_on`, read on a connection of its own."""
+        async with get_connection(self._db_path) as db:
+            return await self.can_reject_on(
+                db, driver_profile_id=driver_profile_id, season_id=season_id
+            )
+
+    async def reject_placements_on(self, db, *, driver_profile_id: int, season_id: int) -> None:
+        """Remove every unconfirmed placement of a driver in a season on *db*, freeing each seat,
+        on the connection handed and committed by no one here. The caller has judged
+        `can_reject_on` and writes the driver's state and the audit entry. An unconfirmed
+        placement stands outside the championship: it holds no role and no lineup entry, so
+        nothing is owed to Discord."""
+        await db.execute(
+            "UPDATE team_seats SET driver_profile_id = NULL WHERE id IN ("
+            "SELECT team_seat_id FROM driver_season_assignments "
+            "WHERE driver_profile_id = ? AND season_id = ? AND committed = 0)",
+            (driver_profile_id, season_id),
+        )
+        await db.execute(
+            "DELETE FROM driver_season_assignments "
+            "WHERE driver_profile_id = ? AND season_id = ? AND committed = 0",
+            (driver_profile_id, season_id),
+        )
+
+    # ------------------------------------------------------------------
     # Revoke all placement roles
     # ------------------------------------------------------------------
 

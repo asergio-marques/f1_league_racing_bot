@@ -24,7 +24,9 @@ job, in this order:
 4. **The line** that records the change, written last so that it carries what was not done.
 
 A rejection is for a driver approved and not yet placed (Unassigned), while drivers are being
-placed: the one save turns them down (`write_transition`), calls the *driver_turned_down* hook
+placed; with the signup module off it is for a driver holding only unconfirmed placements
+(Assigned), whose every placement the save removes: the one save turns them down
+(`write_transition`), calls the *driver_turned_down* hook
 each module signs up to (signup withdraws the approval of their signup), and writes the
 `DRIVER_REJECT` audit entry, shaped as a sack's and naming the driver in its values (the audit
 table has no subject column); the one job after it takes the driver role. It
@@ -152,11 +154,20 @@ NOTHING_RELEASED = (
 #: `/driver reject` as the line names it.
 REJECT_COMMAND = "/driver reject"
 
-#: The reply once a league admin has discarded the stopped save: nobody was turned down.
+#: The reply once a league admin has discarded the stopped save: nobody was turned down. With
+#: the signup module off, the driver keeps their placements instead.
 NOBODY_TURNED_DOWN = (
     "Nothing was turned down: **{driver_name}** is still an Unassigned driver. "
     "Run `/driver reject` again."
 )
+NOBODY_TURNED_DOWN_SIGNUP_OFF = (
+    "Nothing was turned down: **{driver_name}** keeps their placements. "
+    "Run `/driver reject` again."
+)
+
+#: What `/driver reject` answers, with the signup module off, a driver who holds no unconfirmed
+#: placement to turn down, or holds a confirmed one.
+NO_UNCONFIRMED_REFUSAL = "**{driver_name}** holds no unconfirmed placement to turn down."
 
 #: What `/driver reject` answers a driver who is not Unassigned.
 NOT_UNASSIGNED_REFUSAL = (
@@ -221,7 +232,8 @@ class _Kind:
     kind: str
     command: str
     doing: Callable[[dict[str, Any]], str]
-    nothing_done: str
+    #: The reply once the stopped save is discarded, or a function of the payload that gives it.
+    nothing_done: str | Callable[[dict[str, Any]], str]
     done: Callable[[dict[str, Any], dict[str, Any], bool], str]
     details: Callable[[dict[str, Any], dict[str, Any]], str]
     check: Callable[[CheckContext], Awaitable[Verdict]]
@@ -383,7 +395,10 @@ def _change(
     def outcome(ctx: OutcomeContext) -> str:
         result = _saved_result(ctx)
         if result is None:
-            return kind.nothing_done.format(**ctx.payload)
+            nothing_done = kind.nothing_done
+            if callable(nothing_done):
+                return nothing_done(ctx.payload)
+            return nothing_done.format(**ctx.payload)
         problems = _not_done(ctx)
         reply = kind.done(ctx.payload, result, _roles_refused(ctx))
         if problems:
@@ -871,18 +886,22 @@ async def _account_gone_refusal(ctx: CheckContext) -> Verdict | None:
 
 
 def driver_reject_change(
-    *, roles: TeamRoleService, lineups: LineupPoster, driver_turned_down: AwaitedHook,
-    now: Callable[[], datetime],
+    *, roles: TeamRoleService, lineups: LineupPoster, placement: PlacementService,
+    modules: ModuleService, driver_turned_down: AwaitedHook, now: Callable[[], datetime],
 ) -> ChangeType:
     """The `core.driver_reject` change type, for the builder to register: *roles* is what the
     job after the save takes the driver role through, *lineups* what posts the lineup, and
     *driver_turned_down* the hook the save calls, given its connection and the driver's profile id,
-    for each module to let go of what it holds for them.
+    for each module to let go of what it holds for them. *modules* is read for the signup
+    module's switch, on the connection the check or the save holds, and *placement* removes the
+    placements with it off.
 
     The payload names the driver (`driver_profile_id`, `discord_user_id`, `driver_name`) and the
-    season (`season_id`). The driver role is read inside the save and taken after it, from the
+    season (`season_id`), and with the signup module off `signup_off`, which words the reply of a
+    discarded save. The driver role is read inside the save and taken after it, from the
     account the save read from the driver's profile; a fake driver, never granted a role, has none
-    taken.
+    taken. With the signup module off the driver holds only unconfirmed placements, which the save
+    removes, and no role was granted for them, so none is taken.
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -896,6 +915,13 @@ def driver_reject_change(
         if refused is not None:
             return refused
         async with get_connection(ctx.db_path) as db:
+            if not await modules.is_enabled_on(db, "signup"):
+                if await placement.can_reject_on(
+                    db, driver_profile_id=int(payload["driver_profile_id"]),
+                    season_id=int(payload["season_id"]),
+                ):
+                    return Verdict.go()
+                return Verdict.refuse(f"⛔ {NO_UNCONFIRMED_REFUSAL.format(**payload)}")
             cursor = await db.execute(
                 "SELECT current_state FROM driver_profiles WHERE id = ?",
                 (int(payload["driver_profile_id"]),),
@@ -916,11 +942,22 @@ def driver_reject_change(
         if row is None:
             raise ValueError(f"no driver profile {profile_id}")
         state = DriverState(row["current_state"])
+        role_id = None
+        if not await modules.is_enabled_on(db, "signup"):
+            season_id = int(ctx.payload["season_id"])
+            if not await placement.can_reject_on(
+                db, driver_profile_id=profile_id, season_id=season_id
+            ):
+                raise Refused(NO_UNCONFIRMED_REFUSAL.format(**ctx.payload))
+            await placement.reject_placements_on(
+                db, driver_profile_id=profile_id, season_id=season_id
+            )
+        else:
+            cursor = await db.execute("SELECT driver_role_id FROM server_configs")
+            config = await cursor.fetchone()
+            role_id = config["driver_role_id"] if config is not None else None
         await write_transition(db, profile_id, state, DriverState.NOT_SIGNED_UP)
         await driver_turned_down.call(db, profile_id)
-        cursor = await db.execute("SELECT driver_role_id FROM server_configs")
-        config = await cursor.fetchone()
-        role_id = config["driver_role_id"] if config is not None else None
         return _Saved(
             result={},
             audit=AuditRecord(
@@ -936,6 +973,10 @@ def driver_reject_change(
     def doing(payload: dict[str, Any]) -> str:
         return f"Turning down **{payload['driver_name']}**"
 
+    def nothing_turned_down(payload: dict[str, Any]) -> str:
+        template = NOBODY_TURNED_DOWN_SIGNUP_OFF if payload.get("signup_off") else NOBODY_TURNED_DOWN
+        return template.format(**payload)
+
     def done(payload: dict[str, Any], _saved: dict[str, Any], _roles_refused: bool) -> str:
         return f"✅ Turned down **{payload['driver_name']}**. They are no longer signed up."
 
@@ -945,7 +986,7 @@ def driver_reject_change(
     return _change(
         _Kind(
             kind=DRIVER_REJECT, command=REJECT_COMMAND, doing=doing,
-            nothing_done=NOBODY_TURNED_DOWN, done=done, details=details, check=check, apply=apply,
+            nothing_done=nothing_turned_down, done=done, details=details, check=check, apply=apply,
             role_reason="Driver rejected",
         ),
         now, roles, lineups,
@@ -1154,7 +1195,8 @@ def _problems(ctx: OutcomeContext) -> list[str]:
 __all__ = [
     "DRIVER_ASSIGN", "DRIVER_MOVE", "DRIVER_REASSIGN", "DRIVER_REJECT", "DRIVER_RELEASE",
     "DRIVER_SACK", "DRIVER_UNASSIGN", "NO_ACCOUNT_CHANGED", "NOBODY_SACKED", "NOBODY_TURNED_DOWN",
-    "NOT_PLACING_REFUSAL", "NOT_UNASSIGNED_REFUSAL", "PAST_ACCOUNT_REFUSAL", "NOTHING_ASSIGNED",
+    "NOBODY_TURNED_DOWN_SIGNUP_OFF", "NO_UNCONFIRMED_REFUSAL", "NOT_PLACING_REFUSAL",
+    "NOT_UNASSIGNED_REFUSAL", "PAST_ACCOUNT_REFUSAL", "NOTHING_ASSIGNED",
     "NOTHING_MOVED", "NOTHING_RELEASED", "NOTHING_UNASSIGNED", "driver_assign_change",
     "driver_move_change", "driver_reassign_change", "driver_reject_change",
     "driver_release_change", "driver_sack_change", "driver_unassign_change",

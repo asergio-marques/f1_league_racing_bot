@@ -722,6 +722,7 @@ def register_change_types(bot: LeagueBot) -> None:
     bot.change_queue.register(
         driver_reject_change(
             roles=bot.team_role_service, lineups=bot.lineup_poster,
+            placement=bot.placement_service, modules=bot.module_service,
             driver_turned_down=bot.driver_turned_down,
             now=lambda: bot.change_queue.now(),
         )

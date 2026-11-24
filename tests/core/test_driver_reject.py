@@ -209,11 +209,6 @@ def _no_unconfirmed(name: str) -> str:
     return f"⛔ **{name}** holds no unconfirmed placement to turn down."
 
 
-_REJECT_SIGNUP_OFF_UNBUILT = (
-    "#624: with signup off a driver holding only unconfirmed placements cannot yet be turned down"
-)
-
-
 async def _valtteri_on_an_account_gone_from_the_server(league):
     """Valtteri's current account becomes 9999, which is not in the server; 106 is then a past
     account of his."""
@@ -304,11 +299,6 @@ async def test_a_driver_rejection_its_withdrawal_audit_entry_and_line_are_one_sa
         pytest.param(
             _placing_mid_season, _signup_off, 101, _no_unconfirmed("Lewis"),
             id="signup-off-mid-season-a-confirmed-driver",
-            marks=pytest.mark.xfail(
-                strict=True,
-                reason="#624: with signup off a confirmed driver is still refused as not "
-                "Unassigned",
-            ),
         ),
     ],
 )
@@ -562,7 +552,6 @@ async def _charles_state(league):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_REJECT_SIGNUP_OFF_UNBUILT)
 @pytest.mark.parametrize(
     "build",
     [
@@ -598,7 +587,6 @@ async def test_with_signup_off_a_rejection_removes_every_unconfirmed_placement(t
     assert last_said(asked) == _turned_down("Charles")
 
 
-@pytest.mark.xfail(strict=True, reason=_REJECT_SIGNUP_OFF_UNBUILT)
 async def test_with_signup_off_a_failed_rejection_keeps_every_placement(tmp_path):
     """#624. The season is in Placements, the signup module off; Charles sits at McLaren in Am and
     at Ferrari in Pro, neither confirmed. The league admin runs `/driver reject` of Charles, and

@@ -26,6 +26,7 @@ from leaguebot.core.services.drivers.driver_changes import (
     DRIVER_RELEASE,
     DRIVER_SACK,
     DRIVER_UNASSIGN,
+    NO_UNCONFIRMED_REFUSAL,
     NOT_PLACING_REFUSAL,
     NOT_UNASSIGNED_REFUSAL,
 )
@@ -391,11 +392,22 @@ async def reject(
         )
         return
 
+    # With the signup module off a driver is turned down for holding only unconfirmed
+    # placements, not for being Unassigned, which no signup makes them.
+    signup_off = not await bot.module_service.is_enabled("signup")
     profile = await bot.driver_service.get_profile(driver.account)
-    if profile is None or profile.current_state is not DriverState.UNASSIGNED:
+    if signup_off:
+        turned_down = profile is not None and await bot.placement_service.can_reject(
+            driver_profile_id=profile.id, season_id=season.id
+        )
+        refusal = f"⛔ {NO_UNCONFIRMED_REFUSAL}"
+    else:
+        turned_down = profile is not None and profile.current_state is DriverState.UNASSIGNED
+        refusal = NOT_UNASSIGNED_REFUSAL
+    if profile is None or not turned_down:
         await refuse(
             interaction,
-            NOT_UNASSIGNED_REFUSAL.format(driver_name=driver.name),
+            refusal.format(driver_name=driver.name),
             what=describe(interaction),
         )
         return
@@ -410,6 +422,7 @@ async def reject(
             "discord_user_id": driver.account,
             "driver_name": driver.name,
             "season_id": season.id,
+            "signup_off": signup_off,
         },
         interaction=interaction, what=describe(interaction),
     )
