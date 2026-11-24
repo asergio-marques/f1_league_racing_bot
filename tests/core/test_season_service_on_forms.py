@@ -361,6 +361,28 @@ async def test_renumbering_on_the_connection_handed_commits_nothing(tmp_path):
         assert await _round_numbers(db) == {ROUND_ID: 1, ROUND_ID + 1: 2, ROUND_ID + 2: 3}
 
 
+
+@pytest.mark.xfail(strict=True, reason="#605: rounds sharing a moment are numbered in scan order")
+async def test_a_cancelled_round_is_numbered_before_a_round_sharing_its_moment(tmp_path):
+    """Pro's round 1 (id 21) is not run and round 2 (id 22) is cancelled, both at 18:00 on 13
+    December; round 3 (id 23) is not run, a week later. Renumbering Pro numbers the cancelled
+    round first at the moment they share: it becomes round 1, the round still to be run round 2,
+    and round 3 stays round 3."""
+    from leaguebot.core.services.seasons.season_service import renumber_rounds_on
+
+    db_path = await _ongoing_db(tmp_path, ("NOT_RUN", "CANCELLED", "NOT_RUN"))
+    async with get_connection(db_path) as db:
+        for round_id, moment in (
+            (ROUND_ID, "2026-12-13T18:00:00+00:00"),
+            (ROUND_ID + 1, "2026-12-13T18:00:00+00:00"),
+            (ROUND_ID + 2, "2026-12-20T18:00:00+00:00"),
+        ):
+            await db.execute(
+                "UPDATE rounds SET scheduled_at = ? WHERE id = ?", (moment, round_id)
+            )
+        await renumber_rounds_on(db, DIVISION_ID)
+        assert await _round_numbers(db) == {ROUND_ID: 2, ROUND_ID + 1: 1, ROUND_ID + 2: 3}
+
 # ---------------------------------------------------------------------------
 # A season's end (#439, slice 5)
 #

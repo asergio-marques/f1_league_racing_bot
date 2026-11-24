@@ -266,17 +266,32 @@ async def test_two_imported_rounds_may_not_share_a_moment(tmp_path):
     assert await round_rows(league.db_path, "Pro") == []
 
 
-async def test_an_imported_round_may_not_land_on_an_existing_one(tmp_path):
+@pytest.mark.parametrize("status", [
+    "NOT_RUN",
+    pytest.param("CANCELLED", marks=pytest.mark.xfail(
+        strict=True, reason="#605: a cancelled round still holds its moment against an import",
+    )),
+])
+async def test_an_imported_round_may_not_land_on_an_existing_one(tmp_path, status):
     """The confirmation of placements refuses such a season; catching it here saves finding out
     later. Season #1 in Placements, Pro holding a round on 14 June at 18:00. The manager pastes a
-    round at that moment. They are refused, the moment held by a round already in the division,
-    and Pro holds its one round."""
+    round at that moment. Where the round Pro holds is not cancelled, they are refused, the moment
+    held by a round already in the division, and Pro holds its one round. A cancelled round holds
+    no moment: where it is cancelled, nothing is refused and Pro holds both rounds."""
+    from leaguebot.framework.db.database import get_connection
     from tests.support.settings_league import said
 
     league = await setup_league(tmp_path, divisions=_pro(_hungaroring(14)))
+    async with get_connection(league.db_path) as db:
+        await db.execute("UPDATE rounds SET status = ?", (status,))
+        await db.commit()
 
     asked = await _imported(league, "bulk", _paste(14))
 
+    if status == "CANCELLED":
+        assert not any(line.startswith("❌") for line in said(asked)), said(asked)
+        assert len(await round_rows(league.db_path, "Pro")) == 2
+        return
     assert said(asked) == [_rejected(
         "Line 1: duplicate datetime 2026-06-14T18:00:00 — already used by a round already in "
         "this division."
