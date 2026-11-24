@@ -35,6 +35,14 @@ class PreviewSources(Protocol):
         default, whether or not the module is on."""
         ...
 
+    def attendance_sheet_order(
+        self, totals: Mapping[int, int], names: Mapping[int, str]
+    ) -> list[int]:
+        """The keys of *totals* in the order the attendance sheet lists its rows: most points
+        first, drivers level on points by name, as the module's textual sheet after a round
+        lists them. *names* is by the same keys."""
+        ...
+
     def sample_sessions(self, round_format: str) -> Sequence[SampleSession]:
         """The sessions a round of *round_format* is run over for results, in the order they
         are run."""

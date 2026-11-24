@@ -130,13 +130,19 @@ def create_bot() -> LeagueBot:
 
 
 class LeaguePreviewSources(ResultsPreviewSources):
-    """The image module's `PreviewSources`: results' share, with attendance's deadline."""
+    """The image module's `PreviewSources`: results' share, with attendance's: the check-in's
+    deadline and the attendance sheet's order."""
 
-    def __init__(self, deadlines: AttendancePreviewSources) -> None:
-        self._deadlines = deadlines
+    def __init__(self, attendance: AttendancePreviewSources) -> None:
+        self._attendance = attendance
 
     async def check_in_deadline(self, scheduled_at: datetime) -> datetime:
-        return await self._deadlines.check_in_deadline(scheduled_at)
+        return await self._attendance.check_in_deadline(scheduled_at)
+
+    def attendance_sheet_order(
+        self, totals: Mapping[int, int], names: Mapping[int, str]
+    ) -> list[int]:
+        return self._attendance.attendance_sheet_order(totals, names)
 
 
 def register_module_switches(modules: "ModuleService") -> None:
