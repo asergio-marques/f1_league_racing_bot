@@ -854,6 +854,11 @@ async def _approval_not_posted(
 # Main persistent view (T010, T011, T018)
 # ---------------------------------------------------------------------------
 
+#: The rows Remove buttons are placed in, and the most a prompt can carry: five to a row.
+_REMOVE_ROWS = range(1, 5)
+_REMOVE_SLOTS = 5 * len(_REMOVE_ROWS)
+
+
 def _add_remove_buttons(view: discord.ui.View, buttons: list[tuple]) -> None:
     """Add a view's Remove buttons in rows 1 to 4, into whatever room those rows have left.
 
@@ -871,7 +876,7 @@ def _add_remove_buttons(view: discord.ui.View, buttons: list[tuple]) -> None:
     for item in view.children:
         if item.row is not None:
             used[item.row] += item.width
-    slots = [row for row in range(1, 5) for _ in range(5 - used[row])]
+    slots = [row for row in _REMOVE_ROWS for _ in range(5 - used[row])]
     if len(buttons) > len(slots):
         log.warning(
             "_add_remove_buttons: %d Remove buttons, room for %d; the rest are not shown",
