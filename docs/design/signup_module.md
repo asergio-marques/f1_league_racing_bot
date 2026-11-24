@@ -645,8 +645,8 @@ several modules join a hook the entry point calls the function in its order.
 | `channel_uses_read`, `setting_channels_read` | `channel_uses` | the channels signup holds: `channel_uses` only while it is on, `setting_channels` whatever its switch |
 | `fingerprint_areas_read` | `fingerprint_areas.fingerprint_areas` | its channel, window, settings and slots in the season's fingerprint, whatever its switch |
 | `in_memory_state_cleared` | `signup_views.clear_pending_reasons` | drops the pending reasons |
-| `fake_signups_ready_read` | `fake_signups.fake_signups_faults_on` | every fault that stands in the way of signing fake drivers up, as values, whatever the switch says: the module off, unconfigured, signups not open, no availability slot |
-| `fake_signups_approved` | `fake_signups.fake_signups_approved_on` | the signup each fake driver would have made, recorded with default answers to the open window and approved, the driver moved through the wizard's states to Unassigned by core's `transition_on`, and the audit records handed back |
+| `fake_signups_ready_read` | `fake_signups.fake_signups_faults_on` | the faults that stand in the way of signing fake drivers up, as values, whatever the switch says: the module off, or else unconfigured, or else signups not open and no availability slot |
+| `fake_signups_approved` | `fake_signups.fake_signups_approved_on` | the signup each fake driver would have made, recorded with default answers to the open window and approved, the driver moved through Pending Signup Completion and Pending Admin Approval to Unassigned by core's `transition_on`, and the audit records handed back |
 
 Signup's switch is the keyed hook `ModuleService.register_switch` under `"signup"`. Three of the
 subscribers that write in a save core calls them in whatever the switches say read signup's switch
@@ -668,8 +668,8 @@ The approval subscriber **raises** where the module is off or no window is open:
 the command before its first write on those faults, so that state in the save is a bug or a race,
 and the queue's own failure path (the stopped lane) is there for it, rather than a quiet success or
 a refusal after drivers were created (`fake_signups`' docstring). The readiness subscriber answers
-whatever the switch says, and names the switch as the first fault, the module being refused while it
-is off (core specification, "Fake drivers and rosters").
+whatever the switch says, and names the switch alone while it is off, the command being refused
+while the module is off (core specification, "Fake drivers and rosters").
 
 ### Core holds no rule of signup's
 
