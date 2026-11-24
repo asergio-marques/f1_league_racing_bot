@@ -169,7 +169,7 @@ folder.
 |---|---|---|
 | Configuration | `config_service` (`ConfigService`) | `server_configs`, and the claim on the server; it also fulfils the framework's protocols, answering the league's settings (the claimed server, the settings row) and the authority tiers (who is a league admin, who a league manager) the change queue asks, each tier delegating to `channel_guard`, where the rule stays |
 | Seasons, divisions, rounds | `season_service` (`SeasonService`), `season_lifecycle_service`, `season_end_service`, `round_moments`, `track_service`, `round_context` (`round_context`, `division_context`, `division_rounds`) | seasons, divisions, rounds, sessions; reads `tracks`; `round_context` answers a round's, and a division's, season, tier and grand prix for the module that heads a picture with them (image's pictures), and `division_rounds` a division's rounds in order, for a picture that lists them |
-| Teams and placements | `team_service` (`TeamService`), `placement_service` (`PlacementService`), `team_role_service` (`TeamRoleService`), `template_capacity_service` (`TemplateCapacityService`), `lineup_posting` (`LineupPoster`), `lineup_command` (`lineups_for_command`), `division_seating` (`division_seating`) | the list and the divisions' teams; the seats and placements (`PlacementService`, which posts nothing, reads a team's role through the team-role service it is handed, joins `team_role_configs` in its own queries for the roles a driver's placements carry, reads the driver role from the settings row, and gives and takes roles only through that service's helpers); `team_role_configs` and the helpers that give and take a team's Discord role (`TeamRoleService`); nothing for the capacity guards, which ask the image module's drawing whether its templates could draw a seat (`TemplateCapacityService`); nothing for the lineup's posting, the picture or its text (`LineupPoster`), nor for `/team lineup`'s pictures, which refuse rather than fall back to text (`lineups_for_command`); the seats and who sits in them, read as the lineup of record shows them, for every module that lists who races in a division (`division_seating`: the text lineup, image's lineup, standings and previews, each handing in its own filter on the state of the driver who sits); the portrait roster reads `active_season_driver_ids` beside it, which takes no filter: every driver assigned in the active season, a placement not yet confirmed included, test drivers left out |
+| Teams and placements | `team_service` (`TeamService`), `placement_service` (`PlacementService`), `team_role_service` (`TeamRoleService`), `template_capacity_service` (`TemplateCapacityService`), `lineup_posting` (`LineupPoster`), `lineup_command` (`lineups_for_command`), `division_seating` (`division_seating`) | the list and the divisions' teams; the seats and placements (`PlacementService`, which posts nothing, reads a team's role through the team-role service it is handed, joins `team_role_configs` in its own queries for the roles a driver's placements carry, reads the driver role from the settings row, counting it for a driver with no confirmed placement only where the signup module is on, the caller reading that switch and handing it in, and gives and takes roles only through that service's helpers); `team_role_configs` and the helpers that give and take a team's Discord role (`TeamRoleService`); nothing for the capacity guards, which ask the image module's drawing whether its templates could draw a seat (`TemplateCapacityService`); nothing for the lineup's posting, the picture or its text (`LineupPoster`), nor for `/team lineup`'s pictures, which refuse rather than fall back to text (`lineups_for_command`); the seats and who sits in them, read as the lineup of record shows them, for every module that lists who races in a division (`division_seating`: the text lineup, image's lineup, standings and previews, each handing in its own filter on the state of the driver who sits); the portrait roster reads `active_season_driver_ids` beside it, which takes no filter: every driver assigned in the active season, a placement not yet confirmed included, test drivers left out |
 | Drivers | `driver_service` (`DriverService`), `driver_names`, `driver_reference` | profiles, accounts, memberships, and the state machine; history is written by `season_end_service.write_driver_history_entries_on`; nothing for `driver_names`, which reads a driver's name, username and nationality, and whether the league collects a nationality, from the profile, the accounts, the test-mode fields and signup's hook; nothing for `driver_reference`, which resolves a driver named as text and lists drivers by name through `current_account_of` and `driver_names` |
 | A round's timed work | `round_jobs` (`RoundJobs`) | nothing: it is handed the rounds it arms, and reads the live seasons' rounds only to cancel their jobs (`cancel_live_rounds`) |
 | Channels | `channel_registry_service` | nothing: it reads core's channel columns, and the modules' through a hook, and asks Discord, through `judged_presence`, whether a channel being set can be used as its needs ask (`unusable_refusal`) |
@@ -891,7 +891,31 @@ statement that writes `current_state`: it raises `InvalidDriverTransition` for a
 not allow, having written nothing, and commits nothing. Every caller changing a state inside a
 larger write calls it rather than the update (its docstring). `DriverService.transition_on` creates
 a profile where none exists and the table allows the move from Not Signed Up; no transition deletes
-one.
+one. `write_transition` takes one keyword, `signup_off`, which widens one move and no other: Not
+Signed Up to Assigned. Nothing else of the table bends for a switch.
+
+**A league without signups places a driver from Not Signed Up.** Unassigned is reached only by an
+approved signup, so with the signup module off a driver is seated straight from Not Signed Up
+(the widening above), a member holding no profile being Not Signed Up in all but a row. The row is
+made in the save that places them, by `profile_for_placement_on`, the one place a profile is made
+for a placement: it resolves the account through every account a driver has held and inserts only
+where none names a driver, so a past account never gains a profile beside its driver's. A move
+through Unassigned first was not taken: it would write a state no signup made and split one
+placement into two transitions. The switch is read by name through
+`ModuleService.is_enabled_on` on the connection the check or the save already holds, the service
+handed to the change by the builder and never looked up on the bot; the switch is fixed for the
+season once its configuration is confirmed, so a read in the check and another in the save agree.
+The services take the answer as `signup_off` rather than read it themselves: `PlacementService`
+judges and writes what it is told, and the change owns the question. The other placement moves
+follow the same flag. A driver left holding no placement returns to Not Signed Up, where signup
+would have left them Unassigned. A reject, which signup's approval otherwise bounds, removes every
+unconfirmed placement through `PlacementService.reject_placements_on` in the save, so seats free
+with the state and the audit entry in one write, and takes no role, none having been given. The
+driver role follows the placements, not an approval: confirmation plans it onto each driver's
+grant job (`driver_role_due_on`, read on the save's connection, carried in the job's payload and
+its role read as the job runs so one put right meanwhile is the one given), `driver_role_ids_on`
+counts it only for a confirmed placement so that a reassign moves no role ahead of one, and
+`grant_to_every_driver` narrows a replaced driver role to confirmed drivers by the same test.
 
 **The accounts are a table the database keeps.** `driver_profiles.discord_user_id` names the
 current account; `driver_accounts` lists every account the driver has held, written by two
@@ -943,7 +967,8 @@ What the reply of a discarded save needs is read into the payload at the ask (`f
 in a save stops the lane. What each kind judges and writes is its docstring's. A roster the file
 shows wrong on its own is refused by the form before the ask. A roster command is judged in no stage
 of the season, only on test mode being on and a season standing: a fake driver is created unsigned,
-and the signup and `/driver assign` after it carry every rule of the stage (`sign-up-bulk`, which
+and the signup and `/driver assign` after it, or `/driver assign` alone with the signup module off,
+carry every rule of the stage (`sign-up-bulk`, which
 makes the signup, being the exception, below). Removal asks whether the driver has raced through
 core's reader of the divisions a driver raced in (`divisions_raced_read`) and the former-driver
 flag, and whether it holds a committed seat, never the results tables, so core reads no table
@@ -967,9 +992,11 @@ queue's clock is passed in.
 
 **Fake drivers are seeded, not moved through the state machine.** `test_roster_service` inserts a
 fake driver at Not Signed Up with no seat, flagged as a test driver, with a synthetic id above any
-real Discord id; the signup and `/driver assign` then move it through the state machine, and its
-docstring says why the insert bypasses `write_transition`. They are removed through
-`delete_driver_profiles`, keeping their history.
+real Discord id; the signup, or with the signup module off `/driver assign` alone, then moves it through the state
+machine, and its docstring says why the insert bypasses `write_transition`. They are removed through
+`delete_driver_profiles`, keeping their history. A member holding no profile is placed, with the
+signup module off, only as a real driver, which test mode refuses: a fake driver always has its row,
+so the test-mode guard reads a missing profile as a real one.
 
 **Advancing reads one moment and asks the modules.** `advance_next_step` reads the next step and
 the steps passed over at one `now`, for the reason its docstring gives. Each module hands back its
