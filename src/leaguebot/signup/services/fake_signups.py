@@ -70,8 +70,9 @@ async def _open_window_on(db: aiosqlite.Connection) -> tuple[int, int] | None:
 
 
 async def fake_signups_faults_on(db: aiosqlite.Connection) -> list[str]:
-    """Every fault that stands in the way of signing fake drivers up, read on *db*, in words: the
-    module off, then (the module on) it unconfigured, signups not open, no availability slot."""
+    """The faults that stand in the way of signing fake drivers up, read on *db*, in words: the
+    module off alone, else its configuration missing alone, else signups not open and no
+    availability slot, each that stands."""
     if not await signup_enabled_on(db):
         return [NOT_ENABLED]
     if await config_on(db) is None:
