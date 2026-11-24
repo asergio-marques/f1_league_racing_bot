@@ -255,8 +255,9 @@ def _started(number: int, edition: int) -> str:
     """`/season setup`'s reply once the season is saved, word for word."""
     return (
         f"✅ Season setup started. **Season #{number} (F1 {edition})** is being configured.\n\n"
-        "Use `/division add` for each division, then `/round add` for each round.\n"
-        "When done, run `/season placements-review` to review and approve."
+        "Settle its team list, its modules and their settings, and test mode, then run "
+        "`/season config-review` to confirm the configuration.\n"
+        "Its divisions and rounds are added once it reaches placements."
     )
 
 
