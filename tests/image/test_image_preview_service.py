@@ -13,6 +13,8 @@ from types import SimpleNamespace
 import aiosqlite
 import pytest
 
+from leaguebot.__main__ import LeaguePreviewSources
+from leaguebot.attendance.services.hooks.preview_sources import AttendancePreviewSources
 from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.image.services.config.image_config_service import ImageConfigService
 from leaguebot.image.services.preview.image_preview_service import (
@@ -74,8 +76,9 @@ async def db_path(tmp_path):
 async def bot(db_path):
     """A stand-in carrying only what the preview service reaches for.
 
-    No Discord anywhere: the service takes a bot-shaped object and touches three services
-    and the database, which is the whole of its dependency surface.
+    No Discord anywhere: the service takes a bot-shaped object and touches three services,
+    the previews' sources the entry point joins, and the database, which is the whole of its
+    dependency surface.
     """
     config_service = ImageConfigService(db_path)
     await create_image_defaults(config_service)
@@ -83,6 +86,7 @@ async def bot(db_path):
         db_path=db_path,
         season_service=SeasonService(db_path),
         image_config_service=config_service,
+        preview_sources=LeaguePreviewSources(AttendancePreviewSources(db_path)),
     )
 
 

@@ -903,6 +903,31 @@ class TestAttendancePreview:
         marked = [n for n in spec.image_data if n.endswith("_points_background")]
         assert len(marked) < len(context.drivers)
 
+    async def test_the_preview_draws_its_rows_in_the_sheet_s_order(self, bot, league):
+        """The Premier division's sheet after round 2, as `/images test attendance` previews it:
+        its rows run from most points down, and drivers level on points stand in the order of
+        their names, as the textual sheet after a round orders them (image spec, Attendance,
+        Test data)."""
+        from pathlib import Path
+
+        from leaguebot.image.utils.svg_document import load_svg
+
+        context = await _context(bot, round_number=2, require_teams=True)
+        requests = await build_attendance_preview(bot, context)
+
+        root_dir = Path(__file__).resolve().parents[2] / "resources" / "defaults" / "templates"
+        spec = requests[0][2](load_svg(root_dir / "attendance_template.svg"))
+
+        rows = []
+        while f"row_{len(rows) + 1}_points" in spec.text:
+            n = len(rows) + 1
+            rows.append((int(spec.text[f"row_{n}_points"]), spec.text[f"row_{n}_driver_name"]))
+        level = [(a, b) for a, b in zip(rows, rows[1:]) if a[0] == b[0]]
+
+        assert [points for points, _ in rows] == sorted((p for p, _ in rows), reverse=True)
+        assert level, "the preview draws no two drivers level on points"
+        assert all(a[1].casefold() <= b[1].casefold() for a, b in level)
+
     async def test_a_league_that_collects_no_nationality_draws_no_flag(self, bot, league, db_path):
         """FR-028 — the sheet does carry a flag element, and it obeys the switch."""
         async with get_connection(db_path) as db:
