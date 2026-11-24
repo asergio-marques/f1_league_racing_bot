@@ -257,6 +257,7 @@ The services sit flat in `signup/services/`, each file a topic. The table groups
 |---|---|---|
 | The service | `signup_module_service` | `SignupModuleService`, the reads and the `*_on` writers of every table, and signup's subscribers to core's hooks (the confirmation's copy, a driver's names, the turn-down, the account change, the season's delete, the pack, the review's section) |
 | Settings | `signup_settings`, `channel_setting`, `close_time_settings`, `module_switch_settings` | the five `/signup` settings that are not the channel or the close time, and `open_to_change`, the refusal they share; `/signup channel`; the close-time group; the switch-on |
+| The helper's signup | `fake_signups` | signup's two subscribers for `/test-mode roster sign-up-bulk`: the faults that stand in its way, and each fake driver's signup, recorded and approved |
 | The switch-off | `signup_off_change` | `module.off:signup` |
 | The window | `window_changes`, `window_close`, `information_post` | `signup.open` and `signup.close`, and the window's close at a season's end; the close timer, its handler and its catch-up; the one post of the information message |
 | The wizard | `wizard_changes`, `wizard_answers`, `wizard_service`, `driver_naming` | the start, the end, a held channel's deletion and a member leaving; the answers, the submission and the review panel; `WizardService`, the channel's making and lock, the prompts and the review panel's text; how a signup names its driver wherever it names one (log lines, posts, job descriptions, refusals), a fake driver by its test name |
@@ -643,6 +644,8 @@ several modules join a hook the entry point calls the function in its order.
 | `channel_uses_read`, `setting_channels_read` | `channel_uses` | the channels signup holds: `channel_uses` only while it is on, `setting_channels` whatever its switch |
 | `fingerprint_areas_read` | `fingerprint_areas.fingerprint_areas` | its channel, window, settings and slots in the season's fingerprint, whatever its switch |
 | `in_memory_state_cleared` | `signup_views.clear_pending_reasons` | drops the pending reasons |
+| `fake_signups_ready_read` | `fake_signups.fake_signups_faults_on` | every fault that stands in the way of signing fake drivers up, as values, whatever the switch says: the module off, unconfigured, signups not open, no availability slot |
+| `fake_signups_approved` | `fake_signups.fake_signups_approved_on` | the signup each fake driver would have made, recorded with default answers to the open window and approved, the driver moved through the wizard's states to Unassigned by core's `transition_on`, and the audit records handed back |
 
 Signup's switch is the keyed hook `ModuleService.register_switch` under `"signup"`. Three of the
 subscribers that write in a save core calls them in whatever the switches say read signup's switch
@@ -653,6 +656,18 @@ the turn-down (`driver_turned_down_on`) and the account change (`driver_account_
 none. The names a signup gives, the channels and the fingerprint read none either, as their
 docstrings say (`driver_names`, `channel_uses`, `fingerprint_areas`): a signup kept still names its
 driver, and rows and channels held are held off or on.
+
+**The helper's signup is a record and three moves, never the wizard.** `/test-mode roster
+sign-up-bulk` is core's command, and core creates its drivers. Signup's subscribers read on the
+connection the save holds (`slots_on`, `config_on`, `window_state_on`), as the save judged them,
+write the signup's own tables through `save_record_on` and `mark_approved_on`, and move the driver
+only through core's `transition_on`, so that no other path writes a driver's state. No channel,
+wizard row, panel, role, post or timer is made, since those are what make a signup a conversation.
+The approval subscriber **raises** where the module is off or no window is open: core has refused
+the command before its first write on those faults, so that state in the save is a race, and turning
+it into a refusal after drivers were created would leave a part-made list. The readiness subscriber
+answers whatever the switch says, and names the switch as the fault, since a module that is off
+cannot be asked its rule.
 
 ### Core holds no rule of signup's
 
