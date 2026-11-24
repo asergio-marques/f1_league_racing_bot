@@ -959,9 +959,9 @@ as values for core to gather into one refusal with the roster's own, with no `Re
 the hook, and `fake_signups_approved`, called in the save alone, whose subscriber writes the signup
 and moves each driver through Pending Signup Completion and Pending Admin Approval to Unassigned by
 `transition_on`, handing back the audit records for the save's result. With no subscriber to the
-first, core refuses. Every refusal is judged at the ask, as the change starts and in the save before
-the first write; after the first write a fault in a subscriber raises and rolls the save back, the
-lane stopping. The command is core's and sits in core's `roster` group, the exception
+first, core refuses; with none to the second, the save raises and rolls back. Every refusal is judged
+at the ask, as the change starts and in the save before the first write; after the first write a
+fault in a subscriber raises and rolls the save back, the lane stopping. The command is core's and sits in core's `roster` group, the exception
 `architecture.md` records ("What each part may do"). It posts nothing but its log line, and the
 queue's clock is passed in.
 

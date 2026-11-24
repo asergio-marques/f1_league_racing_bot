@@ -10,7 +10,8 @@ through it, is signup's, so the change reaches it only through the two hooks the
 *fake_signups_ready_read*, asked for the faults that stand in the way of signing a driver up, and
 *fake_signups_approved*, asked in the save for the signup and the driver's passage to Unassigned,
 which hands back the audit records of what it did. With no subscriber to the first, core refuses:
-nothing can sign a driver up.
+nothing can sign a driver up. With none to the second the save raises and rolls back, the lane
+stopping, rather than leaving drivers created at Not Signed Up under a success line.
 
 **The refusals are the check's**, judged at the ask and again as the change starts, and once more
 in the save before the first write, on the connection the save holds, so that each is judged
