@@ -68,6 +68,7 @@ from tests.support.season_league import (
     run_at_once,
 )
 from tests.support.mentions import NOBODY, notified
+from leaguebot.utils.messages import discord_ts
 
 
 PRO_CH, AM_CH = DIVISIONS[PRO][3], DIVISIONS[AM][3]
@@ -94,6 +95,14 @@ CANNOT_DISCARD = (
 NO_LONGER = "⛔ This round can no longer be amended:\n• "
 NOTHING_CHANGED = "\n\n**Nothing has been changed.** Run `/round amend` again to start over."
 NOT_DONE = "⚠️ **Not done**"
+
+
+def _held(number: int, moment: datetime) -> str:
+    """The refusal of a move onto the moment Pro's round *number* holds."""
+    return (
+        f"This division already holds round {number} at {discord_ts(moment)}. "
+        "Two rounds of one division cannot share a moment."
+    )
 #: The message of a check-in call recorded as posted late at a restart.
 LATE_CALL = 7101
 #: What each stop notice adds where an amendment's call is refused, by what is left of the round.
@@ -644,6 +653,9 @@ async def test_a_discarded_check_in_call_take_down_is_named_and_the_call_is_stil
     "the check-in deadline passes",
     "results entered",
     "the round cancelled",
+    pytest.param("round 4 takes the moment", marks=pytest.mark.xfail(
+        strict=True, reason="#605: the queue's check does not judge the division's other rounds",
+    )),
 ])
 async def test_an_amendment_judged_again_when_it_runs_is_refused_in_today_s_words(
     tmp_path, meanwhile,
@@ -652,8 +664,9 @@ async def test_an_amendment_judged_again_when_it_runs_is_refused_in_today_s_word
     to two hours and ten minutes out and confirmed, and waits; Am's round 4 is cancelled behind
     it. While they wait, the check-in deadline (two hours before the round) passes eleven minutes
     on, while the reply can still be updated, or round 3's results are entered, or it is
-    cancelled. Once the queue goes on, the amendment is refused in today's Confirm words, nothing
-    of it written and nothing unarmed, and Am's round 4 is cancelled."""
+    cancelled, or Pro's round 4 is moved to the moment asked. Once the queue goes on, the
+    amendment is refused in today's Confirm words, nothing of it written and nothing unarmed, and
+    Am's round 4 is cancelled."""
     reasons = {
         "the check-in deadline passes": (
             "The check-in deadline for that moment has already passed, so the round would have "
@@ -668,6 +681,8 @@ async def test_an_amendment_judged_again_when_it_runs_is_refused_in_today_s_word
     league = await ongoing_league(tmp_path, attendance=True)
     await _stopped_blocker(league)
     before = await _moment(league)
+    asked = _when(league, hours=2, minutes=10)
+    reasons["round 4 takes the moment"] = _held(4, asked)
     press = await _amended(league, scheduled_at=_at(league, hours=2, minutes=10))
     behind = await cancel_round(league, "Am", 4)
     assert not league.errors, league.errors
@@ -675,6 +690,10 @@ async def test_an_amendment_judged_again_when_it_runs_is_refused_in_today_s_word
         league.clock.advance(minutes=11)
     elif meanwhile == "results entered":
         await _set_status(league, "AWAITING_REPORT_VERDICTS")
+    elif meanwhile == "round 4 takes the moment":
+        await league.write(
+            "UPDATE rounds SET scheduled_at = ? WHERE id = ?", asked.isoformat(), R4
+        )
     else:
         await _set_status(league, "CANCELLED")
 
@@ -821,6 +840,68 @@ async def test_an_amendment_stopped_after_its_judgement_and_retried_once_the_dea
             if json.loads(row["payload"]).get("round_id") == round_id(AM, 4)]
     assert [row["state"] for row in am_4] == ["DONE"]
     assert reposts.posted == []
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#605: the save does not judge the division's other rounds again",
+)
+async def test_a_moment_taken_by_another_round_while_the_amendment_stood_stopped_is_refused_by_the_save(
+    tmp_path,
+):
+    """Pro's round 3 is moved to 60 days out and confirmed; the amendment is judged allowed and
+    stops at the removal of its timed work. While it stands stopped, Pro's round 4 is moved to
+    that same moment. The fault is mended and Retry is pressed: the save refuses, naming round 4,
+    nothing of the amendment written, one refusal line, and the round armed again as it stood."""
+    league = await ongoing_league(tmp_path)
+    before = await _moment(league)
+    asked = _when(league, days=60)
+    press = await _amended(league, scheduled_at=_at(league, days=60))
+    _unarming_fails(league)
+    await run_queue(league.bot)
+    assert await _stopped_at(league) == "unarm"
+
+    await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?", asked.isoformat(), R4)
+    _unarming_mended(league)
+    await retry_job(league.bot)
+
+    refused = NO_LONGER + _held(4, asked) + NOTHING_CHANGED
+    assert _outcome(press) == refused
+    assert (await _job(league, "apply"))["result"]["refused"] == refused
+    assert await _moment(league) == before
+    assert await league.rows(
+        "SELECT * FROM audit_entries WHERE change_type = 'round.scheduled_at'"
+    ) == []
+    assert _success_lines(league) == []
+    assert len(_amend_refusals(league)) == 1
+    assert league.unarmed.count(R3) == 1
+    assert league.armed == [("results", [R3])]
+    assert await stopped_job(league.db_path) is None
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#605: a cancelled round is not numbered first at a moment it shares",
+)
+async def test_a_round_moved_onto_a_cancelled_round_s_moment_is_amended_and_numbered_after_it(
+    tmp_path,
+):
+    """Pro's round 4 is cancelled, 120 days out. Round 3 is moved to that same moment and
+    confirmed: a cancelled round holds no moment, so the amendment is carried out, and the
+    cancelled round, numbered first at the moment they share, becomes round 3 and the moved
+    round becomes round 4."""
+    league = await ongoing_league(tmp_path)
+    cancelled_at = _when(league, days=120)
+    await league.write(
+        "UPDATE rounds SET scheduled_at = ?, status = 'CANCELLED' WHERE id = ?",
+        cancelled_at.isoformat(), R4,
+    )
+    press = await _amended(league, scheduled_at=_at(league, days=120))
+    await run_queue(league.bot)
+
+    assert (await _change(league))["state"] == "DONE"
+    assert _outcome(press).startswith(AMENDED)
+    assert await _moment(league) == await _moment(league, R4) == cancelled_at
+    assert (await _numbers(league))[R4] == 3
+    assert (await _numbers(league))[R3] == 4
 
 
 async def test_a_round_gone_when_the_amendment_runs_is_refused(tmp_path):

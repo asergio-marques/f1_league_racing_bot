@@ -568,6 +568,11 @@ ROUND_AMEND_REFUSALS = [
     pytest.param("first forecast posted", {"track": NEW_TRACK},
                  "first forecast for this round has already been posted",
                  id="the-first-forecast-stands"),
+    pytest.param("moment held", {}, "already holds round 2", id="the-moment-is-held",
+                 marks=pytest.mark.xfail(
+                     strict=True,
+                     reason="#605: /round amend does not judge the division's other rounds",
+                 )),
     pytest.param("confirm by another", {}, "Not your action", id="confirm-not-your-action"),
     pytest.param("confirm round gone", {}, "no longer exists", id="confirm-round-gone"),
     pytest.param("confirm window passed", {}, "can no longer be amended",
@@ -589,6 +594,18 @@ async def test_every_round_amend_refusal_reaches_the_log_channel(tmp_path, case,
         else timedelta(days=3) if forecast else timedelta(days=30)
     )
     path = await _db(tmp_path, scheduled_at=when, phase1_done=int(forecast))
+    if case == "moment held":
+        # Round 2 of the division, not run, a day after round 1: the moment round 1 is asked to.
+        held = (when + timedelta(days=1)).replace(microsecond=0)
+        async with get_connection(path) as db:
+            await db.execute(
+                "INSERT INTO rounds (id, division_id, round_number, format, track_name, "
+                "scheduled_at, status) VALUES (2, 1, 2, 'NORMAL', 'Silverstone Circuit', ?, "
+                "'NOT_RUN')",
+                (held.isoformat(),),
+            )
+            await db.commit()
+        kwargs = {"scheduled_at": held.strftime("%Y-%m-%dT%H:%M:%S")}
     cog = await _cog(path)
     interaction = _interaction()
     _recording(cog, interaction)
