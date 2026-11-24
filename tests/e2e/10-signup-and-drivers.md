@@ -412,9 +412,9 @@ Every answer in this part is given in `#wade-walsh-signup`, as you.
       **Step 7 — Preferred Teammate**
       Enter your preferred teammate's username, or press **No Preference**.
       ```
-    - **Log:** the line names the button pressed, though Bravo Motorsport is kept:
+    - **Log:** the line names the pick kept:
       ```
-      <you> | Signup | Preferred team: no preference
+      <you> | Signup | Preferred teams: Bravo Motorsport
         driver: Wade Walsh
       ```
 

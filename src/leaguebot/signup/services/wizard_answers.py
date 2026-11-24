@@ -345,9 +345,11 @@ def judge_button(
     step = int(draft.get("_pref_teams_step", 0))
     picks = list(draft.get("preferred_teams") or [])
     if value is None:
+        # No Preference ends the picking; a pick already made is kept, and the line names it.
         return Accepted(
             {"preferred_teams": picks}, drop=("_pref_teams_step",),
-            line="Preferred team: no preference",
+            line=(f"Preferred teams: {', '.join(picks)}" if picks
+                  else "Preferred team: no preference"),
         )
     if value in picks:
         return _refused("", _TEAM_PICKED)

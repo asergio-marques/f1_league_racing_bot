@@ -211,7 +211,7 @@ async def test_running_out_of_teams_ends_the_loop(tmp_path):
 async def test_no_preference_ends_the_loop_keeping_the_picks_so_far(tmp_path):
     """The third way out. A driver who wanted only one team says so by pressing No
     Preference, and that first pick must survive — discarding it would lose the one
-    preference they expressed."""
+    preference they expressed. The log line names the pick kept, not "no preference"."""
     league = await _team_step(tmp_path, picks=["Ferrari"])
     await _reshape(league, draft={"_pref_teams_step": 1})
 
@@ -219,6 +219,8 @@ async def test_no_preference_ends_the_loop_keeping_the_picks_so_far(tmp_path):
 
     assert await _picks(league) == ["Ferrari"]
     assert await _state(league) == "COLLECTING_PREFERRED_TEAMMATE"
+    assert "Preferred teams: Ferrari" in league.log()
+    assert "Preferred team: no preference" not in league.log()
 
 
 @pytest.mark.parametrize("ends_by", ["third-pick", "no-preference"])
