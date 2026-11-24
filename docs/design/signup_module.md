@@ -131,6 +131,7 @@ never stored (`_snapshot_to_dict`'s docstring; `AvailabilitySlot`'s docstring, p
 | | `signup_module_service` (`driver_account_changed_on`, `bot_packed_on`), `closing_steps.drivers_returned_on` and `window_changes`' `return_drivers` | the row re-keyed to a new account and the new account's abandoned draft deleted; every row deleted by a pack; a returned driver's wizard ended |
 | | `held_channel_moves` (`DELETE_REPLACED_CHANNEL`) | the replaced account's row, deleted with its channel |
 | `signup_records` | `signup_module_service`, for `wizard_answers` and `review_changes` | a signup saved or corrected, approved, its lap sum |
+| | `fake_signups`, for core's `core.test_roster_sign_up_bulk` save | a fake driver's signup saved and approved |
 | | `signup_module_service` (`driver_turned_down_on`, `season_deleted_on`) | the approval withdrawn; a season's records deleted |
 | `season_signup_config` | `signup_module_service` (`configuration_confirmed_on`, `season_deleted_on`) | the season's copy, written or replaced; deleted with the season |
 
