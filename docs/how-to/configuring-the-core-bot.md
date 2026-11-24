@@ -460,9 +460,9 @@ The other six belong to modules, and each is set by its module's own command. Se
 /driver reject user:@Bob
 ```
 
-Every driver the signup window let through is **Unassigned**, and each of them has to be **settled** before placements can be confirmed: placed in a team with `/driver assign`, or turned down with `/driver reject`.
+Every driver the signup window let through is **Unassigned**, and each of them has to be **settled** before placements can be confirmed: placed in a team with `/driver assign`, or turned down with `/driver reject`. A signup still awaiting approval, or sent back for a correction, is unsettled too — finish reviewing it. [The signup guide](configuring-the-signup-module.md) covers reading the queue and its seeds.
 
-**With the signup module off there is no signup, so no one is Unassigned.** `/driver assign` places a member straight from Not Signed Up, giving the bot a profile for them as it does: name the member and the seat, and they are placed. Take back a placement with `/driver unassign`, and when it was the driver's last they return to Not Signed Up. `/driver reject` then turns down a driver holding only placements not yet confirmed, removing every one and freeing its seats. A signup still awaiting approval, or sent back for a correction, is unsettled too — finish reviewing it. [The signup guide](configuring-the-signup-module.md) covers reading the queue and its seeds.
+**With the signup module off there is no signup, so no one is Unassigned.** `/driver assign` places a member straight from Not Signed Up, giving the bot a profile for them as it does: name the member and the seat, and they are placed. Take back a placement with `/driver unassign`, and when it was the driver's last they return to Not Signed Up. `/driver reject` then turns down a driver holding only placements not yet confirmed, removing every one and freeing its seats.
 
 **A placement is not live until it is confirmed.** Nothing is granted and nothing is posted when you assign: the division and team roles (and, with the signup module off, the driver role) are handed out, and every lineup posted, when you confirm placements in step 12. Until then, `/driver unassign` takes a placement back without trace.
 
