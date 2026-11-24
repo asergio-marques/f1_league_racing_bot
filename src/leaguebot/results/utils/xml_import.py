@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 from lxml import etree
 
 from leaguebot.results.models.points_config import SessionType
+from leaguebot.results.utils.points_ordering import ordering_message, ordering_violations
 
 __all__ = [
     "XmlImportPayload",
@@ -215,25 +216,17 @@ def parse_xml_payload(xml_text: str) -> tuple[XmlImportPayload, list[str]]:
 # ---------------------------------------------------------------------------
 
 
-def validate_payload(payload: XmlImportPayload) -> list[str]:
-    """Return a list of monotonic-ordering violations in *payload*.
+def validate_payload(payload: XmlImportPayload, config_name: str) -> list[str]:
+    """Return a sentence for each place *payload* breaks the points-ordering rule.
 
-    For each session type, position points must be non-increasing when sorted
-    by position id ascending.  Zero-points entries do not break the chain
-    (they are allowed to follow a zero or stay at zero), but a positive value
-    that is greater-than-or-equal-to the preceding positive value is a
-    violation.
+    The rule is the shared one, taken from ``points_ordering.ordering_violations``: for each
+    session type, points must not rise with position id. Zero-points entries do not break the
+    chain, but a positive value greater than or equal to the one before it is a violation.
+    Each violation is worded by ``ordering_message``, naming *config_name*, the session and
+    the position ids at fault as the file gives them.
     """
-    errors: list[str] = []
-    for session_type, pos_dict in payload.positions.items():
-        sorted_pts = [pts for _, pts in sorted(pos_dict.items())]
-        for i in range(len(sorted_pts) - 1):
-            pts_current = sorted_pts[i]
-            pts_next = sorted_pts[i + 1]
-            if pts_next > 0 and pts_next >= pts_current:
-                errors.append(
-                    f"[{session_type.label()}] Points are not monotonically "
-                    f"non-increasing: position {i + 1} has {pts_current} pts but "
-                    f"position {i + 2} has {pts_next} pts."
-                )
-    return errors
+    return [
+        ordering_message(config_name, session_type.value, violation)
+        for session_type, pos_dict in payload.positions.items()
+        for violation in ordering_violations(list(pos_dict.items()))
+    ]

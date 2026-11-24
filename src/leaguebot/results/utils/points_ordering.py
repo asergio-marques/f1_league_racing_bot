@@ -9,10 +9,8 @@ It lives in ``utils`` rather than in either service that needs it:
 ``season_points_service`` already imports ``points_config_service``, so a helper in
 either of them would have to be imported backwards by the other.
 
-``leaguebot.results.utils.xml_import.validate_payload`` states the same rule in its own words and is
-deliberately left alone — its messages are part of the import's contract and it has
-its own tests. Two statements of one rule is one more than is comfortable; a third
-would have been the point it started to drift.
+The XML import (``leaguebot.results.utils.xml_import.validate_payload``) takes the rule
+from here too, so all four callers hold one statement of it.
 """
 from __future__ import annotations
 

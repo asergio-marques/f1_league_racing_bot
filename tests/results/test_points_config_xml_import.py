@@ -90,7 +90,7 @@ UNORDERED_XML = """
   <session>
     <type>Feature Race</type>
     <position id="1">10</position>
-    <position id="2">25</position>
+    <position id="3">25</position>
   </session>
 </config>
 """
@@ -373,7 +373,7 @@ async def test_an_xml_import_database_fault_names_the_config_in_one_failure_line
         ),
         pytest.param(
             UNORDERED_XML,
-            ["⛔ ", f"refused for {NAMED}", "position 1 has 10 pts"],
+            ["⛔ ", f"refused for {NAMED}", "position 1 (10 pts) < position 3 (25 pts)"],
             id="ordering",
         ),
     ],
@@ -454,7 +454,7 @@ XML_IMPORT_REFUSALS = [
     pytest.param(b"\xff\xfe<config/>", True, True, "UTF-8", id="not-utf8"),
     pytest.param(VALID_XML.encode(), True, False, "not enabled", id="module-off"),
     pytest.param(MALFORMED_XML.encode(), True, True, "XML syntax error", id="parse"),
-    pytest.param(UNORDERED_XML.encode(), True, True, "position 1 has 10 pts", id="ordering"),
+    pytest.param(UNORDERED_XML.encode(), True, True, "position 1 (10 pts) < position 3 (25 pts)", id="ordering"),
     pytest.param(VALID_XML.encode(), False, True, "not found", id="config-not-found"),
 ]
 

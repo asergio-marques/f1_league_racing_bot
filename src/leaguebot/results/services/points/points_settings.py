@@ -676,7 +676,7 @@ async def run_xml_import(
         return
 
     # --- semantic validation (monotonic ordering) -------------------------
-    mono_errors = validate_payload(payload)
+    mono_errors = validate_payload(payload, config_name)
     if mono_errors:
         error_text = "\n".join(f"  • {e}" for e in mono_errors)
         await refuse(
