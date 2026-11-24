@@ -662,12 +662,13 @@ sign-up-bulk` is core's command, and core creates its drivers. Signup's subscrib
 connection the save holds (`slots_on`, `config_on`, `window_state_on`), as the save judged them,
 write the signup's own tables through `save_record_on` and `mark_approved_on`, and move the driver
 only through core's `transition_on`, so that no other path writes a driver's state. No channel,
-wizard row, panel, role, post or timer is made, since those are what make a signup a conversation.
+wizard row, panel, role, post or timer is made (signup specification, "Wizard flow").
 The approval subscriber **raises** where the module is off or no window is open: core has refused
-the command before its first write on those faults, so that state in the save is a race, and turning
-it into a refusal after drivers were created would leave a part-made list. The readiness subscriber
-answers whatever the switch says, and names the switch as the fault, since a module that is off
-cannot be asked its rule.
+the command before its first write on those faults, so that state in the save is a bug or a race,
+and the queue's own failure path (the stopped lane) is there for it, rather than a quiet success or
+a refusal after drivers were created (`fake_signups`' docstring). The readiness subscriber answers
+whatever the switch says, and names the switch as the first fault, the module being refused while it
+is off (core specification, "Fake drivers and rosters").
 
 ### Core holds no rule of signup's
 
