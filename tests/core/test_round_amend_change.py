@@ -36,6 +36,7 @@ from unittest.mock import AsyncMock, MagicMock, call, patch
 import discord
 import pytest
 
+from leaguebot.utils.messages import discord_ts
 from tests.support.change_queue import (
     discard_job,
     http_error,
@@ -68,7 +69,6 @@ from tests.support.season_league import (
     run_at_once,
 )
 from tests.support.mentions import NOBODY, notified
-from leaguebot.utils.messages import discord_ts
 
 
 PRO_CH, AM_CH = DIVISIONS[PRO][3], DIVISIONS[AM][3]
@@ -95,14 +95,6 @@ CANNOT_DISCARD = (
 NO_LONGER = "⛔ This round can no longer be amended:\n• "
 NOTHING_CHANGED = "\n\n**Nothing has been changed.** Run `/round amend` again to start over."
 NOT_DONE = "⚠️ **Not done**"
-
-
-def _held(number: int, moment: datetime) -> str:
-    """The refusal of a move onto the moment Pro's round *number* holds."""
-    return (
-        f"This division already holds round {number} at {discord_ts(moment)}. "
-        "Two rounds of one division cannot share a moment."
-    )
 #: The message of a check-in call recorded as posted late at a restart.
 LATE_CALL = 7101
 #: What each stop notice adds where an amendment's call is refused, by what is left of the round.
@@ -115,6 +107,14 @@ NOTHING_LEFT = ("no call stands, and no attendance rows are open for this round 
 MAY_HAVE_LANDED = ("; it may have reached Discord all the same: the bot posts it again on its "
                    "next try, and any second copy is to be deleted by hand")
 NOT_POSTED = "ATTENDANCE | check-in call | NOT POSTED"
+
+
+def _held(number: int, moment: datetime) -> str:
+    """The refusal of a move onto the moment Pro's round *number* holds."""
+    return (
+        f"This division already holds round {number} at {discord_ts(moment)}. "
+        "Two rounds of one division cannot share a moment."
+    )
 
 
 # ── Recorders, patched before the league is built ──────────────────────────────────
