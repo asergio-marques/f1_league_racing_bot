@@ -14,6 +14,9 @@ roster across them, then writes:
     alone: the bot allocates the ID, and a driver is created with no seat
   - roster.csv    (only with --record, in tools/data-generator/) — ID and driver name, the two
     columns /test-mode roster add-bulk imports
+  - sign_up.csv   (only with --record, in tools/data-generator/) — ID, driver name and nationality,
+    the three columns /test-mode roster sign-up-bulk takes: it creates, signs up and approves the
+    drivers while signups are open
   - seating.csv   (only with --record, in tools/data-generator/) — the ID / name / team /
     division / nationality mapping, for the sibling generator scripts to consume: the seat each
     driver is to be given with /driver assign once its signup is approved, and the nationality
@@ -46,6 +49,7 @@ SRC_DIR = SCRIPT_DIR.parent.parent.parent / "src"
 COMMANDS_PATH = SCRIPT_DIR / "commands.txt"
 NAMES_PATH = SCRIPT_DIR / "names.txt"
 CSV_PATH = DATA_DIR / "roster.csv"
+SIGN_UP_PATH = DATA_DIR / "sign_up.csv"
 SEATING_PATH = DATA_DIR / "seating.csv"
 SEATING_BACKUP_PATH = DATA_DIR / "seating_old.csv"
 TEAMS_PATH = DATA_DIR / "teams.txt"
@@ -86,6 +90,7 @@ COMMAND_TEMPLATE = "/test-mode roster add driver_name:{name}"
 
 #: The two columns /test-mode roster add-bulk imports, and no others: it refuses a file of more.
 CSV_HEADERS = ["ID", "Driver name"]
+SIGN_UP_HEADERS = ["ID", "Driver name", "Nationality"]
 
 #: Appended, never inserted. The sibling generators read seating.csv by DictReader but then
 #: index each row positionally (row[0]..row[3]), so a column added anywhere but the end
@@ -387,7 +392,7 @@ def confirm_overwrite(read_line=input):
     """
     print(f"\n{SEATING_PATH} already exists.")
     print(f"Overwriting it will move the current file to {SEATING_BACKUP_PATH.name}, ")
-    print(f"and replace {CSV_PATH.name} and {TEAMS_PATH.name} alongside it.")
+    print(f"and replace {CSV_PATH.name}, {SIGN_UP_PATH.name} and {TEAMS_PATH.name} alongside it.")
     answer = read_line("Overwrite? [y/N]: ")
     return answer.strip().casefold() in ("y", "yes")
 
@@ -398,6 +403,15 @@ def write_csv(roster):
         writer = csv.writer(handle)
         writer.writerow(CSV_HEADERS)
         writer.writerows(row[:2] for row in roster)
+
+
+def write_sign_up(roster):
+    """Write the list /test-mode roster sign-up-bulk takes, ID, driver name and nationality, to
+    SIGN_UP_PATH, replacing any there."""
+    with SIGN_UP_PATH.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(SIGN_UP_HEADERS)
+        writer.writerows((row[0], row[1], row[4]) for row in roster)
 
 
 def write_seating(roster):
@@ -486,6 +500,7 @@ def main(argv=None):
 
     if args.record:
         write_csv(roster)
+        write_sign_up(roster)
         write_seating(roster)
         write_teams(teams)
 
@@ -496,6 +511,7 @@ def main(argv=None):
     print(f"Commands written to {COMMANDS_PATH}")
     if args.record:
         print(f"Roster written to {CSV_PATH}")
+        print(f"Sign-up list written to {SIGN_UP_PATH}")
         print(f"Seating written to {SEATING_PATH}")
         print(f"Teams written to {TEAMS_PATH}")
     return 0

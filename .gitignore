@@ -246,6 +246,7 @@ poc/
 # Data generator output — regenerated on every run, never committed
 tools/data-generator/roster.csv
 tools/data-generator/roster_old.csv
+tools/data-generator/sign_up.csv
 tools/data-generator/seating.csv
 tools/data-generator/seating_old.csv
 tools/data-generator/teams.txt

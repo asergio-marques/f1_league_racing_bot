@@ -12,7 +12,7 @@ a calendar names circuits and dates, never drivers, so it stands outside that co
 
 | Script | Generates | Reads | Writes |
 |---|---|---|---|
-| `test-roster/generate_test_roster.py` | drivers, teams and divisions | `test-roster/names.txt` | `roster.csv`, `seating.csv`, `teams.txt`, `test-roster/commands.txt` |
+| `test-roster/generate_test_roster.py` | drivers, teams and divisions | `test-roster/names.txt` | `roster.csv`, `sign_up.csv`, `seating.csv`, `teams.txt`, `test-roster/commands.txt` |
 | `check-in-data/generate_check_in_data.py` | RSVP check-ins and revisions | `seating.csv` | `check-in-data/<slug>_initial.txt`, `check-in-data/<slug>_changed.txt` |
 | `results-data/generate_results_data.py` | a round's session results | `seating.csv`, `teams.txt`, `check-in-data/<slug>_*.txt` | `results-data/<slug>_<stamp>_<n>_<stage>_<session>.txt` |
 | `calendar-data/generate_calendar_data.py` | a season's calendar of rounds | the bot's track migration | `calendar-data/calendar.xml` |
@@ -20,7 +20,7 @@ a calendar names circuits and dates, never drivers, so it stands outside that co
 ## `roster.csv` and `seating.csv`
 
 The roster generator is the first link in the chain, because everything else refers to
-drivers. With `--record` it writes two files in this directory. `roster.csv` is what the bot
+drivers. With `--record` it writes three files in this directory. `roster.csv` is what the bot
 imports, the two columns `/test-mode roster add-bulk` takes and no others:
 
 ```
@@ -31,8 +31,19 @@ ID,Driver name
 ```
 
 The bot creates each driver at Not Signed Up, with no team, division or nationality: those
-come later, from the driver's signup and from `/driver assign`. So the rest of what the
-generator drew goes in `seating.csv`, the shared contract the sibling scripts read:
+come later, from the driver's signup and from `/driver assign`. `sign_up.csv` is the same
+drivers with the nationality each drew, the three columns `/test-mode roster sign-up-bulk`
+takes:
+
+```
+ID,Driver name,Nationality
+9000000000000000001,Juggernaut,Brazilian
+9000000000000000002,Deadbolt,Finnish
+9000000000000000003,Saltire,British
+```
+
+The rest of what the generator drew goes in `seating.csv`, the shared contract the sibling
+scripts read:
 
 ```
 ID,Driver name,Team,Division,Nationality
@@ -42,7 +53,7 @@ ID,Driver name,Team,Division,Nationality
 ```
 
 Each row is where the driver is to be seated, with `/driver assign` once its signup is
-approved, and the nationality to answer in its wizard. The bot reads neither file's team,
+approved, and the nationality to answer in its wizard or to sign it up with. The bot reads neither file's team,
 division or nationality; the siblings do, so that their results and check-ins agree with the
 seats you give.
 
@@ -110,6 +121,24 @@ go, and — unlike the commands above — writes the **IDs the file names**. The
 check-in generators key on those IDs, so importing the CSV keeps them lined up whatever
 order you do things in. `commands.txt` only lines up on a season with no test drivers
 in it yet.
+
+**Or sign the drivers up as well.** With `--record`, run `/test-mode roster sign-up-bulk`,
+while signups are open, and paste `sign_up.csv` whole: it creates every driver as `add-bulk`
+does and signs each up and approves it with default answers, leaving it Unassigned. It is
+refused while the test-mode nationality switch (`/test-mode nationality`) is off, because the
+file names a nationality for every driver; turn the switch on, or blank the column. Seating
+stays `/driver assign`, one driver at a time, from `seating.csv`. Use either `roster.csv` or
+`sign_up.csv` for a roster, not both: the second would find the IDs already held.
+
+**How each file is used.**
+
+| File | Used by |
+|---|---|
+| `commands.txt` | pasted into the server, one `/test-mode roster add` each |
+| `roster.csv` | pasted into `/test-mode roster add-bulk` |
+| `sign_up.csv` | pasted into `/test-mode roster sign-up-bulk`, while signups are open |
+| `seating.csv` | read by the sibling generators, and the guide to each `/driver assign` |
+| `teams.txt` | read by the results generator |
 
 **Naming your divisions and teams.** Only a single space *after* a comma is stripped, so
 `Division 1, Division 2` gives you exactly those two names, and a team called `Red Bull`
@@ -180,9 +209,9 @@ default, and the wizard asks no nationality while it is off — see
 [Testing with test mode](../../docs/how-to/test-mode.md).
 
 **`--record`.** Without it, only `commands.txt` is written and this directory is untouched.
-With it, `roster.csv`, `seating.csv` and `teams.txt` are written too. If a `seating.csv` is
+With it, `roster.csv`, `sign_up.csv`, `seating.csv` and `teams.txt` are written too. If a `seating.csv` is
 already there you are asked to confirm; the existing file is moved to `seating_old.csv` and
-replaced, keeping one generation of history. `roster.csv` and `teams.txt` are replaced
+replaced, keeping one generation of history. `roster.csv`, `sign_up.csv` and `teams.txt` are replaced
 outright — they hold names that the seating beside them can always regenerate, so a backup of
 either would only be one more file to keep in step.
 
