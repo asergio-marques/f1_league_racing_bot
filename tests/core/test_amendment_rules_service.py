@@ -18,6 +18,7 @@ import pytest
 from leaguebot.core.models.round import Round, RoundFormat, RoundStatus
 from leaguebot.core.services.rounds.amendment_rules_service import judge_amendment
 from leaguebot.attendance.models.attendance import AttendanceWindows
+from leaguebot.utils.messages import discord_ts
 from leaguebot.weather.models.weather_config import WeatherWindows
 from tests.support.amendment_judging import judged
 
@@ -35,11 +36,12 @@ def _round(
     status: str = RoundStatus.NOT_RUN.value,
     fmt: RoundFormat = RoundFormat.NORMAL,
     track: str | None = "Bahrain International Circuit",
+    number: int = 1,
 ) -> Round:
     return Round(
-        id=1,
+        id=number,
         division_id=1,
-        round_number=1,
+        round_number=number,
         format=fmt,
         track_name=track,
         scheduled_at=scheduled_at,
@@ -191,6 +193,83 @@ def test_a_round_may_not_be_moved_from_one_past_moment_to_another():
     verdict = judge_amendment(rnd, {"scheduled_at": NOW - timedelta(hours=1)}, now=NOW)
     assert not verdict.allowed
     assert any("cannot be moved into the past" in r for r in verdict.refusals)
+
+
+#: The amended round's own moment, and the moment round 2 of its division holds.
+OWN_AT = NOW + timedelta(days=30)
+SIBLING_AT = NOW + timedelta(days=40)
+
+
+def _held_refusal(number: int, moment: datetime) -> str:
+    """The refusal of a move onto the moment round *number* of the division holds."""
+    return (
+        f"This division already holds round {number} at {discord_ts(moment)}. "
+        "Two rounds of one division cannot share a moment."
+    )
+
+
+_NO_HELD_YET = "#605: judge_amendment takes no held rounds yet"
+
+
+@pytest.mark.parametrize(
+    "changes,sibling_status,sibling_at,refusals",
+    [
+        pytest.param(
+            {"scheduled_at": SIBLING_AT}, RoundStatus.NOT_RUN.value, SIBLING_AT,
+            [_held_refusal(2, SIBLING_AT)],
+            id="the_sibling_s_moment",
+            marks=pytest.mark.xfail(
+                strict=True, reason="#605: a moment another round holds is not refused"
+            ),
+        ),
+        pytest.param(
+            {"scheduled_at": SIBLING_AT.astimezone(timezone(timedelta(hours=1)))},
+            RoundStatus.NOT_RUN.value, SIBLING_AT,
+            [_held_refusal(2, SIBLING_AT)],
+            id="the_same_instant_at_plus_one_hour",
+            marks=pytest.mark.xfail(
+                strict=True, reason="#605: a moment another round holds is not refused"
+            ),
+        ),
+        pytest.param(
+            {"scheduled_at": SIBLING_AT}, RoundStatus.CANCELLED.value, SIBLING_AT, [],
+            id="a_cancelled_sibling_s_moment",
+            marks=pytest.mark.xfail(strict=True, reason=_NO_HELD_YET),
+        ),
+        pytest.param(
+            {"scheduled_at": OWN_AT, "track_name": "Silverstone Circuit"},
+            RoundStatus.NOT_RUN.value, SIBLING_AT, [],
+            id="its_own_moment_restated_beside_a_track_change",
+            marks=pytest.mark.xfail(strict=True, reason=_NO_HELD_YET),
+        ),
+        pytest.param(
+            {"track_name": "Silverstone Circuit"}, RoundStatus.NOT_RUN.value, OWN_AT, [],
+            id="a_track_change_alone",
+            marks=pytest.mark.xfail(strict=True, reason=_NO_HELD_YET),
+        ),
+        pytest.param(
+            {"scheduled_at": SIBLING_AT + timedelta(minutes=1)},
+            RoundStatus.NOT_RUN.value, SIBLING_AT, [],
+            id="one_minute_off",
+            marks=pytest.mark.xfail(strict=True, reason=_NO_HELD_YET),
+        ),
+    ],
+)
+def test_a_round_moved_onto_a_moment_another_round_of_its_division_holds_is_refused(
+    changes, sibling_status, sibling_at, refusals
+):
+    """Round 1, 30 days out, judged beside its division's rounds: itself and round 2.
+
+    Two rounds of one division never share a moment (core specification, "Rounds"), so a move
+    onto round 2's moment is refused, naming it, whatever zone the moment is given in. A cancelled
+    round holds no moment; the round never clashes with itself; a change that moves the round
+    nowhere is not judged by this rule, though round 2 stands at the round's own moment; and a
+    minute apart is not the same moment.
+    """
+    rnd = _round(scheduled_at=OWN_AT)
+    sibling = _round(scheduled_at=sibling_at, status=sibling_status, number=2)
+    verdict = judge_amendment(rnd, changes, now=NOW, held=(rnd, sibling))
+    assert verdict.refusals == refusals
 
 
 def test_a_mystery_round_may_not_be_given_a_track_without_a_format():
@@ -365,11 +444,14 @@ async def test_with_no_module_signed_up_nothing_module_specific_is_refused():
     assert verdict.kept == {}
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#605: the rules are not judged beside the division's rounds"
+)
 async def test_refusals_run_core_s_head_then_each_module_in_sign_up_order_then_core_s_tail():
     """Every one of core's rules refusing at once, beside two modules': the field that cannot be
-    amended, the round's status and the move into the past, then attendance's refusal and
-    weather's, in the order they signed up, then the round already started and the mystery
-    round given a track alone. Today's order, kept."""
+    amended, the round's status, the move into the past and the moment round 2 of the division
+    holds, then attendance's refusal and weather's, in the order they signed up, then the round
+    already started and the mystery round given a track alone. Today's order, kept."""
     from leaguebot.core.models.amendment import AmendmentPart
     from leaguebot.core.services.rounds.amendment_rules_service import (
         judged_with_the_modules,
@@ -386,6 +468,7 @@ async def test_refusals_run_core_s_head_then_each_module_in_sign_up_order_then_c
         fmt=RoundFormat.MYSTERY,
         track=None,
     )
+    sibling = _round(scheduled_at=NOW - timedelta(hours=2), number=2)
     verdict = await judged_with_the_modules(
         hook, rnd,
         {
@@ -393,13 +476,14 @@ async def test_refusals_run_core_s_head_then_each_module_in_sign_up_order_then_c
             "scheduled_at": NOW - timedelta(hours=2),
             "track_name": "Silverstone Circuit",
         },
-        now=NOW, db=None,
+        now=NOW, db=None, held=(rnd, sibling),
     )
     assert verdict.refusals == [
         "A round's round_number cannot be amended.",
         status_refusal(RoundStatus.AWAITING_REPORT_VERDICTS.value),
         "A round cannot be moved into the past. Its result submission would open late, at "
         "once, and not at the round's moment. Give it a moment still to come.",
+        _held_refusal(2, NOW - timedelta(hours=2)),
         "Attendance refuses it.",
         "Weather refuses it.",
         "This round has already started, so its track and format can no longer be amended.",
