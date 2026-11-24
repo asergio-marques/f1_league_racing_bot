@@ -315,7 +315,6 @@ _PAST_ACCOUNT_GONE = (
     f"⛔ <@{_NICO_PAST}> is a past account of a driver whose current account, <@{_NICO}>, is not "
     "in the server."
 )
-_LABEL_UNBUILT = "#624: a refusal still names the state by its stored value"
 
 
 async def _placing_signup_on(tmp_path):
@@ -371,7 +370,6 @@ async def _placing_past_account_gone(tmp_path):
         pytest.param(
             _placing_signup_on_not_signed_up, 108, _NOT_SIGNED_UP_REFUSED,
             id="signup-on-not-signed-up",
-            marks=pytest.mark.xfail(strict=True, reason=_LABEL_UNBUILT),
         ),
         pytest.param(_placing_signup_on, 108, _NO_PROFILE, id="signup-on-no-profile"),
         pytest.param(_placing_test_mode, 108, _TEST_MODE, id="signup-off-test-mode-no-profile"),

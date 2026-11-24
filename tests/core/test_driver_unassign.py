@@ -272,13 +272,7 @@ _NOT_ASSIGNED = (
     ("setup", "user_id", "reply"),
     [
         pytest.param(_take_charles_out_of_am, 103, _NOT_THERE, id="no-seat-in-am"),
-        pytest.param(
-            _valtteri_unassigned, 106, _NOT_ASSIGNED, id="an-unassigned-driver",
-            marks=pytest.mark.xfail(
-                strict=True,
-                reason="#624: the refusal does not yet name the state by its label",
-            ),
-        ),
+        pytest.param(_valtteri_unassigned, 106, _NOT_ASSIGNED, id="an-unassigned-driver"),
     ],
 )
 async def test_a_driver_unassignment_is_refused_at_the_ask(tmp_path, setup, user_id, reply):

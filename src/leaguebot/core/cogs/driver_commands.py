@@ -113,7 +113,7 @@ async def assign(
     division: str,
     team: str,
 ) -> None:
-    """Assign an Unassigned driver to a team and division."""
+    """Assign a driver to a team and division."""
     # Resolve season, and the stage placements may be made in
     season = await bot.season_service.get_setup_or_active_season()
     if season is None or season.stage not in _PLACING_STAGES:
@@ -375,11 +375,13 @@ async def reject(
     interaction: discord.Interaction,
     driver: ResolvedDriver,
 ) -> None:
-    """Turn down an Unassigned driver.
+    """Turn down a driver: an Unassigned one, or, with the signup module off, one holding
+    only unconfirmed placements.
 
     Available while the season is in Placements or Ongoing, placements — where the
     drivers of a window are settled. The driver returns to Not Signed Up and loses the
-    driver role; their signup is kept with the season.
+    driver role (with signup off, every unconfirmed placement is removed and no role is
+    taken, none having been given); their signup is kept with the season.
     """
     from leaguebot.core.models.driver_profile import DriverState
 

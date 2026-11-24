@@ -222,7 +222,6 @@ _STATE_NAMED = {
 }
 
 
-@pytest.mark.xfail(strict=True, reason="#624: the refusal names the state by its stored value")
 @pytest.mark.parametrize(
     "state",
     [

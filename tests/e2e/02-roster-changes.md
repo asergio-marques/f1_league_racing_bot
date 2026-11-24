@@ -1132,8 +1132,8 @@ Each division holds the Fixture's eleven teams of two seats and a Reserve team, 
 77. **A driver who never signed up.** **Do:** `/driver assign user:9000000000000000002 division:Division 1 team:ALP`
 
     **Expect:**
-    - **Reply:** `⛔ Driver must be Unassigned or Assigned to be placed (current state: NOT_SIGNED_UP).`
-    - **Log:** ``⛔ `/driver assign` refused for <you> — Driver must be Unassigned or Assigned to be placed (current state: NOT_SIGNED_UP).``
+    - **Reply:** `⛔ Driver must be Unassigned or Assigned to be placed (current state: Not Signed Up).`
+    - **Log:** ``⛔ `/driver assign` refused for <you> — Driver must be Unassigned or Assigned to be placed (current state: Not Signed Up).``
     - A fake driver made by `roster add` or `add-bulk` is seated only once its signup is approved.
 
 78. **Do**, once for each row below, in this order:

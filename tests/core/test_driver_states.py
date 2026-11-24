@@ -51,10 +51,6 @@ def test_the_table_names_no_state_outside_the_enum():
     assert named <= set(DriverState)
 
 
-_NO_LABEL = "#624: a driver's state has no label of its own yet"
-
-
-@pytest.mark.xfail(strict=True, reason=_NO_LABEL)
 def test_every_state_is_named_as_the_core_specification_names_it():
     """A refusal that names a driver's state names it as the core specification does, never by
     its stored value: "current state: Not Signed Up", not "current state: NOT_SIGNED_UP"."""

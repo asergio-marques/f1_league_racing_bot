@@ -544,7 +544,7 @@ class PlacementService:
         if current_state not in placeable:
             raise Refused(
                 f"Driver must be Unassigned or Assigned to be placed "
-                f"(current state: {current_state.value})."
+                f"(current state: {current_state.label})."
             )
 
         if uncommitted_only:
@@ -717,7 +717,7 @@ class PlacementService:
         if current_state != DriverState.ASSIGNED:
             raise Refused(
                 f"Driver must be in Assigned state to be unassigned "
-                f"(current state: {current_state.value})."
+                f"(current state: {current_state.label})."
             )
 
         cursor = await db.execute(
@@ -1056,7 +1056,7 @@ class PlacementService:
         if current_state not in (DriverState.UNASSIGNED, DriverState.ASSIGNED):
             raise Refused(
                 f"Driver must be Unassigned or Assigned to be sacked "
-                f"(current state: {current_state.value})."
+                f"(current state: {current_state.label})."
             )
 
         cursor = await db.execute(

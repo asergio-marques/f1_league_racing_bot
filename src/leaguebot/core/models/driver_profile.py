@@ -24,6 +24,12 @@ class DriverState(str, Enum):
     UNASSIGNED                     = "UNASSIGNED"
     ASSIGNED                       = "ASSIGNED"
 
+    @property
+    def label(self) -> str:
+        """The state as the core specification names it, for a reply or a line to say: "Not
+        Signed Up", never the stored value ``NOT_SIGNED_UP``."""
+        return self.value.replace("_", " ").title()
+
 
 class InvalidDriverTransition(ValueError):
     """The state machine's refusal of a transition its table does not allow.
