@@ -18,6 +18,8 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+from leaguebot.results.models.points_config import SessionType
+
 # A violation, as the four values a caller needs to name it:
 #   (position, its points, the position below it, that position's points)
 Violation = tuple[int, int, int, int]
@@ -55,12 +57,15 @@ def ordering_message(config_name: str, session_type: str, violation: Violation) 
     """The one sentence a league reads when a points table is out of order.
 
     Every check that applies the rule formats its errors through here, so a season's
-    approval, a mid-season amendment and a config edit all describe the same fault in
-    the same words. A manager who has read one has read all three.
+    approval, a placements review, the review of a mid-season amendment and its approval
+    all describe the same fault in the same words, naming the session as a league reads it
+    ("Feature Race"), not as it is stored. A manager who has read one has read all four.
+    (A config edit words its notice through `ordering_notice`, which names the session
+    the same way.)
     """
     position, points, next_position, next_points = violation
     return (
-        f"Config '{config_name}', {session_type}: "
+        f"Config '{config_name}', {SessionType(session_type).label()}: "
         f"position {position} ({points} pts) < "
         f"position {next_position} ({next_points} pts)"
     )

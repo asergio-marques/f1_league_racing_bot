@@ -486,8 +486,7 @@ async def _out_of_order_and_undeliverable(league: Any) -> None:
     pytest.param(_round_amended, {},
                  "⏸️ Not approved yet. Round 3 of **Pro** is being amended in <#706>.", None,
                  id="round-amendment-open"),
-    pytest.param(_out_of_order, {}, OUT_OF_ORDER, ORDERING_ERROR, id="out-of-order",
-                 marks=pytest.mark.xfail(strict=True, reason="#601: the ordering error names the session by its stored value")),
+    pytest.param(_out_of_order, {}, OUT_OF_ORDER, ORDERING_ERROR, id="out-of-order"),
     pytest.param(_undeliverable, {}, NOT_PUBLISHED,
                  "**Pro** — the results channel (id 700) is not in the server.",
                  id="undeliverable"),
@@ -501,8 +500,7 @@ async def _out_of_order_and_undeliverable(league: Any) -> None:
                  "**Pro** — the attendance channel (id 705)", id="live-attendance-lost"),
     pytest.param(_cannot_post, {}, NOT_PUBLISHED, "Send Messages", id="cannot-post"),
     pytest.param(_out_of_order_and_undeliverable, {}, OUT_OF_ORDER, ORDERING_ERROR,
-                 id="out-of-order-and-undeliverable",
-                 marks=pytest.mark.xfail(strict=True, reason="#601: the ordering error names the session by its stored value")),
+                 id="out-of-order-and-undeliverable"),
 ])
 async def test_the_press_is_refused_at_once_in_today_s_words(
     tmp_path, setup, options, expected, detail,

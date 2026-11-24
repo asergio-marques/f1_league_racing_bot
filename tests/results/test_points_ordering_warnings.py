@@ -483,7 +483,6 @@ def _sent(interaction) -> str:
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(strict=True, reason="#601: the ordering error names the session by its stored value")
 async def test_the_review_panel_shows_the_ordering_problem_with_the_diff(db_path, season):
     """A manager deciding whether to approve should see the fault while deciding, the
     session named as a league reads it."""

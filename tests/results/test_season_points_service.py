@@ -327,7 +327,6 @@ async def test_attached_ordering_passes_a_well_built_table(db_path):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(strict=True, reason="#601: the ordering error names the session by its stored value")
 async def test_attached_ordering_catches_a_table_the_season_has_not_copied_yet(db_path):
     """The regression. Nothing has written `season_points_entries` and the fault is found."""
     season_id = await _make_season(db_path)
@@ -389,7 +388,6 @@ async def test_attached_ordering_skips_a_name_attached_but_never_created(db_path
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(strict=True, reason="#601: the ordering error names the session by its stored value")
 async def test_attached_ordering_judges_each_session_type_on_its_own(db_path):
     """A league scoring qualifying differently is not compared across the two tables."""
     season_id = await _make_season(db_path)
@@ -592,7 +590,7 @@ async def test_installing_returns_each_value_changed_by_its_session_label(db_pat
 
 @pytest.mark.parametrize("case", [
     "mode off",
-    pytest.param("out of order", marks=pytest.mark.xfail(strict=True, reason="#601: the ordering error names the session by its stored value")),
+    pytest.param("out of order"),
 ])
 async def test_installing_refuses_writing_nothing_where_amendment_mode_is_off_or_the_table_is_out_of_order(
     db_path, case,

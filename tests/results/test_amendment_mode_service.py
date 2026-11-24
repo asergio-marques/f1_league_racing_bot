@@ -191,9 +191,6 @@ async def test_validate_modification_ordering_passes_a_table_running_down(tmp_pa
     assert await validate_modification_ordering(db_path, SEASON_ID) == []
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#601: the ordering error names the session by its stored value"
-)
 async def test_validate_modification_ordering_names_a_staged_inversion(tmp_path):
     """Season 1 in amendment mode with the Feature Race's P2 staged at 30, above P1's 25: one
     ordering error, naming the configuration and the session as a league reads it."""
@@ -209,9 +206,6 @@ async def test_validate_modification_ordering_names_a_staged_inversion(tmp_path)
     ]
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#601: the ordering error names the session by its stored value"
-)
 async def test_validate_modification_ordering_judges_each_session_on_its_own(tmp_path):
     """A qualifying table staged worth 1 for P1 and 3 for P2 is wrong; it does not make the
     race table, still 25 and 18, wrong: one error, naming the qualifying session as a league

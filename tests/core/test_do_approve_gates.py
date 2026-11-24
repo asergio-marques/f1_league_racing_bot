@@ -646,7 +646,6 @@ async def _attach(db_path, config_name: str, points: list[tuple[int, int]]) -> N
     )
 
 
-@pytest.mark.xfail(strict=True, reason="#601: the ordering error names the session by its stored value")
 async def test_a_wrongly_ordered_points_table_refuses_a_first_approval(db_path):
     """The regression. Before the fix this season was approved without a word."""
     await _attach(db_path, "BROKEN", [(1, 10), (2, 25)])
