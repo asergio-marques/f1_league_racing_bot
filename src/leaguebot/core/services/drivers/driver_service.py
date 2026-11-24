@@ -55,20 +55,11 @@ ALLOWED_TRANSITIONS: dict[DriverState, set[DriverState]] = {
     },
 }
 
-# Test-mode additional transitions from NOT_SIGNED_UP
-_TEST_MODE_EXTRA_FROM_NOT_SIGNED_UP: set[DriverState] = {
-    DriverState.UNASSIGNED,
-    DriverState.ASSIGNED,
-}
-
-
 async def write_transition(
     db,
     profile_id: int,
     current: DriverState,
     new_state: DriverState,
-    *,
-    test_mode_active: bool = False,
 ) -> None:
     """Write *profile_id*'s move from *current* to *new_state*, within the caller's transaction.
 
@@ -79,8 +70,6 @@ async def write_transition(
     transition the table does not allow, having written nothing. Does not commit.
     """
     allowed = set(ALLOWED_TRANSITIONS.get(current, set()))
-    if test_mode_active and current == DriverState.NOT_SIGNED_UP:
-        allowed |= _TEST_MODE_EXTRA_FROM_NOT_SIGNED_UP
     if new_state not in allowed:
         raise InvalidDriverTransition(
             f"Transition from {current.value} to {new_state.value} is not allowed. "
@@ -627,8 +616,6 @@ class DriverService:
         db: aiosqlite.Connection,
         discord_user_id: str,
         new_state: DriverState,
-        *,
-        test_mode_active: bool = False,
     ) -> DriverProfile:
         """Transition a driver to *new_state* on the connection handed, committing nothing.
 
@@ -647,8 +634,6 @@ class DriverService:
         row = await cursor.fetchone()
         if row is None:
             valid = set(ALLOWED_TRANSITIONS.get(DriverState.NOT_SIGNED_UP, set()))
-            if test_mode_active:
-                valid |= _TEST_MODE_EXTRA_FROM_NOT_SIGNED_UP
             if new_state not in valid:
                 raise InvalidDriverTransition(
                     f"No driver profile found for user {discord_user_id}; "
@@ -665,9 +650,7 @@ class DriverService:
                 current_state=new_state, former_driver=False,
             )
         profile = _row_to_profile(row)
-        await write_transition(
-            db, profile.id, profile.current_state, new_state, test_mode_active=test_mode_active
-        )
+        await write_transition(db, profile.id, profile.current_state, new_state)
         profile.current_state = new_state
         return profile
 
