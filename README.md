@@ -153,7 +153,7 @@ When inviting the bot, grant it the following OAuth2 bot permissions. All are us
 | **Manage Channels** | Creates private signup wizard channels; applies and removes channel permission overwrites for the signup module, the hub and per-driver wizard channels; deletes the channels it created during a `/bot factory-reset` |
 | **Manage Messages** | Deletes the old forecast message when a newer phase supersedes it (`forecast_cleanup_service`); deletes its own messages for `/clean-bot` and `/bot factory-reset` |
 | **Read Message History** | Reads back through a channel to find its own messages, for `/clean-bot` and `/bot factory-reset`, and to post again and take down what it posted in the results, standings, verdicts and attendance channels, and to read the check-in call back to redraw it |
-| **Manage Roles** | Grants the driver role on signup approval; grants/revokes division and team roles on driver placement, unassignment, and sacking |
+| **Manage Roles** | Grants the driver role on signup approval, or, with the signup module off, when placements are confirmed; grants/revokes division and team roles on driver placement, unassignment, and sacking |
 | **Mention @everyone, @here, and All Roles** | Pings the division role in a division's weather forecast messages (phase 1–3), in the check-in call (posted again when an amendment calls for it), in the attendance cancellation notice and in the weather notice that an amended round's forecasts no longer stand, and the interaction role when a round's results submission channel opens. Required when those roles are not set to "Allow anyone to @mention this role" (the typical default for private league roles) |
 
 The bot needs more than a server-wide grant in the channels it posts to: a channel's own settings can take a permission away. Each division channel, below, names the permissions it needs, and confirming placements names any the bot lacks.
@@ -197,7 +197,7 @@ This registers:
 - **Interaction channel** -- the only channel where commands are accepted
 - **Log channel** -- where computation audit logs are posted
 
-The league's two roles — the **base role** its members hold and the **driver role** its drivers hold — are set afterwards with [`/bot base-role` and `/bot driver-role`](#bot-base-role-bot-driver-role--set-the-leagues-two-roles). Neither is needed until you turn the signup module on.
+The league's two roles — the **base role** its members hold and the **driver role** its drivers hold — are set afterwards with [`/bot base-role` and `/bot driver-role`](#bot-base-role-bot-driver-role--set-the-leagues-two-roles). Neither is needed until you turn the signup module on. With it off, a driver role you have set is given to each driver as placements are confirmed.
 
 A **hub** — one channel every member can use the bot from — can be set with [`/bot hub-channel`](#bot-hub-channel--set-the-hub). It is optional, and offers **About** — which bot this is and which version it runs — until modules add options of their own.
 
@@ -423,17 +423,17 @@ If the bot has never been configured on the server, these refuse and point you a
 | Command | Parameter | Sets |
 |---|---|---|
 | `/bot base-role` | `role` | The role the league's members hold. Where the signup module is enabled, only it and the two league roles can see the signup channel, and opening signups pings it |
-| `/bot driver-role` | `role` | The role the league's drivers hold. The bot grants it when a signup is approved, and takes it back whenever the driver returns to Not Signed Up |
+| `/bot driver-role` | `role` | The role the league's drivers hold. The bot grants it when a signup is approved, or, with the signup module off, when the driver's placement is confirmed, and takes it back whenever the driver returns to Not Signed Up |
 
 Both roles are the league's, not the signup module's. Disabling a module does not clear them. Neither is required unless the signup module is enabled; while it is, `/signup open` and confirming a season's configuration each refuse until both are set, both are still on the server, and the bot can grant the driver role.
 
-**The driver role must be one the bot can grant.** `/bot driver-role` refuses `@everyone`, a role an integration manages (a bot's own role, Server Booster, a linked role), a role at or above the bot's own highest role, and any role at all while the bot lacks **Manage Roles** — each with the reason. Every approval grants it, and a grant Discord refuses would otherwise only reach the host's log.
+**The driver role must be one the bot can grant.** `/bot driver-role` refuses `@everyone`, a role an integration manages (a bot's own role, Server Booster, a linked role), a role at or above the bot's own highest role, and any role at all while the bot lacks **Manage Roles** — each with the reason. Every approval grants it, and with the signup module off every confirmation of placements, and a grant Discord refuses would otherwise only reach the host's log.
 
 Setting a new base role, while the signup module is enabled, moves the signup channel's permissions to it, and the role it replaces loses its access; while the module is off it touches nothing on the channel, and switching signup on gives the role its permissions. If Discord refuses the permission change, the role is still set and the channel can be fixed by hand. The driver role touches no channel.
 
 Setting either role to the role it already holds changes nothing: you're told so, it's logged as nothing changed, no audit entry is written, and neither the hub's permissions nor, for the base role, the signup channel's are set again.
 
-> **Both roles are fixed once a season's configuration is confirmed — unless one is deleted.** From then until the season ends, both commands refuse. A role deleted from the server can be replaced all the same: nobody holds it any more, and without it no signup window could open. The bot gives the replacement to every driver — everyone Unassigned or Assigned, test drivers aside — and names anyone it could not give it to, for you to give by hand. That holds for the base role too, the one time the bot grants it: it knows its drivers but not the rest of your members, so the reply reminds you to give it to them yourself. Where the grant itself cannot be carried out, the role is still saved: you're told it's saved but could not be given to the drivers, to give it to them by hand, and the base role's reply still reminds you to give it to your other members yourself.
+> **Both roles are fixed once a season's configuration is confirmed — unless one is deleted.** From then until the season ends, both commands refuse. A role deleted from the server can be replaced all the same: nobody holds it any more, and without it no signup window could open. The bot gives the replacement to every driver — everyone Unassigned or Assigned, test drivers aside — and names anyone it could not give it to, for you to give by hand. With the signup module off, a replaced driver role goes only to drivers whose placement is confirmed, the others being given it as theirs is. That holds for the base role too, the one time the bot grants it: it knows its drivers but not the rest of your members, so the reply reminds you to give it to them yourself. Where the grant itself cannot be carried out, the role is still saved: you're told it's saved but could not be given to the drivers, to give it to them by hand, and the base role's reply still reminds you to give it to your other members yourself.
 
 **Both are fixed once a season's configuration is confirmed**, until that season ends. A driver role changed mid-season would leave every current driver holding the old one. Each change is recorded in the log channel and audited with the role it replaced. Unlike the four settings above, these are ordinary commands, given in the interaction channel. The command answers at once that the change is under way, then updates that reply once it has run.
 
@@ -693,7 +693,7 @@ No parameters. Displays the pending season configuration, ending with a message 
 
 > **Three things hold the button back that the report does not otherwise show.** The season must hold at least one division that is not cancelled. Every signup must be settled: no driver may still be Unassigned, awaiting approval or correcting their signup — place them with `/driver assign`, turn them down with `/driver reject`, or finish reviewing their signup. And every division must have every channel it posts to — its **lineup** and **calendar** channels, and each channel an enabled module needs (weather; results, standings and verdicts; check-in and attendance) — set, and still on the server. The review lists every unsettled signup by name in its public report, names each channel at fault with its division and the command that sets it, and the approval refuses on the same reading. A channel the bot cannot see or post in, or lacks a permission it needs there (Embed Links for the lineup, Attach Files for a picture), is named with the permission it lacks, the same as a channel gone: *"**Pro**'s lineup channel is missing permissions the bot needs there: Embed Links — give the bot them, or `/division lineup-channel`."* A channel the bot merely could not look up, a Discord server error say, is not counted missing: only one Discord says is gone, or refuses to show the bot, is named.
 
-> **Approving commits every placement.** Until then a placement stands outside the championship; approving grants the division and team roles (the division's alone to a driver whose team has no role set) and posts the lineups, as described below.
+> **Approving commits every placement.** Until then a placement stands outside the championship; approving grants the division and team roles (the division's alone to a driver whose team has no role set), and with the signup module off the driver role besides, where you have set one, and posts the lineups, as described below.
 
 > **Mid-season, the review covers the new drivers only.** When a signup window closed mid-season leaves drivers to place, the season waits in *ongoing, placements* while you place them with `/driver assign`. `/season placements-review` then lists the drivers to confirm and each division's lineup as it will stand, and offers **✅ Confirm placements**, governed like the Approve button. Where the lineup is drawn as a picture, each lineup confirming will post is drawn with its new drivers in it and shown in place of its text.
 >
@@ -734,13 +734,13 @@ The image subsection also lists the eight **asset directories** and the path eac
 >
 > Only the enabled modules' windows count — but the round's own moment is judged whichever modules are on. A cancelled round is ignored either way. **Test mode is not exempt**, so a test season has to be built with its rounds still to come and beyond every configured window.
 
-Pressing it is acknowledged at once, naming its first job, and the reply is updated when it is done. The season's sessions, placements, points and state are saved together; then the timed work is armed — every round's result collection whatever modules you run (with weather and results both off it simply closes the round at its moment, so the season can be completed), the weather phases with weather on, and with the attendance module on every round's check-in call, reminder and deadline — each driver's roles are granted, and each lineup, calendar and opening classification and sheet is posted, each a job on the queue.
+Pressing it is acknowledged at once, naming its first job, and the reply is updated when it is done. The season's sessions, placements, points and state are saved together; then the timed work is armed — every round's result collection whatever modules you run (with weather and results both off it simply closes the round at its moment, so the season can be completed), the weather phases with weather on, and with the attendance module on every round's check-in call, reminder and deadline — each driver's roles are granted (the driver role among them with the signup module off, where you have set one), and each lineup, calendar and opening classification and sheet is posted, each a job on the queue.
 
 **The review is deleted once Approve is pressed and the queue has accepted the approval**, and not before — the whole report, pictures included, not just the button. It comes down ahead of the approval's own work, in the same breath as the queue accepts it, and never for a press the queue refuses at once, which leaves the review standing. It described a season waiting on a decision, and the decision has been made; leaving it would put a long stale scroll above everything the bot posts next. An approval that is then refused when its turn comes, or discarded by a league admin, leaves the season in placements and the review gone: run `/season placements-review` again. Your confirmation that the season was approved is private to you and stays. An expired review is cleared the same way, for the same reason.
 
 **Once committed, the approval stands, even where something after it cannot be done.** Any job after the save that fails — the arming, a grant or a post among them — stops the queue until it is retried or, save the arming, a league admin discards it. The arming cannot be discarded: put right what stopped it and press Retry, since without it no round would ever run. A calendar or lineup that was drawn with notices is named in the confirmation too, whatever else it says: **⚠️ Image notices** lists each picture (*calendar — Season 3 Pro*, *lineup — Pro*), a *see them in the log* link to the log message holding its notices, and each notice beneath, as `/division calendar-sync` does. Your confirmation lists each one discarded, under **Not everything could be done**:
 
-- a driver the bot could not give their roles — grant them by hand, and [`/team lineup`](#team-lineup--show-the-confirmed-team-lineups-of-the-season-being-raced) shows who is placed where;
+- a driver the bot could not give their roles (the driver role too, with the signup module off) — grant them by hand, and [`/team lineup`](#team-lineup--show-the-confirmed-team-lineups-of-the-season-being-raced) shows who is placed where;
 - the notice that the season's posts were being made, where it could not be posted;
 - a lineup that was not posted — no command posts one again, and it is posted with the next change to that division's drivers;
 - a calendar that was not posted — post it with [`/division calendar-sync`](#division-calendar-sync--repost-a-divisions-calendar) while the season is still being raced;
@@ -1009,7 +1009,7 @@ Manually sets the `former_driver` flag on a driver profile. Only available when 
 | `user` | String | ✅ | The driver whose flag is being updated: a mention or the driver's ID, a fake driver included, offered by name as you type. Text that names no driver is refused, naming what was typed |
 | `value` | Boolean | ✅ | The new value for the `former_driver` flag (`True` / `False`) |
 
-> **The roster changes in any stage of the season, `sign-up-bulk` apart.** `/test-mode roster add`, `add-bulk`, `remove` and `clear` run whatever the season's stage, while test mode is on. A fake driver is created at Not Signed Up, with no seat: it signs up through [`/signup start`](#signup-start--start-a-fake-drivers-signup), or with others through [`sign-up-bulk`](#test-mode-roster-sign-up-bulk--create-sign-up-and-approve-a-list-at-once), and `/driver assign` seats it once approved.
+> **The roster changes in any stage of the season, `sign-up-bulk` apart.** `/test-mode roster add`, `add-bulk`, `remove` and `clear` run whatever the season's stage, while test mode is on. A fake driver is created at Not Signed Up, with no seat: it signs up through [`/signup start`](#signup-start--start-a-fake-drivers-signup), or with others through [`sign-up-bulk`](#test-mode-roster-sign-up-bulk--create-sign-up-and-approve-a-list-at-once), and `/driver assign` seats it once approved, or, with the signup module off, straight from Not Signed Up.
 
 #### `/test-mode roster add` — Add a fake driver
 *Access: League admin · Requires test mode active*
@@ -1025,7 +1025,7 @@ Creates a synthetic driver profile at Not Signed Up — no seat, no signup, no n
 #### `/test-mode roster add-bulk` — Create a whole roster at once
 *Access: League admin · Requires test mode active*
 
-No parameters. Opens a box; paste the roster, header row and all, two columns, `ID,Driver name`, and every driver in it is created at Not Signed Up, with no seat. Each is seated afterwards with `/driver assign`, once its signup is approved.
+No parameters. Opens a box; paste the roster, header row and all, two columns, `ID,Driver name`, and every driver in it is created at Not Signed Up, with no seat. Each is seated afterwards with `/driver assign`, once its signup is approved, or at once with the signup module off.
 
 **The IDs in the file are the IDs written**, unlike `roster add`, which allocates its own. The generator's other scripts — results, check-ins — name drivers by those IDs, so importing the CSV keeps a generated results file lined up with the grid.
 
@@ -1265,13 +1265,13 @@ Name the driver by any of their accounts: `old_user` where it is still in the se
 #### `/driver assign` — Assign a driver to a team and division
 *Access: League manager*
 
-Places an Unassigned driver into a specific team seat within a division. Available only while the season is in **placements**, or mid-season while the drivers of a closed signup window are being placed — and then only for a driver who holds no confirmed placement. A driver whose placement is confirmed is moved or released instead.
+Places a driver into a specific team seat within a division: an Unassigned or Assigned driver, or, with the signup module off, a Not Signed Up one or a member the bot holds no profile for, who is given one by being placed. Available only while the season is in **placements**, or mid-season while the drivers of a closed signup window are being placed — and then only for a driver who holds no confirmed placement. A driver whose placement is confirmed is moved or released instead.
 
-**A placement stands outside the championship until placements are confirmed.** No role is granted and no lineup posted when you assign; the division and team roles are granted (or the division's alone where the team has no role set), and the lineups posted on the change queue, when placements are confirmed from the review.
+**A placement stands outside the championship until placements are confirmed.** No role is granted and no lineup posted when you assign; the division and team roles are granted (or the division's alone where the team has no role set), and the lineups posted on the change queue, when placements are confirmed from the review. With the signup module off the driver role is granted then too, where you have set one.
 
 A driver may hold at most one seat per division. Non-Reserve teams run out of seats; the Reserve team always has room.
 
-Refused while test mode is active: a real driver is never seated in a division under test. Fake drivers created by `/test-mode roster add` are unaffected: `/driver assign` seats one once its signup is approved, and one already seated in a division may be given a seat in a second.
+Refused while test mode is active: a real driver is never seated in a division under test, nor is a member the bot holds no profile for. Fake drivers created by `/test-mode roster add` are unaffected: `/driver assign` seats one once its signup is approved, or at once with the signup module off, and one already seated in a division may be given a seat in a second.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -1282,7 +1282,7 @@ Refused while test mode is active: a real driver is never seated in a division u
 #### `/driver unassign` — Remove a driver from a division
 *Access: League manager*
 
-Removes a driver's placement from one division. If this was their only assignment the driver reverts to Unassigned. Available in the same stages as `/driver assign`, and only for a placement not yet confirmed — which held no role, so none is revoked and no lineup is posted.
+Removes a driver's placement from one division. If this was their only assignment the driver reverts to Unassigned, or, with the signup module off, to Not Signed Up. Available in the same stages as `/driver assign`, and only for a placement not yet confirmed — which held no role, so none is revoked and no lineup is posted.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -1315,14 +1315,14 @@ Refused for a driver's **only** confirmed seat — a seat not yet confirmed in a
 | `user` | Member | ✅ | The driver to release |
 | `division` | String | ✅ | Division tier number or name to release them from |
 
-#### `/driver reject` — Turn down an approved driver
+#### `/driver reject` — Turn down a driver
 *Access: League manager · Placements only*
 
-Turns down a driver who was approved but has not been placed — one in the Unassigned state. They return to Not Signed Up and lose the driver role, which is taken after the save; their signup is kept with the season, and its approval withdrawn while the signup module is on. Available while the season is in placements, or mid-season while the drivers of a closed signup window are placed — the moments every signup has to be settled before placements are confirmed. A signup still in review is rejected from its review panel instead, and a placed driver is unassigned first.
+Turns down a driver who was approved but has not been placed — one in the Unassigned state — or, with the signup module off, one who holds only placements not yet confirmed, every one of which is removed, freeing its seat. A driver with a confirmed placement, or none to remove, is refused: *"⛔ **Name** holds no unconfirmed placement to turn down."* They return to Not Signed Up and lose the driver role, which is taken after the save (with the signup module off none is taken, none having been given); their signup is kept with the season, and its approval withdrawn while the signup module is on. Available while the season is in placements, or mid-season while the drivers of a closed signup window are placed — the moments every signup has to be settled before placements are confirmed. A signup still in review is rejected from its review panel instead, and, with the signup module on, a placed driver is unassigned first.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `user` | Member | ✅ | The Unassigned driver to turn down |
+| `user` | Member | ✅ | The driver to turn down |
 
 #### `/driver sack` — Sack a driver
 *Access: League admin · Ongoing only*
@@ -1581,7 +1581,7 @@ Ends a signup a driver is filling in, has sent for review, or is correcting — 
 
 The driver is then Not Signed Up and may press Sign Up again while signups are open. Their timers are dropped, and their signup channel is told the signup was cancelled by you, with the reason where you gave one, and is deleted 24 hours later, as after a rejection. A signup that had reached review is kept with its season. Where the channel is already gone the signup still ends, and nothing is posted. You may cancel your own signup.
 
-**Refused, changing nothing, when:** the driver has no signup under way; the driver is already approved — an Unassigned driver is turned down with [`/driver reject`](#driver-reject--turn-down-an-approved-driver), a placed one is not touched; the signup module is off; or a manager has pressed Reject or Request Changes on the driver's signup and is still to type the reason (run it again once the reason is given or has lapsed). The last is judged when you run the command and when you submit the form, not when the cancellation comes to run: a Reject pressed after you submitted lets the cancellation go ahead, and the reason typed then is refused as having moved on. A cancellation that finds the driver approved, or the module off, by the time it runs is refused and recorded; the manager is told why, and the driver's channel is told nothing.
+**Refused, changing nothing, when:** the driver has no signup under way; the driver is already approved — an Unassigned driver is turned down with [`/driver reject`](#driver-reject--turn-down-a-driver), a placed one is not touched; the signup module is off; or a manager has pressed Reject or Request Changes on the driver's signup and is still to type the reason (run it again once the reason is given or has lapsed). The last is judged when you run the command and when you submit the form, not when the cancellation comes to run: a Reject pressed after you submitted lets the cancellation go ahead, and the reason typed then is refused as having moved on. A cancellation that finds the driver approved, or the module off, by the time it runs is refused and recorded; the manager is told why, and the driver's channel is told nothing.
 
 It is a change of the change queue, its notice a job of the driver's own lane, and it is recorded in the log channel and as an audit entry naming you, the driver and the states the driver left and reached. So is each decision on a signup: Approve, Reject, Request Changes, a manager's choice of the field to correct, and the driver's own withdrawal.
 
