@@ -112,6 +112,9 @@ def _make_cog(
 
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock(return_value=None)
+    # The signup module is on: with it off, `/driver assign` takes a member with no profile
+    # (#624), pinned in `test_driver_assign.py`.
+    bot.module_service.is_enabled = AsyncMock(return_value=True)
     return DriverCog(bot)
 
 
