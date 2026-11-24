@@ -5,8 +5,10 @@ press, whether the review has expired and whether the season has changed since. 
 is a workflow, run here: it runs every gate the confirmation rests on, in its order, and answers
 the member through the interaction it is handed where one refuses, **in the words the change's own
 check uses** (the change judges them again when it runs). Where every gate passes, it asks the
-change queue for the confirmation, the review taken down ahead of it (`take_review_down_before`),
-and the queue's acknowledgement is the press's own response.
+change queue for the confirmation, the review taken down ahead of it (`take_review_down_before`).
+The button has already deferred the press, privately (`ApproveView._answer_at_once`), so every
+answer is a follow-up, the first taking the deferral's place: a refusal, the queue's
+acknowledgement, or, for an approval under test mode, the backup question ahead of it.
 
 Each workflow takes the interaction pressed, the services it reads as keywords, named as the bot
 carries them, and the press's own particulars (*what*, the button as the log channel names it, and
@@ -109,14 +111,13 @@ async def confirm_configuration(
     confirmation is judged against again when it runs; where it is not given the season is
     fingerprinted as it stands.
 
-    **The press is not deferred:** the queue's acknowledgement is the press's own response
-    and the confirmation's outcome updates it. The refusals below answer the press at once
-    in the words the confirmation's own check uses (`configuration_confirm_change`), which
-    judges them again when the confirmation runs, and the season no longer in Configuration
-    with them: a season changed while it waited must not be confirmed. Everything after the
-    request, the stage, signup's settings, the audit entry and the line, is the change's one
-    save, to Waiting where the signup module is enabled and test mode is off, or to Placements
-    otherwise.
+    **The button has deferred the press:** the queue's acknowledgement is the follow-up that takes
+    the deferral's place, and the confirmation's outcome updates it. The refusals below answer the
+    press in the words the confirmation's own check uses (`configuration_confirm_change`), which
+    judges them again when the confirmation runs, and the season no longer in Configuration with
+    them: a season changed while it waited must not be confirmed. Everything after the request, the
+    stage, signup's settings, the audit entry and the line, is the change's one save, to Waiting
+    where the signup module is enabled, test mode or not, or to Placements otherwise.
 
     The review comes down ahead of the confirmation, but only for a request the queue
     accepts: one it refuses at once leaves the review standing.
@@ -201,13 +202,13 @@ async def confirm_mid_season_placements(
     confirmation is judged against again when it runs; where it is not given the season is
     fingerprinted as it stands.
 
-    **The press is not deferred:** the queue's acknowledgement is the press's own response
-    and the confirmation's outcome updates it. The refusals below answer the press at once
-    in the words the confirmation's own check uses (`mid_season_confirm_change`), which
-    judges them again when the confirmation runs: a season changed while it waited must
-    not be committed. Everything after the request, the placements and the season's return
-    to Ongoing in one save, each driver's roles, each lineup, the one line that records it,
-    is the change's, a job each, so that a stop leaves nothing undone for good.
+    **The button has deferred the press:** the queue's acknowledgement is the follow-up that takes
+    the deferral's place, and the confirmation's outcome updates it. The refusals below answer the
+    press in the words the confirmation's own check uses (`mid_season_confirm_change`), which judges
+    them again when the confirmation runs: a season changed while it waited must not be committed.
+    Everything after the request, the placements and the season's return to Ongoing in one save,
+    each driver's roles, each lineup, the one line that records it, is the change's, a job each, so
+    that a stop leaves nothing undone for good.
     """
     if what is None:
         what = review_button("Confirm placements", "/season placements-review")
@@ -540,13 +541,14 @@ async def approve_season(
     in; where it is not given, as the gate tests call this, the season is fingerprinted as
     it stands, so that the check at run is never an empty one.
 
-    **The press is not deferred here.** The queue's acknowledgement is the press's own response
-    and its outcome updates it; only the backup question, which waits on a person, defers
-    first. A refusal below answers the press itself. **The in-hand check comes after the gates
-    and before the question**, so that a second approval of the season, from any review, is
-    refused at once without being asked whether to save the databases, and without naming the
-    job. Everything after it, the writes, the roles and the posts, is the change's
-    (`season_approval_change`), a job each, so that a stop leaves nothing undone for good.
+    **The button has deferred the press.** A refusal below, the backup question and the queue's
+    acknowledgement each answer it by a follow-up, the first taking the deferral's place, and the
+    approval's outcome updates the acknowledgement. The backup question still defers a press not yet
+    answered, for a caller that hands it one. **The in-hand check comes after the gates and before
+    the question**, so that a second approval of the season, from any review, is refused at once
+    without being asked whether to save the databases, and without naming the job. Everything after
+    it, the writes, the roles and the posts, is the change's (`season_approval_change`), a job each,
+    so that a stop leaves nothing undone for good.
     """
     # Every gate below refuses through `refuse`, naming the button pressed (*what*, the
     # review's own Approve button where the caller names none) in the log channel.

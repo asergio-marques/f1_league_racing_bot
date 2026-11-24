@@ -224,7 +224,7 @@ async def test_the_review_is_refused_in_the_other_ongoing_stages(db_path, stage)
 async def test_confirming_returns_the_season_to_ongoing(db_path):
     """Season 1 in Ongoing, placements, every signup settled and its channels set, driver 1002
     placed in Pro and not yet committed. A manager presses ✅ Confirm placements on a review whose
-    evidence reads Pro's rounds "as reviewed", in channel 610: the press is not deferred, and asks
+    evidence reads Pro's rounds "as reviewed", in channel 610: the press asks
     the change queue once for the confirmation of season 1, carrying the review's evidence and the
     channel, which returns the season to Ongoing when it runs. Nothing is committed on the spot."""
     await _settle_every_signup(db_path)
@@ -237,7 +237,6 @@ async def test_confirming_returns_the_season_to_ongoing(db_path):
         "season_id": 1, "season_number": 1,
         "fingerprint": {"rounds of Pro": "as reviewed"}, "channel_id": 610,
     }]
-    assert interaction.response.defer.await_count == 0
     assert await _uncommitted(db_path) == ["1002"]
 
 

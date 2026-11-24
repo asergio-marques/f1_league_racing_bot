@@ -190,6 +190,14 @@ def asking_the_take_down(env, workflows, helper: str, *, then=None) -> None:
     getattr(workflows, helper).side_effect = _worked
 
 
+def _answered_privately(interaction) -> None:
+    """The press was answered at once by a private deferral, and what it was then told came as a
+    private follow-up in the deferral's place: seen by the presser alone."""
+    interaction.response.defer.assert_awaited_once_with(ephemeral=True, thinking=True)
+    interaction.response.send_message.assert_not_awaited()
+    assert interaction.followup.send.await_args.kwargs["ephemeral"] is True
+
+
 def _press_on(env, user_id: int = REVIEWER, name: str = "Alex"):
     """A press of the button on Alex's question Q, in channel 700, by *name*."""
     from tests.support.change_queue import member_interaction
@@ -268,7 +276,7 @@ async def test_a_press_by_someone_who_may_not_answer_is_recorded(
     reply = acknowledgement(interaction)
     assert reply.startswith("⛔ Only the person who ran this review, or a league admin, can ")
     assert f"**Nothing has been {verb}.**" in reply
-    assert interaction.response.send_message.await_args.kwargs["ephemeral"] is True
+    _answered_privately(interaction)
     lines = _queue_lines(env)
     assert len(lines) == 1, lines
     line = lines[0]
@@ -277,6 +285,36 @@ async def test_a_press_by_someone_who_may_not_answer_is_recorded(
     assert reason, line
     assert label in refused and review in refused, line
     assert reason.startswith("Only the person who ran this review, or a league admin"), line
+
+
+@pytest.mark.parametrize("kind,label,review,helper,verb", _BUTTONS)
+async def test_a_press_is_deferred_privately_before_its_checks_run(
+    tmp_path, monkeypatch, kind, label, review, helper, verb
+):
+    """Alex's review stands in channel 700, its question Q posted a moment ago, and Alex presses
+    his own button. Discord drops a press not answered within three seconds, and the checks behind
+    the button outrun them on a slow host (#627).
+
+    The press is answered before anything is checked: deferred once, privately, with Discord's
+    "thinking…", and the workflow it goes through to is handed a press already answered. It is
+    never answered by a response of its own, which a deferral has already taken.
+    """
+    env = await _standing(tmp_path, review)
+    view, workflows = _view_on(env, kind, helper, monkeypatch)
+    interaction = _press_on(env)
+    answered_when: dict[str, bool] = {}
+
+    async def _worked(pressed, **_kwargs):
+        answered_when["workflow"] = pressed.response.is_done()
+        return True
+
+    getattr(workflows, helper).side_effect = _worked
+
+    await type(view).approve(view, interaction, MagicMock())
+
+    interaction.response.defer.assert_awaited_once_with(ephemeral=True, thinking=True)
+    interaction.response.send_message.assert_not_awaited()
+    assert answered_when == {"workflow": True}, answered_when
 
 
 @pytest.mark.parametrize("kind,label,review,helper,verb", _BUTTONS)
@@ -490,7 +528,7 @@ async def test_a_press_after_the_five_minutes_confirms_nothing(
     told = acknowledgement(interaction)
     assert "⛔ This review's five minutes are up, so it can no longer be answered." in told
     assert f"Nothing has been {verb}" in told
-    assert interaction.response.send_message.await_args.kwargs["ephemeral"] is True
+    _answered_privately(interaction)
     lines = _queue_lines(env)
     assert len(lines) == 1, lines
     assert lines[0].startswith("⛔ ") and " refused for Alex (<@4242>) — " in lines[0], lines
@@ -717,7 +755,7 @@ async def test_a_second_press_while_one_is_being_worked_is_refused(
     reply = acknowledgement(second)
     assert "already being answered" in reply, reply
     assert f"Nothing has been {verb}" in reply, reply
-    assert second.response.send_message.await_args.kwargs["ephemeral"] is True
+    _answered_privately(second)
     refusals = _lines(env, "⛔ ")
     assert len(refusals) == 1, _queue_lines(env)
     assert " refused for Alex (<@4242>) — " in refusals[0], refusals

@@ -970,8 +970,9 @@ class ChangeQueue:
         message: discord.WebhookMessage | None = None
         try:
             if interaction.response.is_done():
-                # A command that deferred, a form already answered: no response is left to take,
-                # so the acknowledgement is a follow-up, and that message is what is updated.
+                # A command or a button that deferred, a form already answered: no response is
+                # left to take, so the acknowledgement is a follow-up, and that message is what is
+                # updated.
                 message = await interaction.followup.send(text, ephemeral=True, wait=True)
             else:
                 await interaction.response.send_message(text, ephemeral=True)

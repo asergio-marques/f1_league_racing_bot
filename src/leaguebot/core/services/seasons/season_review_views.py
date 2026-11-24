@@ -1,14 +1,14 @@
 """The review's buttons: the Approve of `/season placements-review`, the Confirm placements of a
 mid-season review and the Confirm configuration of `/season config-review`.
 
-A review's question carries one of these views, and a press is the whole of what it does: who
-may press, whether the review still stands and has its five minutes, the claim on the button,
-whether the season has changed since the report, and then the workflow of
-`season_review_workflows`. Each view is handed the services it reads, by keyword and named as the
-bot carries them, with the queue's clock (`now`) that the five minutes are judged on; it holds no
-cog and looks nothing up on the bot. The entry point's factory builds them for the review's post
-change and for the restart sweep (`recover_expired_review_prompts`), as `queue_stop_view` is built
-for the stop notice.
+A review's question carries one of these views, and a press is the whole of what it does: answered
+at once, deferred privately (`ApproveView._answer_at_once`), then who may press, whether the review
+still stands and has its five minutes, the claim on the button, whether the season has changed since
+the report, and then the workflow of `season_review_workflows`. Each view is handed the services it
+reads, by keyword and named as the bot carries them, with the queue's clock (`now`) that the five
+minutes are judged on; it holds no cog and looks nothing up on the bot. The entry point's factory
+builds them for the review's post change and for the restart sweep
+(`recover_expired_review_prompts`), as `queue_stop_view` is built for the stop notice.
 
 The views are persistent with fixed custom ids, so that a question posted before a restart is
 routed again by the id of its message: the review itself is its row in `season_review_prompts`.
@@ -280,6 +280,20 @@ class ApproveView(LeagueView):
         )
         return season_fingerprint_service.SeasonFingerprint(review.evidence).differs_from(current)
 
+    @staticmethod
+    async def _answer_at_once(interaction: discord.Interaction) -> None:
+        """Answer the press before anything is read: deferred privately, so that Discord shows the
+        presser "thinking…" until the refusal, the backup question or the queue's acknowledgement
+        takes its place as the first follow-up.
+
+        Discord drops a press not answered within three seconds, and the checks that follow, the
+        fingerprint's image checks and the workflow's gates, outrun them on a slow host: the press
+        then failed though its confirmation went through, or an approval could not be made at
+        all. Deferring reads nothing, so who is pressing is still the first thing the button
+        settles. Pinned by `test_a_press_is_deferred_privately_before_its_checks_run`.
+        """
+        await interaction.response.defer(ephemeral=True, thinking=True)
+
     async def _may_approve(self, interaction: discord.Interaction) -> bool:
         """The reviewer, or a league admin.
 
@@ -316,6 +330,7 @@ class ApproveView(LeagueView):
         ends it as an expired one does. Only a press whose approval the queue accepts takes the
         review down, which the approval itself asks for, just before it asks for the approval.
         """
+        await self._answer_at_once(interaction)
         # Checked first, the fingerprint included: the message is public, so anyone who can
         # read the channel can press this. Nothing is read and nothing is approved for a
         # member who may not approve.
@@ -404,6 +419,7 @@ class ApproveView(LeagueView):
         review standing, as the approval's does. *evidence_to_confirm* hands the review's
         own evidence to *confirm* as its `fingerprint`, for a confirmation the queue judges
         again when it runs."""
+        await self._answer_at_once(interaction)
         if not await self._may_approve(interaction):
             await refuse(
                 interaction,
