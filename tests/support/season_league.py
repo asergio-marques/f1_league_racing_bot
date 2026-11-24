@@ -90,6 +90,7 @@ from tests.support.change_queue import (
     SERVER_ID,
     Clock,
     change_rows,
+    followup_edits,
     http_error,
     league_bot,
     league_queue,
@@ -685,10 +686,12 @@ def _content(call: Any) -> str:
 
 def reply(press: Any) -> str:
     """Everything the presser was told, in the order of its kinds: the response, the follow-ups,
-    then the edits of the acknowledgement."""
+    then the edits of the acknowledgement, whether the response or, for a deferred press, the
+    follow-up that took its place."""
     parts = [_content(c) for c in press.response.send_message.await_args_list]
     parts += [_content(c) for c in press.followup.send.await_args_list]
     parts += [_content(c) for c in press.edit_original_response.await_args_list]
+    parts += followup_edits(press)
     return "\n".join(part for part in parts if part)
 
 

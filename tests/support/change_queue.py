@@ -266,15 +266,32 @@ def _content(call: Any) -> str:
 
 
 def acknowledgement(interaction: Any) -> str:
-    """What the member was first answered with: the interaction's response."""
+    """What the member was first answered with: the interaction's response, or, where the
+    response was a deferral, its first follow-up, which takes the deferral's place."""
     calls = interaction.response.send_message.await_args_list
-    return _content(calls[0]) if calls else ""
+    if calls:
+        return _content(calls[0])
+    if interaction.response.defer.await_args_list:
+        followed = interaction.followup.send.await_args_list
+        return _content(followed[0]) if followed else ""
+    return ""
+
+
+def followup_edits(interaction: Any) -> list[str]:
+    """The edits of the follow-up that acknowledged a deferred press, which is what the queue
+    updates in place of the response the deferral took; none where no follow-up was edited."""
+    edit = getattr(interaction.followup.send.return_value, "edit", None)
+    if not isinstance(edit, AsyncMock):
+        return []
+    return [_content(call) for call in edit.await_args_list]
 
 
 def updated_reply(interaction: Any) -> str:
-    """The reply as updated: the edits of the acknowledgement, then the follow-ups, in order."""
+    """The reply as updated: the edits of the acknowledgement, then the follow-ups, in order, and
+    the edits of a follow-up that acknowledged a deferred press."""
     parts = [_content(call) for call in interaction.edit_original_response.await_args_list]
     parts += [_content(call) for call in interaction.followup.send.await_args_list]
+    parts += followup_edits(interaction)
     return "\n".join(part for part in parts if part)
 
 
@@ -683,7 +700,10 @@ def member_interaction(bot: Any, *, user: Any = None, created_at: datetime | Non
     interaction.response.defer = AsyncMock(side_effect=_answer)
     interaction.response.is_done = MagicMock(side_effect=lambda: answered["done"])
     interaction.edit_original_response = AsyncMock()
-    interaction.followup.send = AsyncMock()
+    # A follow-up sent with `wait=True` is a message the queue edits, as Discord's is.
+    followed = MagicMock()
+    followed.edit = AsyncMock()
+    interaction.followup.send = AsyncMock(return_value=followed)
     return interaction
 
 

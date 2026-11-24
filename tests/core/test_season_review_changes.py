@@ -1372,11 +1372,13 @@ async def test_approve_refuses_where_the_season_changed_while_the_review_waited(
 
 
 def _refused_as_expired(env: Any, interaction: Any) -> None:
-    """Alex was refused, privately, the review's five minutes being up, and the refusal is the one
-    ⛔ line in the log channel, naming the button and its review."""
+    """Alex was refused, privately, the review's five minutes being up: the press deferred at once,
+    and the refusal a private follow-up in its place. The refusal is the one ⛔ line in the log
+    channel, naming the button and its review."""
     reply = acknowledgement(interaction)
     assert "five minutes are up" in reply and "Nothing has been approved" in reply
-    assert interaction.response.send_message.await_args.kwargs.get("ephemeral") is True
+    interaction.response.defer.assert_awaited_once_with(ephemeral=True, thinking=True)
+    assert interaction.followup.send.await_args.kwargs.get("ephemeral") is True
     [line] = _refusals(env)
     assert "Approve" in line and PLACEMENTS in line
 

@@ -29,6 +29,7 @@ import pytest
 from tests.support.change_queue import (
     change_rows,
     discard_job,
+    followup_edits,
     http_error,
     retry_job,
     run_queue,
@@ -461,26 +462,31 @@ async def test_the_manager_is_told_at_once_and_the_reply_is_updated_when_the_pla
 
     assert CONFIRMED in reply(press)
     assert NOT_EVERYTHING not in reply(press)
-    # The outcome arrives as an edit of the acknowledgement, with no section on what could
-    # not be done.
-    updated = "\n".join(str(call.args[0] if call.args else call.kwargs.get("content", ""))
-                        for call in press.edit_original_response.await_args_list)
+    # The outcome arrives as an edit of the acknowledgement, the follow-up that took the
+    # deferred press's place, with no section on what could not be done.
+    updated = "\n".join(followup_edits(press))
     assert CONFIRMED in updated
     assert "Not everything could be done" not in updated
 
 
-async def test_the_press_is_not_deferred_the_acknowledgement_is_its_response(
+async def test_the_press_is_deferred_and_the_acknowledgement_takes_its_place(
     tmp_path, monkeypatch,
 ):
+    """A manager presses ✅ Confirm placements on a standing mid-season review. The press is
+    deferred at once, privately, before its checks run (#627), and the queue's acknowledgement is
+    the private follow-up that takes the deferral's place, kept to be updated; the press is never
+    answered by a response of its own."""
     league = await _league(tmp_path, monkeypatch)
 
     press = await _pressed(league)
 
-    assert press.response.defer.await_count == 0
-    [ack] = press.response.send_message.await_args_list
+    press.response.defer.assert_awaited_once_with(ephemeral=True, thinking=True)
+    press.response.send_message.assert_not_awaited()
+    [ack] = press.followup.send.await_args_list
     assert str(ack.args[0] if ack.args else ack.kwargs["content"]).startswith(
         "⏳ Confirming season 3's placements."
     )
+    assert ack.kwargs["ephemeral"] is True and ack.kwargs["wait"] is True
 
 
 async def test_one_line_records_the_confirmation_after_the_last_job(tmp_path, monkeypatch):
