@@ -32,3 +32,6 @@ class Division:
     #: graphic or textual, and deleted by the image flow when it replaces it — an
     #: attachment cannot be added to a message already posted (Constitution XIV.8).
     calendar_message_id: int | None = None
+    #: The channel that message was posted in, which the division's calendar channel may have
+    #: left since; None for a calendar posted before it was recorded.
+    calendar_message_channel_id: int | None = None

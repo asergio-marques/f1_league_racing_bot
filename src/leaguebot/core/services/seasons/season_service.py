@@ -539,7 +539,7 @@ class SeasonService:
             cursor = await db.execute(
                 "SELECT id, season_id, name, mention_role_id, status, tier, "
                 "lineup_channel_id, calendar_channel_id, lineup_message_id, "
-                "calendar_message_id "
+                "calendar_message_id, calendar_message_channel_id "
                 "FROM divisions WHERE season_id = ? ORDER BY tier",
                 (season_row[0],),
             )
@@ -1322,7 +1322,7 @@ async def division_in_ongoing_season(db_path: str, name: str) -> Division | None
         cursor = await db.execute(
             "SELECT d.id, d.season_id, d.name, d.mention_role_id, d.status, d.tier, "
             "d.lineup_channel_id, d.calendar_channel_id, d.lineup_message_id, "
-            "d.calendar_message_id "
+            "d.calendar_message_id, d.calendar_message_channel_id "
             "FROM divisions d JOIN seasons s ON s.id = d.season_id "
             f"WHERE s.stage IN ({','.join('?' for _ in ongoing)}) "
             "AND LOWER(d.name) = LOWER(?) LIMIT 1",
@@ -1400,7 +1400,7 @@ async def season_divisions_on(db: aiosqlite.Connection, season_id: int) -> list[
     cursor = await db.execute(
         "SELECT id, season_id, name, mention_role_id, status, tier, "
         "lineup_channel_id, calendar_channel_id, lineup_message_id, "
-        "calendar_message_id "
+        "calendar_message_id, calendar_message_channel_id "
         "FROM divisions WHERE season_id = ? ORDER BY tier",
         (season_id,),
     )
@@ -1456,7 +1456,7 @@ async def division_on(db: aiosqlite.Connection, division_id: int) -> Division | 
     cursor = await db.execute(
         "SELECT id, season_id, name, mention_role_id, status, tier, "
         "lineup_channel_id, calendar_channel_id, lineup_message_id, "
-        "calendar_message_id "
+        "calendar_message_id, calendar_message_channel_id "
         "FROM divisions WHERE id = ?",
         (division_id,),
     )
@@ -1776,6 +1776,9 @@ def _row_to_division(row: aiosqlite.Row) -> Division:
         # Guarded like every other optional column.
         calendar_message_id=(
             row["calendar_message_id"] if "calendar_message_id" in keys else None
+        ),
+        calendar_message_channel_id=(
+            row["calendar_message_channel_id"] if "calendar_message_channel_id" in keys else None
         ),
     )
 

@@ -131,8 +131,6 @@ async def test_the_new_calendar_is_posted_before_the_old_one_is_deleted_by_a_job
     assert delete["payload"]["message_id"] == CALENDAR_MESSAGE
 
 
-@pytest.mark.xfail(strict=True, reason="#607: no channel is recorded beside a calendar's id, so "
-                   "the old calendar is looked for in the division's present channel")
 async def test_a_calendar_is_deleted_from_the_channel_it_was_posted_in_after_the_channel_moves(
     tmp_path,
 ):
