@@ -16,7 +16,10 @@ APScheduler triggers:
   /test-mode backup …          — save the whole database, and put it back
 
 A module's own test tool sits under that module's group, not here, and is test mode's all the
-same: `/attendance test rsvp` sets the RSVP status of fake drivers.
+same: `/attendance test rsvp` sets the RSVP status of fake drivers. `/test-mode roster
+sign-up-bulk` is the one exception: it sits here because it creates the roster's drivers, and
+signup's part is handed to signup through the two hooks `fake_signups_ready_read` and
+`fake_signups_approved` (architecture.md, "What each part may do").
 
 Every command here is a league admin's — the core specification places the whole of test
 mode at that tier, backup and restore no more than the rest — and is given in the
