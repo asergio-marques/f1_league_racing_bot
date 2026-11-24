@@ -144,7 +144,7 @@ class TeamRoleService:
         return True
 
     async def grant_to_every_driver(
-        self, guild: discord.Guild, role_id: int
+        self, guild: discord.Guild, role_id: int, *, confirmed_only: bool = False
     ) -> RoleGrantOutcome:
         """Grant *role_id* to every driver of the league, and say what came of it.
 
@@ -152,17 +152,27 @@ class TeamRoleService:
         configuration is fixed. Nobody holds a deleted role, so every driver who held it lost it
         with the role; this gives them its replacement. **Every driver** is whoever the driver
         role belongs to — a real driver, Unassigned or Assigned — which is the set
-        `driver_role_ids` grants it on.
+        `driver_role_ids` grants it on. With *confirmed_only*, the driver role of a league
+        running without the signup module, which gives it with the confirmed placements, the
+        set is narrowed to the drivers holding a confirmed placement in the live season.
 
         Each driver is granted on their own and a failure is recorded, not raised: the role is
         already stored by the time this runs, and one member Discord refuses must not cost the
         rest theirs. A driver no longer in the server is passed over.
         """
+        confirmed = (
+            " AND EXISTS (SELECT 1 FROM driver_season_assignments dsa "
+            "JOIN seasons s ON s.id = dsa.season_id "
+            "WHERE dsa.driver_profile_id = driver_profiles.id AND dsa.committed = 1 "
+            "AND s.status IN ('SETUP', 'ACTIVE'))"
+            if confirmed_only
+            else ""
+        )
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
                 "SELECT discord_user_id FROM driver_profiles "
-                "WHERE is_test_driver = 0 AND current_state IN (?, ?) "
-                "ORDER BY discord_user_id",
+                "WHERE is_test_driver = 0 AND current_state IN (?, ?)"
+                f"{confirmed} ORDER BY discord_user_id",
                 (DriverState.UNASSIGNED.value, DriverState.ASSIGNED.value),
             )
             user_ids = [row["discord_user_id"] for row in await cursor.fetchall()]

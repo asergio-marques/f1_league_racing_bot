@@ -41,6 +41,7 @@ from tests.support.season_league import (
     AM_ROLE,
     CHARLES,
     DIVISIONS,
+    DRIVER_ROLE,
     FERRARI_ROLE,
     LEWIS,
     MAX,
@@ -265,6 +266,38 @@ async def test_a_stop_after_the_save_finishes_the_roles_and_lineups_on_restart(
     assert len(league.texts(AM_CH.lineup)) == 1
     assert await _stage(league) == "ONGOING"
     assert len(_confirmed_lines(league)) == 1
+
+
+@pytest.mark.parametrize(
+    ("signup", "extra"),
+    [
+        pytest.param(
+            False, [DRIVER_ROLE], id="signup-off",
+        ),
+        pytest.param(True, [], id="signup-on"),
+    ],
+)
+async def test_the_driver_role_is_given_at_a_mid_season_confirmation_only_with_signup_off(
+    tmp_path, monkeypatch, signup, extra,
+):
+    """#624. The season is placing drivers mid-season: Max at Ferrari in Pro and Charles at
+    McLaren in Am are unconfirmed, Lewis's placement confirmed; the league's driver role (820) is
+    set, and the signup module off or on. A league admin presses Confirm placements and the queue
+    runs. Max is given Pro's and Ferrari's roles and Charles Am's and McLaren's, each with the
+    driver role only where the signup module is off; Lewis, already confirmed, is given nothing."""
+    from tests.support.season_league import driver_role_set
+
+    league = await _league(tmp_path, monkeypatch)
+    await league.switch("signup", signup)
+    await driver_role_set(league)
+    await _pressed(league)
+
+    await run_queue(league.bot)
+
+    assert {user: sorted(roles) for user, roles in league.granted.items()} == {
+        MAX: sorted([PRO_ROLE, FERRARI_ROLE, *extra]),
+        CHARLES: sorted([AM_ROLE, MCLAREN_ROLE, *extra]),
+    }
 
 
 async def test_the_placements_and_the_season_s_move_are_saved_in_one_save(

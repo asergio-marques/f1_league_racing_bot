@@ -708,14 +708,21 @@ def register_change_types(bot: LeagueBot) -> None:
         )
     )
     bot.change_queue.register(
-        driver_assign_change(placement=bot.placement_service, now=lambda: bot.change_queue.now())
+        driver_assign_change(
+            placement=bot.placement_service, modules=bot.module_service,
+            now=lambda: bot.change_queue.now(),
+        )
     )
     bot.change_queue.register(
-        driver_unassign_change(placement=bot.placement_service, now=lambda: bot.change_queue.now())
+        driver_unassign_change(
+            placement=bot.placement_service, modules=bot.module_service,
+            now=lambda: bot.change_queue.now(),
+        )
     )
     bot.change_queue.register(
         driver_reject_change(
             roles=bot.team_role_service, lineups=bot.lineup_poster,
+            placement=bot.placement_service, modules=bot.module_service,
             driver_turned_down=bot.driver_turned_down,
             now=lambda: bot.change_queue.now(),
         )
@@ -724,6 +731,7 @@ def register_change_types(bot: LeagueBot) -> None:
         driver_reassign_change(
             driver=bot.driver_service,
             placement=bot.placement_service,
+            modules=bot.module_service,
             roles=bot.team_role_service,
             profiles_merged=bot.profiles_merged,
             divisions_raced_read=bot.divisions_raced_read,
@@ -972,7 +980,9 @@ def register_change_types(bot: LeagueBot) -> None:
             config=bot.config_service, roles=bot.team_role_service,
             base_role_changed=bot.base_role_changed,
         ),
-        driver_role_setting(config=bot.config_service, roles=bot.team_role_service),
+        driver_role_setting(
+            config=bot.config_service, roles=bot.team_role_service, modules=bot.module_service
+        ),
         hub_channel_setting(config=bot.config_service, channel_uses_read=bot.channel_uses_read),
         *division_channel_settings(
             seasons=bot.season_service,

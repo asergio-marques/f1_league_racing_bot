@@ -7,6 +7,7 @@ removes is never confirmed, so no role is taken back and no lineup posted.
 
 These run on `season_league`'s season, in Placements, Charles alone at McLaren in Am, his
 placement not confirmed; or on `placing_league`'s, mid-season placements, where it is the same.
+The signup module is off unless a test turns it on.
 """
 from __future__ import annotations
 
@@ -134,7 +135,8 @@ async def _confirm_charles(league):
 )
 async def test_a_driver_unassignment_and_its_audit_entry_and_line_are_one_save(tmp_path, build):
     """The core specification's removal of a placement and its record of what changed. The season
-    is in Placements, or placing drivers mid-season; Charles sits alone at McLaren in Am, his
+    is in Placements, or placing drivers mid-season, the signup module on; Charles sits alone at
+    McLaren in Am, his
     placement not confirmed. The league admin Admin (77) runs `/driver unassign` of Charles from
     Am. They are answered at once with the queue's acknowledgement, "Unassigning **Charles** from
     **Am**", naming its first job, and nothing is removed until the queue runs the change, of kind
@@ -150,6 +152,7 @@ async def test_a_driver_unassignment_and_its_audit_entry_and_line_are_one_save(t
     from tests.support.setup_rounds import acknowledged
 
     league = await build(tmp_path)
+    await league.switch("signup", True)
     asked = await _ask_unassign(league, 103)
 
     first_job = (await step_rows(league.db_path))[0]["id"]
@@ -252,23 +255,45 @@ async def test_a_driver_unassignment_is_judged_again_as_it_starts(
     assert await stopped_job(league.db_path) is None
 
 
-async def test_a_driver_unassignment_is_refused_at_the_ask(tmp_path):
-    """The season is in Placements, and Charles holds no seat in Am. The league admin runs
-    `/driver unassign` of Charles from Am. They are refused at once, in today's words: "Driver is
-    not assigned to any team in **Am**.", and the log channel takes the refusal as its one line.
-    Nothing is asked of the queue, no audit entry is written and no role touched. Takes the place
-    of `test_driver_cog_refusals.py`'s "unassign refused by the service" case and
-    `test_driver_cog.py`'s `test_a_refused_unassignment_is_reported_not_raised`, which mocked the
-    service."""
+async def _valtteri_unassigned(league):
+    """Valtteri (106) is approved and never placed, Unassigned, with the signup module on."""
+    from tests.support.season_league import approved_unplaced
+
+    await league.switch("signup", True)
+    await approved_unplaced(league)
+
+
+_NOT_ASSIGNED = (
+    "⛔ Driver must be in Assigned state to be unassigned (current state: Unassigned)."
+)
+
+
+@pytest.mark.parametrize(
+    ("setup", "user_id", "reply"),
+    [
+        pytest.param(_take_charles_out_of_am, 103, _NOT_THERE, id="no-seat-in-am"),
+        pytest.param(_valtteri_unassigned, 106, _NOT_ASSIGNED, id="an-unassigned-driver"),
+    ],
+)
+async def test_a_driver_unassignment_is_refused_at_the_ask(tmp_path, setup, user_id, reply):
+    """The season is in Placements. Either Charles holds no seat in Am, or Valtteri, approved
+    with the signup module on and never placed, is Unassigned. The league admin runs `/driver
+    unassign` of him from Am. They are refused at once: "Driver is not assigned to any team in
+    **Am**." for Charles, and for Valtteri "Driver must be in Assigned state to be unassigned
+    (current state: Unassigned).", the state named by its own name (#624); the log channel takes
+    the refusal as its one line. Nothing is asked of the queue, no audit entry is written and no
+    role touched. Takes the place of `test_driver_cog_refusals.py`'s "unassign refused by the
+    service" case and `test_driver_cog.py`'s `test_a_refused_unassignment_is_reported_not_raised`,
+    which mocked the service."""
     from tests.support.change_queue import change_rows
     from tests.support.settings_league import audit_rows, last_said, log_lines
 
     league = await _in_placements(tmp_path)
-    await _take_charles_out_of_am(league)
-    asked = await _ask_unassign(league, 103)
+    await setup(league)
+    asked = await _ask_unassign(league, user_id)
 
-    assert last_said(asked) == _NOT_THERE
-    assert _unassign_lines(await log_lines(league)) == [_unassign_refusal(_NOT_THERE)]
+    assert last_said(asked) == reply
+    assert _unassign_lines(await log_lines(league)) == [_unassign_refusal(reply)]
     assert await change_rows(league.db_path) == []
     assert await audit_rows(league.db_path) == []
     assert league.granted == {} and league.revoked == {}
@@ -300,7 +325,7 @@ async def test_unassigning_a_driver_who_holds_no_seat_names_no_team(tmp_path):
 async def test_a_driver_unassignment_asked_again_while_it_waits_is_refused_as_a_repeat(tmp_path):
     """The core specification's "How a change is carried out": a request repeating a change that
     has not started, with nothing else asked for since on its lane, is refused, saying so. The
-    season is in Placements; Charles sits at McLaren in Am. The league admin runs `/driver
+    season is in Placements, the signup module on; Charles sits at McLaren in Am. The league admin runs `/driver
     unassign` of Charles from Am and is acknowledged; before the queue runs it, they run it
     again. The second is refused at once, in the queue's words, and the log channel takes that
     refusal as a line; only the one change is queued. The queue runs it: Charles sits nowhere,
@@ -310,6 +335,7 @@ async def test_a_driver_unassignment_asked_again_while_it_waits_is_refused_as_a_
     from tests.support.setup_rounds import acknowledged, repeated
 
     league = await _in_placements(tmp_path)
+    await league.switch("signup", True)
     first, repeat = await _ask_unassign(league, 103), await _ask_unassign(league, 103)
 
     assert said(first)[0].startswith(acknowledged(_unassigning()))
@@ -322,3 +348,64 @@ async def test_a_driver_unassignment_asked_again_while_it_waits_is_refused_as_a_
     assert _unassign_lines(await log_lines(league)) == [
         _unassign_refusal(repeated(_unassigning())), _unassign_line(),
     ]
+
+
+async def _charles_also_in_pro(league):
+    """Charles takes Ferrari's third seat in Pro as well, unconfirmed, as a second `/driver
+    assign` would leave him."""
+    from tests.support.season_league import CHARLES, FERRARI, PRO, SEASON_ID, profile_id
+
+    await league.write(
+        "INSERT INTO team_seats (team_instance_id, seat_number, driver_profile_id) "
+        "VALUES (?, 3, ?)", FERRARI, profile_id(CHARLES),
+    )
+    await league.write(
+        "INSERT INTO driver_season_assignments (driver_profile_id, season_id, division_id, "
+        "team_seat_id, committed) SELECT ?, ?, ?, id, 0 FROM team_seats "
+        "WHERE team_instance_id = ? AND seat_number = 3",
+        profile_id(CHARLES), SEASON_ID, PRO, FERRARI,
+    )
+
+
+async def _nothing_else(league):
+    return None
+
+
+@pytest.mark.parametrize(
+    "elsewhere, left, state",
+    [
+        pytest.param(_nothing_else, [], "NOT_SIGNED_UP", id="last-placement"),
+        pytest.param(
+            _charles_also_in_pro, [("Pro", "Ferrari", False)], "ASSIGNED", id="another-left"
+        ),
+    ],
+)
+async def test_with_signup_off_an_unassignment_leaves_the_driver_as_the_placements_left(
+    tmp_path, elsewhere, left, state
+):
+    """#624. The season is in Placements and its configuration was confirmed with the signup
+    module off; Charles sits at McLaren in Am, unconfirmed, and either holds no other placement
+    or sits at Ferrari in Pro as well, also unconfirmed. The league admin Admin (77) runs `/driver
+    unassign` of Charles from Am, and the queue runs it. Charles no longer sits in Am. With no
+    other placement left he goes back to Not Signed Up, as he was before he was placed, and keeps
+    his profile; with his Pro placement left he stays Assigned there. One audit entry,
+    `DRIVER_UNASSIGN`, by Admin, on Am, records McLaren before and his state after; the log
+    channel holds the usual success line; no role is touched; and the reply is the usual "✅
+    Removed **Charles** from **McLaren F1 Team** in **Am**."."""
+    from tests.support.change_queue import run_queue
+    from tests.support.season_league import AM
+    from tests.support.settings_league import last_said, log_lines
+
+    league = await _in_placements(tmp_path)
+    await elsewhere(league)
+    asked = await _ask_unassign(league, 103)
+    await run_queue(league.bot)
+
+    assert await _charles(league) == (left, state)
+    [entry] = await _unassign_audits(league)
+    assert (entry["actor_id"], entry["division_id"]) == (77, AM)
+    assert entry["old_value"]["team"] == "McLaren"
+    assert entry["new_value"] == {"new_state": state, "has_remaining": bool(left)}
+    assert _unassign_lines(await log_lines(league)) == [_unassign_line()]
+    assert league.revoked == {} and league.granted == {}
+    assert last_said(asked) == "✅ Removed **Charles** from **McLaren F1 Team** in **Am**."

@@ -185,6 +185,7 @@ def _reassign_change(driver, profiles_merged=None):
 
     return driver_reassign_change(
         driver=driver, placement=MagicMock(), roles=MagicMock(), drawing=MagicMock(),
+        modules=MagicMock(is_enabled_on=AsyncMock(return_value=True)),
         profiles_merged=profiles_merged or AwaitedHook(), divisions_raced_read=AwaitedHook(),
         driver_account_changed=AwaitedHook(), driver_account_changed_steps=MagicMock(),
         now=lambda: datetime(2026, 9, 17, 12, tzinfo=timezone.utc),
@@ -266,8 +267,18 @@ CATCHES = [
                  id="driver sack check"),
     pytest.param(_placement_check("driver_release_change", roles=MagicMock(), lineups=MagicMock()),
                  id="driver release check"),
-    pytest.param(_placement_check("driver_assign_change"), id="driver assign check"),
-    pytest.param(_placement_check("driver_unassign_change"), id="driver unassign check"),
+    pytest.param(
+        _placement_check(
+            "driver_assign_change", modules=MagicMock(is_enabled_on=AsyncMock(return_value=True))
+        ),
+        id="driver assign check",
+    ),
+    pytest.param(
+        _placement_check(
+            "driver_unassign_change", modules=MagicMock(is_enabled_on=AsyncMock(return_value=True))
+        ),
+        id="driver unassign check",
+    ),
     pytest.param(_team_check("team_add_change", _TEAM_ADDED), id="team add check"),
     pytest.param(_team_save("team_add_change", _TEAM_ADDED), id="team add save"),
     pytest.param(_team_check("team_remove_change", _TEAM_REMOVED), id="team remove check"),

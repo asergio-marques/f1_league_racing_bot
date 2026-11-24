@@ -55,20 +55,13 @@ ALLOWED_TRANSITIONS: dict[DriverState, set[DriverState]] = {
     },
 }
 
-# Test-mode additional transitions from NOT_SIGNED_UP
-_TEST_MODE_EXTRA_FROM_NOT_SIGNED_UP: set[DriverState] = {
-    DriverState.UNASSIGNED,
-    DriverState.ASSIGNED,
-}
-
-
 async def write_transition(
     db,
     profile_id: int,
     current: DriverState,
     new_state: DriverState,
     *,
-    test_mode_active: bool = False,
+    signup_off: bool = False,
 ) -> None:
     """Write *profile_id*'s move from *current* to *new_state*, within the caller's transaction.
 
@@ -77,10 +70,14 @@ async def write_transition(
     same transaction, the driver pass ending a season — calls this rather than issuing the UPDATE
     itself, so the transition table governs every route alike. Raises InvalidDriverTransition for a
     transition the table does not allow, having written nothing. Does not commit.
+
+    *signup_off* is the one exception to the table: with the signup module off, an approved signup
+    is no way to a seat, so a driver who is Not Signed Up is placed straight to Assigned. It
+    widens that one move and no other, and a caller passes it only where it has read the switch.
     """
     allowed = set(ALLOWED_TRANSITIONS.get(current, set()))
-    if test_mode_active and current == DriverState.NOT_SIGNED_UP:
-        allowed |= _TEST_MODE_EXTRA_FROM_NOT_SIGNED_UP
+    if signup_off and current == DriverState.NOT_SIGNED_UP:
+        allowed.add(DriverState.ASSIGNED)
     if new_state not in allowed:
         raise InvalidDriverTransition(
             f"Transition from {current.value} to {new_state.value} is not allowed. "
@@ -115,6 +112,42 @@ async def resolve_driver_profile_id(discord_user_id: int, db) -> int | None:
     )
     row = await cursor.fetchone()
     return row[0] if row else None
+
+
+async def existing_profile_for_placement_on(db, discord_user_id: str) -> int | None:
+    """The id of the profile *discord_user_id* names, or None where the member holds none, writing
+    nothing.
+
+    The account's own profile, else the profile of the driver any account of whom it is, a past
+    account included. `profile_for_placement_on` makes the profile this finds nothing of.
+    """
+    cursor = await db.execute(
+        "SELECT id FROM driver_profiles WHERE discord_user_id = ?", (discord_user_id,)
+    )
+    row = await cursor.fetchone()
+    if row is not None:
+        return int(row["id"])
+    return await resolve_driver_profile_id(int(discord_user_id), db)
+
+
+async def profile_for_placement_on(db, discord_user_id: str) -> int:
+    """The id of the driver *discord_user_id* names, given a profile of their own, Not Signed Up,
+    where the member holds none: how a league that runs without signups places a member.
+
+    The one place a profile is made for a placement, within the caller's transaction, committing
+    nothing. Any account the driver has held names them (`existing_profile_for_placement_on`), so
+    an account that is a past one of a driver finds that driver's profile and is never given
+    another. Its state is written by `write_transition` as the placement moves it (`signup_off`).
+    """
+    found = await existing_profile_for_placement_on(db, discord_user_id)
+    if found is not None:
+        return found
+    cursor = await db.execute(
+        "INSERT INTO driver_profiles (discord_user_id, current_state, former_driver) "
+        "VALUES (?, ?, 0)",
+        (discord_user_id, DriverState.NOT_SIGNED_UP.value),
+    )
+    return inserted_id(cursor)
 
 
 # ---------------------------------------------------------------------------
@@ -627,8 +660,6 @@ class DriverService:
         db: aiosqlite.Connection,
         discord_user_id: str,
         new_state: DriverState,
-        *,
-        test_mode_active: bool = False,
     ) -> DriverProfile:
         """Transition a driver to *new_state* on the connection handed, committing nothing.
 
@@ -647,8 +678,6 @@ class DriverService:
         row = await cursor.fetchone()
         if row is None:
             valid = set(ALLOWED_TRANSITIONS.get(DriverState.NOT_SIGNED_UP, set()))
-            if test_mode_active:
-                valid |= _TEST_MODE_EXTRA_FROM_NOT_SIGNED_UP
             if new_state not in valid:
                 raise InvalidDriverTransition(
                     f"No driver profile found for user {discord_user_id}; "
@@ -665,9 +694,7 @@ class DriverService:
                 current_state=new_state, former_driver=False,
             )
         profile = _row_to_profile(row)
-        await write_transition(
-            db, profile.id, profile.current_state, new_state, test_mode_active=test_mode_active
-        )
+        await write_transition(db, profile.id, profile.current_state, new_state)
         profile.current_state = new_state
         return profile
 

@@ -1055,3 +1055,35 @@ async def test_a_role_discord_refuses_in_a_reassign_is_reported_and_the_queue_go
     assert league.revoked[SIGNING_UP] == [DRIVER_ROLE]
     assert league.granted[_KIMI_NEW] == [DRIVER_ROLE]
     assert last_said(kimi) == _reassigned("given a new account", _KIMI_NEW, "<@105>")
+
+
+@pytest.mark.parametrize(
+    ("user_id", "held", "moves"),
+    [
+        pytest.param(103, set(), False, id="unconfirmed"),
+        pytest.param(101, {801, 811, 820}, True, id="confirmed"),
+    ],
+)
+async def test_with_signup_off_a_reassign_moves_the_driver_role_only_for_a_confirmed_driver(
+    tmp_path, monkeypatch, user_id, held, moves,
+):
+    """#624. With the signup module off a driver is given the driver role only when a placement
+    of theirs is confirmed, and a reassign never hands it on earlier. The season is placing
+    drivers mid-season, the signup module off and the league's driver role (820) set: Charles
+    (103) sits at McLaren in Am, unconfirmed, holding no role; Lewis (101) at Ferrari in Pro,
+    confirmed, holding Pro's, Ferrari's and the driver role. The league manager runs `/driver
+    reassign` of Charles, or of Lewis, onto 9001, an account no driver holds, and the queue runs
+    it. For Charles the driver role is neither taken from 103 nor given to 9001; for Lewis it is
+    taken from 101 and given to 9001."""
+    from tests.support.change_queue import run_queue
+    from tests.support.season_league import DRIVER_ROLE, placing_league
+
+    league = await placing_league(tmp_path)
+    await league.write("UPDATE server_configs SET driver_role_id = ?", DRIVER_ROLE)
+    league.roles_held[user_id] = set(held)
+    _portraits_discarded(league, monkeypatch)
+    await _ask_reassign(league, user_id, _NEW)
+    await run_queue(league.bot)
+
+    assert (DRIVER_ROLE in league.revoked.get(user_id, [])) is moves
+    assert (DRIVER_ROLE in league.granted.get(_NEW, [])) is moves

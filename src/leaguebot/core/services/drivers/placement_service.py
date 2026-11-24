@@ -133,14 +133,16 @@ class PlacementService:
     # The test-mode guard
     # ------------------------------------------------------------------
 
-    async def _guard_test_mode(self, driver_profile_id: int) -> None:
+    async def _guard_test_mode(self, driver_profile_id: int | None) -> None:
         """Refuse to seat a *real* driver while the server is in test mode.
 
         Test mode and a real league may not share a server, so a real driver never enters
         a division while the flag is on: their signup is refused at the button, and their
         placement here. A fake driver is let through: `/driver assign` of one, by the test-mode
-        `/driver`, passes this guard, and the roster commands seat them by another path. Attendance
-        autoreserve moves drivers through `move_on`, which this guard does not govern.
+        `/driver`, passes this guard, and the roster commands seat them by another path. A member
+        holding no profile (*driver_profile_id* None) is a real one: a fake driver always has a
+        profile. Attendance autoreserve moves drivers through `move_on`, which this guard does not
+        govern.
 
         Unlike the capacity guards above, this is a genuine precondition rather than a
         best-effort check, so it does **not** swallow its own errors: a fault reading the
@@ -148,20 +150,18 @@ class PlacementService:
         """
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT (SELECT test_mode_active FROM server_configs) "
-                "           AS test_mode_active, "
-                "       dp.is_test_driver "
-                "FROM driver_profiles dp WHERE dp.id = ?",
-                (driver_profile_id,),
+                "SELECT (SELECT test_mode_active FROM server_configs) AS test_mode_active, "
+                "       (SELECT is_test_driver FROM driver_profiles WHERE id = ?) "
+                "           AS is_test_driver, "
+                "       EXISTS (SELECT 1 FROM driver_profiles WHERE id = ?) AS found",
+                (driver_profile_id, driver_profile_id),
             )
-            row = await cursor.fetchone()
+            row = await sole_row(cursor)
 
-        if row is None:
+        if driver_profile_id is not None and not row["found"]:
             # No such profile: `judge_assign_on` reports that itself, in its own words.
             return
-        if row["is_test_driver"]:
-            return
-        if row["test_mode_active"]:
+        if not row["is_test_driver"] and row["test_mode_active"]:
             raise Refused(
                 "Test mode is active — a real driver cannot be assigned to a team. "
                 "Turn it off with `/test-mode toggle` first."
@@ -490,7 +490,7 @@ class PlacementService:
     # ------------------------------------------------------------------
 
     async def guard_assign(
-        self, division_id: int, season_id: int, team_name: str, driver_profile_id: int
+        self, division_id: int, season_id: int, team_name: str, driver_profile_id: int | None
     ) -> None:
         """Refuse an assignment that would outgrow a template or seat a real driver in test mode.
 
@@ -507,11 +507,12 @@ class PlacementService:
         self,
         db,
         *,
-        driver_profile_id: int,
+        driver_profile_id: int | None,
         division_id: int,
         team_name: str,
         season_id: int,
         uncommitted_only: bool = False,
+        signup_off: bool = False,
     ) -> dict:
         """Judge the assignment of a driver to a team of a division on *db*, writing nothing: what
         `assign_on` would refuse, in its words, and the state it would assign from.
@@ -520,7 +521,16 @@ class PlacementService:
         with *uncommitted_only* already holds a confirmed placement in the season, already holds
         a seat in the division, or the team is not in the division or has no free seat. Returns
         the profile's *current_state*.
+
+        With *signup_off*, a driver who is Not Signed Up is placed as well, and a member holding no
+        profile (*driver_profile_id* None) is judged as one: Not Signed Up, holding no placement,
+        asking only for a seat.
         """
+        if driver_profile_id is None:
+            if not signup_off:
+                raise Refused("Driver profile not found.")
+            await self._find_free_seat(db, division_id, team_name)
+            return {"current_state": DriverState.NOT_SIGNED_UP}
         cursor = await db.execute(
             "SELECT current_state FROM driver_profiles WHERE id = ?", (driver_profile_id,)
         )
@@ -528,10 +538,13 @@ class PlacementService:
         if row is None:
             raise Refused("Driver profile not found.")
         current_state = DriverState(row["current_state"])
-        if current_state not in (DriverState.UNASSIGNED, DriverState.ASSIGNED):
+        placeable = {DriverState.UNASSIGNED, DriverState.ASSIGNED}
+        if signup_off:
+            placeable.add(DriverState.NOT_SIGNED_UP)
+        if current_state not in placeable:
             raise Refused(
                 f"Driver must be Unassigned or Assigned to be placed "
-                f"(current state: {current_state.value})."
+                f"(current state: {current_state.label})."
             )
 
         if uncommitted_only:
@@ -570,18 +583,19 @@ class PlacementService:
         team_name: str,
         season_id: int,
         uncommitted_only: bool = False,
+        signup_off: bool = False,
     ) -> dict:
         """Assign a driver to a team seat of a division on *db*, leaving the audit entry to the
         caller.
 
         Seats the driver in the team's first free seat (the reserve team making another where it
-        has none), writes the assignment unconfirmed, and moves an Unassigned driver to Assigned,
-        on the connection handed and committed by no one here, so that a change on the queue
-        writes the entry with the queue's clock (*audit*). An unconfirmed placement stands outside
-        the championship: it asks no role and no lineup, which follow when placements are
-        confirmed. Nothing is awaited but *db*, and the guards (`guard_assign`) are the caller's.
-        *uncommitted_only* refuses a driver who already holds a confirmed placement in the
-        season. Refused as `judge_assign_on` refuses.
+        has none), writes the assignment unconfirmed, and moves an Unassigned driver to Assigned
+        (with *signup_off*, a Not Signed Up one too), on the connection handed and committed by
+        no one here, so that a change on the queue writes the entry with the queue's clock
+        (*audit*). An unconfirmed placement stands outside the championship: it asks no role and
+        no lineup, which follow when placements are confirmed. Nothing is awaited but *db*, and the
+        guards (`guard_assign`) are the caller's. *uncommitted_only* refuses a driver who already
+        holds a confirmed placement in the season. Refused as `judge_assign_on` refuses, *signup_off* with it.
 
         Returns the summary (was_unassigned, team_name, division_name) and the audit entry's
         *audit*: its old and new values and the division.
@@ -589,6 +603,7 @@ class PlacementService:
         judged = await self.judge_assign_on(
             db, driver_profile_id=driver_profile_id, division_id=division_id,
             team_name=team_name, season_id=season_id, uncommitted_only=uncommitted_only,
+            signup_off=signup_off,
         )
         current_state = judged["current_state"]
 
@@ -608,9 +623,9 @@ class PlacementService:
             "VALUES (?, ?, ?, ?, 0)",
             (driver_profile_id, season_id, division_id, seat_id),
         )
-        if was_unassigned:
+        if current_state != DriverState.ASSIGNED:
             await write_transition(
-                db, driver_profile_id, DriverState.UNASSIGNED, DriverState.ASSIGNED
+                db, driver_profile_id, current_state, DriverState.ASSIGNED, signup_off=signup_off
             )
         return {
             "was_unassigned": was_unassigned,
@@ -702,7 +717,7 @@ class PlacementService:
         if current_state != DriverState.ASSIGNED:
             raise Refused(
                 f"Driver must be in Assigned state to be unassigned "
-                f"(current state: {current_state.value})."
+                f"(current state: {current_state.label})."
             )
 
         cursor = await db.execute(
@@ -738,6 +753,7 @@ class PlacementService:
         division_id: int,
         season_id: int,
         uncommitted_only: bool = False,
+        signup_off: bool = False,
     ) -> dict:
         """Remove a driver's assignment from one division on *db*, leaving the audit entry to the
         caller.
@@ -747,6 +763,9 @@ class PlacementService:
         the queue's clock (*audit*). It awaits nothing but *db*: no member is fetched and no role
         asked of Discord. Roles and the lineup are owed only where the placement was committed,
         and a test driver holds no roles. Refused as `judge_unassign_on` refuses.
+
+        A driver left holding no placement goes back to Unassigned, or with *signup_off*, where no
+        signup ever made them Unassigned, to Not Signed Up, as they were before they were placed.
 
         Returns the summary (division_name, has_remaining_assignments, team_name, lineups), the
         audit entry's *audit* (its old and new values and the division), the driver's account
@@ -816,9 +835,10 @@ class PlacementService:
                 "UPDATE team_seats SET driver_profile_id = NULL WHERE id = ?", (seat_id,)
             )
         await db.execute("DELETE FROM driver_season_assignments WHERE id = ?", (asgn_id,))
+        left_as = DriverState.NOT_SIGNED_UP if signup_off else DriverState.UNASSIGNED
         if not has_remaining:
             await write_transition(
-                db, driver_profile_id, DriverState.ASSIGNED, DriverState.UNASSIGNED
+                db, driver_profile_id, DriverState.ASSIGNED, left_as, signup_off=signup_off
             )
 
         revoke: list[int] = []
@@ -837,9 +857,7 @@ class PlacementService:
             "audit": {
                 "old_value": {"team": team_name, "seat_id": seat_id},
                 "new_value": {
-                    "new_state": (
-                        DriverState.ASSIGNED if has_remaining else DriverState.UNASSIGNED
-                    ).value,
+                    "new_state": (DriverState.ASSIGNED if has_remaining else left_as).value,
                     "has_remaining": has_remaining,
                 },
                 "division_id": division_id,
@@ -847,6 +865,57 @@ class PlacementService:
             "user_id": judged["user_id"],
             "revoke": revoke,
         }
+
+    # ------------------------------------------------------------------
+    # Reject: every unconfirmed placement removed
+    # ------------------------------------------------------------------
+
+    async def can_reject_on(self, db, *, driver_profile_id: int, season_id: int) -> bool:
+        """Whether a driver can be turned down with the signup module off, on *db*: they are
+        Assigned and hold no confirmed placement in the season, only unconfirmed ones, of which
+        at least one."""
+        cursor = await db.execute(
+            "SELECT dp.current_state, "
+            "COALESCE(SUM(dsa.committed = 1), 0) AS confirmed, "
+            "COALESCE(SUM(dsa.committed = 0), 0) AS unconfirmed "
+            "FROM driver_profiles dp "
+            "LEFT JOIN driver_season_assignments dsa "
+            "ON dsa.driver_profile_id = dp.id AND dsa.season_id = ? "
+            "WHERE dp.id = ? GROUP BY dp.id",
+            (season_id, driver_profile_id),
+        )
+        row = await cursor.fetchone()
+        return (
+            row is not None
+            and DriverState(row["current_state"]) is DriverState.ASSIGNED
+            and row["confirmed"] == 0
+            and row["unconfirmed"] > 0
+        )
+
+    async def can_reject(self, *, driver_profile_id: int, season_id: int) -> bool:
+        """`can_reject_on`, read on a connection of its own."""
+        async with get_connection(self._db_path) as db:
+            return await self.can_reject_on(
+                db, driver_profile_id=driver_profile_id, season_id=season_id
+            )
+
+    async def reject_placements_on(self, db, *, driver_profile_id: int, season_id: int) -> None:
+        """Remove every unconfirmed placement of a driver in a season on *db*, freeing each seat,
+        on the connection handed and committed by no one here. The caller has judged
+        `can_reject_on` and writes the driver's state and the audit entry. An unconfirmed
+        placement stands outside the championship: it holds no role and no lineup entry, so
+        nothing is owed to Discord."""
+        await db.execute(
+            "UPDATE team_seats SET driver_profile_id = NULL WHERE id IN ("
+            "SELECT team_seat_id FROM driver_season_assignments "
+            "WHERE driver_profile_id = ? AND season_id = ? AND committed = 0)",
+            (driver_profile_id, season_id),
+        )
+        await db.execute(
+            "DELETE FROM driver_season_assignments "
+            "WHERE driver_profile_id = ? AND season_id = ? AND committed = 0",
+            (driver_profile_id, season_id),
+        )
 
     # ------------------------------------------------------------------
     # Revoke all placement roles
@@ -905,20 +974,25 @@ class PlacementService:
     # A driver's roles follow their current account
     # ------------------------------------------------------------------
 
-    async def driver_role_ids(self, driver_profile_id: int) -> set[int]:
+    async def driver_role_ids(
+        self, driver_profile_id: int, *, signup_off: bool = False
+    ) -> set[int]:
         """`driver_role_ids_on` on a connection of its own."""
         async with get_connection(self._db_path) as db:
-            return await self.driver_role_ids_on(db, driver_profile_id)
+            return await self.driver_role_ids_on(db, driver_profile_id, signup_off=signup_off)
 
     async def driver_role_ids_on(
-        self, db: aiosqlite.Connection, driver_profile_id: int
+        self, db: aiosqlite.Connection, driver_profile_id: int, *, signup_off: bool = False
     ) -> set[int]:
         """The roles the driver's standing entitles them to, read from state, not from Discord.
 
         The driver role while they are Unassigned or Assigned, and the division and team
         roles of every confirmed placement in the live season — exactly what approval and
-        confirming placements grant. A test-mode driver holds no roles. Read from the league's
-        own record so that it answers even when the account holding the roles has left.
+        confirming placements grant. With the signup module off (*signup_off*) approval grants
+        nothing, and the driver role is given with the confirmed placements: it counts only
+        for a driver holding one, so that no role runs ahead of a placement not yet
+        confirmed. A test-mode driver holds no roles. Read from the league's own record so
+        that it answers even when the account holding the roles has left.
         """
         cursor = await db.execute(
             "SELECT current_state, is_test_driver FROM driver_profiles WHERE id = ?",
@@ -928,13 +1002,9 @@ class PlacementService:
         if profile is None or profile["is_test_driver"]:
             return set()
         roles: set[int] = set()
-        if profile["current_state"] in (
+        in_standing = profile["current_state"] in (
             DriverState.UNASSIGNED.value, DriverState.ASSIGNED.value
-        ):
-            cursor = await db.execute("SELECT driver_role_id FROM server_configs")
-            row = await cursor.fetchone()
-            if row is not None and row["driver_role_id"]:
-                roles.add(int(row["driver_role_id"]))
+        )
         cursor = await db.execute(
             """
             SELECT d.mention_role_id AS division_role, trc.role_id AS team_role
@@ -949,10 +1019,16 @@ class PlacementService:
             """,
             (driver_profile_id,),
         )
-        for row in await cursor.fetchall():
+        confirmed = await cursor.fetchall()
+        for row in confirmed:
             for role_id in (row["division_role"], row["team_role"]):
                 if role_id:
                     roles.add(int(role_id))
+        if in_standing and (confirmed or not signup_off):
+            cursor = await db.execute("SELECT driver_role_id FROM server_configs")
+            config = await cursor.fetchone()
+            if config is not None and config["driver_role_id"]:
+                roles.add(int(config["driver_role_id"]))
         return roles
 
     # ------------------------------------------------------------------
@@ -980,7 +1056,7 @@ class PlacementService:
         if current_state not in (DriverState.UNASSIGNED, DriverState.ASSIGNED):
             raise Refused(
                 f"Driver must be Unassigned or Assigned to be sacked "
-                f"(current state: {current_state.value})."
+                f"(current state: {current_state.label})."
             )
 
         cursor = await db.execute(

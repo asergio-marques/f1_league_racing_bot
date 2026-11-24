@@ -72,6 +72,7 @@ from leaguebot.framework.services.queue.change_types import (
 from leaguebot.framework.services.posting.channel_tell_change import KIND as CHANNEL_TELL
 from leaguebot.core.services.seasons.season_approval_change import (
     GRANT_ROLES,
+    driver_role_due_on,
     driver_roles_step,
     tell_channel,
     ungranted_line,
@@ -318,6 +319,7 @@ def mid_season_confirm_change(
         )
         divisions = [(int(row["id"]), str(row["name"])) for row in await cursor.fetchall()]
         steps: list[PlannedStep] = []
+        driver_role = {"driver_role": True} if await driver_role_due_on(db, modules) else {}
         for division_id, division_name in divisions:
             drivers = sorted(
                 (p for p in placements
@@ -332,6 +334,7 @@ def mid_season_confirm_change(
                         "division_id": division_id,
                         "division_name": division_name,
                         "team_name": driver["team_name"],
+                        **driver_role,
                     },
                 )
                 for driver in drivers
@@ -525,6 +528,7 @@ def _left(ctx: OutcomeContext, *, told: bool = True) -> list[str]:
     lines: list[str] = []
     ungranted: list[str] = []
     ungranted_at: int | None = None
+    driver_role = False
     for view in ctx.steps:
         if not _discarded(view):
             continue
@@ -534,6 +538,7 @@ def _left(ctx: OutcomeContext, *, told: bool = True) -> list[str]:
                 ungranted_at = len(lines)
                 lines.append("")
             ungranted.append(str(each["user_id"]))
+            driver_role = driver_role or bool(each.get("driver_role"))
         elif view.name == POST_LINEUP:
             lines.append(unposted_lineup_line(each["division_name"]))
         elif view.name == standing_posts.DELETE_REPLACED:
@@ -541,6 +546,6 @@ def _left(ctx: OutcomeContext, *, told: bool = True) -> list[str]:
         elif told and view.name == TELL_REVIEW_CHANNEL:
             lines.append(f"<#{ctx.payload['channel_id']}> was not told how the confirmation ended")
     if ungranted_at is not None:
-        lines[ungranted_at] = ungranted_line(ungranted)
+        lines[ungranted_at] = ungranted_line(ungranted, driver_role=driver_role)
     return lines
 

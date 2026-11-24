@@ -64,6 +64,9 @@ def _cog() -> DriverCog:
         return_value=SimpleNamespace(id=PROFILE_ID, current_state=DriverState.UNASSIGNED)
     )
     bot.output_router.post_log = AsyncMock()
+    # The signup module is on: with it off, `/driver assign` takes a member with no profile and
+    # `/driver reject` an Assigned driver (#624), both pinned in their own files.
+    bot.module_service.is_enabled = AsyncMock(return_value=True)
     cog.bot = bot
     return cog
 

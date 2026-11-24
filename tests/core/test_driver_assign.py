@@ -7,7 +7,8 @@ uncommitted, so no role is given and no lineup posted. The guards that read temp
 server's test-mode flag run in the change's check, at the ask and again as it starts.
 
 These run on `season_league`'s season, in Placements: Charles alone at McLaren in Am, its second
-seat free, and Valtteri (106) approved and never placed (`approved_unplaced`).
+seat free, and Valtteri (106) approved and never placed (`approved_unplaced`). The signup module is
+off unless a test turns it on; Oscar (108, `NEWCOMER`) is a member of the server holding no profile.
 """
 from __future__ import annotations
 
@@ -99,6 +100,17 @@ def _assign_refusal(reply: str) -> str:
     from leaguebot.framework.utils.log_lines import reply_reason
 
     return f"⛔ `/driver assign` refused for {_ADMIN} — {reply_reason(reply)}"
+
+
+def _logged_refusal(reply: str) -> str:
+    """`_assign_refusal`, each mention in the reason set in code, as the log channel sets it so
+    that nobody is pinged."""
+    import re
+
+    from leaguebot.framework.utils.log_lines import reply_reason
+
+    reason = re.sub(r"(<@\d+>)", r"`\1`", reply_reason(reply))
+    return f"⛔ `/driver assign` refused for {_ADMIN} — {reason}"
 
 
 def _assign_lines(lines):
@@ -293,6 +305,60 @@ async def _placing_mid_season(tmp_path):
     return await placing_league(tmp_path)
 
 
+_NOT_SIGNED_UP_REFUSED = (
+    "⛔ Driver must be Unassigned or Assigned to be placed (current state: Not Signed Up)."
+)
+_NO_PROFILE = "⛓ No driver profile found for **Oscar**."
+#: Nico's current account, gone from the server, and a past account of his still in it.
+_NICO, _NICO_PAST = 109, 110
+_PAST_ACCOUNT_GONE = (
+    f"⛔ <@{_NICO_PAST}> is a past account of a driver whose current account, <@{_NICO}>, is not "
+    "in the server."
+)
+
+
+async def _placing_signup_on(tmp_path):
+    """`_placing`'s season with the signup module on, Oscar holding no profile."""
+    league = await _placing(tmp_path)
+    await league.switch("signup", True)
+    return league
+
+
+async def _placing_signup_on_not_signed_up(tmp_path):
+    """`_placing_signup_on`'s season, Oscar holding a profile and Not Signed Up."""
+    from tests.support.season_league import NEWCOMER
+
+    league = await _placing_signup_on(tmp_path)
+    await league.write(
+        "INSERT INTO driver_profiles (id, discord_user_id, current_state, is_test_driver) "
+        "VALUES (48, ?, 'NOT_SIGNED_UP', 0)", str(NEWCOMER),
+    )
+    return league
+
+
+async def _placing_test_mode(tmp_path):
+    """`_placing`'s season, the signup module off and test mode on, Oscar holding no profile."""
+    league = await _placing(tmp_path)
+    await league.set_test_mode(True)
+    return league
+
+
+async def _placing_past_account_gone(tmp_path):
+    """`_placing`'s season, the signup module off: Nico (109), Not Signed Up, has left the server,
+    and his past account (110) is still in it."""
+    league = await _placing(tmp_path)
+    await league.write(
+        "INSERT INTO driver_profiles (id, discord_user_id, current_state, is_test_driver) "
+        "VALUES (49, ?, 'NOT_SIGNED_UP', 0)", str(_NICO),
+    )
+    await league.write(
+        "INSERT INTO driver_accounts (driver_profile_id, discord_user_id) VALUES (49, ?)",
+        str(_NICO_PAST),
+    )
+    league.absent.add(_NICO)
+    return league
+
+
 @pytest.mark.parametrize(
     "build, user_id, reply",
     [
@@ -300,6 +366,16 @@ async def _placing_mid_season(tmp_path):
         pytest.param(_placing_mid_season, 101, _CONFIRMED_ELSEWHERE, id="a-confirmed-driver"),
         pytest.param(
             _placing_standings_full, 106, _STANDINGS_FULL, id="the-standings-template-full"
+        ),
+        pytest.param(
+            _placing_signup_on_not_signed_up, 108, _NOT_SIGNED_UP_REFUSED,
+            id="signup-on-not-signed-up",
+        ),
+        pytest.param(_placing_signup_on, 108, _NO_PROFILE, id="signup-on-no-profile"),
+        pytest.param(_placing_test_mode, 108, _TEST_MODE, id="signup-off-test-mode-no-profile"),
+        pytest.param(
+            _placing_past_account_gone, _NICO_PAST, _PAST_ACCOUNT_GONE,
+            id="signup-off-past-account-gone",
         ),
     ],
 )
@@ -315,8 +391,18 @@ async def test_a_driver_assignment_is_refused_at_the_ask(tmp_path, build, user_i
     placement this season. Move them with `/driver move`, or release them from a division with
     `/driver release`." or the image module's own words for the template's problem and its
     remedy, between them "The driver was **not** assigned.", and the log channel takes the refusal as its
-    one line. Nothing is asked of the queue, nobody is placed, no audit entry is written and no
-    role touched. Takes the place of `test_driver_cog_refusals.py`'s "assign refused by the
+    one line. Nothing is asked of the queue, nobody is placed, no audit entry is written, no
+    profile is created and no role touched.
+
+    The rest are #624's, the season in Placements with McLaren's second seat free. With the signup
+    module on, Oscar, Not Signed Up, is refused as he always was, his state named as the core
+    specification names it: "Driver must be Unassigned or Assigned to be placed (current state:
+    Not Signed Up)."; and Oscar holding no profile is refused, "No driver profile found for
+    **Oscar**.". With the signup module off and test mode on, Oscar, a real member with no profile,
+    is refused as any real driver is under test mode. With the signup module off, Nico's past
+    account (110) names Nico, whose current account (109) has left the server, and the assignment
+    is refused as today: "<@110> is a past account of a driver whose current account, <@109>, is
+    not in the server.", no profile created for the past account. Takes the place of `test_driver_cog_refusals.py`'s "assign refused by the
     service" case and `test_driver_cog.py`'s `test_a_refused_assignment_is_reported_not_raised`,
     which mocked the service, and of the mid-season case of its
     `test_an_assignment_is_made_uncommitted`."""
@@ -325,10 +411,12 @@ async def test_a_driver_assignment_is_refused_at_the_ask(tmp_path, build, user_i
 
     league = await build(tmp_path)
     placements = await league.rows("SELECT * FROM driver_season_assignments ORDER BY id")
+    profiles = await league.rows("SELECT * FROM driver_profiles ORDER BY id")
     asked = await _ask_assign(league, user_id)
 
     assert last_said(asked) == reply
-    assert _assign_lines(await log_lines(league)) == [_assign_refusal(reply)]
+    assert await league.rows("SELECT * FROM driver_profiles ORDER BY id") == profiles
+    assert _assign_lines(await log_lines(league)) == [_logged_refusal(reply)]
     assert await change_rows(league.db_path) == []
     assert await league.rows("SELECT * FROM driver_season_assignments ORDER BY id") == placements
     assert await audit_rows(league.db_path) == []
@@ -361,3 +449,124 @@ async def test_a_driver_assignment_asked_again_while_it_waits_is_refused_as_a_re
     assert _assign_lines(await log_lines(league)) == [
         _assign_refusal(repeated(_assigning())), _assign_line(),
     ]
+
+
+async def _signup_off_newcomer(tmp_path):
+    """`_placing`'s season, the signup module off, Oscar a member holding no profile."""
+    return await _placing(tmp_path)
+
+
+async def _signup_off_not_signed_up(tmp_path):
+    """`_placing`'s season, the signup module off, Oscar a real driver Not Signed Up."""
+    from tests.support.season_league import NEWCOMER
+
+    league = await _placing(tmp_path)
+    await league.write(
+        "INSERT INTO driver_profiles (id, discord_user_id, current_state, is_test_driver) "
+        "VALUES (48, ?, 'NOT_SIGNED_UP', 0)", str(NEWCOMER),
+    )
+    return league
+
+
+@pytest.mark.parametrize(
+    "build",
+    [
+        pytest.param(_signup_off_newcomer, id="no-profile"),
+        pytest.param(_signup_off_not_signed_up, id="not-signed-up"),
+    ],
+)
+async def test_with_signup_off_a_member_not_signed_up_is_placed(tmp_path, build):
+    """#624. The season is in Placements and its configuration was confirmed with the signup
+    module off; test mode is off and McLaren's second seat in Am is free. Oscar is a member of the
+    server who holds no driver profile, or a real driver Not Signed Up. The league admin Admin
+    (77) runs `/driver assign` of Oscar to McLaren in Am, and the queue runs it. Oscar holds
+    exactly one profile, on his account, and is Assigned, sitting at McLaren in Am, not confirmed;
+    one audit entry, `DRIVER_ASSIGN`, by Admin, on Am, records him Not Signed Up before and at
+    McLaren in Am, Assigned, after; the log channel holds the usual success line; no role is given
+    on Discord, the placement being unconfirmed; and the reply is the usual "✅ Assigned **Oscar**
+    to **McLaren F1 Team** in **Am**."."""
+    from tests.support.change_queue import run_queue
+    from tests.support.season_league import AM, NEWCOMER
+    from tests.support.settings_league import audit_rows, last_said, log_lines
+
+    league = await build(tmp_path)
+    asked = await _ask_assign(league, NEWCOMER)
+    await run_queue(league.bot)
+
+    [profile] = await league.rows(
+        "SELECT id, current_state, is_test_driver FROM driver_profiles WHERE discord_user_id = ?",
+        str(NEWCOMER),
+    )
+    assert (profile["current_state"], profile["is_test_driver"]) == ("ASSIGNED", 0)
+    placed = await league.rows(
+        "SELECT d.name AS division, ti.name AS team, dsa.committed "
+        "FROM driver_season_assignments dsa "
+        "JOIN divisions d ON d.id = dsa.division_id "
+        "JOIN team_seats ts ON ts.id = dsa.team_seat_id "
+        "JOIN team_instances ti ON ti.id = ts.team_instance_id "
+        "WHERE dsa.driver_profile_id = ?", profile["id"],
+    )
+    assert [(r["division"], r["team"], bool(r["committed"])) for r in placed] == [
+        ("Am", "McLaren", False)
+    ]
+    [entry] = [
+        row for row in await audit_rows(league.db_path) if row["change_type"] == "DRIVER_ASSIGN"
+    ]
+    assert (entry["actor_id"], entry["division_id"]) == (77, AM)
+    assert entry["old_value"] == {"state": "NOT_SIGNED_UP"}
+    assert {key: entry["new_value"][key] for key in ("team", "division", "new_state")} == {
+        "team": "McLaren", "division": "Am", "new_state": "ASSIGNED",
+    }
+    assert _assign_lines(await log_lines(league)) == [_assign_line("Oscar", NEWCOMER)]
+    assert league.granted == {} and league.revoked == {}
+    assert last_said(asked) == "✅ Assigned **Oscar** to **McLaren F1 Team** in **Am**."
+
+
+async def test_with_signup_off_a_second_assign_of_a_member_with_no_profile_is_refused_at_its_check(
+    tmp_path,
+):
+    """#624. The season is in Placements and its configuration was confirmed with the signup
+    module off; test mode is off. Am holds McLaren, its second seat free, and Williams, a seat
+    free. Oscar is a member of the server who holds no driver profile. Before the queue runs, the
+    league admin runs `/driver assign` of Oscar to McLaren in Am, then of Oscar to Williams in Am;
+    both are acknowledged. The queue runs them in turn. The first places Oscar at McLaren in Am,
+    not confirmed, and makes his profile; the second, judged as it starts against the profile the
+    first made, is refused, its acknowledgement updated to "⛔ Driver is already assigned to a
+    team in **Am**.". Oscar holds one profile and the one placement, at McLaren; one
+    `DRIVER_ASSIGN` audit entry is written; the log channel holds the success line and then the
+    refusal; and the queue is not stopped."""
+    from tests.support.change_queue import run_queue, stopped_job
+    from tests.support.season_league import AM, NEWCOMER
+    from tests.support.settings_league import audit_rows, last_said, log_lines
+
+    league = await _placing(tmp_path)
+    await league.write(
+        "INSERT INTO team_instances (id, division_id, name, full_name, max_seats, is_reserve) "
+        "VALUES (33, ?, 'Williams', 'Williams Racing', 3, 0)", AM,
+    )
+    await league.write("INSERT INTO team_seats (team_instance_id, seat_number) VALUES (33, 1)")
+    first = await _ask_assign(league, NEWCOMER)
+    second = await _ask_assign(league, NEWCOMER, team="Williams")
+    await run_queue(league.bot)
+
+    refusal = "⛔ Driver is already assigned to a team in **Am**."
+    assert last_said(first) == "✅ Assigned **Oscar** to **McLaren F1 Team** in **Am**."
+    assert last_said(second) == refusal
+    [profile] = await league.rows(
+        "SELECT id, current_state FROM driver_profiles WHERE discord_user_id = ?", str(NEWCOMER)
+    )
+    assert profile["current_state"] == "ASSIGNED"
+    placed = await league.rows(
+        "SELECT ti.name AS team, dsa.committed FROM driver_season_assignments dsa "
+        "JOIN team_seats ts ON ts.id = dsa.team_seat_id "
+        "JOIN team_instances ti ON ti.id = ts.team_instance_id "
+        "WHERE dsa.driver_profile_id = ?", profile["id"],
+    )
+    assert [(r["team"], bool(r["committed"])) for r in placed] == [("McLaren", False)]
+    assert [
+        row["change_type"] for row in await audit_rows(league.db_path)
+    ] == ["DRIVER_ASSIGN"]
+    assert _assign_lines(await log_lines(league)) == [
+        _assign_line("Oscar", NEWCOMER), _assign_refusal(refusal),
+    ]
+    assert await stopped_job(league.db_path) is None

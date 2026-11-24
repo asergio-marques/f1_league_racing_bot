@@ -26,6 +26,7 @@ from leaguebot.core.services.drivers.driver_changes import (
     DRIVER_RELEASE,
     DRIVER_SACK,
     DRIVER_UNASSIGN,
+    NO_UNCONFIRMED_REFUSAL,
     NOT_PLACING_REFUSAL,
     NOT_UNASSIGNED_REFUSAL,
 )
@@ -112,7 +113,7 @@ async def assign(
     division: str,
     team: str,
 ) -> None:
-    """Assign an Unassigned driver to a team and division."""
+    """Assign a driver to a team and division."""
     # Resolve season, and the stage placements may be made in
     season = await bot.season_service.get_setup_or_active_season()
     if season is None or season.stage not in _PLACING_STAGES:
@@ -150,9 +151,10 @@ async def assign(
         await refuse(interaction, f"⛔ {reference.refusal}", what=describe(interaction))
         return
 
-    # Fetch the driver profile
+    # Fetch the driver profile. With the signup module off a member holding none is placed all
+    # the same, and given one as the save places them.
     profile = await bot.driver_service.get_profile(driver.account)
-    if profile is None:
+    if profile is None and await bot.module_service.is_enabled("signup"):
         await refuse(
             interaction,
             f"⛓ No driver profile found for **{driver.name}**.",
@@ -165,7 +167,7 @@ async def assign(
     await bot.change_queue.ask(
         DRIVER_ASSIGN,
         {
-            "driver_profile_id": profile.id,
+            "driver_profile_id": None if profile is None else profile.id,
             "discord_user_id": driver.account,
             "driver_name": driver.name,
             "season_id": season.id,
@@ -373,11 +375,13 @@ async def reject(
     interaction: discord.Interaction,
     driver: ResolvedDriver,
 ) -> None:
-    """Turn down an Unassigned driver.
+    """Turn down a driver: an Unassigned one, or, with the signup module off, one holding
+    only unconfirmed placements.
 
     Available while the season is in Placements or Ongoing, placements — where the
     drivers of a window are settled. The driver returns to Not Signed Up and loses the
-    driver role; their signup is kept with the season.
+    driver role (with signup off, every unconfirmed placement is removed and no role is
+    taken, none having been given); their signup is kept with the season.
     """
     from leaguebot.core.models.driver_profile import DriverState
 
@@ -390,11 +394,22 @@ async def reject(
         )
         return
 
+    # With the signup module off a driver is turned down for holding only unconfirmed
+    # placements, not for being Unassigned, which no signup makes them.
+    signup_off = not await bot.module_service.is_enabled("signup")
     profile = await bot.driver_service.get_profile(driver.account)
-    if profile is None or profile.current_state is not DriverState.UNASSIGNED:
+    if signup_off:
+        turned_down = profile is not None and await bot.placement_service.can_reject(
+            driver_profile_id=profile.id, season_id=season.id
+        )
+        refusal = f"⛔ {NO_UNCONFIRMED_REFUSAL}"
+    else:
+        turned_down = profile is not None and profile.current_state is DriverState.UNASSIGNED
+        refusal = NOT_UNASSIGNED_REFUSAL
+    if profile is None or not turned_down:
         await refuse(
             interaction,
-            NOT_UNASSIGNED_REFUSAL.format(driver_name=driver.name),
+            refusal.format(driver_name=driver.name),
             what=describe(interaction),
         )
         return
@@ -409,6 +424,7 @@ async def reject(
             "discord_user_id": driver.account,
             "driver_name": driver.name,
             "season_id": season.id,
+            "signup_off": signup_off,
         },
         interaction=interaction, what=describe(interaction),
     )

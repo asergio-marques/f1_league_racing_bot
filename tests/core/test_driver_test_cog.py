@@ -93,6 +93,10 @@ async def test_a_fake_driver_named_by_id_is_asked_for_as_a_real_driver_is(
 
     ongoing, real, fake, params = _COMMANDS[name]
     league = await _league(tmp_path, ongoing=ongoing)
+    if name == "reject":
+        # The turn-down of an Unassigned driver is the signup module's: with it off a driver is
+        # turned down for holding only unconfirmed placements.
+        await league.switch("signup", True)
     ask = AsyncMock()
     monkeypatch.setattr(league.bot.change_queue, "ask", ask)
 
@@ -154,6 +158,42 @@ async def test_a_seated_fake_driver_is_given_a_seat_in_a_second_division(tmp_pat
     )
     assert [(r["division"], r["team"]) for r in placed] == [("Pro", "Ferrari"), ("Am", "McLaren")]
     assert [r["team_instance_id"] for r in seats] == [FERRARI, MCLAREN]
+    assert league.granted == {}
+
+
+async def test_with_signup_off_a_fake_driver_not_signed_up_is_placed(tmp_path):
+    """#624. Test mode is on, the season is in Placements, and its configuration was confirmed
+    with the signup module off. Ghost, a fake driver, is Not Signed Up, and McLaren in Am has a
+    third seat free. Admin runs the test-mode `/driver assign` of Ghost, by ID, to McLaren in Am,
+    and the queue runs it: Ghost is Assigned, sits at McLaren in Am, not confirmed, and is given
+    no role."""
+    from tests.support.change_queue import run_queue
+    from tests.support.season_league import MCLAREN
+
+    league = await _league(tmp_path)
+    await league.write(
+        "UPDATE driver_profiles SET current_state = 'NOT_SIGNED_UP' WHERE id = ?", GHOST_PROFILE
+    )
+    await league.write("INSERT INTO team_seats (team_instance_id, seat_number) VALUES (?, 3)", MCLAREN)
+
+    await _run_variant(league, "assign", user=str(GHOST), division="Am", team="McLaren")
+    await run_queue(league.bot)
+
+    placed = await league.rows(
+        "SELECT d.name AS division, ti.name AS team, dsa.committed "
+        "FROM driver_season_assignments dsa "
+        "JOIN divisions d ON d.id = dsa.division_id "
+        "JOIN team_seats ts ON ts.id = dsa.team_seat_id "
+        "JOIN team_instances ti ON ti.id = ts.team_instance_id "
+        "WHERE dsa.driver_profile_id = ?", GHOST_PROFILE,
+    )
+    [state] = await league.rows(
+        "SELECT current_state FROM driver_profiles WHERE id = ?", GHOST_PROFILE
+    )
+    assert [(r["division"], r["team"], bool(r["committed"])) for r in placed] == [
+        ("Am", "McLaren", False)
+    ]
+    assert state["current_state"] == "ASSIGNED"
     assert league.granted == {}
 
 

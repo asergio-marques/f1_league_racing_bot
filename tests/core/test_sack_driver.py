@@ -214,6 +214,14 @@ async def test_a_driver_with_no_confirmed_placement_is_refused(tmp_path):
     assert await _count(db_path, "SELECT COUNT(*) FROM driver_season_assignments") == 1
 
 
+#: How the refusal names each state a sack refuses: as the core specification names it.
+_STATE_NAMED = {
+    DriverState.NOT_SIGNED_UP: "Not Signed Up",
+    DriverState.PENDING_ADMIN_APPROVAL: "Pending Admin Approval",
+    DriverState.PENDING_DRIVER_CORRECTION: "Pending Driver Correction",
+}
+
+
 @pytest.mark.parametrize(
     "state",
     [
@@ -227,11 +235,13 @@ async def test_any_other_state_is_refused(tmp_path, state):
     out — sacking either would do nothing but move a driver the season no longer holds. The
     refusal names the state it found: a manager who meets it needs to know which state they
     hit, not merely that they hit one — a driver still in review and one already gone call for
-    different next steps."""
+    different next steps. It names it as the core specification does, "current state: Not
+    Signed Up", never by its stored value (#624)."""
     from leaguebot.framework.models.refusal import Refused
     db_path = await _make_db(tmp_path, name=f"refuse_{state.value}", state=state)
 
-    with pytest.raises(Refused, match=f"Unassigned or Assigned.*{state.value}"):
+    named = _STATE_NAMED[state]
+    with pytest.raises(Refused, match=rf"Unassigned or Assigned.*\(current state: {named}\)"):
         await _sack(_service(db_path))
 
     assert await _profile_state(db_path) == state.value

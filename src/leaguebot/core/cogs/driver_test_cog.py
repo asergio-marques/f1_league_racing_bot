@@ -165,7 +165,7 @@ class DriverTestCog(commands.Cog):
 
     @driver.command(
         name="assign",
-        description="Assign an Unassigned driver to a team and division.",
+        description="Assign a driver to a team and division.",
     )
     @app_commands.describe(
         user="The driver to assign: a mention or an ID.",
@@ -281,12 +281,12 @@ class DriverTestCog(commands.Cog):
 
     @driver.command(
         name="reject",
-        description="Turn down an approved driver who has not been placed.",
+        description="Turn down a driver, returning them to Not Signed Up.",
     )
-    @app_commands.describe(user="The Unassigned driver to turn down: a mention or an ID.")
+    @app_commands.describe(user="The driver to turn down: a mention or an ID.")
     @league_manager_only
     async def reject(self, interaction: discord.Interaction, user: str) -> None:
-        """Turn down an Unassigned driver (`driver_commands.reject`)."""
+        """Turn down a driver (`driver_commands.reject`)."""
         await interaction.response.defer(ephemeral=True)
         if not await self._test_mode_on(interaction):
             return
