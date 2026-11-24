@@ -182,7 +182,7 @@ Paste the file — header row and all — into the box that opens. It creates ev
 
 **Nothing is created unless everything can be.** An ID below the test range, two rows sharing an ID or a name, or a name held to the rules a division's name is: any of these refuses the whole import and names every fault at once. Fix the file and paste it again — nothing landed the first time, so there is nothing to undo.
 
-**About two hundred drivers fit.** Discord caps the box at 4000 characters. A larger roster goes in two pastes, the import adding to the fake drivers the season already holds.
+**About 130 drivers fit.** Discord caps the box at 4000 characters. A larger roster goes in two pastes, the import adding to the fake drivers the season already holds.
 
 ### Signing a whole roster up
 
