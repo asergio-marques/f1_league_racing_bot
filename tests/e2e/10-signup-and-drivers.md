@@ -181,7 +181,8 @@ names you as the one who acted, and the driver by its test name beneath.
      <@&<Members role id>> — click below to sign up!
      ```
      The `🔒 Signups are now closed.` notice the base's close left in `#signup` is deleted once
-     the embed stands.
+     the embed stands, where an earlier spec has not already taken it down
+     (`02-roster-changes.md` step 57 does); a notice already gone is passed over silently.
    - **Log:**
      ```
      <you> | /signup open | Success
@@ -785,7 +786,7 @@ Every answer in this part is given in `#wade-walsh-signup`, as you.
 
     **Expect:** the mid-season review, of the placements alone (`SeasonCog._review_mid_season_placements`).
     - **Ack:** `Posting the review of /season placements-review`
-    - **Then:** as `00-base.md` step 30: the acknowledgement updated with an image notices section
+    - **Then:** as `00-base.md` step 35: the acknowledgement updated with an image notices section
       where the lineup drew with notices, else left standing, with the ERROR in the host's log
       that step records.
     - **Posts** (`#bot-commands`, public), in this order:
