@@ -225,10 +225,10 @@ def _after_the_disqualified(row: dict) -> tuple[bool, int]:
     (results specification, penalty review): after the lapped, retired and
     non-starting drivers as well as the classified finishers. The old finishing
     position alone is not enough, because the driver was ranked above them
-    before the review and would keep that place. The disqualified are ordered by
-    ``(outcome == "DSQ", finishing_position)``, so several of them keep their
-    order among themselves. *row* carries ``outcome`` and ``fp``, the old
-    finishing position.
+    before the review and would keep that place. These rows are ordered by
+    ``(outcome == "DSQ", finishing_position)``, so the disqualified fall last and
+    keep their order among themselves. *row* carries ``outcome`` and ``fp``, the
+    old finishing position.
     """
     return (row["outcome"] == "DSQ", row["fp"])
 
