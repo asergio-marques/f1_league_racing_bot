@@ -733,13 +733,9 @@ round has started cannot be reached with a round dated a year ahead.
       `Japanese Grand Prix`, the embed titled `Season 1 Round 1 — Suzuka International Racing Course`
       with `📍 Location` `Suzuka International Racing Course` and the same `📅 Date`, and the three
       buttons.
-    - **Every driver shows `()`, Adam Archer, Bruno Bianchi and Carlos Cortes included.** The
-      call's embed is built with every driver unanswered (`check_in_call`, the roster's
-      `"rsvp_status": "NO_RSVP"`), while the answers of step 42 are still held for the round (the
-      call's record inserts its rows with `INSERT OR IGNORE`,
-      `attendance_config_service.bulk_insert_attendance_rows_on`), so the call shows them unanswered
-      while the bot counts them answered. Believed a bot defect: record it, and carry on. Step 53's
-      record of the check-in reads the held answers.
+    - **The answers of step 42 are carried over:** `(✅)` beside Adam Archer, `(❌)` beside Bruno
+      Bianchi, `(❓)` beside Carlos Cortes, and `()` beside every other driver, as step 42
+      recorded. Step 53's record of the check-in reads the same answers.
     - **Log:** any notice block for the check-in picture.
 
 ---

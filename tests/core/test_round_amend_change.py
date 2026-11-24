@@ -52,6 +52,7 @@ from tests.support.season_league import (
     CHARLES,
     DIVISIONS,
     FERRARI,
+    LEWIS,
     MAX,
     MCLAREN,
     PRO,
@@ -2799,6 +2800,13 @@ async def test_an_amendment_s_call_saves_its_record_in_the_job(tmp_path, monkeyp
     embed.assert_awaited_once()
     rows.assert_awaited_once()
     assert embed.await_args.args[0] is rows.await_args.args[0]
+    # The call drew the answers it kept: Lewis's accepted, Max's not given (#608).
+    [call] = league.channel(PRO_CH.checkin).send.await_args_list
+    [field] = [f for f in call.kwargs["embed"].fields if "Driver Roster" in f.name]
+    [lewis] = [line for line in field.value.splitlines() if f"<@{LEWIS}>" in line]
+    [max_] = [line for line in field.value.splitlines() if f"<@{MAX}>" in line]
+    assert lewis.endswith("(✅)")
+    assert max_.endswith("()")
 
 
 async def test_an_amendment_s_call_posted_again_writes_no_post_check_in_line(tmp_path, reposts):
