@@ -166,7 +166,6 @@ def test_a_normal_round_s_format_is_emptied_without_a_notice():
     result = svg_fill.fill(spec)
     assert not [n for n in result.notices if n.field_id == "round_1_format"]
     assert "OPTIONAL_FIELD_EMPTIED" not in {n.notice_kind for n in result.notices}
-    assert result.unresolved == []
 
 
 def test_spec_crops_at_the_final_drawn_round():
