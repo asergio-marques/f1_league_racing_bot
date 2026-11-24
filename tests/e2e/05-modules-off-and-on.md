@@ -84,10 +84,10 @@ channel, so nothing is posted for it.
    - **Reply:**
      ```
      📦 **Saved backup**
-       Taken: <timestamp: the moment of 00-base.md step 33>
-       Size: <size: as in 00-base.md step 33> KB
+       Taken: <timestamp: the moment of 00-base.md step 38>
+       Size: <size: as in 00-base.md step 38> KB
        Readable: yes
-       Locked: locked by <your display name> at <the moment of 00-base.md step 34, ISO 8601>
+       Locked: locked by <your display name> at <the moment of 00-base.md step 39, ISO 8601>
      ```
      A `Readable:` other than `yes`, or the reply
      ``📭 There is no saved backup. Take one with `/test-mode backup save`.``, means the base must
@@ -100,7 +100,7 @@ channel, so nothing is posted for it.
    **Expect:**
    - **Reply**, with two buttons, **♻️ Restore** and **Cancel**:
      ```
-     ⚠️ **Restore the backup taken <relative timestamp: when 00-base.md step 33 ran>?**
+     ⚠️ **Restore the backup taken <relative timestamp: when 00-base.md step 38 ran>?**
      Everything the bot holds now — seasons, rounds, drivers, results and every scheduled job — is replaced by what that backup holds. A copy of the current database is kept beside it first.
      **The bot must be restarted afterwards** to pick it up.
      ```
@@ -981,7 +981,7 @@ while a season is in configuration. A Season #2 is set up for that alone, as
 72. **Do:** steps 1 to 4 again: `/test-mode backup status`, `/test-mode backup restore`, press
     **♻️ Restore**, and restart the bot.
 
-    **Expect:** as steps 1 to 4: the backup taken at `00-base.md` step 33, readable and locked,
+    **Expect:** as steps 1 to 4: the backup taken at `00-base.md` step 38, readable and locked,
     survived the cancellation. `bot.prerestore.db` and `scheduler.prerestore.db` now hold the
     server as this part found it, should it be wanted.
 
