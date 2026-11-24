@@ -29,7 +29,7 @@ league admin role.
 | `07-image-config.md` | Restores the base and works the image configuration — templates, asset folders, colours and driver portraits — checking each change by preview, then puts the base's settings back. |
 | `08-recovery.md` | Restores the base and restarts the bot at awkward moments, checking what resumes. |
 | `10-signup-and-drivers.md` | Restores the base, opens signups mid-season, signs fake drivers up through the real wizard with a league admin answering for them, reviews them, seats them with `/driver assign`, and works the `/driver` commands on fake drivers. |
-| `09-season-endings.md` | Restores the base, cancels its season, aborts a season set up after it, packs the bot and factory-resets it. **Run last: it erases everything.** |
+| `09-season-endings.md` | Restores the base, cancels its season, aborts a season set up after it, packs the bot and factory-resets it. **Run last: it erases everything.** The last spec that restores the base; `11-signup-off.md` is run after it. |
 | `11-signup-off.md` | Builds its own season, with the signup module never turned on, from the fresh install `09` leaves: the configuration confirmed straight into placements, fake drivers seated by `/driver assign` from Not Signed Up, `/driver unassign` and `/driver reject` returning one to Not Signed Up, and the placements confirmed. **Run after `09`**: it cannot restore the base, whose season fixed signup on. |
 
 Run **`00-base.md` first**, from no database file. It fixes, in its **Fixture** table, every

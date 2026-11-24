@@ -226,12 +226,12 @@ shorthand, as in `00-base.md` step 32.
     - **Reply:** `⛔ Driver must be in Assigned state to be unassigned (current state: Not Signed Up).`
     - **Log:** ``⛔ `/driver unassign` refused for <you> — Driver must be in Assigned state to be unassigned (current state: Not Signed Up).``
 
-23. **A turned-down driver is placed again.** **Do:** `/driver assign user:9000000000000000003 division:Division 1 team:BRV`
+23. **An unassigned driver is placed again.** **Do:** `/driver assign user:9000000000000000003 division:Division 1 team:BRV`
 
     **Expect:** as step 14, for **Carlos Cortes**, `<@9000000000000000003>`, **Bravo Motorsport**
     in **Division 1**.
 
-24. **Do:** `/driver assign user:9000000000000000004 division:Division 2 team:CHL`
+24. **A turned-down driver is placed again.** **Do:** `/driver assign user:9000000000000000004 division:Division 2 team:CHL`
 
     **Expect:** as step 14, for **Dirk Dekker**, `<@9000000000000000004>`, **Charlie GP** in
     **Division 2**.
