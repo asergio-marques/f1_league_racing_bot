@@ -22,8 +22,8 @@ The order keeps something to act on at each step:
   ongoing season has short of completing it: `/season abort` is refused once placements are
   confirmed, which `02-roster-changes.md` step 26 shows, and is not shown again here.
 - **Part C** sets up a season and aborts it, twice: once in configuration, and once in placements
-  with test mode on and fake drivers seated. An abort leaves nothing of the season, not even its
-  number.
+  with test mode on, after a signup window in which a fake driver signed up. An abort leaves
+  nothing of the season, not even its number.
 - **Part D** packs the bot, which a current season refuses, and claims the same server again with
   `/bot init`. The same server is allowed: a pack frees the claim, and `/bot init` then claims
   whichever server it is given on (`BotCog.handle_bot_init`, `ConfigService.claim_on`). Nothing need
@@ -209,8 +209,8 @@ No season is live now, and test mode is off.
 `/season abort` abandons a season whose placements were never confirmed, in configuration, waiting,
 signups or placements, **as if it had never been**: it is deleted with every record of it, and takes
 no number (`season_end_changes.season_abort_change`). It is shown twice: in configuration, with test
-mode off and nothing in the season; and in placements, with test mode on and two fake drivers
-seated.
+mode off and nothing in the season; and in placements, with test mode on, after a signup window
+opened and closed, and two fake drivers: one signed up and approved, one never signed up.
 
 ### In configuration
 
@@ -262,54 +262,99 @@ seated.
 
 17. **The backup survived the cancellation.** **Do:** `/test-mode backup status`
 
-    **Expect:** as `02-roster-changes.md` step 1: taken at `00-base.md` step 33, `Readable: yes`,
+    **Expect:** as `02-roster-changes.md` step 1: taken at `00-base.md` step 38, `Readable: yes`,
     locked. No log line.
 
 18. **Do:** `/results config append name:Standard`, then `/season config-review`, then, within five
     minutes, press **✅ Confirm configuration** on the question.
 
-    **Expect:** as `02-roster-changes.md` steps 49, 50 and 51: `Standard` attached; the review
+    **Expect:** as `02-roster-changes.md` steps 49 and 50: `Standard` attached; the review
     posted with nothing at fault, its acknowledgement left standing (believed a bot defect, as
-    `00-base.md` step 20 records); then
-    ``✅ Season #2's configuration is confirmed. The season is now in placements — …`` and the log
-    line `<you> | /season config-review | Confirmed` with `season: Season #2` and
-    `stage: PLACEMENTS` beneath.
+    `00-base.md` records of its own review); then, on the press:
+    - **Ack:** `Confirming season 2's configuration`
+    - **Then:** ``✅ Season #2's configuration is confirmed. The season now waits for its signup window — open it with `/signup open`.``
+    - **Log:**
+      ```
+      <you> | /season config-review | Confirmed
+        season: Season #2
+        stage: WAITING
+      ```
+    The signup module is on, so the season waits for its window, test mode or not
+    (`configuration_confirm_change`).
 
-19. **Do:** `/bot pack confirm:CONFIRM`
-
-    **Expect:** as step 13, the stage now read as placements:
-    - **Reply:** `⛔ Season 2 is current (stage: placements). The bot does not leave a server while a season is under way — complete it, or cancel or abort it, first.`
-    - **Log:** the same, as a refusal of `` `/bot pack` ``.
-
-20. **Do:** `/division add name:Division 1 role:@Division 1 tier:1`
-
-    **Expect:** as `00-base.md` step 22.
-
-21. **Do:** `/test-mode roster add driver_name:Adam Archer team_name:ALP division:Division 1 nationality:British`
+19. **Do:** `/bot pack confirm:CONFIRM`, then `/division add name:Division 1 role:@Division 1 tier:1`
 
     **Expect:**
-    - **Ack:** `Adding fake driver **Adam Archer** to **Alpha Racing** in **Division 1**`
+    - The pack, as step 13, the stage now read as waiting:
+      - **Reply:** `⛔ Season 2 is current (stage: waiting). The bot does not leave a server while a season is under way — complete it, or cancel or abort it, first.`
+      - **Log:** the same, as a refusal of `` `/bot pack` ``.
+    - The division, refused: divisions are added only in placements, once the window has closed.
+      - **Reply:** `⛔ Divisions can only be added while the season is in placements — once its configuration is confirmed and its signup window has closed.`
+      - **Log:** ``⛔ `/division add` refused for <you> — Divisions can only be added while the season is in placements — once its configuration is confirmed and its signup window has closed.``
+
+20. **Do:** `/signup open`
+
+    **Expect:** as `00-base.md` opening its own window:
+    - **Ack:** `Opening signups`
+    - **Then:** `✅ Signups opened. Button posted in <#<signup id>>.`
+    - **Posts** (`#signup`): the embed `🏁 Driver Signups Are Open!` with its **Sign Up** button,
+      pinging `@Members`, its time slot the Fixture's `• Monday 20:00 UTC`, which the cancellation
+      kept with the rest of the signup module's settings. The `🔒 Signups are now closed.` notice
+      the base's close left in `#signup` is deleted.
+    - **Log:** `<you> | /signup open | Success`
+    - The season moves from waiting to signups.
+
+21. **A fake driver who never signs up.** **Do:** `/test-mode roster add driver_name:Adam Archer`
+
+    **Expect:**
+    - **Ack:** `Adding fake driver **Adam Archer**`
     - **Then:**
       ```
-      ✅ Added fake driver **Adam Archer** to **Alpha Racing** in **Division 1**.
-      Nationality: **British**
+      ✅ Added fake driver **Adam Archer**.
       Mention string (copy-paste into results): `<@9000000000000000001>`
       ```
       The first identifier again: the cancellation deleted every fake driver, and a single add
-      takes one above the highest left (`_next_synthetic_id_on`).
+      takes one above the highest left (`_next_synthetic_id_on`). The driver is created at Not
+      Signed Up, with no seat.
     - **Log:**
       ```
       <you> | /test-mode roster add | Success
         driver: Adam Archer
-        team: Alpha Racing
-        division: Division 1
-        nationality: British
       ```
 
-22. **Do:** `/test-mode roster add driver_name:Bruno Bianchi team_name:ALP division:Division 1 nationality:Italian`
+22. **A fake driver signed up, and the window closed.** **Do:** `/test-mode roster sign-up-bulk`. In
+    the form **Sign up fake drivers**, paste the following into **Paste ID,Driver name,Nationality**,
+    and submit; then, once it has answered, `/signup close`.
 
-    **Expect:** as step 21, for **Bruno Bianchi**, `Nationality: **Italian**`, the mention string
-    `<@9000000000000000002>`, and the log line's `driver:` and `nationality:` lines to match.
+    ```
+    9000000000000000002,Bruno Bianchi,
+    ```
+
+    The nationality is left blank, as the form allows; the trailing comma is its third column.
+
+    **Expect:**
+    - The sign-up:
+      - **Ack:** `Signing up 1 fake driver`
+      - **Then:** ``✅ Signed up and approved **1** fake driver(s). Seat each with `/driver assign`.``
+      - **Log:**
+        ```
+        <you> | /test-mode roster sign-up-bulk | Success
+          drivers_signed_up: 1
+        ```
+      Bruno Bianchi is created, signed up with the default answers and approved, and left
+      Unassigned with no seat; nothing posts for a fake driver (`signup/services/fake_signups.py`).
+    - The close, with no confirmation asked: nobody is part-way through a signup, Adam Archer
+      never having started one and Bruno Bianchi being Unassigned.
+      - **Ack:** `Closing signups`
+      - **Then:** `✅ Signups closed.`
+      - **Posts** (`#signup`): step 20's message, with its **Sign Up** button, deleted, and
+        `🔒 Signups are now closed.` posted.
+      - **Log:**
+        ```
+        <you> | /signup close | Success
+          drivers_returned_to_not_signed_up: 0
+        ```
+    - The season moves from signups to placements. Neither driver is seated: the abort needs none.
 
 23. **Do:** `/season abort confirm:Confirm`
 
@@ -322,23 +367,24 @@ seated.
     **Expect:**
     - **Ack:** `Aborting the season being set up`
     - **Then:** ``✅ The season has been aborted. Nothing of it remains, and a new season may be set up with `/season setup`.``
-    - **Posts:** nothing. Under test mode the abort first clears what test mode posted, and nothing
-      was posted.
+    - **Posts:** nothing. No signup window stands open, and under test mode the abort first clears
+      what test mode posted, and nothing was posted.
     - **Roles:** none taken. Fake drivers hold none.
     - **Log:**
       ```
       <you> | /season abort | Success
-        drivers returned to Not Signed Up: 2
+        drivers returned to Not Signed Up: 1
         drivers deleted: 0
       ```
-      Both fake drivers were seated, and the driver pass returns them to Not Signed Up; it deletes
-      only real drivers who never raced. The fake drivers are deleted by test mode being switched
-      off, in the same save, which the line does not count (`run_driver_pass_on`,
-      `switch_test_mode_off_on`).
+      The driver pass returns every driver Unassigned, Assigned, mid-signup or in review to Not
+      Signed Up: Bruno Bianchi, Unassigned, is counted; Adam Archer, at Not Signed Up already, is
+      not. The pass deletes only real drivers who never raced. The fake drivers are deleted by test
+      mode being switched off, in the same save, which the line does not count
+      (`run_driver_pass_on`, `switch_test_mode_off_on`).
     - **Test mode is off**, and both fake drivers are gone. **The saved backup is kept**:
       `bot.bkup.db`, `scheduler.bkup.db` and `backup.lock` are still in the bot host folder.
 
-25. **Do:** `/test-mode roster list division:Division 1`
+25. **Do:** `/test-mode roster list`
 
     **Expect:**
     - **Reply:** `⛔ This command is only available when test mode is enabled.`
@@ -378,7 +424,8 @@ refused for the tier, for the word and for the channel; they are not shown again
       ```
       Twelve team roles: the eleven teams' and the Reserve team's, which `/team reserve-role` keeps
       in the same table (`team_changes`, `TeamRoleService.set_team_role_config_on`). No signup
-      wizard: test mode opened no signup window.
+      wizard: nobody signed up through the wizard, and a fake driver's signup is made without one
+      (`signup/services/fake_signups.py`).
       The scheduled jobs cleared are **0**, or **1** where step 26 comes within five minutes of
       step 18's question: that review's `review_expiry` timer is still armed, and the pack clears
       it with the rest. Any other number names jobs that outlived the season. The cancellation
@@ -388,8 +435,9 @@ refused for the tier, for the word and for the channel; they are not shown again
 27. **Nothing in Discord changed.** Look at the Fixture's channels.
 
     **Expect:**
-    - Every post stands: the lineups, standings and attendance sheets `00-base.md` step 32 posted,
-      and the cancellation notices and calendars of step 5. The pack changes the database alone.
+    - Every post stands: the lineups, standings and attendance sheets `00-base.md` step 37 posted,
+      the cancellation notices and calendars of step 5, and the `🔒 Signups are now closed.` notice
+      of step 22 in `#signup`. The pack changes the database alone.
     - Nothing in the bot host folder changed: no new file, and the saved backup still there.
     - **Host check (optional):**
       `sqlite3 bot.db "SELECT server_id, log_channel_id, base_role_id, test_mode_active FROM server_configs;"`
@@ -532,7 +580,7 @@ server owner's alone, from any channel, and nothing inside the bot can undo it.
         line `• <fault>` for each follow.
     - **Discord:** every message **of the bot's** is deleted from the channels it posts to, in
       every season: the lineups, calendars, standings and attendance sheets of `00-base.md`
-      step 32, the cancellation notices of step 5, and every line in `#bot-log`. A message of
+      step 37, the cancellation notices of step 5, and every line in `#bot-log`. A message of
       anybody else's is left where it is. No channel is deleted.
     - **Log**, once the clean-up ends, in `#bot-log`, the one message of the bot's left there:
       ```
