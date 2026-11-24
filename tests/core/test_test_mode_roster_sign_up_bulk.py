@@ -120,8 +120,10 @@ def _command() -> Any:
 
 
 def _asks(league):
-    """Admin's (77) interaction, recording every word they are told."""
+    """Admin's (77) interaction on the league's server, recording every word they are told, so
+    that what is asked of the server through it is seen as `_on_discord` sees the league's."""
     asked = member_asks(league.bot, user=member(ACTOR_ID, "Admin", "Admin#0001"))
+    asked.guild = league.guild
     asked.response.send_modal = AsyncMock()
     return asked
 
@@ -307,7 +309,6 @@ async def test_its_drivers_are_placed_as_any_approved_driver_is(league):
         "INSERT INTO team_seats (team_instance_id, seat_number) VALUES (?, 2)", MCLAREN
     )
     assigning = _asks(league)
-    assigning.guild = league.guild
     await undecorate(DriverTestCog.assign)(
         DriverTestCog(league.bot), assigning, user=ALPHA, division="Am", team="McLaren"
     )
