@@ -3,14 +3,17 @@
 Core judges an amendment's own rules and asks each module for its part. Attendance's part is the
 check-in: whether each of its windows (the call, the last notice, the deadline) would have run
 already were the round always to have stood at its new moment, the refusal of a round brought
-inside its deadline, the warnings of a call or a reminder already due, and whether the call is
-posted again or the check-in stays closed. `judge_check_in` is pure: no database, no Discord.
+inside its deadline, the refusals of a round moved inside its last notice or once its last notice
+is posted, the warning of a call already due, and whether the call is posted again or the check-in
+stays closed. `judge_check_in` is pure: no database, no Discord.
 
 Every test pins ``now`` alongside the dates it seeds.
 """
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+
+import pytest
 
 from leaguebot.attendance.models.attendance import AttendanceWindows
 
@@ -20,11 +23,38 @@ NOW = datetime(2026, 6, 1, 12, 0, tzinfo=timezone.utc)
 DEFAULT_ATTENDANCE = AttendanceWindows(notice_days=5, last_notice_hours=24, deadline_hours=2)
 
 
-def _judged(moment: datetime, windows: AttendanceWindows | None = DEFAULT_ATTENDANCE):
-    """The check-in's part of an amendment leaving the round at *moment*, judged at NOW."""
+def _judged(
+    moment: datetime, windows: AttendanceWindows | None = DEFAULT_ATTENDANCE, **standing: bool
+):
+    """The check-in's part of an amendment leaving the round at *moment*, judged at NOW, with
+    *standing* (``called``, ``notified``, ``moved``) where a test gives it."""
     from leaguebot.attendance.services.check_in.check_in_amendment_rules import judge_check_in
 
-    return judge_check_in(moment=moment, now=NOW, windows=windows)
+    return judge_check_in(moment=moment, now=NOW, windows=windows, **standing)
+
+
+#: The call warning where no call has gone out yet, and where one stands (#606).
+POSTED_AT_ONCE = "The check-in call for that moment is already due, so it will be posted at once."
+POSTED_AGAIN = (
+    "The check-in call for that moment is already due, so the call already posted will be "
+    "posted again at once, carrying what changed and keeping every answer given to it."
+)
+#: The refusals a move earns once its last notice has passed or been posted (#606).
+LAST_NOTICE_PASSED = (
+    "The check-in last notice for that moment has already passed, so drivers would have no time "
+    "left to answer the check-in. Move it further out, or shorten the last notice."
+)
+LAST_NOTICE_POSTED = (
+    "The check-in last notice for this round has already been posted, so its check-in cannot be "
+    "run again this close to the race. Move it far enough out that its check-in call is still to "
+    "come."
+)
+DEADLINE_PASSED = (
+    "The check-in deadline for that moment has already passed, so the round would have no "
+    "check-in at all. Move it further out, or shorten the deadline."
+)
+NO_LAST_NOTICE = AttendanceWindows(notice_days=5, last_notice_hours=0, deadline_hours=2)
+_NOT_YET = "#606: the check-in judgement is not yet told whether a call or last notice stands"
 
 
 # ---------------------------------------------------------------------------
@@ -59,18 +89,71 @@ def test_a_deadline_falling_exactly_now_counts_as_passed():
     assert _judged(NOW + timedelta(hours=2)).part.refusals
 
 
-def test_a_round_just_beyond_its_deadline_is_allowed_and_warns():
-    """A round brought to three hours away, inside its call window but not its deadline, as a
-    round an hour away delayed by two is: nothing refused, and the league warned what it costs.
-    The call and the reminder would still have gone out, so they stand; a moment already past is
-    never honoured retroactively. Only the deadline, which has not yet come round under the new
-    moment, is armed again."""
-    judgement = _judged(NOW + timedelta(hours=3))
-    assert not judgement.part.refusals
-    assert judgement.part.warnings, "a round this close must not be moved silently"
-    assert judgement.windows["call"].stands
-    assert judgement.windows["last_notice"].stands
-    assert judgement.windows["deadline"].rearm
+@pytest.mark.parametrize("hours_out, windows, standing, refusals, warnings", [
+    pytest.param(48, DEFAULT_ATTENDANCE, dict(called=False, notified=False, moved=True),
+                 (), (POSTED_AT_ONCE,), id="no-call-yet-last-notice-ahead",
+                 marks=pytest.mark.xfail(strict=True, reason=_NOT_YET)),
+    pytest.param(48, DEFAULT_ATTENDANCE, dict(called=True, notified=False, moved=True),
+                 (), (POSTED_AGAIN,), id="call-standing-last-notice-ahead",
+                 marks=pytest.mark.xfail(strict=True, reason=_NOT_YET)),
+    pytest.param(3, DEFAULT_ATTENDANCE, dict(called=False, notified=False, moved=True),
+                 (LAST_NOTICE_PASSED,), (), id="no-call-yet-last-notice-passed",
+                 marks=pytest.mark.xfail(strict=True, reason=_NOT_YET)),
+    pytest.param(3, DEFAULT_ATTENDANCE, dict(called=True, notified=False, moved=True),
+                 (LAST_NOTICE_PASSED,), (), id="call-standing-last-notice-passed",
+                 marks=pytest.mark.xfail(strict=True, reason=_NOT_YET)),
+    pytest.param(48, DEFAULT_ATTENDANCE, dict(called=True, notified=True, moved=True),
+                 (LAST_NOTICE_POSTED,), (), id="last-notice-posted",
+                 marks=pytest.mark.xfail(strict=True, reason=_NOT_YET)),
+    pytest.param(3, DEFAULT_ATTENDANCE, dict(called=True, notified=True, moved=True),
+                 (LAST_NOTICE_POSTED,), (), id="last-notice-posted-and-its-moment-passed",
+                 marks=pytest.mark.xfail(strict=True, reason=_NOT_YET)),
+    pytest.param(1, DEFAULT_ATTENDANCE, dict(called=True, notified=True, moved=True),
+                 (DEADLINE_PASSED,), (), id="deadline-passed",
+                 marks=pytest.mark.xfail(strict=True, reason=_NOT_YET)),
+    pytest.param(144, DEFAULT_ATTENDANCE, dict(called=True, notified=True, moved=True),
+                 (), (), id="call-ahead-again-after-the-last-notice",
+                 marks=pytest.mark.xfail(strict=True, reason=_NOT_YET)),
+    pytest.param(3, NO_LAST_NOTICE, dict(called=False, notified=False, moved=True),
+                 (), (POSTED_AT_ONCE,), id="no-last-notice-at-all",
+                 marks=pytest.mark.xfail(strict=True, reason=_NOT_YET)),
+    pytest.param(3, DEFAULT_ATTENDANCE, dict(called=True, notified=True, moved=False),
+                 (), (POSTED_AGAIN,), id="circuit-corrected-after-the-last-notice",
+                 marks=pytest.mark.xfail(strict=True, reason=_NOT_YET)),
+])
+def test_a_round_inside_its_call_window_is_offered_or_refused_by_its_last_notice(
+    hours_out, windows, standing, refusals, warnings
+):
+    """The owner's rule of 2026-11-24 (#606). A round left *hours_out* from now, its check-in
+    call five days before it, last notice 24 hours (or none, where it is 0) and deadline 2 hours,
+    so the call's moment has passed in every case but the one six days out. Whether a call has
+    gone out, whether its last notice has, and whether the amendment moves the round, as given:
+    - two days out, last notice still ahead and not posted: allowed, warned that the call is
+      posted at once where none stands, or posted again keeping every answer where one does;
+    - three hours out, the last notice's moment passed: refused, call or none;
+    - the last notice already posted: refused while the call's moment is past, that refusal alone
+      even where the last notice's moment has passed too; six days out, the call ahead again,
+      allowed with no warning;
+    - an hour out, the deadline passed: the deadline refusal alone, as today;
+    - no last notice at all: three hours out is allowed, warned the call is posted at once;
+    - a circuit corrected three hours out without moving the round, last notice posted: allowed,
+      warned the call is posted again, as today.
+    "This round will get no reminder" is never warned of."""
+    judgement = _judged(NOW + timedelta(hours=hours_out), windows, **standing)
+    assert judgement.part.refusals == refusals
+    assert judgement.part.warnings == warnings
+
+
+@pytest.mark.xfail(strict=True, reason=_NOT_YET)
+def test_a_move_refused_for_its_last_notice_keeps_what_an_allowed_one_keeps():
+    """A round three hours out on the default windows, its call posted and its last notice not.
+    Moved there, it is refused for its last notice; corrected there without moving, it is allowed.
+    Both keep the same for the save and the arming (reopened), the re-arming of a round judging it
+    as it stands and arming from what is kept, whatever is refused."""
+    refused = _judged(NOW + timedelta(hours=3), called=True, notified=False, moved=True)
+    allowed = _judged(NOW + timedelta(hours=3), called=True, notified=False, moved=False)
+    assert refused.part.refusals and not allowed.part.refusals
+    assert refused.part.kept == allowed.part.kept == {"reopened": True}
 
 
 def test_the_deadline_is_not_judged_while_attendance_is_disabled():
