@@ -647,7 +647,8 @@ class TeamService:
             # confirmed as empty: that driver is outside the championship.
             seat_rows = await (
                 await db.execute(
-                    "SELECT ts.seat_number, dp.id AS driver_profile_id, dp.discord_user_id "
+                    "SELECT ts.seat_number, dp.id AS driver_profile_id, dp.discord_user_id, "
+                    "dp.is_test_driver, dp.test_display_name "
                     "FROM team_seats ts "
                     "LEFT JOIN driver_profiles dp ON dp.id = ts.driver_profile_id "
                     + (f"AND {uncommitted_seat_excluded('ts')} " if committed_only else "")
@@ -666,6 +667,8 @@ class TeamService:
                         "seat_number": s["seat_number"],
                         "driver_profile_id": s["driver_profile_id"],
                         "discord_user_id": s["discord_user_id"],
+                        "is_test_driver": bool(s["is_test_driver"]),
+                        "test_display_name": s["test_display_name"],
                     }
                     for s in seat_rows
                 ],

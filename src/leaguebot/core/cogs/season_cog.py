@@ -867,8 +867,12 @@ class SeasonCog(commands.Cog):
             teams = await self.bot.team_service.get_division_teams(division.id)
             block = [f"\U0001f4c2 **{division.name}** — lineup once confirmed"]
             for team in teams:
+                # A fake driver is named as the posted lineup names it, its test name beside the
+                # mention of an account no member holds (`LineupPoster._lineup_embed`).
                 seated = [
-                    f"<@{seat['discord_user_id']}>"
+                    f"<@{seat['discord_user_id']}> ({seat['test_display_name']})"
+                    if seat.get("is_test_driver") and seat.get("test_display_name")
+                    else f"<@{seat['discord_user_id']}>"
                     for seat in team["seats"]
                     if seat["discord_user_id"] is not None
                 ]
