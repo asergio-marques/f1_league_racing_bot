@@ -12,9 +12,10 @@ speeds it up.
 the save is the one the save writes under (`slots_on`, `config_on`, `window_state_on`,
 `live_season_stage_on`).
 
-**`fake_signups_faults_on` hands its faults back as values**, every one that stands, for core to
-gather into the refusal; it answers whatever the module's switch says, naming the switch itself
-as the first fault. **`fake_signups_approved_on` raises where the module is off, or no window is
+**`fake_signups_faults_on` hands its faults back as values**, for core to gather into the
+refusal; it answers whatever the module's switch says: the switch alone while the module is off,
+else the configuration alone while there is none, else signups not open and no availability slot,
+each that stands. **`fake_signups_approved_on` raises where the module is off, or no window is
 open**: the faults above have refused the helper before the first write, so that state in the save
 is a bug or a race the queue's own failure path (the stopped lane) is there for, and it must not be
 turned into a quiet success or a refusal after drivers were created.
