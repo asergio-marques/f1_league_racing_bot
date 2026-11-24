@@ -1006,7 +1006,7 @@ sets up Season #2 with test mode on, leaving it in configuration.
 
 73. **Do:** `/season cancel confirm:CONFIRM`
 
-    **Expect:** as `02-roster-changes.md` step 27: `Cancelling season 1`, then
+    **Expect:** as `02-roster-changes.md` step 31: `Cancelling season 1`, then
     `✅ Season cancelled.`, the cancellation notices in each division's check-in, weather and
     results channels, each calendar posted again with its rounds cancelled, and the line
     `<you> | /season cancel | Success`. Test mode is off and the fake drivers deleted. **The saved
@@ -1025,11 +1025,11 @@ sets up Season #2 with test mode on, leaving it in configuration.
 
 75. **Do:** `/season setup game_edition:25`
 
-    **Expect:** as `02-roster-changes.md` step 43: **Season #2 (F1 25)** is being configured.
+    **Expect:** as `02-roster-changes.md` step 47: **Season #2 (F1 25)** is being configured.
 
 76. **Do:** `/test-mode toggle`
 
-    **Expect:** as `02-roster-changes.md` step 45: test mode **enabled**, with no `📌 Added default
+    **Expect:** as `02-roster-changes.md` step 49: test mode **enabled**, with no `📌 Added default
     point configs` line, and the line `<you> | /test-mode toggle | Success` with
     `test_mode: enabled` beneath. This switches test mode **on**; never run it again in this spec.
 

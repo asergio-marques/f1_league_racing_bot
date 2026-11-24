@@ -737,7 +737,7 @@ that the cancellation reads as that spec gives it.
 
 41. **Do:** `/season cancel confirm:CONFIRM`
 
-    **Expect:** as `02-roster-changes.md` step 27: `Cancelling season 1`, `✅ Season cancelled.`,
+    **Expect:** as `02-roster-changes.md` step 31: `Cancelling season 1`, `✅ Season cancelled.`,
     the cancellation notices in each division's channels, and `<you> | /season cancel | Success`.
     Test mode is off and the fake drivers deleted; `bot.bkup.db`, `scheduler.bkup.db` and
     `backup.lock` remain.
@@ -745,14 +745,14 @@ that the cancellation reads as that spec gives it.
 42. **Do:** `/season setup game_edition:25`, then `/test-mode toggle`, then
     `/results config append name:Standard`, each once the last has answered.
 
-    **Expect:** as `02-roster-changes.md` steps 43, 45 and 49: Season #2 (F1 25) set up, test
+    **Expect:** as `02-roster-changes.md` steps 47, 49 and 53: Season #2 (F1 25) set up, test
     mode on with no configurations seeded, and `Standard` attached.
 
 ### A review standing, and its five minutes run out while the bot is down
 
 43. **Do:** `/season config-review`
 
-    **Expect:** as `02-roster-changes.md` step 50: the review in `#bot-commands`, headed
+    **Expect:** as `02-roster-changes.md` step 54: the review in `#bot-commands`, headed
     `**Configuration Review (Season #2 — F1 25)**`, its question last with
     **✅ Confirm configuration**, and `<you> | /season config-review | Review posted`. The
     acknowledgement stands unchanged, as `00-base.md` step 21 records.
@@ -809,7 +809,7 @@ that the cancellation reads as that spec gives it.
 46. **Only in (b): the button answers after the restart.** **Do:** within five minutes of the
     question, press **✅ Confirm configuration**.
 
-    **Expect:** as `02-roster-changes.md` step 51:
+    **Expect:** as `02-roster-changes.md` step 55:
     - **Ack:** `Confirming season 2's configuration`
     - **Then:** ``✅ Season #2's configuration is confirmed. The season now waits for its signup window — open it with `/signup open`.``
       The signup module is on, so the season waits for its window, test mode or not

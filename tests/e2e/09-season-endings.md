@@ -20,7 +20,7 @@ The order keeps something to act on at each step:
 
 - **Part B** cancels Season #1, the base's running season. A cancellation is the one end an
   ongoing season has short of completing it: `/season abort` is refused once placements are
-  confirmed, which `02-roster-changes.md` step 26 shows, and is not shown again here.
+  confirmed, which `02-roster-changes.md` step 30 shows, and is not shown again here.
 - **Part C** sets up a season and aborts it, twice: once in configuration, and once in placements
   with test mode on, after a signup window in which a fake driver signed up. An abort leaves
   nothing of the season, not even its number.
@@ -131,7 +131,7 @@ every division before it records the season's end (`cancellation_changes`, `seas
 
 5. **Do:** `/season cancel confirm:CONFIRM`
 
-   **Expect:** as `02-roster-changes.md` step 27, in full:
+   **Expect:** as `02-roster-changes.md` step 31, in full:
    - **Ack:** `Cancelling season 1`
    - **Then:** `✅ Season cancelled.`, followed, where a calendar drew with notices, by a blank line
      and a `⚠️ **Image notices**` section naming each calendar with its notices.
@@ -216,7 +216,7 @@ opened and closed, and two fake drivers: one signed up and approved, one never s
 
 11. **Do:** `/season setup game_edition:25`
 
-    **Expect:** as `02-roster-changes.md` step 43: **Season #2 (F1 25)**, the next number after the
+    **Expect:** as `02-roster-changes.md` step 47: **Season #2 (F1 25)**, the next number after the
     cancelled Season #1, which the league keeps.
 
 12. **Do:** `/season status`
@@ -257,7 +257,7 @@ opened and closed, and two fake drivers: one signed up and approved, one never s
 
 16. **Do:** `/test-mode toggle`
 
-    **Expect:** as `02-roster-changes.md` step 45: ``✅ Test mode **enabled**. …``, with no
+    **Expect:** as `02-roster-changes.md` step 49: ``✅ Test mode **enabled**. …``, with no
     `📌 Added default point configs` line, the server already holding `Standard` and `Half Points`.
 
 17. **The backup survived the cancellation.** **Do:** `/test-mode backup status`
@@ -268,7 +268,7 @@ opened and closed, and two fake drivers: one signed up and approved, one never s
 18. **Do:** `/results config append name:Standard`, then `/season config-review`, then, within five
     minutes, press **✅ Confirm configuration** on the question.
 
-    **Expect:** as `02-roster-changes.md` steps 49 and 50: `Standard` attached; the review
+    **Expect:** as `02-roster-changes.md` steps 53 and 54: `Standard` attached; the review
     posted with nothing at fault, its acknowledgement left standing (believed a bot defect, as
     `00-base.md` records of its own review); then, on the press:
     - **Ack:** `Confirming season 2's configuration`
