@@ -840,9 +840,6 @@ async def test_an_amendment_stopped_after_its_judgement_and_retried_once_the_dea
     assert reposts.posted == []
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#605: the save does not judge the division's other rounds again",
-)
 async def test_a_moment_taken_by_another_round_while_the_amendment_stood_stopped_is_refused_by_the_save(
     tmp_path,
 ):
