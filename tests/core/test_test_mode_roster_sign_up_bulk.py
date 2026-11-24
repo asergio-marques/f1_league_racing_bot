@@ -269,6 +269,60 @@ async def test_a_pasted_list_signs_up_and_approves_every_driver_in_one_save(leag
     assert "Mock Alpha" in listed and "Mock Beta" in listed
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_BUILT)
+async def test_its_drivers_are_placed_as_any_approved_driver_is(league):
+    """The core specification's test mode: a fake driver is placed by `/driver assign` once
+    approved, indistinguishable thereafter from a real one. Signups are open, the season at
+    Signups, and Valtteri (106), a real driver approved and never placed, holds a signup whose lap
+    times total 1:23.456. Admin (77) submits Mock Alpha and Mock Beta to `/test-mode roster
+    sign-up-bulk` and the queue runs it. Admin's `/signup unassigned list` lists Valtteri first,
+    seeded by his time, then Mock Alpha and Mock Beta, who hold none; and the placements review's
+    list of unsettled signups names Mock Alpha and Mock Beta by their test names, each not yet
+    placed. Signups then close, the season moving to Placements with McLaren's second seat in Am
+    free, and Admin runs the test-mode `/driver assign` of Mock Alpha, by ID, to McLaren in Am, and
+    the queue runs it: Mock Alpha is Assigned, seated at McLaren, and the review's list no longer
+    names him, Mock Beta still unplaced."""
+    from leaguebot.core.cogs.driver_test_cog import DriverTestCog
+    from leaguebot.core.services.seasons.approval_checks import unsettled_signups
+    from tests.support.season_league import MCLAREN, approved_unplaced
+    from tests.support.undecorate import undecorate
+
+    await approved_unplaced(league)
+    await league.write(
+        "UPDATE signup_records SET total_lap_ms = 83456 WHERE discord_user_id = '106'"
+    )
+    await _submit(league, _asks(league))
+    await run_queue(league.bot)
+
+    listing = _asks(league)
+    await _unassigned_list(league, listing)
+    listed = "\n".join(said(listing))
+    assert listed.index("Valtteri") < listed.index("Mock Alpha") < listed.index("Mock Beta")
+    unsettled = await unsettled_signups(league.db_path, league.bot.driver_names_read)
+    assert "**Mock Alpha** — not yet placed" in unsettled
+    assert "**Mock Beta** — not yet placed" in unsettled
+
+    await _signups_closed(league)
+    await league.write("UPDATE seasons SET stage = 'PLACEMENTS' WHERE id = ?", SEASON_ID)
+    await league.write(
+        "INSERT INTO team_seats (team_instance_id, seat_number) VALUES (?, 2)", MCLAREN
+    )
+    assigning = _asks(league)
+    assigning.guild = league.guild
+    await undecorate(DriverTestCog.assign)(
+        DriverTestCog(league.bot), assigning, user=ALPHA, division="Am", team="McLaren"
+    )
+    await run_queue(league.bot)
+
+    assert [
+        (row["test_display_name"], row["current_state"], row["team_instance_id"])
+        for row in await _drivers(league)
+    ] == [("Mock Alpha", "ASSIGNED", MCLAREN), ("Mock Beta", "UNASSIGNED", None)]
+    unsettled = await unsettled_signups(league.db_path, league.bot.driver_names_read)
+    assert not any("Mock Alpha" in line for line in unsettled)
+    assert "**Mock Beta** — not yet placed" in unsettled
+
+
 def _on_discord(league) -> dict[str, Any]:
     """What the league's server has been asked for but the log channel: every channel created,
     what every channel and the interaction channel were posted, every role granted, and every
