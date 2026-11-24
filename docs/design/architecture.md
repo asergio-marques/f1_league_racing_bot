@@ -207,9 +207,12 @@ point, which would then hold every module's registrations and grow with each mod
   in core's cog, the signup part handed to signup through two hooks (`fake_signups_ready_read`,
   `fake_signups_approved`). A roster's tool belongs with the roster, which core owns, and the
   command creates drivers, which only core does; what it asks of signup is a read and a signup's own
-  record, which a hook carries without part of signup moving into core. It is the one tool for
-  test mode that sits in core's group for a module's part, and a further one needs the same
-  reasons.
+  record, which a hook carries without part of signup moving into core. Its two hooks are therefore
+  named for what the roster asks of signing up, not for a moment of core's, and with nothing signed
+  up to the first core refuses; that is the price, accepted for this command alone, and core still
+  holds none of signup's rules. It is the one command under `/test-mode` whose work is chiefly a
+  module's, rather than a moment of core's the modules join as `/test-mode advance` and `toggle` are;
+  a further one needs the same reasons.
 - **A service** holds the league's rules and all the database code. It may use discord.py: it can
   post to a channel and build the buttons it posts, and a workflow, to which a cog hands a button's
   press, takes the pressed interaction and answers the member through it, while the gates it walks
@@ -287,12 +290,13 @@ a division or a season cancelled, a round's results made final, placements confi
 approval saved, a season's configuration confirmed, a review gathering its lines, the placements
 review gathering each division's lines, a division's channel faults read, a channel's uses read as a
 command sets it or as a module is switched on (weather, results, attendance and signup answer it
-only while the module is on), the channels a picture posts to read as an output is switched to one or
-the image module is switched on (core answers it for the lineup and the calendar, and weather,
+only while the module is on), the channels a picture posts to read as an output is switched to one
+or the image module is switched on (core answers it for the lineup and the calendar, and weather,
 results and attendance each for their own outputs, only while on), the factory reset gathering the
 channels each module holds, a round's drawn phases read, a driver's signup name, username and
 nationality read for a season, with whether a nationality is collected, which the modules that draw
-a driver ask through core's reader, the divisions a driver's accounts raced in read, the faults in the way of signing fake drivers up read and the fake drivers signed up and approved, a driver's
+a driver ask through core's reader, the divisions a driver's accounts raced in read, the faults in
+the way of signing fake drivers up read and the fake drivers signed up and approved, a driver's
 standing in a division read for the season's history, a season's fingerprint taken, a season's
 pending test-mode steps read, the test-mode review's marks read, a season's confirmation judged, a
 division's final round read, a season ending, a season, division, round or driver deleted, a driver
