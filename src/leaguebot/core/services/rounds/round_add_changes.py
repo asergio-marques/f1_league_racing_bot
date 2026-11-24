@@ -56,7 +56,7 @@ from leaguebot.framework.services.queue.change_types import (
     StepContext,
 )
 from leaguebot.framework.services.switches.module_service import SwitchNotSignedUp
-from leaguebot.core.services.seasons.season_service import renumber_rounds_on
+from leaguebot.core.services.seasons.season_service import renumber_rounds_on, round_holding
 from leaguebot.core.utils.formatting import format_round_list
 from leaguebot.utils.messages import discord_ts
 from leaguebot.core.utils.input_validator import parse_datetime
@@ -203,7 +203,7 @@ def _add_check(
         # Two rounds of one division may not share a moment: the confirmation of placements
         # refuses a season that holds such a pair, and it is refused here instead, at the change
         # that would cause it, rather than at an approval days later.
-        clash = next((r for r in held if r.scheduled_at == moment), None)
+        clash = round_holding(held, moment)
         if clash is not None:
             return Verdict.refuse(
                 f"❌ **{division.name}** already holds round {clash.round_number} at "

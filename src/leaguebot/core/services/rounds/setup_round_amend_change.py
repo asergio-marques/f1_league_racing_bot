@@ -59,7 +59,11 @@ from leaguebot.core.services.rounds.round_add_changes import (
     saved_result,
 )
 from leaguebot.core.services.rounds.round_amend_change import NOTHING_AMENDED
-from leaguebot.core.services.seasons.season_service import SeasonService, renumber_rounds_on
+from leaguebot.core.services.seasons.season_service import (
+    SeasonService,
+    renumber_rounds_on,
+    round_holding,
+)
 from leaguebot.core.utils.formatting import format_round_list
 from leaguebot.utils.messages import discord_ts
 from leaguebot.core.utils.input_validator import parse_datetime
@@ -228,7 +232,7 @@ def _check(seasons: SeasonService) -> Callable[[CheckContext], Awaitable[Verdict
         # that would cause it. The round's own moment, restated, is no clash.
         moment = asked.get("scheduled_at")
         if moment is not None:
-            clash = next((r for r in held if r.id != rnd.id and r.scheduled_at == moment), None)
+            clash = round_holding(held, moment, other_than=rnd)
             if clash is not None:
                 return Verdict.refuse(
                     f"❌ **{division.name}** already holds round {clash.round_number} at "
