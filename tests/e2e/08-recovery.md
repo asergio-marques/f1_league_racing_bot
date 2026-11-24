@@ -665,7 +665,7 @@ a restart loses them. The panel is not one of the reviews the start-up takes dow
     - **Reply**, seen by you alone, with **✅ Approve** and **❌ Reject**:
       ```
       **1 change staged:**
-      Standard/FEATURE_RACE/P1: 30 → 35
+      Standard, Feature Race, P1: 30 → 35
 
       Approve or reject these changes?
       ```
