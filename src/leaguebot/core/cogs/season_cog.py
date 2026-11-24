@@ -1003,7 +1003,7 @@ class SeasonCog(commands.Cog):
         lines.append("**Teams**")
         for team in teams:
             role = f"<@&{team['role_id']}>" if team["role_id"] else "no role"
-            lines.append(f"  {team['name']} → {role}")
+            lines.append(f"  {team['full_name']} — `{team['name']}` → {role}")
         lines.append("")
         if not any(team["is_reserve"] and team["role_id"] for team in teams):
             lines += [
