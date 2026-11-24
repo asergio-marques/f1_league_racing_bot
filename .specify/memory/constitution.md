@@ -1,6 +1,23 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-11-24 — v14.18.0 → v14.18.1: PATCH — a team's shorthand is no longer typed in a test roster (issue #600)]
+  Version change    : 14.18.0 → 14.18.1
+  Bump rationale    : PATCH: a stale example corrected. A test roster carries no team since fake
+                      drivers are created from an identifier and a name alone and placed by
+                      `/driver assign`; the rule itself (a team is typed by its shorthand alone) is
+                      unchanged.
+
+  Modified sections :
+    - Data & State Management, A team's three names: "and in a test roster" dropped from where a
+      shorthand is typed.
+
+  Added sections    : none.
+  Removed sections  : none.
+  Templates checked : .specify/templates/*.md cite principles by number only — no change needed.
+  Documents to follow: none; the core specification already says a test roster carries no team.
+  Deferred / TODO   : none.
+
 [2026-11-23 — v14.17.0 → v14.18.0: MINOR — test mode's fake drivers sign up like any driver (issue #600)]
   Version change    : 14.17.0 → 14.18.0
   Bump rationale    : MINOR, sized by how much it matters: the owner's decisions of 2026-11-23
@@ -6048,8 +6065,8 @@ point:
   whenever that configuration is read or written and none is present.
 - **A team's three names**: A team MUST carry a **full name**, a **shorthand** and a **role**,
   and each MUST do one job and no other. The **full name** is what is shown wherever a team is
-  named to a league. The **shorthand** is the only text by which a team is typed — in a command,
-  in the team column of a results submission, and in a test roster — and is the datum its artwork
+  named to a league. The **shorthand** is the only text by which a team is typed — in a command
+  and in the team column of a results submission — and is the datum its artwork
   is named after. The **role** is granted to the team's drivers and is what the team is mentioned
   by; it MUST NOT name a team where one is typed. A command taking a team SHOULD offer the
   shorthands as the manager types, each suggestion carrying the full name beside it. Text that is
@@ -9167,4 +9184,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 14.18.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-11-23
+**Version**: 14.18.1 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-11-24
