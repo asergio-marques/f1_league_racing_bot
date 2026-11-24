@@ -9,13 +9,14 @@ ending Unassigned with no seat. It obeys the signup flow: it is refused unless s
 the signup module on and configured with at least one availability slot. No channel, wizard,
 review panel, role, post or timer is made. Seating stays `/driver assign`.
 
-These run on `setup_league`'s league at Signups with the window open (`SIGNUP_CHANNEL`), test
-mode on and its nationality switch on, two availability slots (Monday 19:00 and Wednesday 20:00)
+These run on `setup_league`'s league at Signups with the window open (`SIGNUP_CHANNEL`), or,
+where a test asks for it, `ongoing_league`'s season at Ongoing, signups open; test mode on and its nationality switch on, two availability slots (Monday 19:00 and Wednesday 20:00)
 and one open window of season 3. Admin (77) holds the league admin role.
 """
 from __future__ import annotations
 
 import json
+from functools import partial
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -26,7 +27,7 @@ from discord import app_commands
 # Imported as a module: pytest tries to collect a bare `TestModeCog` name as a test class.
 from leaguebot.core.cogs import test_mode_cog
 from tests.support.change_queue import change_rows, member, run_queue, stopped_job
-from tests.support.season_league import SEASON_ID, setup_league
+from tests.support.season_league import SEASON_ID, ongoing_league, setup_league
 from tests.support.settings_league import audit_rows, last_said, said, unruled
 from tests.support.settings_league import interaction as member_asks
 
@@ -61,10 +62,17 @@ _ALPHA_TAKEN = f"Line 2: a driver with ID {ALPHA} is already on this server."
 
 
 @pytest.fixture
-async def league(tmp_path):
-    """The league of the module docstring; `cog` is the test-mode cog on its bot and `window` the
-    id of the open window."""
-    built = await setup_league(tmp_path, stage="SIGNUPS", signups_open=True)
+async def league(tmp_path, request):
+    """The league of the module docstring, its season at the stage a test asks for through
+    `request.param` (Signups where it asks for none); `cog` is the test-mode cog on its bot and
+    `window` the id of the open window."""
+    if getattr(request, "param", "SIGNUPS") == "ONGOING_SIGNUPS":
+        built = await ongoing_league(tmp_path, signups_open=True)
+        await built.write(
+            "UPDATE seasons SET stage = 'ONGOING_SIGNUPS' WHERE id = ?", SEASON_ID
+        )
+    else:
+        built = await setup_league(tmp_path, stage="SIGNUPS", signups_open=True)
     await built.set_test_mode(True)
     await built.write("UPDATE server_configs SET test_mode_nationality_required = 1")
     for day, time in ((0, "19:00"), (2, "20:00")):
@@ -157,9 +165,16 @@ async def _nothing_written(league) -> None:
 
 
 @pytest.mark.xfail(strict=True, reason=_NOT_BUILT)
+@pytest.mark.parametrize(
+    "league",
+    [pytest.param("SIGNUPS", id="signups"),
+     pytest.param("ONGOING_SIGNUPS", id="ongoing, signups open")],
+    indirect=True,
+)
 async def test_a_pasted_list_signs_up_and_approves_every_driver_in_one_save(league):
     """The core specification's test mode: a fake driver signs up as any driver, and the helper
-    is a second way through the signup. Signups are open. Admin (77) runs `/test-mode roster
+    is a second way through the signup. Signups are open, the season at Signups or at Ongoing,
+    signups open. Admin (77) runs `/test-mode roster
     sign-up-bulk` and submits Mock Alpha, British, and Mock Beta, its nationality blank, and the
     queue runs one change, `core.test_roster_sign_up_bulk`. Both are fake drivers with the IDs the
     list names, at Unassigned, seated nowhere. Each holds one approved signup to season 3 and the
@@ -170,7 +185,8 @@ async def test_a_pasted_list_signs_up_and_approves_every_driver_in_one_save(leag
     queue's clock: its addition, its signup's start (Not Signed Up to Pending Signup Completion)
     and its approval (Pending Admin Approval to Unassigned). The reply reads "✅ Signed up and
     approved **2** fake driver(s). Seat each with `/driver assign`.", and the log channel holds one
-    line, counting the two drivers signed up."""
+    line, counting the two drivers signed up. Afterwards they read as any approved driver: Admin's
+    `/signup unassigned list` names Mock Alpha and Mock Beta by their test names."""
     from leaguebot.core.utils.input_validator import parse_nationality
     from leaguebot.signup.services.signup_module_service import slots_on
     from leaguebot.framework.db.database import get_connection
@@ -234,6 +250,20 @@ async def test_a_pasted_list_signs_up_and_approves_every_driver_in_one_save(leag
         f"{_NAMED} | /test-mode roster sign-up-bulk | Success\n"
         "  drivers_signed_up: 2"
     ]
+    listing = _asks(league)
+    await _unassigned_list(league, listing)
+    listed = "\n".join(said(listing))
+    assert "Mock Alpha" in listed and "Mock Beta" in listed
+
+
+async def _unassigned_list(league, interaction) -> None:
+    """*interaction* runs `/signup unassigned list` on the league's bot."""
+    from leaguebot.signup.cogs.signup_cog import SignupCog
+    from tests.support.undecorate import undecorate
+
+    cog = SignupCog.__new__(SignupCog)
+    cog.bot = league.bot
+    await undecorate(SignupCog.signup_unassigned_list)(cog, interaction)
 
 
 async def _test_mode_off(league) -> None:
@@ -269,18 +299,42 @@ async def _alpha_taken(league) -> None:
     )
 
 
+def _module_of(subscriber: Any) -> str:
+    """The module *subscriber* was written in, through any `partial` round it."""
+    while isinstance(subscriber, partial):
+        subscriber = subscriber.func
+    return str(getattr(subscriber, "__module__", ""))
+
+
+async def _signup_unwired(league) -> None:
+    """The signup module signed up to no hook: every subscriber written in signup's package is
+    taken off every hook on the bot, the module's switch and configuration left as they are."""
+    from leaguebot.framework.utils.hooks import AwaitedHook, Hook
+
+    for hook in vars(league.bot).values():
+        if isinstance(hook, (Hook, AwaitedHook)):
+            hook._subscribers[:] = [
+                each for each in hook._subscribers
+                if not _module_of(each).startswith("leaguebot.signup")
+            ]
+
+
 async def _nationality_switch_off(league) -> None:
     await league.write("UPDATE server_configs SET test_mode_nationality_required = 0")
 
 
 #: Each thing that refuses the helper, by what sets it up, the list pasted and a part of the
-#: refusal's words, where the plan fixes them ("⛔" where it fixes only that one is given).
+#: refusal's words naming the fault ("⛔" alone where nothing but the refusal is fixed). Signup's
+#: own faults are named in the words its refusals elsewhere use.
 _REFUSALS = [
     pytest.param(_test_mode_off, SIGN_UPS, _NOT_IN_TEST_MODE, id="test mode off"),
-    pytest.param(_signups_closed, SIGN_UPS, "⛔", id="signups not open"),
-    pytest.param(_signup_module_off, SIGN_UPS, "⛔", id="the signup module off"),
-    pytest.param(_signup_unconfigured, SIGN_UPS, "⛔", id="the signup module unconfigured"),
-    pytest.param(_no_slot, SIGN_UPS, "⛔", id="no availability slot"),
+    pytest.param(_signups_closed, SIGN_UPS, "Signups", id="signups not open"),
+    pytest.param(_signup_module_off, SIGN_UPS, "not enabled", id="the signup module off"),
+    pytest.param(
+        _signup_unconfigured, SIGN_UPS, "not configured", id="the signup module unconfigured"
+    ),
+    pytest.param(_no_slot, SIGN_UPS, "slot", id="no availability slot"),
+    pytest.param(_signup_unwired, SIGN_UPS, "⛔", id="the signup module signed up to no hook"),
     pytest.param(_alpha_taken, SIGN_UPS, _ALPHA_TAKEN, id="an ID already held"),
     pytest.param(
         _nationality_switch_off, SIGN_UPS, "/test-mode nationality",
@@ -296,10 +350,13 @@ async def test_a_list_it_cannot_sign_up_is_refused_at_the_ask_writing_nothing(
 ):
     """Admin (77) opens `/test-mode roster sign-up-bulk`'s box while signups are open, then, before
     submitting it: test mode is turned off; the window closes; the signup module is switched off;
-    its configuration is gone; its availability slots are gone; a fake driver Mock Zero comes to
+    its configuration is gone; its availability slots are gone; the signup module is signed up to
+    no hook, as where it is not wired into the bot; a fake driver Mock Zero comes to
     hold Mock Alpha's ID; or the test-mode nationality switch is turned off, Mock Alpha's line
     naming British. Admin submits Mock Alpha and Mock Beta. They are refused at once, seen by them
-    alone, the fault named; nothing is queued, no driver, signup or audit entry is written."""
+    alone, the fault named ("Signups" for the window, "not enabled" for the module off, "not
+    configured", "slot", Mock Alpha's ID, `/test-mode nationality`); nothing is queued, no driver,
+    signup or audit entry is written."""
     interaction = _asks(league)
     opening = _asks(league)
     await _command()(league.cog, opening)
