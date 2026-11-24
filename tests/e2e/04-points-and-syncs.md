@@ -943,22 +943,21 @@ Keller 43, Liam Lavoie 3) and Delta Racing from 32 to **34** (Hiro Hayashi 32, G
     **Expect:**
     - **Reply**, seen by you alone, with two buttons, **✅ Approve** and **❌ Reject**:
       ```
-      **6 changes staged:**
-      Standard, Feature Qualifying, P1: 3 → 5
-      Standard, Feature Qualifying, P2: 2 → 3
-      Standard, Feature Race, P1: 30 → 35
-      Standard, Feature Race, P2: 27 → 40
-      Standard, Feature Race, fastest lap: 2 → 5
-      Standard, Feature Race, fastest lap position limit: 15 → 10
+      **4 changes staged:**
+      Standard/FEATURE_QUALIFYING/P1: 3 → 5
+      Standard/FEATURE_QUALIFYING/P2: 2 → 3
+      Standard/FEATURE_RACE/P1: 30 → 35
+      Standard/FEATURE_RACE/P2: 27 → 40
 
       ⚠️ **These changes cannot be approved — the points would be out of order:**
-      • Config 'Standard', Feature Race: position 1 (35 pts) < position 2 (40 pts)
+      • Config 'Standard', FEATURE_RACE: position 1 (35 pts) < position 2 (40 pts)
       A lower position cannot be worth as much as the one above it. Repair the staged table, or `/results amend revert` to start again from the season's own.
 
       Approve or reject these changes?
       ```
-      The fastest-lap bonus and limit of steps 63 and 64 are listed with the positions, as the
-      approval installs them (step 74).
+      **The fastest-lap changes of steps 63 and 64 are not listed.** The diff compares the
+      positions alone (`get_modification_store_diff`), though they are staged and the approval
+      installs them (step 74). This is believed a bot defect: record it, and carry on.
     - **Log:** `<you> | /results amend review | Review posted`
 
 70. **A refusal: approving a table out of order.** **Do:** press **✅ Approve** on the panel.
@@ -967,13 +966,13 @@ Keller 43, Liam Lavoie 3) and Delta Racing from 32 to **34** (Hiro Hayashi 32, G
     - **Reply:**
       ```
       ❌ Amendment not approved — the points would be out of order:
-      • Config 'Standard', Feature Race: position 1 (35 pts) < position 2 (40 pts)
+      • Config 'Standard', FEATURE_RACE: position 1 (35 pts) < position 2 (40 pts)
       Nothing has been changed. The staged changes are still there to repair.
       ```
     - **Log:**
       ```
       ⛔ `/results amend review` refused for <you> — Amendment not approved — the points would be out of order:
-      Config 'Standard', Feature Race: position 1 (35 pts) < position 2 (40 pts)
+      Config 'Standard', FEATURE_RACE: position 1 (35 pts) < position 2 (40 pts)
       ```
     - Nothing posted; the standings stand as step 54 left them. The panel's buttons no longer
       answer: run the review again.
@@ -1002,16 +1001,15 @@ Keller 43, Liam Lavoie 3) and Delta Racing from 32 to **34** (Hiro Hayashi 32, G
     **Expect:**
     - **Reply**, with **✅ Approve** and **❌ Reject**:
       ```
-      **5 changes staged:**
-      Standard, Feature Qualifying, P1: 3 → 5
-      Standard, Feature Qualifying, P2: 2 → 3
-      Standard, Feature Race, P1: 30 → 35
-      Standard, Feature Race, fastest lap: 2 → 5
-      Standard, Feature Race, fastest lap position limit: 15 → 10
+      **3 changes staged:**
+      Standard/FEATURE_QUALIFYING/P1: 3 → 5
+      Standard/FEATURE_QUALIFYING/P2: 2 → 3
+      Standard/FEATURE_RACE/P1: 30 → 35
 
       Approve or reject these changes?
       ```
-      P2 is gone from the diff, staged back at the season's own 27.
+      P2 is gone from the diff, staged back at the season's own 27. The fastest-lap changes are
+      still not listed (step 69).
     - **Log:** `<you> | /results amend review | Review posted`
 
 74. **Do:** within five minutes, press **✅ Approve** on the panel.
