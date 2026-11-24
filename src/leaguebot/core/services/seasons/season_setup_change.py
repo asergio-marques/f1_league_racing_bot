@@ -126,8 +126,9 @@ def _outcome(ctx: OutcomeContext) -> str:
     return (
         f"✅ Season setup started. **Season #{saved['season_number']} "
         f"(F1 {saved['game_edition']})** is being configured.\n\n"
-        "Use `/division add` for each division, then `/round add` for each round.\n"
-        "When done, run `/season placements-review` to review and approve."
+        "Settle its team list, its modules and their settings, and test mode, then run "
+        "`/season config-review` to confirm the configuration.\n"
+        "Its divisions and rounds are added once it reaches placements."
     )
 
 

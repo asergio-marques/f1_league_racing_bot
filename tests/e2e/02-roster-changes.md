@@ -677,8 +677,8 @@ cancelled, so this is Season #2.
       ```
       ✅ Season setup started. **Season #2 (F1 25)** is being configured.
 
-      Use `/division add` for each division, then `/round add` for each round.
-      When done, run `/season placements-review` to review and approve.
+      Settle its team list, its modules and their settings, and test mode, then run `/season config-review` to confirm the configuration.
+      Its divisions and rounds are added once it reaches placements.
       ```
     - **Log:**
       ```
