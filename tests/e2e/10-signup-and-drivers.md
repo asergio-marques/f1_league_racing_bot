@@ -21,7 +21,7 @@ log line.
 fixed once a season's configuration is confirmed (`signup_settings.open_to_change`), so the slot
 must already be in the base. `/test-mode roster sign-up-bulk` refuses a nationality while
 `/test-mode nationality` is off, so the base, which signs its 45 drivers up with theirs, leaves it
-on. Step 5 checks both.
+on. Step 5 checks the slot; step 11's reply shows the switch was on, as it turns it off.
 
 The base's one availability slot is `Monday 20:00 UTC` (its Fixture), and it leaves the signup
 settings at their defaults: nationality required, Time Trial, time image required.
@@ -804,7 +804,8 @@ Every answer in this part is given in `#wade-walsh-signup`, as you.
           Zeno Zappa → **Charlie GP** in **Division 2**
         ```
         then Division 1's lineup as text, which no new driver touches: `📂 **Division 1** — lineup
-        once confirmed`, then a line per team, `  **<shorthand>**: <@<ID>>, <@<ID>>`;
+        once confirmed`, then a line per team, `  **<shorthand>**: <@<ID>> (<driver>), <@<ID>> (<driver>)`,
+        e.g. `  **ALP**: <@9000000000000000001> (Adam Archer), <@9000000000000000002> (Bruno Bianchi)`;
       - last, the question, with a **✅ Confirm placements** button:
         ```
         📋 **Do you confirm these placements?**
@@ -814,10 +815,8 @@ Every answer in this part is given in `#wade-walsh-signup`, as you.
       `⛔ **Every signup must be settled before placements are confirmed.**`.
     - **Log:** `<you> | /season placements-review | Review posted`
 
-    > UNVERIFIED: how Discord shows Division 1's text lineup. It names each seated driver by a
-    > mention of its account (`<@9000000000000000001>`), which a fake driver does not have, so it
-    > is expected to read as an unknown user rather than the driver's test name. Record what it
-    > shows.
+    Each mention is of an account no member holds, so Discord shows it as an unknown user; the
+    test name beside it names the driver.
 
 45. **Do:** within five minutes, press **✅ Confirm placements**.
 
