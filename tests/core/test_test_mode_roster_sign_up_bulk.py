@@ -537,3 +537,20 @@ async def test_a_fault_in_the_save_creates_and_signs_up_nobody(league):
     assert last_said(interaction) == _DISCARDED
     assert not any("database or disk is full" in text for text in said(interaction))
     assert await stopped_job(league.db_path) is None
+
+
+async def test_a_save_no_subscriber_signs_up_stops_the_lane_and_writes_nothing(league):
+    """Signups are open, and the signup module answers whether it can sign fake drivers up but
+    nothing is signed up to record their signups (`fake_signups_approved` has no subscriber). Admin
+    (77) submits Mock Alpha and Mock Beta and the queue runs the change. The save raises rather than
+    creating drivers no one signed up: no fake driver, no signup, no audit entry and no success line
+    are written, and the league's lane stops at the job."""
+    league.bot.fake_signups_approved._subscribers[:] = []
+    interaction = _asks(league)
+
+    await _submit(league, interaction)
+    await run_queue(league.bot)
+
+    await _nothing_written(league)
+    assert not any("| Success" in line for line in _lines(league))
+    assert await stopped_job(league.db_path) is not None

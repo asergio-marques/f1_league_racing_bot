@@ -161,7 +161,13 @@ def test_roster_sign_up_bulk_change(
             fakes.append(
                 FakeSignUp(str(driver.discord_user_id), driver.driver_name, driver.nationality)
             )
-        for handed in await fake_signups_approved.call(db, fakes, now()):
+        signed_up = await fake_signups_approved.call(db, fakes, now())
+        if not signed_up:
+            # The readiness read was answered, so a subscriber stood; a save that found none to
+            # record the signups raises and rolls back rather than leaving drivers created at Not
+            # Signed Up under a success line.
+            raise LookupError("nothing is signed up to record a fake driver's signup")
+        for handed in signed_up:
             audits.extend(handed)
         line = (
             f"{ctx.named} | {SIGN_UP_BULK_COMMAND} | Success\n"
