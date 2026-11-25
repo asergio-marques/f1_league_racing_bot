@@ -17,6 +17,7 @@ from leaguebot.image.utils.svg_document import (
     canvas_of,
     computed_style,
     declarations,
+    elements_with_class,
     FieldIndex,
     length,
     load_svg,
@@ -408,6 +409,18 @@ def test_the_stylesheet_is_still_a_mapping_by_selector():
         ".b": {"fill": "#111111"},
         "#c": {"stroke": "#222222"},
     }
+
+
+def test_elements_with_class_matches_whole_class_tokens():
+    """Each class token is matched whole, whatever whitespace separates them, in document order."""
+    root = _doc(
+        '<rect id="one" class="fastest-lap-background"/>'
+        '<rect id="two" class="a  fastest-lap-background"/>'
+        '<rect id="dim" class="fastest-lap-background-dim"/>'
+        '<rect id="bare"/>'
+    )
+    found = elements_with_class(root, "fastest-lap-background")
+    assert [element.get("id") for element in found] == ["one", "two"]
 
 
 def test_selector_lists_are_indexed_per_selector():

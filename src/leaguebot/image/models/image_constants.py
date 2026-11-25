@@ -280,9 +280,10 @@ TEST_KIND_TEMPLATES: dict[str, tuple[str, ...]] = {
 
 # ── Presentation ──────────────────────────────────────────────────────────
 
-#: The element id in the race results template whose fill is the background behind the
-#: fastest-lap field. FR-026a: the contrast check locates it by this single documented id.
-FASTEST_LAP_BACKGROUND_ID = "fastest_lap_background"
+#: The class that marks, in the race results template, a shape drawn behind the fastest-lap
+#: cells. The contrast check finds the background by it: every shape a template marks with this
+#: class is a background, and the lowest contrast across them is the one reported.
+FASTEST_LAP_BACKGROUND_CLASS = "fastest-lap-background"
 
 #: Notice kinds (Constitution XIV.4).
 NOTICE_FONT_SUBSTITUTED = "FONT_SUBSTITUTED"

@@ -683,8 +683,10 @@ HELD = (
 
 @pytest.mark.parametrize("name, arguments, config, values", HELD)
 async def test_a_value_already_held_changes_nothing(tmp_path, name, arguments, config, values):
-    """Acknowledged at once; once run, nothing is written, the reply says "Nothing changed",
-    naming the value, one "Nothing changed" line records it, and no audit entry is saved."""
+    """Acknowledged at once; once run, nothing is written, the reply is the one "Nothing
+    changed" line naming the value, with no advice after it (the fastest-lap colour held is
+    not measured again: no contrast line), one "Nothing changed" line records it, and no
+    audit entry is saved."""
     league = await _league(tmp_path, **config)
     before = await _stored(league.db_path)
 
@@ -694,6 +696,7 @@ async def test_a_value_already_held_changes_nothing(tmp_path, name, arguments, c
     reply = _reply(asked)
     assert reply.startswith("ℹ️ Nothing changed: "), reply
     assert "is already **" in reply and "✅" not in reply, reply
+    assert "\n" not in reply and "Contrast" not in reply, reply
     assert await _stored(league.db_path) == before
     assert await audit_rows(league.db_path) == []
     details = assert_one_line(league.bot, name, "Nothing changed")

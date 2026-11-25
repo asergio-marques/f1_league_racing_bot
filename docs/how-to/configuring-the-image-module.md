@@ -114,7 +114,7 @@ Four settings, none of which need any artwork, so they are easy to get out of th
 | `/images config date-format` | Eleven formats, picked from a dropdown that shows each one written out. Short: `Sun 14 Jun 2026`, `14 Jun 2026`, `14/06/2026`, `06/14/2026`, `2026-06-14`. Written out: `Sunday 14th June 2026`, `14th June 2026`, `Sunday 14 June 2026`, `14 June 2026`, `June 14, 2026`, `Sunday, June 14th, 2026` | `Sun 14 Jun 2026` |
 | `/images config fastest-lap-colour` | The colour marking the fastest lap. A `#` and six characters | `#A020F0` (purple) |
 
-When you set the fastest-lap colour, the bot also tells you whether it will be easy to read against the background behind it, and warns you if not. It saves your choice either way — it is your league's look, not the bot's.
+When you change the fastest-lap colour, the bot also tells you whether it will be easy to read against the background behind the fastest lap, and warns you if not. Where several shapes make up that background, you are told the figure for the hardest to read. It saves your choice either way — it is your league's look, not the bot's. Setting the colour the league already has changes nothing and measures nothing.
 
 > **Everyone sees the same time zone.** When the bot posts times as text, Discord shows each driver the time in their own local zone. A picture cannot do that. Whatever zone you pick here is printed on the picture for everybody, with its short name after the time. Set it to the zone your league actually races in. This is the one thing a picture tells drivers *less* clearly than the text it replaces.
 
@@ -472,6 +472,8 @@ Before you edit a drawing file, read the **`/images template <kind>`** section o
 
 **Make room for your biggest season.** Where the drawing file sets the limit — table rows, calendar rounds, reserve seats — the bot will refuse to go past it rather than quietly leaving someone off. The one exception is a reserve block you left out altogether, which is a decision rather than a limit and is honoured in silence. If your calendar drawing has room for 22 rounds, `/round add` will stop you at 23. Spare room costs nothing, as unused slots are hidden.
 
+> **Marking the background behind the fastest lap.** The bot tells you how readable the fastest-lap colour is only against the shapes your race results drawing marks for it. Add the class `fastest-lap-background` to every shape that lies behind the fastest-lap times of the rows — the canvas, and any band behind a row. The shipped race drawing marks its canvas and its row bands. Leave off a plate that sits behind something else, such as the block at the top right of the shipped drawing. Where you mark several shapes, the bot measures the colour against each and reports the lowest. A marked shape needs a plain colour (`fill="#14171C"`, or one in the stylesheet); a gradient or a missing fill makes the reading "could not be measured". With a colour per division on, only a division whose colour for that shape cannot be read goes unmeasured, and the others are still reported. A drawing that marks nothing is also told the contrast could not be measured. The colour itself is saved either way.
+
 ### Giving each tier its own colours
 
 You can run **one** drawing file across every tier and have each of them drawn in its own colour, instead of keeping a separate set of files per division. Like division logos, nothing the bot ships uses this and it stays off until you turn it on.
@@ -565,7 +567,7 @@ It tells you straight away if any slot is still unset, and for which tier.
 
 **Check it before you trust it.** `/images test` draws a preview for a division you name, in that tier's colours. Use it on two different tiers and compare.
 
-**Then set the fastest-lap colour again, if the plate behind it takes a tier's colour.** The contrast you were told in step 3 was measured against your drawing as it stands. Run `/images config fastest-lap-colour` again with the same colour: it now measures the plate in every tier's colours and names the tier it is hardest to read on — or tells you it is the same for every tier.
+**A change of tier colours is not measured against the fastest-lap colour again.** The contrast you were told in step 3 was measured when you changed the fastest-lap colour, in the colours the tiers had then. Changing a tier's colours afterwards does not repeat it, and setting the fastest-lap colour to the value it already holds changes nothing. To measure again, change the fastest-lap colour: with per-tier colours on, the bot measures the background in every tier's colours and names the tier it is hardest to read on — or tells you it is the same for every tier.
 
 ### Working out a tier's palette
 

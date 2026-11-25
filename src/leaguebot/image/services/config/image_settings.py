@@ -613,9 +613,9 @@ def _fastest_lap_colour(
     """`/images config fastest-lap-colour`: `{"value"}`, the colour in its canonical form.
 
     A malformed value is refused at once by the command, leaving the stored colour untouched
-    (FR-025). The contrast against the template's plate is measured after the save, in the
-    `advise` step, so that an unmeasurable contrast never costs the manager their input
-    (FR-026, FR-027).
+    (FR-025). The contrast against the background behind the fastest lap is measured after the
+    save, in the `advise` step, so that an unmeasurable contrast never costs the manager
+    their input (FR-026, FR-027).
     """
 
     async def check(_ctx: CheckContext) -> Verdict:

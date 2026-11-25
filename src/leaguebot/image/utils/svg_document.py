@@ -540,6 +540,21 @@ def stylesheet(root: etree._Element) -> Stylesheet:
     return rules
 
 
+def elements_with_class(root: etree._Element, name: str) -> list[etree._Element]:
+    """Every element of the tree whose ``class`` holds *name*, in document order.
+
+    The attribute is split on whitespace and each token matched whole, so `fastest-lap-background`
+    is not found inside `fastest-lap-background-dim`. The walk covers the whole tree, ``<defs>``
+    and ``<style>`` included: a class on an element that is never drawn is still found, and it is
+    for the caller to say whether that matters.
+    """
+    return [
+        element
+        for element in root.iter()
+        if isinstance(element.tag, str) and name in (element.get("class") or "").split()
+    ]
+
+
 def computed_style(
     element: etree._Element, rules: Stylesheet | None = None
 ) -> dict[str, str]:
