@@ -469,15 +469,17 @@ channel, keeping the new message and channel as the notice's record, and `DELETE
 takes the old one down through the standing-post handler, a message or channel already gone
 counting as done. A failure of either step, refused or not, is named once in the reply and recorded
 as a failure line, the channel staying saved and the lane going on: a refused post leaves the old
-notice standing for the next opening, and a refused delete names the old message with its link
+notice standing for the next opening (none, where its channel is gone), and a refused delete names
+the old message with its link
 (`channel_setting`'s module docstring; the specification's "Enabling signup flow"). Pinned by
 `test_signup_channel_refuses_a_channel_lacking_what_the_bot_needs_before_anything_is_edited`,
 `test_moving_the_signup_channel_sets_the_new_before_clearing_the_old`,
 `test_an_unforeseen_refusal_keeps_the_channel_and_names_the_fault`,
-`test_a_signup_channel_deleted_mid_season_is_replaced` and
+`test_a_signup_channel_deleted_mid_season_is_replaced`,
 `test_a_signup_channel_replaced_while_signups_are_open_carries_the_sign_up_button`,
-`test_a_move_while_signups_are_closed_carries_the_closed_notice_across` and
-`test_a_closed_notice_that_cannot_be_carried_stays_where_it_was` and
+`test_a_move_while_signups_are_closed_carries_the_closed_notice_across`,
+`test_a_closed_notice_that_cannot_be_carried_stays_where_it_was`,
+`test_a_closed_notice_refused_for_a_signup_channel_deleted_from_the_server_says_none_stands` and
 `test_a_closed_notice_carry_or_take_down_that_fails_without_a_refusal_is_named_in_the_reply`.
 
 **The switch-on and the switch-off read the season's stage again as they start**, so one asked
@@ -624,12 +626,12 @@ channel is created by `WizardService._create_wizard_channel`, in the `create_cha
 channel always shows one or the other: an opening takes the notice down only once its message is up
 (`delete_closed`), from the channel the notice was posted in, and a close takes the button down
 before it posts the notice, from the channel the button was posted in, the notice going up in the
-present signup channel (`window_changes`' module docstring). A notice standing in another channel when `/signup channel`
-moves the signup channel while signups are closed is carried in the same order: posted anew in the
-new channel (`CARRY_CLOSED`), then taken down from the old one in a step of its own
-(`DELETE_CARRIED_CLOSED`), so the channel is never empty. An opening takes down the notice
-`post_info` found held as it ran, not the one its plan read when it was asked, since a carry may
-have moved it between. One function posts the information
+present signup channel (`window_changes`' module docstring). A notice standing in another channel
+when `/signup channel` moves the signup channel while signups are closed is carried in the
+opening's order: posted anew in the new channel (`CARRY_CLOSED`), then taken down from the old one
+in a step of its own (`DELETE_CARRIED_CLOSED`), so that, once the copy is up, the channel is never
+empty. An opening takes down the notice `post_info` found held as it ran, not the one its plan read
+when it was asked, since a carry may have moved it between. One function posts the information
 message, `information_post.post_information`, for `signup.open` and for `/signup channel`, so a
 window moved to a new channel shows what an opened one does.
 
