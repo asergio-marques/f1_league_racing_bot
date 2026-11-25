@@ -282,7 +282,7 @@ must write all or nothing; the posts follow it. A step marked † cannot be disc
 | Kind | Asked by | Jobs |
 |---|---|---|
 | `results.setting.config_*` (seven), `results.setting.amend_*` (four), `results.setting.reserves` | the `/results config` and `/results amend` commands that change a value, `/results reserves toggle` | a `Setting`: **the value and its audit entry** (`core.md`, "A league's settings") |
-| `results.setting.results_channel`, `standings_channel` | `/results channel results`, `standings` | a `Setting` that overtakes a stopped job (`Setting.repairs_the_bot`): **the column and the audit entry**; the setting's check, which refuses a move away from a channel that still stands (results specification, "Assigning channels to divisions"; core specification, "Building a season"); and, where the save replaced a channel, the `After` step `ask_carry`, which asks `results.channel.carry` |
+| `results.setting.results_channel`, `standings_channel` | `/results channel results`, `standings` | a `Setting` that overtakes a stopped job (`Setting.repairs_the_bot`): **the column and the audit entry**; the setting's check, which refuses a move away from a channel that still stands (results specification, "Assigning channels to divisions"; core specification, "Building a season"); and, where the save replaced a channel, the `After` step `ask_carry`, which asks `results.channel.carry` only where the channel the posts stand in still stands and the sync's plan has posts up |
 | `results.setting.verdicts_channel` | `/results channel verdicts` | a `Setting` that overtakes a stopped job: **the column and the audit entry**; it carries nothing, and has no such refusal |
 | `module.on:results` | core's `/module enable results` | a `Setting`: before it, `check_kept_channels`; then **the flag, the clear of each channel another setting took, and the audit entries**; then the hub's refresh and the sweep armed, each an `After` step |
 | `module.off:results` | core's `/module disable results` | **`switch_off`**: the season erased, the flag down, attendance off where cascaded, the rounds waiting on results closed; `disarm_sweep`; one `take_down` for each message or channel; **`close`** |
@@ -363,21 +363,23 @@ are core's change's jobs, each defined by results.
 specification, "Assigning channels to divisions"). The setting saves the channel and stays a plain
 setting that never stops the queue; its check carries the refusal, and `ask_carry`, an `After`
 step, asks `results.channel.carry` only where the channel the posts stand in still stands (the
-channel replaced, or the old channel of a carry still waiting to fill it) and the sync's plan
-(`plan_division_posts`) has posts up. *Rejected:* carrying the posts as steps of the
-setting, which would let a refused post stop the lane at a setting and make a repair wait behind
-it. The carry takes the league lane and so waits behind a stopped job as a sync does.
+channel replaced, or the old channel of a carry still waiting to move the posts into it) and the
+sync's plan (`plan_division_posts`) has posts up. *Rejected:* carrying the posts as steps of the
+setting, which would let a refused post stop the lane at a setting, and a setting never stops the
+queue. The carry takes the league lane and so waits behind a stopped job as a sync does.
 `ask_carry` takes the old channel from `_where_posts_stand`, which reads the queue for a carry of
-the division still waiting to move its posts into the channel being replaced, so that a second move
-asked before the first carry has run carries from where the posts stand, and a move back to that
-channel asks no carry, the posts already standing in the channel set. **`note_old_channel` comes
-first** because the setting has already saved the new channel: a post that records no channel is
-taken to stand in the present one (see the posting's channel above), so without the note its old
-message would be deleted from the channel it was carried into. **The carry's check splits its
-verdicts**: a carry no longer due is dropped (`Verdict.not_due`), not stopped, and carries its line
-so the log channel tells the league the move carried nothing; a new channel that has gone or that
-the bot cannot post in is refused, stopping the lane for the league to repair and press Retry. Its
-docstring (`publishing/channel_move`) holds the conditions and the line.
+the same division and kind, queued or started and not ended, whose new channel is the one being
+replaced, so that a second move asked before the first carry has run carries from where the posts
+stand, and a move back to that channel asks no carry, the posts already standing in the channel
+set. **`note_old_channel` comes first** because the setting has already saved the new channel: a
+post that records no channel is taken to stand in the present one (under the tables above, "Each
+posting keeps the channel it was posted in"), so without the note the deletion of its old message
+would be aimed at the new channel, where it never stood, and the old message would be left up.
+**The carry's check splits its verdicts**: a carry no longer due is dropped (`Verdict.not_due`),
+not stopped, and carries its line so the log channel says why (results specification, "Assigning
+channels to divisions"); a new channel that has gone or that the bot cannot post in is refused,
+stopping the lane for the league to repair and press Retry. Its docstring
+(`publishing/channel_move`) holds the conditions and the line.
 
 Each file's docstring holds its change's check, its jobs and the reason for each.
 
