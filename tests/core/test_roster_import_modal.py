@@ -118,12 +118,18 @@ def test_a_refusal_says_nothing_was_added():
     assert "No drivers were added" in text
 
 
-@pytest.mark.xfail(strict=True, reason="#633: a roster refusal still lists fifteen faults, then …and N more")
-def test_a_systematically_wrong_file_names_every_fault():
-    """A pasted roster of fifty-one rows, every one holding five columns. The refusal names all
-    fifty-one rows, each with its fault, and has no "…and N more" line: the core specification
-    says every fault is named at once, and the reply is divided into parts as it is sent."""
-    text = _format_roster_errors(
+@pytest.mark.xfail(strict=True, reason="#633: a roster or sign-up refusal still lists fifteen faults, then …and N more")
+@pytest.mark.parametrize("refusal", ["roster", "sign-up"])
+def test_a_systematically_wrong_file_names_every_fault(refusal):
+    """A pasted roster (`/test-mode roster add-bulk`) or sign-up list
+    (`/test-mode roster sign-up-bulk`) of fifty-one rows, every one holding five columns. The
+    refusal names all fifty-one rows, each with its fault, and has no "…and N more" line: the core
+    specification says every fault is named at once, and the reply is divided into parts as it is
+    sent."""
+    from leaguebot.core.utils.roster_import import format_sign_up_errors
+
+    format_errors = _format_roster_errors if refusal == "roster" else format_sign_up_errors
+    text = format_errors(
         [f"Line {n}: expected 2 columns (ID, driver name) but found 5." for n in range(1, 52)]
     )
 
