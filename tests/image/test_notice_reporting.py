@@ -164,6 +164,11 @@ def test_the_block_stands_without_a_subject():
 # ── Reporting to the log ──────────────────────────────────────────────────
 
 
+#: The member and the command a preview's log entry opens with.
+NAMED = "Tester (<@1>)"
+WHAT = "`/images test standings`"
+
+
 def _bot():
     bot = MagicMock()
     bot.output_router.post_log = AsyncMock(return_value=MagicMock(jump_url="http://j/1"))
@@ -178,7 +183,9 @@ async def test_twenty_notices_post_one_message_not_twenty():
         for i in range(20)
     ]
 
-    await _log_notices(bot.output_router.post_log, notices)
+    await _log_notices(
+        bot.output_router.post_log, [("Standings", notices)], named=NAMED, what=WHAT
+    )
 
     assert bot.output_router.post_log.await_count == 1
 
@@ -187,7 +194,9 @@ async def test_twenty_notices_post_one_message_not_twenty():
 async def test_the_posted_message_is_returned_so_a_caller_can_link_to_it():
     bot = _bot()
 
-    message = await _log_notices(bot.output_router.post_log, [_notice()])
+    message = await _log_notices(
+        bot.output_router.post_log, [("Standings", [_notice()])], named=NAMED, what=WHAT
+    )
 
     assert message.jump_url == "http://j/1"
 
@@ -196,7 +205,9 @@ async def test_the_posted_message_is_returned_so_a_caller_can_link_to_it():
 async def test_nothing_is_posted_and_none_returned_for_no_notices():
     bot = _bot()
 
-    assert await _log_notices(bot.output_router.post_log, []) is None
+    assert await _log_notices(
+        bot.output_router.post_log, [("Standings", [])], named=NAMED, what=WHAT
+    ) is None
     bot.output_router.post_log.assert_not_awaited()
 
 

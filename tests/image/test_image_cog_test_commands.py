@@ -616,12 +616,6 @@ class TestTheNoNationalityTally:
 
 # ── The notice block, and its link back to the log ────────────────────────
 
-#: Why a preview's log entry fails until it opens with the member and the command, a block for
-#: each picture.
-NOT_YET_FRAMED = "#635: a preview's logged notices open with neither the member nor the command"
-#: Why a preview's reply fails until it heads its notices as every other reply does.
-NOT_YET_HEADED = "#635: a preview's reply heads its notices 'Notices — the render survived these'"
-
 
 class TestTheNoticeBlock:
     """`/images test` is the **only** surface that shows notices in a reply.
@@ -677,7 +671,6 @@ class TestTheNoticeBlock:
 
         assert "http://discord/x/1" in reply
 
-    @pytest.mark.xfail(strict=True, reason=NOT_YET_FRAMED)
     async def test_the_notices_are_logged_as_well_as_shown(self, cog):
         """Tester (member 1) runs `/images test standings` for Division 1, which draws with one
         flag falling back. The notice is logged once, in an entry that opens with the member and
@@ -695,7 +688,6 @@ class TestTheNoticeBlock:
         ), heading
         assert "Standings" in heading and "Division 1" in heading, heading
 
-    @pytest.mark.xfail(strict=True, reason=NOT_YET_HEADED)
     async def test_a_log_failure_costs_the_link_and_nothing_else(self, cog):
         """A log-channel problem must never cost the preview, which is what was asked for: the
         reply still lists the notice under "Image notices", the heading every other reply
@@ -752,7 +744,6 @@ class TestTheNoticeBlock:
         assert all(sent.get("ephemeral") is True for sent in interaction.followup.kwargs)
         assert len(interaction.followup.files) == 1
 
-    @pytest.mark.xfail(strict=True, reason=NOT_YET_FRAMED)
     async def test_each_picture_s_notices_are_listed_beneath_its_own_label(self, cog):
         """Tester runs `/images test standings` for Division 1, which draws two pictures: the
         drivers' standings with a flag falling back, and the teams' standings with a font

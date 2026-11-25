@@ -23,7 +23,10 @@ from typing import Any
 import discord
 
 from leaguebot.framework.utils.hooks import AwaitedHook
-from leaguebot.framework.utils.log_lines import log_link
+from leaguebot.framework.models.change import DrawnNotices
+from leaguebot.framework.utils.interaction_errors import describe
+from leaguebot.framework.utils.log_lines import drawn_notices_section
+from leaguebot.framework.utils.member_names import interaction_member
 from leaguebot.utils.messages import chunk_message
 from leaguebot.image.services.preview import image_preview_service
 from leaguebot.image.services.render import image_render_service
@@ -123,21 +126,31 @@ async def run_preview(
 
 
 async def _log_notices(
-    post_log: Callable[[str], Awaitable[Any]], notices, *, subject: str | None = None
+    post_log: Callable[[str], Awaitable[Any]],
+    pictures: Sequence[tuple[str, Sequence[Any]]],
+    *,
+    named: str,
+    what: str,
 ):
     """Write a preview's render notices to the log channel in one message, and return it, or None
     where there were none to write or the write did not stand.
 
-    *post_log* is the router's log writer, handed in. It contains its own failures and answers
-    None, so a log channel that cannot be written to costs the reply its link to the block and
-    nothing else, as the preview is what was asked for: nothing here catches. The notices are
-    the command's own to report, as a preview runs in no job to hand them back as a line of.
+    The message opens with *named*, the member who ran the preview, and *what*, the command, as
+    every entry in the log does, then holds a block for each of *pictures*, a subject (what was
+    drawn) and the notices met drawing it, headed by that subject. *post_log* is the router's log
+    writer, handed in. It contains its own failures and answers None, so a log channel that cannot
+    be written to costs the reply its link to the block and nothing else, as the preview is what
+    was asked for: nothing here catches. The notices are the command's own to report, as a
+    preview runs in no job to hand them back as a line of.
     """
-    if not notices:
+    blocks = [
+        image_render_service.ImageRenderService.format_notices(list(notices), subject=subject)
+        for subject, notices in pictures
+        if notices
+    ]
+    if not blocks:
         return None
-    return await post_log(image_render_service.ImageRenderService.format_notices(
-        notices, subject=subject
-    ))
+    return await post_log(f"{named} | {what} | " + "\n".join(blocks))
 
 
 async def send_preview(
@@ -169,7 +182,7 @@ async def send_preview(
             "be once its placements are confirmed._"
         )
 
-    all_notices = []
+    drawn_with_notices: list[tuple[str, Sequence[Any]]] = []
     for label, template_key, outcome in outcomes:
         if outcome.problem:
             # A problem means no image at all: never a partial one (XIV.4).
@@ -183,7 +196,14 @@ async def send_preview(
                 files.append(
                     discord.File(str(path), filename=f"{path.stem}{suffix}{path.suffix}")
                 )
-        all_notices.extend(outcome.notices)
+        if outcome.notices:
+            # Named by what was drawn, as every posting path's block is: a log of many previews
+            # says nothing of which one a notice came from otherwise, nor which of the several
+            # a preview draws.
+            subject = f"{label} — {context.division_name}"
+            if context.round is not None:
+                subject += f", round {context.round.round_number}"
+            drawn_with_notices.append((subject, outcome.notices))
 
     # The drivers drawn are invented, and a manager must never mistake them for their
     # own roster (FR-018). This is a real division of a real season whose seats happen
@@ -223,23 +243,22 @@ async def send_preview(
                 f"  ↳ `{fault.asset_class}`: `{fault.configured_value}` — {fault.reason}"
             )
 
-    if all_notices:
+    if drawn_with_notices:
         # Logged first, so the reply can point at what was written.
-        # Headed by what was drawn, as every posting path's block is: a log of many
-        # previews says nothing of which one a notice came from otherwise.
-        subject = f"{title} — {context.division_name}"
-        if context.round is not None:
-            subject += f", round {context.round.round_number}"
-        logged = await _log_notices(post_log, all_notices, subject=subject)
-
-        heading = "⚠️ **Notices** — the render survived these:"
+        logged = await _log_notices(
+            post_log, drawn_with_notices,
+            named=interaction_member(interaction), what=describe(interaction),
+        )
         jump_url = getattr(logged, "jump_url", None)
-        if jump_url:
-            heading += f" {log_link(jump_url)}"
+        link = jump_url if isinstance(jump_url, str) and jump_url else None
 
         lines.append("")
-        lines.append(heading)
-        lines += image_render_service.grouped_notice_lines(all_notices)
+        lines.append(drawn_notices_section(
+            DrawnNotices(
+                subject, tuple(image_render_service.grouped_notice_lines(list(notices))), link
+            )
+            for subject, notices in drawn_with_notices
+        ))
 
     # A preview puts nothing in a league's channel, but it renders through the same
     # pipeline and leaves the same files behind. An evening of template-checking would
