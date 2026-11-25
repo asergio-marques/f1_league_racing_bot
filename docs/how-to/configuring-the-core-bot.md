@@ -458,6 +458,7 @@ The other six belong to modules, and each is set by its module's own command. Se
 /driver assign user:@Alice division:1 team:Ferrari
 /driver unassign user:@Alice division:1
 /driver reject user:@Bob
+/driver assign-bulk
 ```
 
 Every driver the signup window let through is **Unassigned**, and each of them has to be **settled** before placements can be confirmed: placed in a team with `/driver assign`, or turned down with `/driver reject`. A signup still awaiting approval, or sent back for a correction, is unsettled too — finish reviewing it. [The signup guide](configuring-the-signup-module.md) covers reading the queue and its seeds.
@@ -468,9 +469,11 @@ Every driver the signup window let through is **Unassigned**, and each of them h
 
 A driver may hold one seat per division. A team runs out of seats; the Reserve team always has room.
 
+**To seat a whole grid at once, `/driver assign-bulk`.** It opens a box: paste one driver to a line, `<@driver>, division, team`, with the division by its tier number or name and the team by its shorthand, and every driver is placed in the order of the list, or none is. Each line is judged as `/driver assign` judges it and against the lines above it too, so a driver listed twice for one division, or more drivers than a team has seats, has the later lines refused. A refusal names every refused line by its number and the reason, so correct the list and paste it again; nothing was placed. The box holds about a hundred lines, so a larger grid goes in two pastes. Like `/driver assign`, it grants and posts nothing until placements are confirmed in step 12.
+
 **Each of the three answers at once** — "Assigning **Alice** to **Ferrari** in **Pro**", "Unassigning …", "Turning down **Bob**" — and updates that reply once it has run, judged again as it starts: a seat filled, a season moved on or a driver no longer Unassigned meanwhile refuses it then. `/driver reject` takes the driver role back once the driver is turned down (with the signup module off none is taken, none having been given); where Discord refuses that, the reply says so under **⚠️ Done, but on Discord:**, for you to take it by hand, and the rejection stands. With the signup module on, a rejection also withdraws the approval of the driver's signup. If a save fails it stops the queue (see [When a job stops the queue](#when-a-job-stops-the-queue)); if a league admin discards it, nothing was changed, and the reply says so and to run the command again.
 
-With test mode on, a fake driver is created by `/test-mode roster add`, signed up by `/signup start` and placed here once approved (with the signup module off, placed here straight away), and `/driver assign` is refused for real ones, a member with no profile among them. Every `/driver` command then names its driver by mention or ID, and acts on a fake driver as on a real one — see [Testing with test mode](test-mode.md).
+With test mode on, a fake driver is created by `/test-mode roster add`, signed up by `/signup start` and placed here once approved (with the signup module off, placed here straight away), and `/driver assign` and `/driver assign-bulk` are refused for real ones, a member with no profile among them. Every `/driver` command then names its driver by mention or ID (a pasted list, by mention), and acts on a fake driver as on a real one — see [Testing with test mode](test-mode.md).
 
 ---
 
