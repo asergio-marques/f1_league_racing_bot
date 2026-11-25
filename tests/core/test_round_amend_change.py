@@ -3179,6 +3179,15 @@ _UNDONE_STEPS = [
                                 "clean-up is named as a phase"),
     ),
     pytest.param(
+        [("clean_up_forecast", {"standing": [0, 3]}, _GONE)],
+        [("forecast channel", "the mystery round notice and the Phase 3 forecast were not "
+          "deleted a day after the round, and a league admin discarded it; they are deleted when "
+          "the bot next starts")],
+        id="clean-up-mystery-notice-and-a-forecast",
+        marks=pytest.mark.xfail(strict=True, reason="#595: a mystery round's notice left by the "
+                                "clean-up is named as a phase"),
+    ),
+    pytest.param(
         [("clean_up_check_in", {}, _GONE)],
         [("check-in call", "the check-in was not taken down a day after the round, and a league "
           "admin discarded it; it is taken down when the bot next starts")],
@@ -3223,11 +3232,13 @@ async def test_each_module_job_left_undone_is_named_in_today_s_words(tmp_path, s
     """The bot is the one the entry point builds, every module's hooks signed up. Pro's round 3
     is amended, and a league admin discards one of the jobs the amendment planned: the check-in
     call's take-down or repost, a forecast's deletion, the invalidation notice, a phase's redraw,
-    the reserves' distribution, the call's lock, the reserve announcement, a clean-up, a message's
-    deletion, a forecast's draw or post, or a part of a forecast left standing. The amendment's
-    outcome reads "Round amended successfully", then, under "Not done", one line per job naming
-    Pro, the thing left undone and what to do about it, word for word as today; a take-down whose
-    repost is discarded too is named once, by the take-down."""
+    the reserves' distribution, the call's lock, the reserve announcement, a clean-up of the
+    forecasts or of a mystery round's notice, a message's deletion, a forecast's draw or post, or
+    a part of a forecast left standing. The amendment's outcome reads "Round amended
+    successfully", then, under "Not done", one line per job naming Pro, the thing left undone and
+    what to do about it, word for word as today, a mystery round's notice named as "the mystery
+    round notice", never as a phase; a take-down whose repost is discarded too is named once, by
+    the take-down."""
     from leaguebot.framework.db.database import run_migrations
     from leaguebot.framework.services.queue.change_types import OutcomeContext, StepView
     from tests.support.change_queue import league_bot
