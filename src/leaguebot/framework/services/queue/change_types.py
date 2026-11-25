@@ -61,6 +61,7 @@ from leaguebot.framework.models.change import (
     PlannedStep,
     RESULT_DRAWN,
     RESULT_NOTICES,
+    RESULT_PICTURES,
     StepKind,
     StepResult,
     Verdict,
@@ -101,19 +102,39 @@ class StepView:
     log_link: str | None = None
 
 
+def _drawn_by(step: StepView, name: str) -> tuple[DrawnNotices, ...]:
+    """The pictures *step* drew with notices, as its result names them: the one picture of a job
+    (`RESULT_NOTICES`, `RESULT_DRAWN`, labelled *name* where none is given) and then each of the
+    several of another (`RESULT_PICTURES`), every one carrying the job's `log_link`. A job
+    discarded, or a picture that came back with no notice, has none."""
+    result = step.result or {}
+    if "discarded" in result:
+        return ()
+    found: list[DrawnNotices] = []
+    notices = tuple(str(text) for text in result.get(RESULT_NOTICES) or ())
+    if notices:
+        found.append(DrawnNotices(str(result.get(RESULT_DRAWN) or name), notices, step.log_link))
+    for each in result.get(RESULT_PICTURES) or ():
+        grouped = tuple(str(text) for text in each.get(RESULT_NOTICES) or ())
+        if grouped:
+            found.append(DrawnNotices(str(each.get(RESULT_DRAWN) or name), grouped, step.log_link))
+    return tuple(found)
+
+
 def drawn_notices_of(steps: Iterable[StepView], name: str) -> tuple[DrawnNotices, ...]:
     """The notices of every picture the jobs called *name* among *steps* drew, in their order, for
     an outcome to list through `drawn_notices_section`: each is labelled as the job's result
-    names its picture (`RESULT_DRAWN`) and carries the job's `log_link`. A job discarded, or one
-    whose picture came back with no notice, has none."""
-    found: list[DrawnNotices] = []
-    for each in steps:
-        result = each.result or {}
-        notices = tuple(str(text) for text in result.get(RESULT_NOTICES) or ())
-        if each.name != name or "discarded" in result or not notices:
-            continue
-        found.append(DrawnNotices(str(result.get(RESULT_DRAWN) or name), notices, each.log_link))
-    return tuple(found)
+    names its picture (`RESULT_DRAWN`) and carries the job's `log_link`."""
+    return tuple(
+        picture for each in steps if each.name == name for picture in _drawn_by(each, name)
+    )
+
+
+def drawn_notices_in(steps: Iterable[StepView]) -> tuple[DrawnNotices, ...]:
+    """The notices of every picture any of *steps* drew, in their order, labelled and linked as
+    `drawn_notices_of` has them: for the outcome of a change whose jobs draw pictures of several
+    kinds (an approval's calendars, lineups, standings and sheets) to list in one section."""
+    return tuple(picture for each in steps for picture in _drawn_by(each, each.name))
 
 
 @dataclass(frozen=True)

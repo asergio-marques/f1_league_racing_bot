@@ -771,10 +771,6 @@ async def test_an_outcome_links_to_the_line_its_job_named(env, case):
         assert seen["link"] is None
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#635: a job hands back one picture's notices alone, and a stop keeps them unlabelled",
-)
 async def test_an_outcome_gathers_every_picture_s_notices_once_a_stopped_job_kept_each_label(env):
     """Two jobs draw pictures with notices. The first, Pro's calendar, hands back one picture and
     names its line. The second draws Pro's drivers' and teams' standings into one line holding

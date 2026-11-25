@@ -145,6 +145,10 @@ class StepResult:
 #: to list in the reply (`drawn_notices_of`).
 RESULT_NOTICES = "notices"
 RESULT_DRAWN = "drawn"
+#: The key under which a job that drew several pictures puts, on its result, one entry apiece
+#: ({`RESULT_DRAWN`: the picture's label, `RESULT_NOTICES`: its grouped notices}), in the place of
+#: the two keys above, which name one picture alone (`drawn_notices_in` reads both).
+RESULT_PICTURES = "pictures"
 
 
 class NoticeBlock(str):
@@ -175,17 +179,23 @@ class DrawnNotices:
 DRAWN_LINES = "drawn_lines"
 DRAWN_NOTICES = "drawn_notices"
 DRAWN_LINKED = "drawn_linked"
+#: Beside `DRAWN_NOTICES`, which holds one picture's notices unlabelled: the notices of each of
+#: several pictures a job drew, each under the label its log line names it by, in the form
+#: `RESULT_PICTURES` takes, so that a stop does not lose which picture a notice belongs to.
+DRAWN_PICTURES = "drawn_pictures"
 
 
 @dataclass(frozen=True)
 class DrawnKept:
     """What a post job's earlier tries kept on their stops (`StepFailedOnDiscord.carrying`): the
     *lines* a picture was drawn with, its *notices* and the index in *lines* of the one holding
-    them, None where the picture had none."""
+    them, None where the picture had none. A job that drew several pictures keeps each one's
+    label and notices as *pictures* instead (`DrawnNotices`, with no link: the reply finds it)."""
 
     lines: tuple[str, ...] = ()
     notices: tuple[str, ...] = ()
     linked: int | None = None
+    pictures: tuple[DrawnNotices, ...] = ()
 
 
 def drawn_kept(kept: dict[str, Any] | None) -> DrawnKept:
@@ -199,6 +209,12 @@ def drawn_kept(kept: dict[str, Any] | None) -> DrawnKept:
         tuple(found.get(DRAWN_LINES) or ()),
         tuple(found.get(DRAWN_NOTICES) or ()),
         None if linked is None else int(linked),
+        tuple(
+            DrawnNotices(
+                str(each[RESULT_DRAWN]), tuple(str(text) for text in each[RESULT_NOTICES] or ())
+            )
+            for each in found.get(DRAWN_PICTURES) or ()
+        ),
     )
 
 
@@ -250,19 +266,27 @@ class StepFailedOnDiscord(Exception):
         lines: tuple[str, ...],
         *,
         notices: tuple[str, ...] = (),
+        pictures: tuple[DrawnNotices, ...] = (),
         linked: int | None = None,
     ) -> "StepFailedOnDiscord":
         """Keep *lines*, the lines a picture drawn for the post came back with, in the result the
         stop saves (`DRAWN_LINES`), beside anything it already keeps; *self* is handed back so that
         a step can raise it. Where the picture had *notices*, they are kept with the index
         *linked* of the line that holds them (`DRAWN_NOTICES`, `DRAWN_LINKED`), for the reply of
-        the try that posts. A job whose picture said nothing keeps nothing more."""
+        the try that posts; a job that drew several pictures keeps instead each one's label and
+        notices as *pictures* (`DRAWN_PICTURES`). A job whose picture said nothing keeps nothing
+        more."""
         if lines:
             kept: dict[str, Any] = {DRAWN_LINES: list(lines)}
             if notices:
                 kept[DRAWN_NOTICES] = list(notices)
-                if linked is not None:
-                    kept[DRAWN_LINKED] = linked
+            if pictures:
+                kept[DRAWN_PICTURES] = [
+                    {RESULT_DRAWN: each.label, RESULT_NOTICES: list(each.notices)}
+                    for each in pictures
+                ]
+            if (notices or pictures) and linked is not None:
+                kept[DRAWN_LINKED] = linked
             self.result = {**(self.result or {}), **kept}
         return self
 

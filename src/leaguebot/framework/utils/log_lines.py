@@ -36,11 +36,21 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterable
+from dataclasses import dataclass
 from typing import Any
 
 import discord
 
-from leaguebot.framework.models.change import LEAGUE_LANE, DrawnNotices, NoticeBlock
+from leaguebot.framework.models.change import (
+    LEAGUE_LANE,
+    RESULT_DRAWN,
+    RESULT_NOTICES,
+    RESULT_PICTURES,
+    DrawnNotices,
+    NoticeBlock,
+    StepFailedOnDiscord,
+    drawn_kept,
+)
 from leaguebot.framework.utils.league_server import league_guild
 from leaguebot.framework.utils.member_names import interaction_member, member_named  # noqa: F401
 from leaguebot.utils.messages import chunk_message
@@ -346,6 +356,86 @@ def job_notice_lines(named: str, what: str, lines: Iterable[str]) -> tuple[str, 
     return tuple(
         f"{named} | {what} | {line}" if isinstance(line, NoticeBlock) else line for line in lines
     )
+
+
+_NOTICES_HEADING = "Image render notices"
+
+
+def notice_pictures(lines: Iterable[str], *, default: str) -> tuple[DrawnNotices, ...]:
+    """The picture each notice block among *lines* (`NoticeBlock`) reports, as a reply lists it: the
+    label its heading names ("Image render notices — <label>:", *default* where it names none) and
+    the grouped notices beneath. The inverse of `notices_block`."""
+    found: list[DrawnNotices] = []
+    for line in lines:
+        if not isinstance(line, NoticeBlock):
+            continue
+        heading, *body = str(line).split("\n")
+        label = heading.removeprefix(_NOTICES_HEADING).removeprefix(" — ").removesuffix(":")
+        found.append(DrawnNotices(label or default, tuple(body)))
+    return tuple(found)
+
+
+@dataclass(frozen=True)
+class PictureLines:
+    """The lines a job that drew pictures hands back (`framed_picture_lines`): *lines*, the
+    pictures' notices among them framed and joined in one line; *pictures*, each picture's label
+    and notices, for the change's reply; and *linked*, the index in *lines* of the line holding
+    them, None where no picture had a notice."""
+
+    lines: tuple[str, ...]
+    pictures: tuple[DrawnNotices, ...] = ()
+    linked: int | None = None
+
+    def plus(self, *lines: str) -> "PictureLines":
+        """These lines with *lines* after them, the pictures and the link as they were."""
+        return PictureLines(self.lines + tuple(lines), self.pictures, self.linked)
+
+    def result(self) -> dict[str, Any]:
+        """What the job puts on its result for the reply to list its pictures (`RESULT_PICTURES`):
+        nothing where no picture had a notice."""
+        if not self.pictures:
+            return {}
+        return {
+            RESULT_PICTURES: [
+                {RESULT_DRAWN: each.label, RESULT_NOTICES: list(each.notices)}
+                for each in self.pictures
+            ]
+        }
+
+    def carried_by(self, stop: StepFailedOnDiscord) -> StepFailedOnDiscord:
+        """*stop*, keeping these lines, pictures and link on the stop it saves, for the try that
+        posts to hand back (`StepFailedOnDiscord.carrying`)."""
+        return stop.carrying(self.lines, pictures=self.pictures, linked=self.linked)
+
+
+def framed_picture_lines(
+    named: str,
+    what: str,
+    lines: Iterable[str],
+    *,
+    kept: dict[str, Any] | None = None,
+    label: str,
+) -> PictureLines:
+    """What a job that drew pictures writes: the lines an earlier try of it *kept* on its stop, then
+    *lines*, those of this try, with each notice block the drawing marked (`NoticeBlock`) opened
+    with *named* and *what* (`job_notice_lines`) and every one joined in a single line, so that
+    all the job's notices reach the log in one message, which the reply links to once. A picture
+    drawn on an earlier try keeps its own pictures and link; *label* names a block that names no
+    picture. Frame the blocks here, before `StepFailedOnDiscord.carrying` keeps them, because the
+    mark is lost with the saved result."""
+    earlier = drawn_kept(kept)
+    new = tuple(lines)
+    pictures = earlier.pictures + notice_pictures(new, default=label)
+    framed = job_notice_lines(named, what, new)
+    blocks = [line for line, each in zip(framed, new) if isinstance(each, NoticeBlock)]
+    if blocks:
+        first = next(n for n, each in enumerate(new) if isinstance(each, NoticeBlock))
+        others = [line for line, each in zip(framed, new) if not isinstance(each, NoticeBlock)]
+        framed = (*others[:first], "\n".join(blocks), *others[first:])
+    linked = earlier.linked
+    if linked is None and blocks:
+        linked = len(earlier.lines) + first
+    return PictureLines(earlier.lines + tuple(framed), pictures, linked)
 
 
 def log_link(url: str) -> str:
