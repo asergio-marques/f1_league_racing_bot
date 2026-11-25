@@ -235,12 +235,19 @@ async def test_an_allowed_amendment_is_offered_for_confirmation(tmp_path):
         "  • `scheduled_at` → `2099-06-21 18:00:00`",
         id="a-moment-with-a-zone",
     ),
+    pytest.param({"format": "sprint"}, "  • `format` → `Sprint`", id="a-new-format"),
+    pytest.param(
+        {"track": NEW_TRACK, "format": "NORMAL"},
+        "  • `format` → `Normal`",
+        id="a-format-given-with-the-value-it-holds",
+    ),
 ])
 async def test_the_confirmation_shows_each_new_value_as_a_league_reads_it(tmp_path, kwargs, line):
     """The season is active, with attendance off, and round 1 a month out with nothing drawn. A
     manager amends it. The confirmation offered names each new value as a league reads it: a new
     moment, typed with no zone or as 20:00 at +02:00, as UTC with no offset, "• `scheduled_at` →
-    `2099-06-21 18:00:00`"."""
+    `2099-06-21 18:00:00`"; a format, whether new or the one the round already holds given beside
+    a new circuit, by its label, "• `format` → `Sprint`", never as ``RoundFormat.SPRINT``."""
     path = await _db(tmp_path, scheduled_at=datetime.now(timezone.utc) + timedelta(days=30))
     interaction = _interaction()
 

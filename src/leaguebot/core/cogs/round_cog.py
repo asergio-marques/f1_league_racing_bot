@@ -452,11 +452,12 @@ class RoundCog(commands.Cog):
 
         summary_lines = [f"**Amend Round {rnd.round_number}** in division **{div.name}**:"]
         for f_name, f_val in amendments:
-            # A moment is shown in UTC without its offset.
-            shown = (
-                f_val.astimezone(timezone.utc).replace(tzinfo=None)
-                if isinstance(f_val, datetime) else f_val
-            )
+            # A moment is shown in UTC without its offset, a format by its label.
+            shown: object = f_val
+            if isinstance(f_val, datetime):
+                shown = f_val.astimezone(timezone.utc).replace(tzinfo=None)
+            elif isinstance(f_val, RoundFormat):
+                shown = f_val.label
             summary_lines.append(f"  \u2022 `{f_name}` \u2192 `{shown}`")
 
         # What the amendment costs, as the modules give it: the notes first (weather names the
