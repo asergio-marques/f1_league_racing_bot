@@ -47,6 +47,7 @@ the stop could never do.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Awaitable, Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
@@ -260,6 +261,7 @@ def _channel_setting(
                 db, int(ctx.payload["division_id"]), results_only=key == "results",
                 standings_only=key == "standings",
             )
+            old = await _where_posts_stand(db, ctx.payload, key, int(old))
         if not up:
             return StepResult(result={"carrying": False})
         carry = {
@@ -292,6 +294,29 @@ def _channel_setting(
         ),
         repairs_the_bot=True,
     )
+
+
+async def _where_posts_stand(
+    db: "aiosqlite.Connection", payload: dict[str, Any], which: str, replaced: int
+) -> int:
+    """The channel the posts stand in, as far as the queue shows: where *replaced* is the channel an
+    earlier carry of this division's *which* is still waiting to move them to, that carry's old
+    channel, since nothing has gone up in *replaced*; otherwise *replaced* itself."""
+    async with db.execute(
+        "SELECT payload FROM queued_changes WHERE kind = ? AND state IN ('QUEUED', 'RUNNING') "
+        "ORDER BY id",
+        (CHANNEL_CARRY,),
+    ) as cursor:
+        rows = await cursor.fetchall()
+    standing = replaced
+    for row in rows:
+        waiting = json.loads(row["payload"])
+        if (
+            int(waiting["division_id"]) == int(payload["division_id"])
+            and waiting["which"] == which and int(waiting["new_channel_id"]) == standing
+        ):
+            standing = int(waiting["old_channel_id"])
+    return standing
 
 
 async def _stands(bot: "LeagueBot", channel_id: int, needs: Needs) -> bool:

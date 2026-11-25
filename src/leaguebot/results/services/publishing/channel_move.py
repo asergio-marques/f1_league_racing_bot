@@ -13,7 +13,10 @@ the lane. Its scope is what the syncs repost. The payload is `{"division_id", "d
 it may have switched results off, opened an amendment, ended the season's racing or moved the
 channel again. A carry no longer due is dropped, and the log channel is told that the posts stay in
 the old channel and why (`Verdict.not_due`'s line): the posts are not lost, and a sync posts them in
-the new channel once the league wants them there. A carry whose new channel has gone, or which the
+the new channel once the league wants them there. Where the channel moved again, the line says only
+that the carry was not made and that the channel changed: the later move asks a carry of its own,
+from the channel the posts stand in (`channel_settings._where_posts_stand`), which is the first
+carry's old channel while that carry waits. A carry whose new channel has gone, or which the
 bot cannot post in, is refused, which stops the lane at the carry for the league to set a channel
 and press Retry: the move is saved, and the posts have still to be carried.
 
@@ -131,7 +134,11 @@ def channel_move_change(
             now = "none" if held is None else f"<#{held}>"
             return Verdict.not_due(
                 "channel changed",
-                line=_stay(payload, f"the {which} channel has changed since: it is now {now}"),
+                line=(
+                    f"ℹ️ The {which} of **{payload['division_name']}** were not carried from "
+                    f"<#{payload['old_channel_id']}> to <#{payload['new_channel_id']}> because the "
+                    f"{which} channel has changed since: it is now {now}."
+                ),
             )
         refusal = await unusable_refusal(
             await league_guild(ctx.bot), int(payload["new_channel_id"]),
