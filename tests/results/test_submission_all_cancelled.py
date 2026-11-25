@@ -964,6 +964,65 @@ async def test_the_earlier_provisional_tables_come_down_after_each_session_s_not
                 > league.events.index(("send", RESULTS_CHANNEL, note)))
 
 
+#: A results channel moved from 700 to this one after round 3's tables were posted in 700.
+MOVED_RESULTS_CHANNEL = 703
+#: A Sprint Race table of round 3 standing in 700, its session one the resubmission does not
+#: enter again: below 9000, where the channel double's ids for the messages it is sent begin.
+UNPLACED_TABLE = 8803
+
+
+@pytest.mark.xfail(strict=True, reason=(
+    "#645: a results table keeps no channel it was posted in, so one the resubmission does not "
+    "enter again is looked for in the present results channel"
+))
+async def test_a_table_the_resubmission_does_not_enter_again_comes_down_from_where_it_was_posted(
+    tmp_path, monkeypatch,
+):
+    """Round 3's provisional tables were posted in Pro's results channel (700) when its review
+    opened, and a Sprint Race table (8803) of round 3 stands there too, recorded as posted in 700,
+    its session one the resubmission does not enter again. Alex resubmits; Pro's results channel is
+    then moved to 703, 700 still on the server. Alex types CANCELLED for the qualifying and then
+    for the race. When the queue runs, both sessions' "This session was cancelled." lines are
+    posted in 703, and only then is the Sprint Race table deleted from 700, where it was posted;
+    nothing is deleted from 703."""
+    from leaguebot.framework.db.database import get_connection
+    from tests.results.test_resubmission_changes import ROUND_ID as REVIEWED_ROUND, _type
+    from tests.results.test_review_open_change import DIVISION_ID, RESULTS_CHANNEL
+    from tests.support.review_league import channel
+
+    league = await _resubmitting(tmp_path, monkeypatch)
+    league.channel(RESULTS_CHANNEL).seed(UNPLACED_TABLE, "round 3 sprint race results")
+    league.channels[MOVED_RESULTS_CHANNEL] = channel(MOVED_RESULTS_CHANNEL, league.events)
+    league.channels[MOVED_RESULTS_CHANNEL].guild = league.guild
+    async with get_connection(league.db_path) as db:
+        await db.execute(
+            "INSERT INTO session_results (round_id, division_id, session_type, status, "
+            "results_message_id, results_message_ids, results_message_channel_id) "
+            "VALUES (?, ?, 'SPRINT_RACE', 'ACTIVE', ?, ?, ?)",
+            (REVIEWED_ROUND, DIVISION_ID, UNPLACED_TABLE, f"[{UNPLACED_TABLE}]",
+             RESULTS_CHANNEL),
+        )
+        await db.execute(
+            "UPDATE division_results_config SET results_channel_id = ? WHERE division_id = ?",
+            (MOVED_RESULTS_CHANNEL, DIVISION_ID),
+        )
+        await db.commit()
+
+    await _type(league, "CANCELLED")
+    await _type(league, "CANCELLED")
+
+    assert await stopped_job(league.db_path) is None
+    assert UNPLACED_TABLE not in league.channel(RESULTS_CHANNEL).messages
+    assert league.deleted_in(MOVED_RESULTS_CHANNEL) == []
+    standing = league.channel(MOVED_RESULTS_CHANNEL).messages
+    lines = [index for index, event in enumerate(league.events)
+             if event[0] == "send" and event[1] == MOVED_RESULTS_CHANNEL
+             and (sent := standing.get(event[2])) is not None
+             and "This session was cancelled" in str(sent.content)]
+    assert len(lines) == 2
+    assert league.events.index(("delete", RESULTS_CHANNEL, UNPLACED_TABLE)) > max(lines)
+
+
 async def test_a_later_round_s_standings_are_recomputed_without_the_round_and_posted_again(
     tmp_path, monkeypatch,
 ):
