@@ -352,11 +352,8 @@ def job_notice_lines(named: str, what: str, lines: Iterable[str]) -> tuple[str, 
     """A job's *lines* with each notice block the drawing marked (`NoticeBlock`) opened with *named*
     and *what*, the member and the change the job ran for, as every line of the log opens; every
     other line (a fault's, one kept from an earlier try and already framed) is left as it is. The
-    framed block is a plain string, so framing it again changes nothing. A change named by a
-    command alone ("`/season complete`") is written without the code marks, as the line closing
-    that change writes it."""
-    if what.startswith("`") and what.endswith("`") and what.count("`") == 2:
-        what = what[1:-1]
+    framed block is a plain string, so framing it again changes nothing. The change is named as
+    the job names it, a command with its code marks ("`/season complete`")."""
     return tuple(
         f"{named} | {what} | {line}" if isinstance(line, NoticeBlock) else line for line in lines
     )

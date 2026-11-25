@@ -694,12 +694,10 @@ _ASKED_BY = {
 }
 
 
-#: `_OCCASIONS`, the final classification's case marked: its notice line names the command bare.
+#: `_OCCASIONS` as the notice tests take them.
 _NOTICE_OCCASIONS = [
     _OCCASIONS[0],
-    pytest.param(*_OCCASIONS[1].values, id="final", marks=pytest.mark.xfail(
-        strict=True, reason="#635: the notice line names the command bare, without its code marks",
-    )),
+    pytest.param(*_OCCASIONS[1].values, id="final"),
 ]
 
 

@@ -290,9 +290,6 @@ SESSION_NOTICE = "Font7 was unavailable, so a substitute was drawn"
     pytest.param(False, id="first try"),
     pytest.param(True, id="retried as text"),
 ])
-@pytest.mark.xfail(
-    strict=True, reason="#635: the notice line names the command bare, without its code marks",
-)
 async def test_a_rounds_sync_s_reply_names_the_session_picture_drawn_with_notices(
     tmp_path, refused,
 ):
