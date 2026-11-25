@@ -29,15 +29,9 @@ TEMPLATES = Path(__file__).resolve().parents[2] / "resources" / "defaults" / "te
 #: 1002 placed there mid-season and not yet confirmed, 1003 seated with no placement at all.
 NAMES = {1001: "Zara Quill", 1002: "Yuri Vexley", 1003: "Cal Cole"}
 
-#: Why `/team lineup`'s drawing fails until it is handed the member and the command.
-NOT_YET_NAMED = "#635: the command's drawing is not yet handed the member and the command"
-
 #: The member and the command `/team lineup` hands its drawing, for the log entry holding the
 #: picture's notices to open with, as every entry does.
 COMMANDED = {"named": "Alex (<@4242>)", "what": "`/team lineup`"}
-
-#: Why a drawing's notices fail until they come back grouped by kind, repeats counted.
-NOT_YET_GROUPED = "#635: a drawing hands back each notice's words, one apiece"
 
 
 def _asked(draw: str, **handed):
@@ -53,7 +47,6 @@ DRAWS = [
     pytest.param("draw_lineup", id="of_record"),
     pytest.param(
         "draw_lineup_for_command", id="for_command",
-        marks=pytest.mark.xfail(strict=True, reason=NOT_YET_NAMED),
     ),
 ]
 
@@ -213,7 +206,6 @@ PORTRAIT_TRIGGERS = [
     pytest.param("draw_lineup", {}, [1001], False, id="of_record"),
     pytest.param(
         "draw_lineup_for_command", {}, [1001], False, id="for_command",
-        marks=pytest.mark.xfail(strict=True, reason=NOT_YET_NAMED),
     ),
     pytest.param(
         "draw_review_lineup", {"include_uncommitted": True}, [1001, 1002], True, id="for_review",
@@ -258,7 +250,6 @@ def _two_lineup_notices():
 NOTICES_LINK = "https://discord.test/4242/7"
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_NAMED)
 @pytest.mark.parametrize("log_channel", ["takes", "refuses"])
 async def test_a_lineup_drawn_for_a_command_reports_its_notices_to_the_log_channel_in_one_message(
     db_path, monkeypatch, log_channel,
@@ -387,7 +378,6 @@ _ABSENT_WORDS = "Inkscape is not installed on this host."
                      id="for_command-a_converter_absent"),
     ],
 )
-@pytest.mark.xfail(strict=True, reason=NOT_YET_GROUPED)
 async def test_the_lineup_drawing_hands_back_the_picture_the_problem_and_the_notices(
     db_path, monkeypatch, tmp_path, draw, drawn, problem, source,
 ):
@@ -447,7 +437,7 @@ async def test_the_lineup_drawing_hands_back_the_picture_the_problem_and_the_not
 REFUSED_DRAWS = [
     pytest.param("draw_lineup", {}, "the division no longer exists", id="of_record"),
     pytest.param("draw_lineup_for_command", {}, "the lineup: the division no longer exists",
-                 id="for_command", marks=pytest.mark.xfail(strict=True, reason=NOT_YET_NAMED)),
+                 id="for_command"),
     pytest.param("draw_review_lineup", {"include_uncommitted": True},
                  "❌ the lineup: the division no longer exists", id="for_review"),
 ]
@@ -477,7 +467,6 @@ async def test_a_lineup_refused_before_its_render_comes_back_as_its_problem(
     channel.send.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_NAMED)
 async def test_a_lineup_that_cannot_be_read_raises_out_of_the_commanded_draw(
     monkeypatch, tmp_path,
 ):

@@ -526,9 +526,6 @@ async def test_a_notices_section_over_the_message_limit_is_sent_in_parts(tmp_pat
     )
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#635: the command hands its drawing neither member nor command"
-)
 async def test_the_drawing_is_handed_the_member_and_the_command(tmp_path):
     """The league draws its lineup, and Manager (member 77) runs `/team lineup` for Division 1.
     The drawing is handed, with the division, the member named as the log channel names them

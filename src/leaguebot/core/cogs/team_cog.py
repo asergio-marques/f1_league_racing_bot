@@ -28,6 +28,7 @@ from leaguebot.framework.utils.interaction_errors import describe, describe_form
 from leaguebot.framework.utils.league_bot import LeagueBot
 from leaguebot.framework.utils.league_server import LeagueModal
 from leaguebot.framework.utils.log_lines import drawn_notices_section, refuse
+from leaguebot.framework.utils.member_names import interaction_member
 from leaguebot.utils.messages import chunk_message
 
 log = logging.getLogger(__name__)
@@ -451,7 +452,8 @@ class TeamCog(commands.Cog):
         # model `calendar_post_service.replace_calendar_message` and
         # `LineupPoster._refresh_lineup_post` both set.
         async with lineups_for_command(
-            self.bot.image_drawing, interaction.guild, all_divisions
+            self.bot.image_drawing, interaction.guild, all_divisions,
+            named=interaction_member(interaction), what=describe(interaction),
         ) as lineups:
             if lineups.drawn:
                 # The notices are told to the manager alone, whatever `public` says: a channel

@@ -262,13 +262,17 @@ class ImageDrawing(Protocol):
         render, comes back as the problem, and the picture says where its fault lies. Whatever is
         raised is a fault in the bot."""
 
-    async def draw_lineup_for_command(self, guild: Any, division_id: int) -> LineupPicture:
+    async def draw_lineup_for_command(
+        self, guild: Any, division_id: int, *, named: str, what: str,
+    ) -> LineupPicture:
         """Draw *division_id*'s lineup in *guild*, as a command's own output rather than the
-        lineup of record: not written to the lineup of record. Hands back the picture
-        drawn, or the problem naming why it could not be — worded for the command's own
-        refusal rather than the text fallback's — and the notices it survived, which it has reported
-        to the log channel in one message, the command running in no job, with the link to that
-        message where one was posted. A refusal, even one met before the render, comes back as
+        lineup of record: not written to the lineup of record. *named* is the member who ran the
+        command, named as the log channel names them, and *what* the command, as a job line names
+        it. Hands back the picture drawn, or the problem naming why it could not be — worded for
+        the command's own refusal rather than the text fallback's — and the notices it survived,
+        grouped by kind as the log shows them, which it has reported to the log channel in one
+        message opening with *named* and *what*, the command running in no job, with the link to
+        that message where one was posted. A refusal, even one met before the render, comes back as
         the problem, and the picture says where its fault lies. Whatever is raised, a fault in the
         bot while drawing or in reading the division itself (the database cannot be opened), is
         let out, for the command's own failure path to report, rather than turned into refusal

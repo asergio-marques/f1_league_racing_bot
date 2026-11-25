@@ -5,10 +5,11 @@ The command's output is **not** the lineup of record (FR-028): nothing is writte
 `draw_lineup_for_command` and posts nothing. **A division that cannot be drawn refuses the whole
 command rather than falling back to text**: the caller is the one person able to fix the template,
 and text in its place would hide a broken template from them (Constitution XIV.7). The drawing has
-already reported each division's notices to the log channel, headed with the division, so nothing
-here reports them a second time; what is kept here is each division's notices with the link to that
-message, labelled as the log line names the picture, for the command to tell the manager alone
-(Constitution XIV.4: no notice in a channel the drivers read).
+already reported each division's notices to the log channel, opening with the member and the
+command it is handed and headed with the division, so nothing here reports them a second time;
+what is kept here is each division's notices with the link to that message, labelled as the log
+line names the picture, for the command to tell the manager alone (Constitution XIV.4: no notice
+in a channel the drivers read).
 
 The cog chooses the replies and their visibility; the rules are here, so they can be tested with
 no interaction involved (`architecture.md`, "What each part may do").
@@ -49,10 +50,12 @@ class CommandLineups:
 
 @asynccontextmanager
 async def lineups_for_command(
-    drawing: ImageDrawing, guild: Any, divisions: Sequence[Division]
+    drawing: ImageDrawing, guild: Any, divisions: Sequence[Division], *, named: str, what: str
 ) -> AsyncIterator[CommandLineups]:
     """Draw each of *divisions*' lineups in *guild*, in order, as `/team lineup`'s output, and
-    hand back what came of it (`CommandLineups`) for the duration of the block.
+    hand back what came of it (`CommandLineups`) for the duration of the block. *named* is the
+    member who ran the command and *what* the command, handed to each drawing for the log entry
+    holding its notices to open with both.
 
     Nothing is drawn where the league does not draw its lineup (`lineup_wanted`). The first
     division the drawing cannot draw stops the batch and is named in the answer. On leaving the
@@ -69,7 +72,9 @@ async def lineups_for_command(
             yield CommandLineups(drawn=False)
             return
         for division in divisions:
-            picture = await drawing.draw_lineup_for_command(guild, division.id)
+            picture = await drawing.draw_lineup_for_command(
+                guild, division.id, named=named, what=what
+            )
             if picture.path is not None:
                 drawn_paths.append(picture.path)
             if picture.notices:
