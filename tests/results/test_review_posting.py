@@ -197,6 +197,9 @@ class _League:
         guild = MagicMock(spec=discord.Guild)
         guild.id = 12408
         guild.get_channel = MagicMock(side_effect=_get)
+        # A fetch proves a channel gone as Discord's does, so a check judging the server sees
+        # the channel the test deleted as gone.
+        guild.fetch_channel = AsyncMock(side_effect=_fetch)
         guild.get_member = MagicMock(return_value=None)
         guild.fetch_member = AsyncMock(
             side_effect=http_error(discord.NotFound, status=404, text="Unknown Member")
