@@ -17,7 +17,7 @@ any other read of the review's does.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -74,3 +74,37 @@ async def read_division_lines(
     return list(
         await division_lines_read.call(season_id=season_id, division_ids=list(division_ids))
     )
+
+
+_MODULE_ORDER = ("weather", "signup", "results", "attendance", "images")
+
+
+def module_review_lines(
+    states: Sequence[tuple[str, bool]], notes: Mapping[str, str | None]
+) -> list[str]:
+    """The Modules section both reviews open their module list with: its heading, one line for
+    each module in the one order (weather, signup, results, attendance, images) and a blank line.
+
+    *states* is each module's switch by its key, in any order; *notes* is each module's own
+    note, as its section hands it (`ReviewSection.modules_note`), shown only where the module is
+    on. A line gives the state, then whether it can still change: signup is fixed for the season
+    once the configuration is confirmed, and any other module can be switched on only until
+    placements are confirmed and switched off later but never back on. **The notes read the same
+    in both reviews**, so each is worded true at either confirmation. This is where the rule
+    that `ModuleCog` enforces is told to the manager.
+    """
+    enabled = dict(states)
+    lines = ["**Modules**"]
+    for key in _MODULE_ORDER:
+        on = enabled[key]
+        if key == "signup":
+            change = "fixed for the season once the configuration is confirmed"
+        elif on:
+            change = "can be switched off later, but not back on once placements are confirmed"
+        else:
+            change = "can be switched on only until placements are confirmed"
+        line = f"  {key.title()}: {'✅ Enabled' if on else '❌ Disabled'} — {change}"
+        note = notes.get(key) if on else None
+        lines.append(f"{line} | {note}" if note else line)
+    lines.append("")
+    return lines

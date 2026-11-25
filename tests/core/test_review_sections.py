@@ -134,7 +134,6 @@ _RESULTS_ON = (
 _RESULTS_OFF = "  Results: ❌ Disabled — can be switched on only until placements are confirmed"
 
 
-@pytest.mark.xfail(strict=True, reason="#643: no helper writes the reviews' module lines")
 @pytest.mark.parametrize(("module", "on", "line"), [
     pytest.param("signup", True, _SIGNUP_ON, id="signup-on"),
     pytest.param("signup", False, _SIGNUP_OFF, id="signup-off"),
