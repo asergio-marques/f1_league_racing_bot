@@ -43,6 +43,7 @@ from tests.support.change_queue import (
     seed_server,
     stopped_job,
 )
+from tests.support.current_documents import ROOT, current_text_paths
 from tests.support.settings_league import (
     NOW,
     SettingsLeague,
@@ -698,18 +699,9 @@ def test_the_signup_config_group_holds_only_view():
 def test_nothing_current_offers_the_withdrawn_config_channel():
     """A guide or reply naming it would send a league to a command Discord no longer offers.
     `specs/` is a historical record and is not read."""
-    import pathlib
-
-    root = pathlib.Path(__file__).resolve().parents[2]
-    paths = [
-        *sorted((root / "src").rglob("*.py")),
-        root / "README.md",
-        *sorted((root / "docs" / "how-to").glob("*.md")),
-        *sorted((root / "docs" / "wip-specs").glob("*.md")),
-    ]
     offenders = sorted(
-        str(path.relative_to(root))
-        for path in paths
+        str(path.relative_to(ROOT))
+        for path in current_text_paths()
         if "/signup config channel" in path.read_text(encoding="utf-8")
     )
     assert offenders == []
