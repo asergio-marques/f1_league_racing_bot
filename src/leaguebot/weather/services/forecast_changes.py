@@ -452,6 +452,7 @@ def forecast_steps(*, now: Callable[[], datetime], drawing: ImageDrawing) -> dic
         await forecast_cleanup_service.forget_forecast_on(
             db, round_id, int(division_id), int(_value(ctx, "phase")),
             None if message_id is None else int(message_id),
+            keep_notice_given=bool(_value(ctx, "clean_up", False)),
         )
 
     async def describe_delete(ctx: StepContext) -> str:

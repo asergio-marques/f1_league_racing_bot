@@ -94,6 +94,8 @@ async def forget_forecast_on(
     division_id: int,
     phase_number: int,
     message_id: int | None,
+    *,
+    keep_notice_given: bool = False,
 ) -> None:
     """Drop the record of the forecast of *phase_number* of *round_id* on *db*, committing
     nothing, once its message is deleted.
@@ -101,9 +103,12 @@ async def forget_forecast_on(
     Only the row holding *message_id* goes, so that a newer forecast recorded for the phase is
     never dropped with the one it replaced; with no *message_id* the phase's row goes whatever
     it holds. A mystery round's notice (phase 0) closes the round's notice flag with its record,
-    so that a round that is a mystery round again is owed its notice again.
+    so that a round that is a mystery round again is owed its notice again, unless
+    *keep_notice_given*: the clean-up a day after the round takes the notice down and leaves the
+    flag set, as it leaves `phaseN_done`, so that the round is not read as one whose notice was
+    never given.
     """
-    if phase_number == 0:
+    if phase_number == 0 and not keep_notice_given:
         await db.execute("UPDATE rounds SET mystery_notice_given = 0 WHERE id = ?", (round_id,))
     if message_id is None:
         await db.execute(
