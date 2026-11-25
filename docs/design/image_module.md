@@ -353,10 +353,10 @@ owns is read through a protocol image declares, `PreviewSources` (`preview/previ
 each module implements the part whose data it owns, results its sample sessions and
 classification rows, compounds, standings, results drawing and the sanction's wording
 (`results/services/publishing/preview_sources.py`), and attendance its check-in deadline and the
-order its sheet lists a set of drivers in, which the attendance preview's fabricated rows take
-(`attendance/services/hooks/preview_sources.py`), and the builder joins the two and attaches them as
-`bot.preview_sources`. A method hands back a worked answer, never a stored row or a service of the
-module's.
+order its sheet lists a set of drivers in after a round, which the attendance preview's fabricated
+rows take (`attendance/services/hooks/preview_sources.py`), and the builder joins the two and
+attaches them as `bot.preview_sources`. A method hands back a worked answer, never a stored row or a
+service of the module's.
 
 Image has no entry in the dependency table and declares no hook; the one seam it declares for others
 to fill is this protocol (`architecture.md`, "How modules and core fit together").
@@ -496,4 +496,7 @@ Each of these is held by the docstring named, and pinned by a test where one is 
 - **`posting_origin` is required and never inferred** (`render_for_posting`).
 - **The attendance picture's rows keep the order they are handed**, whichever sheet it is: image
   sorts none, so the picture cannot disagree with the text sheet, and the preview takes its order
-  from attendance too (`attendance_drawing.resolve_drawing`, `PreviewSources.attendance_sheet_order`).
+  from attendance too (`attendance_drawing.resolve_drawing`, `PreviewSources.attendance_sheet_order`,
+  `build_attendance_preview`, `test_rows_are_drawn_in_the_order_they_are_handed`,
+  `test_the_opening_sheet_and_its_picture_list_drivers_by_team_then_name`,
+  `test_the_preview_draws_its_rows_in_the_sheet_s_order`).
