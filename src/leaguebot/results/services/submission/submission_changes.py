@@ -420,15 +420,15 @@ def advance_step(queue: ChangeQueue, db_path: str) -> AdvanceStep:
         division, number = entry["division_name"], entry["round_number"]
         if await is_submission_open(db_path, entry["round_id"]):
             status = await round_result_status(db_path, entry["round_id"])
-            if status != "FINAL":
-                review = (
-                    "appeals review" if status == "AWAITING_APPEAL_VERDICTS" else "penalty review"
-                )
+            review = {
+                "AWAITING_REPORT_VERDICTS": "penalty review",
+                "AWAITING_APPEAL_VERDICTS": "appeals review",
+            }.get(status or "")
+            if review is not None:
                 return AdvanceOutcome.refused(
                     f"⏸️ **{division}** — **Round {number}** is awaiting {review} approval. "
                     f"Please complete the {review} in the submission channel before advancing."
                 )
-            # Finalized (shouldn't normally reach here, but handle gracefully)
             return AdvanceOutcome.refused(
                 f"⏸️ Result submission for **{division}** — **Round {number}** is already in "
                 f"progress. Please submit results in the submission channel before advancing."

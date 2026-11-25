@@ -611,12 +611,15 @@ async def test_the_round_s_real_results_job_is_cancelled_before_the_wizard_opens
         service._scheduler._jobstores["default"].engine.dispose()
 
 
-async def test_an_open_submission_blocks_the_next_advance(tmp_path):
+@pytest.mark.parametrize("status", ["AWAITING_RESULTS", "FINAL"])
+async def test_an_open_submission_blocks_the_next_advance(tmp_path, status):
     """The maintainer has to finish the round in front of them before stepping past it. Round
-    3's submission channel stands open, the round awaiting its results: advance asks nothing,
-    refuses naming the penalty review, and records the refusal in the log channel."""
+    3's submission channel stands open with no review under way: advance asks nothing, refuses
+    saying the results are still to be submitted, and records the refusal in the log channel.
+    Awaiting its results is the case met in practice (#587); a finalised round is the defensive
+    one."""
     db_path = await _make_db(tmp_path)
-    await _open_submission(db_path, "AWAITING_RESULTS")
+    await _open_submission(db_path, status)
     cog = _make_cog(db_path)
     interaction = _interaction()
     interaction.client = cog.bot
@@ -626,8 +629,8 @@ async def test_an_open_submission_blocks_the_next_advance(tmp_path):
     assert _asked(cog) == []
     _assert_refused(
         cog, interaction,
-        "⏸️ **Division 1** — **Round 3** is awaiting penalty review approval. Please complete "
-        "the penalty review in the submission channel before advancing.",
+        "⏸️ Result submission for **Division 1** — **Round 3** is already in progress. Please "
+        "submit results in the submission channel before advancing.",
     )
 
 
@@ -662,26 +665,6 @@ async def test_a_round_awaiting_appeals_names_the_appeals_review(tmp_path):
         cog, interaction,
         "⏸️ **Division 1** — **Round 3** is awaiting appeals review approval. Please complete "
         "the appeals review in the submission channel before advancing.",
-    )
-
-
-async def test_a_finalised_round_with_an_open_channel_says_so_differently(tmp_path):
-    """The defensive case: nothing is awaiting review, so the message is about the
-    submission being in progress rather than about a review to complete. The refusal is
-    recorded in the log channel."""
-    db_path = await _make_db(tmp_path)
-    await _open_submission(db_path, "FINAL")
-    cog = _make_cog(db_path)
-    interaction = _interaction()
-    interaction.client = cog.bot
-
-    await _advance(cog, interaction, _entry(4))
-
-    assert _asked(cog) == []
-    _assert_refused(
-        cog, interaction,
-        "⏸️ Result submission for **Division 1** — **Round 3** is already in progress. Please "
-        "submit results in the submission channel before advancing.",
     )
 
 
