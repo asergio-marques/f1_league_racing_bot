@@ -781,9 +781,9 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
       rule of 110 `-`, then one row per driver seated in the division: the 24 Division 1 drivers
       of the Fixture, each with its mention, `<@9000000000000000001>` to
       `<@9000000000000000024>`, the state `Assigned`, its nationality as the Fixture gives it,
-      and its seat as `<team's full name> (Division 1)`: two in each of the eleven racing teams,
-      two `Reserve (Division 1)`. A long roster may come as several messages, each a complete
-      table repeating the heading. It ends:
+      and its seat as `<shorthand> = <team's full name> (Division 1)`: two in each of the eleven
+      racing teams, two `Reserve = Reserve (Division 1)`. A long roster may come as several
+      messages, each a complete table repeating the heading. It ends:
       ```
       Copy mention strings above when submitting results in the format:
       `Position, <@user_id>, <team shorthand>, ...`
