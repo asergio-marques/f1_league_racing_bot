@@ -52,12 +52,12 @@ async def _section(service, on: bool, review: str):
 
 @pytest.mark.parametrize(("review", "note"), [
     pytest.param("PLACEMENTS", "Channel: <#900>"),
-    pytest.param("CONFIGURATION", None),
+    pytest.param("CONFIGURATION", "Channel: <#900>", marks=pytest.mark.xfail(
+        strict=True, reason="#643: the configuration review gets no signup channel")),
 ])
 async def test_signup_hands_its_section_to_each_review(review, note):
     """Signup on, its channel set, its settings and one slot: each review gets the Signup Config
-    section; the placements review also gets the channel to show beside "Signup: ✅ Enabled" in
-    its Modules section, which the configuration review does not show."""
+    section, and the channel to show beside signup's line in its Modules section."""
     section = await _section(_service(), True, review)
 
     assert section.module == "signup"
