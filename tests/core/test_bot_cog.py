@@ -84,7 +84,8 @@ _INIT_SAVED = (
 #: What `/bot init` and `/bot factory-reset` add to their reply when they leave the test-mode flag
 #: on: the `/driver` and `/signup` commands are swapped at a restart alone after either (#600, D9).
 _DRIVER_RESTART = (
-    "The `/driver` and `/signup` commands will show correctly once the bot is restarted."
+    "The `/driver` and `/signup` commands will show correctly once the bot is restarted; then "
+    "reload Discord (Ctrl+R on desktop) before using them."
 )
 
 #: `/bot init` refused on a server already configured, word for word.
