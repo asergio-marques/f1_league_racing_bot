@@ -72,8 +72,8 @@ done: its notice where it is a mystery round, Phase 1 otherwise. So a mystery ro
 another type is judged by the forecasts drawn for it, of which there are none, and its Phase 1 is
 still owed (weather specification, "Mystery rounds"). The notice's flag is lowered
 as the notice's record is dropped (`forget_forecast_on`), so a round that is mystery again is owed
-its notice again, except under a clean-up, which keeps it: a notice taken down a day after the round
-is not owed again to a round amended later. Core carries none of the four flags.
+its notice again, except under a clean-up, which keeps it (weather specification, "Supersession and
+cleanup"). Core carries none of the four flags.
 
 ### The switch
 
@@ -259,7 +259,7 @@ weather specification's "Supersession and cleanup". Every moment is judged at th
 forecasts that stands, and for a mystery round's notice, at `clean_up_moment`; the phases it reads
 are one set, `CLEAN_UP_PHASES` in `forecast_kinds`, which the amendment, the recovery and the
 test-mode steps read too, so that none can leave the notice out. A clean-up keeps the notice's
-flag (`keep_notice_given`), the notice being no forecast to owe again. Which rounds are owed it is
+flag (`keep_notice_given`; see "Weather's own columns on core's tables"). Which rounds are owed it is
 the weather specification's "Supersession and cleanup" and "Changes to a round after generation".
 
 ### The settings and the switch
