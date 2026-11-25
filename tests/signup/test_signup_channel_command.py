@@ -515,23 +515,27 @@ def _deleted(events) -> list[tuple]:
 @pytest.mark.xfail(
     strict=True, reason="#665: a move while signups are closed does not yet carry the closed notice"
 )
-@pytest.mark.parametrize("recorded", [
-    pytest.param(OLD, id="recorded-in-the-old-channel"),
-    pytest.param(None, id="no-channel-recorded"),
+@pytest.mark.parametrize("recorded, standing", [
+    pytest.param(OLD, True, id="recorded-in-the-old-channel"),
+    pytest.param(None, True, id="no-channel-recorded"),
+    pytest.param(OLD, False, id="old-notice-deleted-by-hand"),
 ])
 async def test_a_move_while_signups_are_closed_carries_the_closed_notice_across(
-    tmp_path, recorded
+    tmp_path, recorded, standing
 ):
-    """Signups are closed, and the last close's "🔒 Signups are now closed." notice (950) stands
-    in the league's signup channel, 650, kept with 650 as its channel or, from before channels
-    were kept beside it, with none. The manager moves the signup channel to 700 and the queue
-    runs. The notice is posted in 700 (951) notifying nobody, and only then is 950 deleted from
-    650, as two steps after the permissions, in that order; the configuration keeps 951 with 700
-    as its channel, the manager is told only that the channel was set, and the queue goes on."""
+    """Signups are closed, and the last close's "🔒 Signups are now closed." notice (950) was
+    posted in the league's signup channel, 650, kept with 650 as its channel or, from before
+    channels were kept beside it, with none. The manager moves the signup channel to 700 and the
+    queue runs. The notice is posted in 700 (951) notifying nobody, and only then is 950 deleted
+    from 650, as two steps after the permissions, in that order; the configuration keeps 951 with
+    700 as its channel, the manager is told only that the channel was set, nothing is logged as
+    a failure, and the queue goes on. Where 950 was already deleted by hand from 650, which still
+    stands (*old-notice-deleted-by-hand*), it is left gone: the move ends the same way, with
+    nothing named to delete by hand."""
     league = await _league(tmp_path, held=OLD)
     await _closed_notice(league, channel_id=recorded)
     events: list[tuple] = []
-    old = _holding(_channel(OLD), events, OLD_NOTICE)
+    old = _holding(_channel(OLD), events, *((OLD_NOTICE,) if standing else ()))
     new = _holding(_channel(NEW), events)
     _discord(league, old, new)
 
@@ -541,9 +545,13 @@ async def test_a_move_while_signups_are_closed_carries_the_closed_notice_across(
     [sent] = _sent(events)
     assert sent[:4] == ("send", NEW, CARRIED_NOTICE, CLOSED)
     assert sent[4].to_dict() == discord.AllowedMentions.none().to_dict()
-    assert _deleted(events) == [("delete", OLD, OLD_NOTICE)]
-    assert events.index(sent) < events.index(("delete", OLD, OLD_NOTICE))
+    if standing:
+        assert _deleted(events) == [("delete", OLD, OLD_NOTICE)]
+        assert events.index(sent) < events.index(("delete", OLD, OLD_NOTICE))
+    else:
+        assert _deleted(events) == []
     assert await _notice_kept(league.db_path) == (CARRIED_NOTICE, NEW)
+    assert [line for line in await log_lines(league) if line.startswith("❌ ")] == []
     assert await stopped_job(league.db_path) is None
     from leaguebot.signup.services.channel_setting import (
         CARRY_CLOSED,
