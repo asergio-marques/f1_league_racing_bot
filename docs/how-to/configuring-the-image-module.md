@@ -472,6 +472,8 @@ Before you edit a drawing file, read the **`/images template <kind>`** section o
 
 **Make room for your biggest season.** Where the drawing file sets the limit — table rows, calendar rounds, reserve seats — the bot will refuse to go past it rather than quietly leaving someone off. The one exception is a reserve block you left out altogether, which is a decision rather than a limit and is honoured in silence. If your calendar drawing has room for 22 rounds, `/round add` will stop you at 23. Spare room costs nothing, as unused slots are hidden.
 
+> **Marking the background behind the fastest lap.** The bot tells you how readable the fastest-lap colour is only against the shapes your race results drawing marks for it. Add the class `fastest-lap-background` to every shape that lies behind the fastest-lap times of the rows — the canvas, and any band behind a row. The shipped race drawing marks its canvas and its row bands. Leave off a plate that sits behind something else, such as the block at the top right of the shipped drawing. Where you mark several shapes, the bot measures the colour against each and reports the lowest. A marked shape needs a plain colour (`fill="#14171C"`, or one in the stylesheet); a gradient or a missing fill makes the reading "could not be measured". With a colour per division on, only a division whose colour for that shape cannot be read goes unmeasured, and the others are still reported. A drawing that marks nothing is also told the contrast could not be measured. The colour itself is saved either way.
+
 ### Giving each tier its own colours
 
 You can run **one** drawing file across every tier and have each of them drawn in its own colour, instead of keeping a separate set of files per division. Like division logos, nothing the bot ships uses this and it stays off until you turn it on.
@@ -500,8 +502,6 @@ Do it in this order. Turning it on before the colours are set will stop your pic
 ```
 
 That states each colour once instead of on every element, and is how the drawings supplied in `resources/league/templates` are built. Either way the file still opens in Inkscape drawing its own colours.
-
-**Marking the background behind the fastest lap.** The bot tells you how readable the fastest-lap colour is only against the shapes your race results drawing marks for it. Add the class `fastest-lap-background` to every shape that lies behind the fastest-lap times of the rows — the canvas, and any band behind a row. The shipped race drawing marks its canvas and its row bands. Leave off a plate that sits behind something else, such as the block at the top right of the shipped drawing. Where you mark several shapes, the bot measures the colour against each and reports the lowest. A marked shape needs a plain colour (`fill="#14171C"`, or one in the stylesheet); a gradient or a missing fill makes the reading "could not be measured". With a colour per division on, only a division whose colour for that shape cannot be read goes unmeasured, and the others are still reported. A drawing that marks nothing gets the same reply. The colour itself is saved either way.
 
 > **Every slot you mark is one you must then set, for every division.** Slotting your whole palette means ten colours per tier before anything posts. Mark what you actually want to vary.
 
