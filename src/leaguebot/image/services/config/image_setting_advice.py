@@ -3,9 +3,8 @@
 The advice a setting adds to its reply: which outputs a switched-on aspect would not produce,
 what the fastest-lap colour reads against the background behind it, which colour slots no
 template marks, what a directory resolves to, which colours a per-tier switch-on still wants.
-None of it writes, and
-none of it is needed for the setting to stand: a setting is saved first and advised after, so a
-fault here cannot undo it. It lives apart from the cog so the settings
+None of it writes, and none of it is needed for the setting to stand: a setting is saved first
+and advised after, so a fault here cannot undo it. It lives apart from the cog so the settings
 (`image/services/config/image_settings.py`) can form it, a service importing no cog.
 """
 from __future__ import annotations
