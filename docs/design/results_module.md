@@ -370,8 +370,8 @@ first** because the setting has already saved the new channel: a post that recor
 taken to stand in the present one (see the posting's channel above), so without the note its old
 message would be deleted from the channel it was carried into. **It is dropped, not stopped, where
 it is no longer due** (results switched off, the season gone or pending completion, an amendment
-opened, the division gone, the channel moved again), and each drop tells the log channel that the
-posts stay in the old channel and why, through `Verdict.not_due`'s line, since the league would
+opened, the division gone, the channel moved again), and each drop tells the log channel that nothing
+was carried and why, through `Verdict.not_due`'s line, since the league would
 otherwise not know the move had carried nothing; **a new channel that has gone or that the bot
 cannot post in is refused**, stopping the lane for the league to repair and press Retry. Its
 docstring (`publishing/channel_move`) holds the rest.
