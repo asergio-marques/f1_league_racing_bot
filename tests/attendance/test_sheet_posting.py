@@ -443,12 +443,14 @@ NOT_YET_FRAMED = (
 )
 
 
-async def _sheet_notice_is_framed_and_kept(league: Any) -> None:
+async def _sheet_notice_is_framed_and_kept(league: Any, interaction: Any) -> None:
     """The log channel carries the sheet's one notice once, in a line opening with Alex and the
     command he ran, then "Image render notices — <sheet>:" naming Pro and round 1, and beneath it
     the notice under "Artwork not supplied by the league", naming its field `flag`, with no kind
     code and no template name; the sheet's job keeps the sheet's name and its grouped notices on
-    its result, for the sync's reply to list."""
+    its result, and the sync's reply to Alex's *interaction* says the attendance was recalculated
+    and ends in one "Image notices" section listing the sheet under that name, linked to the log
+    channel's message holding it, and the notice beneath, once."""
     log = await _said(league)
     assert log.count(SHEET_NOTICE) == 1, log
     [block] = [message for message in league.bot.log_channel.sent if SHEET_NOTICE in message]
@@ -471,6 +473,14 @@ async def _sheet_notice_is_framed_and_kept(league: Any) -> None:
         RESULT_DRAWN: drawn.removeprefix("Image render notices — ").removesuffix(":"),
         RESULT_NOTICES: grouped,
     }], kept
+    told = updated_reply(interaction)
+    assert told.startswith("✅ Attendance of **Pro** recalculated from round 1 on."), told
+    assert told.count("⚠️ **Image notices**") == 1, told
+    assert "\n\n⚠️ **Image notices**\n" in told, told
+    n = league.bot.log_channel.sent.index(block) + 1
+    label = drawn.removeprefix("Image render notices — ").removesuffix(":")
+    assert f"  **{label}** ([see them in the log](https://discord.test/{n}))" in told, told
+    assert told.count(SHEET_NOTICE) == 1, told
 
 
 @pytest.mark.xfail(strict=True, reason=NOT_YET_FRAMED)
@@ -481,7 +491,9 @@ async def test_a_sheet_s_render_notices_reach_the_log_once_naming_the_round(tmp_
     queue runs to the end; the log channel carries the notice once, in a line opening with Alex
     and the command, then a heading naming season 3, Pro and round 1, and the notice grouped
     beneath under its kind in plain words, naming its field; the sheet's job keeps the sheet's
-    name and grouped notices for the reply (issue #635; Constitution V)."""
+    name and grouped notices, and the sync's reply ends in one "Image notices" section listing the
+    sheet with a link to that log message, and the notice beneath (issue #635; Constitution V;
+    owner decision 2026-11-24)."""
     from leaguebot.image.models.image_module import RenderNotice, RenderOutcome
     from leaguebot.image.services.aspects.image_attendance_post import (
         ATTENDANCE_ASPECT,
@@ -504,13 +516,13 @@ async def test_a_sheet_s_render_notices_reach_the_log_once_naming_the_round(tmp_
         )],
     ))
 
-    await _sync_pro(league)
+    interaction = await _sync_pro(league)
     await run_queue(league.bot)
 
     assert await stopped_job(league.db_path) is None
     assert _sends(league) == 1
     assert league.channel(SHEET).files[-1] is not None
-    await _sheet_notice_is_framed_and_kept(league)
+    await _sheet_notice_is_framed_and_kept(league, interaction)
     [block] = [message for message in league.bot.log_channel.sent if SHEET_NOTICE in message]
     assert "Season 3 Pro — attendance after round 1" in block.splitlines()[0], block
 
@@ -524,7 +536,9 @@ async def test_a_refused_sheet_s_render_notices_reach_the_log_once_when_it_is_re
     text. The queue runs to the end, and the log channel carries the notice once, in a line opening
     with Alex and the command, then a heading naming Pro and round 1, and the notice grouped
     beneath; the sheet's job keeps the sheet's name and grouped notices across the stop, never
-    lost with the refused try (issue #635; image spec, Errors and the rejection of input, #550)."""
+    lost with the refused try, and the sync's reply lists the sheet under "Image notices" with a
+    link to that log message and the notice beneath, once (issue #635; image spec, Errors and the
+    rejection of input, #550; owner decision 2026-11-24)."""
     from leaguebot.image.models.image_module import RenderNotice, RenderOutcome
     from leaguebot.image.services.aspects.image_attendance_post import (
         ATTENDANCE_ASPECT,
@@ -551,7 +565,7 @@ async def test_a_refused_sheet_s_render_notices_reach_the_log_once_when_it_is_re
     league.channel(SHEET).send_fails = http_error(discord.Forbidden, status=403,
                                                   text="Missing Access")
 
-    await _sync_pro(league)
+    interaction = await _sync_pro(league)
     await run_queue(league.bot)
     assert await stopped_job(league.db_path) is not None
     league.channel(SHEET).send_fails = None
@@ -559,7 +573,7 @@ async def test_a_refused_sheet_s_render_notices_reach_the_log_once_when_it_is_re
 
     assert await stopped_job(league.db_path) is None
     assert league.channel(SHEET).files[-1] is None
-    await _sheet_notice_is_framed_and_kept(league)
+    await _sheet_notice_is_framed_and_kept(league, interaction)
 
 
 #: What each season sheet's job lines name the change by: the approval's button, or the
