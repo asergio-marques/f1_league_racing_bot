@@ -34,6 +34,7 @@ import discord
 import pytest
 
 from leaguebot.core.cogs import test_mode_cog
+from leaguebot.core.services.test_mode.driver_commands import RELOAD
 from leaguebot.framework.db.database import get_connection, run_migrations
 from tests.support.change_queue import (
     Clock,
@@ -231,7 +232,7 @@ class TestEnabling:
         await run_queue(cog.bot)
 
         assert last_said(interaction) == (
-            f"{ENABLED}\n📌 Added default point configs: **Standard, Half Points**"
+            f"{ENABLED}\n📌 Added default point configs: **Standard, Half Points**\n\n{RELOAD}"
         )
         assert _success_lines(cog) == [
             f"{NAMED} | /test-mode toggle | Success\n"
@@ -283,7 +284,7 @@ class TestEnabling:
 
         interaction = await _toggle(cog)
 
-        assert last_said(interaction) == ENABLED
+        assert last_said(interaction) == f"{ENABLED}\n\n{RELOAD}"
         assert _success_lines(cog) == [
             f"{NAMED} | /test-mode toggle | Success\n  test_mode: enabled"
         ]
@@ -435,7 +436,7 @@ async def test_switching_test_mode_on_names_what_the_modules_handed_back(cog, db
     season_id = await _season_3(db_path)
     assert handed == [(True, season_id)] * 3
     assert last_said(interaction).endswith(
-        "\n📌 Added default point configs: **Sprint Ladder, Wet Ladder**"
+        f"\n📌 Added default point configs: **Sprint Ladder, Wet Ladder**\n\n{RELOAD}"
     )
     [line] = _success_lines(cog)
     assert line.endswith("\n  seeded_configs: Sprint Ladder, Wet Ladder")
@@ -470,7 +471,7 @@ async def test_turning_test_mode_off_is_one_save_with_its_audit_entry_and_line(c
 
     await run_queue(cog.bot)
 
-    assert last_said(interaction) == f"{DISABLED}\n🗑️ Removed **1** fake driver(s)."
+    assert last_said(interaction) == f"{DISABLED}\n🗑️ Removed **1** fake driver(s).\n\n{RELOAD}"
     assert _success_lines(cog) == [
         f"{NAMED} | /test-mode toggle | Success\n"
         "  test_mode: disabled\n"
@@ -576,7 +577,7 @@ async def test_a_backup_that_cannot_be_deleted_stops_the_queue_after_test_mode_i
 
     assert last_said(interaction) == (
         f"{DISABLED}\n🗑️ Removed **1** fake driver(s)."
-        f"\n\n⚠️ **Not everything could be done**\n• {BACKUP_KEPT}"
+        f"\n\n⚠️ **Not everything could be done**\n• {BACKUP_KEPT}\n\n{RELOAD}"
     )
     assert _success_lines(cog) == [
         f"{NAMED} | /test-mode toggle | Success\n"

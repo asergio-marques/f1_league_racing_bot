@@ -286,7 +286,8 @@ async def test_the_toggle_swaps_driver_after_its_save(toggling, on):
     the toggle, the server shows the `/driver` and the `/signup` the new flag calls for, the bot's
     own cogs' groups: on, neither on the global tree and each test-mode group on the server; off,
     each member group on the global tree and neither on the server. Both trees were synced, the
-    reply says nothing of `/driver` or `/signup`, and the queue is not stopped."""
+    reply ends with the notice to reload Discord, and the queue is not stopped."""
+    from leaguebot.core.services.test_mode.driver_commands import RELOAD
     from tests.support.settings_league import last_said
 
     bot, path, guild = toggling
@@ -298,7 +299,7 @@ async def test_the_toggle_swaps_driver_after_its_save(toggling, on):
     assert _shown(bot, guild) == _called_for(_groups(bot), on)
     assert call() in bot.tree.sync.await_args_list
     assert call(guild=guild) in bot.tree.sync.await_args_list
-    assert "/driver" not in last_said(asked) and "/signup" not in last_said(asked)
+    assert last_said(asked).endswith(f"\n\n{RELOAD}")
     assert await stopped_job(path) is None
 
 

@@ -89,6 +89,7 @@ from leaguebot.core.services.seasons.season_lifecycle_service import (
 )
 from leaguebot.core.services.test_mode.driver_commands import (
     SWAP_TEST_MODE_COMMANDS,
+    reload_reply,
     swap_not_done_line,
     swap_not_done_reply,
 )
@@ -274,6 +275,7 @@ def test_mode_toggle_change(
                 ENABLED
                 + (f"\n📌 Added default point configs: **{', '.join(seeded)}**" if seeded else "")
                 + swap_not_done_reply(ctx.steps)
+                + reload_reply(ctx.steps)
             )
         if found != OFF:
             return NOT_CHANGED.format(state=_words(not on))
@@ -286,7 +288,7 @@ def test_mode_toggle_change(
         if discarded(view_of(ctx, DISCARD_BACKUP)):
             not_done.append(BACKUP_KEPT)
         reply += not_done_reply(not_done, discarded=anything_discarded(ctx))
-        return reply + swap_not_done_reply(ctx.steps)
+        return reply + swap_not_done_reply(ctx.steps) + reload_reply(ctx.steps)
 
     return ChangeType(
         kind=TEST_MODE_TOGGLE,
