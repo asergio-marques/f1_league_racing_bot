@@ -860,9 +860,9 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
       ```
       followed, where a picture drew with notices, by a blank line and a
       `⚠️ **Image notices**` section, each picture with a *see them in the log* link and its
-      notices: every calendar first (`calendar — Season 1 Division 1`, then Division 2's), then
-      every lineup (`lineup — Division 1`, then Division 2's), then the opening standings tables
-      and attendance sheets, not grouped by division. No
+      notices, in the order the approval's jobs ran, division by division: Division 1's lineup
+      (`lineup — Division 1`), its calendar (`calendar — Season 1 Division 1`), its opening
+      standings tables and its attendance sheet, then Division 2's. No
       `⚠️ **Not everything could be done**` section.
     - **Posts:**
       - `#bot-commands`: every message of the review (step 35) is deleted. Then

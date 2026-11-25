@@ -491,7 +491,7 @@ review has no timer: it does not expire.
 
     **Expect:** as `01-full-season.md` step 30, but for the attendance sheet:
     - **Ack:** `Approving round 1's reports (Division 1)`
-    - **Then:** `✅ Round 1's reports are approved (Division 1): 1 penalty applied. Its appeals review is posted below.`
+    - **Then:** `✅ Round 1's reports are approved (Division 1): 1 penalty applied. Its appeals review is posted below.` Then, where a picture drew with notices, a blank line and the `⚠️ **Image notices**` section, as in `00-base.md` step 37.
     - **Posts:** the results and standings again, `Post-Race Penalty Results`, Rafael Rossi fourth
       on his five seconds (drivers: Kevin Keller 34, Hiro Hayashi 30, Emil Engel 24, Rafael Rossi
       22, …); the verdict banner and Rafael Rossi's verdict in `#d1-verdicts`; an attendance sheet
@@ -526,7 +526,7 @@ review has no timer: it does not expire.
 
     **Expect:** as `01-full-season.md` step 31:
     - **Ack:** `Approving round 1's appeals (Division 1)`
-    - **Then:** `✅ Round 1's appeals are approved (Division 1): no corrections were staged. The round is final.`
+    - **Then:** `✅ Round 1's appeals are approved (Division 1): no corrections were staged. The round is final.` Then, where a picture drew with notices, a blank line and the `⚠️ **Image notices**` section, as in `00-base.md` step 37.
     - **Posts:** the results and standings again, `Final Results`; nothing in `#d1-verdicts`; the
       channel `#s1-division-1-r1-results` **deleted**.
     - **Log:** `<you> | APPEALS_REVIEW_APPROVED | Success` with `round: 1 (Division 1)` and
@@ -689,7 +689,7 @@ a restart loses them. The panel is not one of the reviews the start-up takes dow
     - **Reply** at the command: the panel of step 37. **Log:**
       `<you> | /results amend review | Review posted`
     - **Ack** at the press: `Approving season 1's points amendment`
-    - **Then:** `✅ Amendment approved. All standings recomputed and reposted.`
+    - **Then:** `✅ Amendment approved. All standings recomputed and reposted.` Then, where a picture drew with notices, a blank line and the `⚠️ **Image notices**` section, as in `00-base.md` step 37.
     - **Posts**, each new message posted before the one it replaces is deleted:
       - `#d1-results`: the two pictures of round 1 again, `Final Results`. **Kevin Keller first**,
         with the fastest lap, on 37 (35, and the fastest lap's 2); Hiro Hayashi second; Rafael Rossi
