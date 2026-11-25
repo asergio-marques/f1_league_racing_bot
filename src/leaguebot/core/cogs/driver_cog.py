@@ -24,6 +24,9 @@ from leaguebot.framework.utils.log_lines import refuse
 
 log = logging.getLogger(__name__)
 
+#: What a pasted mention of someone outside the server is refused with.
+NOT_A_MEMBER = "<@{account}> is not a member of this server."
+
 
 class DriverCog(commands.Cog):
     def __init__(self, bot: LeagueBot) -> None:
@@ -54,20 +57,32 @@ class DriverCog(commands.Cog):
         )
         if current == str(user.id):
             return user
-        guild = interaction.guild
+        member, fault = await self._member_of_current_account(
+            interaction.guild, user.id, current
+        )
+        if member is None:
+            await refuse(interaction, f"⛔ {fault}", what=describe(interaction))
+        return member
+
+    async def _member_of_current_account(
+        self, guild: discord.Guild | None, account: int, current: str
+    ) -> tuple[discord.Member | None, str | None]:
+        """The member behind *current*, the current account of the driver the *account* names, or
+        the words that say there is none: that *account* is not in the server, or that it is a past
+        account of a driver whose current account has left it."""
         member = guild.get_member(int(current)) if guild is not None else None
         if member is None and guild is not None:
             try:
                 member = await guild.fetch_member(int(current))
             except discord.HTTPException:
                 member = None
-        if member is None:
-            await refuse(
-                interaction,
-                PAST_ACCOUNT_REFUSAL.format(account=user.id, current=current),
-                what=describe(interaction),
-            )
-        return member
+        if member is not None:
+            return member, None
+        if current == str(account):
+            return None, NOT_A_MEMBER.format(account=account)
+        return None, PAST_ACCOUNT_REFUSAL.format(account=account, current=current).removeprefix(
+            "⛔ "
+        )
 
     async def _resolved(
         self, interaction: discord.Interaction, user: discord.Member
