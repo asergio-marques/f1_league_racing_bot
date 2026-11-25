@@ -372,13 +372,13 @@ swap's step in the outcome, where the step is done with no problem: a refused sw
 for a client to reload, and a real season's end plans no swap, so the notice follows from the plan
 and no outcome tests the season's kind. `!sync` is no change on the queue and ends its reply with
 `RELOAD` itself once its sync has gone through. `/bot init`, a factory reset and a restore swap
-nothing and a restart, which swaps, replies to no one, so none of them gives `RELOAD`: their replies
-say to reload once the bot is restarted instead (`DRIVER_RESTART`, built from `COMMANDS_NAMED`, and
-the restore's own sentence, which names the commands the same way). The swap runs as the step after
-the save of the toggle and of a test season's completion, abort and cancellation, and off the queue as start-up's command sync and
-`!sync`'s, both trees. How a refusal is met in each, the swap being a fifth exception to the lane
-stop, is `architecture.md`'s. The moments of the swap, and the restart a factory reset's and
-`/bot init`'s replies name, are the core specification's ("Test mode"). A swap that failed may leave
+nothing, and a restart, which swaps, replies to no one, so none of them gives `RELOAD`: their
+replies say to reload once the bot is restarted instead (`DRIVER_RESTART`, built from
+`COMMANDS_NAMED`, and the restore's own sentence, which names the commands the same way). The swap
+runs as the step after the save of the toggle and of a test season's completion, abort and
+cancellation, and off the queue as start-up's command sync and `!sync`'s, both trees. How a
+refusal is met in each, the swap being a fifth exception to the lane stop, is `architecture.md`'s.
+The moments of the swap, and the restart a factory reset's and `/bot init`'s replies name, are the core specification's ("Test mode"). A swap that failed may leave
 the wrong form in place until the next one, which is accepted, the remedy being a restart. With no
 server claimed (the core specification's "Test mode" says when that is and what it puts right), the
 member groups go on the global tree, which is synced, and `/driver` and `/signup` are taken off

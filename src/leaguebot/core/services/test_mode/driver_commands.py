@@ -21,13 +21,15 @@ the step that runs it (`Step.on_fault`) or the start-up to report. A swap that f
 wrong commands in place until the next one, which is accepted: the remedy is a restart.
 
 **The notices name the groups in words** (`COMMANDS_NAMED`): the notice a factory reset or
-`/bot init` adds, built where no swap is, the swap's own refusal (`SWAP_PROBLEM`) and the reload
-notice (`RELOAD`) are all built from it; only the step's describe line spells the names out.
+`/bot init` adds, built where no swap is, the sentence of the restore's reply that sends the member
+to reload after the restart, the swap's own refusal (`SWAP_PROBLEM`) and the reload notice
+(`RELOAD`) are all built from it; only the step's describe line spells the names out.
 
 **A swap done tells the member to reload** (`reload_reply`): a Discord client loaded before the
 swap still offers the old commands, and Discord answers them with `Unknown Integration` without
 the bot seeing them. The notice is the last thing in the reply of each change that plans the
-swap, and is not given where Discord refused the swap, which changed nothing.
+swap, and of the `!sync` command, which is no change and ends its own reply with it once its sync
+has gone through; it is not given where Discord refused the swap, which changed nothing.
 """
 
 from __future__ import annotations
