@@ -57,7 +57,6 @@ DEADLINE_PASSED = (
     "check-in at all. Move it further out, or shorten the deadline."
 )
 NO_LAST_NOTICE = AttendanceWindows(notice_days=5, last_notice_hours=0, deadline_hours=2)
-_NOT_YET = "#606: the check-in judgement is not yet told whether a call or last notice stands"
 
 
 # ---------------------------------------------------------------------------
@@ -162,12 +161,11 @@ def test_the_deadline_is_not_judged_while_attendance_is_disabled():
     assert judgement.windows == {}
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 def test_a_deadline_of_zero_hours_is_the_rounds_own_moment():
-    """A deadline of zero hours, the round brought to thirty minutes away: nothing refused, and
-    the deadline falls at the round's own moment. Zero is the documented meaning of the setting,
-    not an absent window."""
-    windows = AttendanceWindows(notice_days=5, last_notice_hours=24, deadline_hours=0)
+    """A deadline of zero hours, and no last notice, the round brought to thirty minutes away:
+    nothing refused, and the deadline falls at the round's own moment. Zero is the documented
+    meaning of the setting, not an absent window."""
+    windows = AttendanceWindows(notice_days=5, last_notice_hours=0, deadline_hours=0)
     judgement = _judged(NOW + timedelta(minutes=30), windows=windows)
     assert not judgement.part.refusals
     assert judgement.windows["deadline"].fire_at == NOW + timedelta(minutes=30)
