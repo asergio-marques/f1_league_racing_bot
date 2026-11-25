@@ -118,8 +118,8 @@ objects, which would reach into the queue's private state or be handed all of it
 docstring). What reads none of that state is out of the file.
 `framework/services/queue/change_types.py` holds the types a change is made of, `Step` and
 `ChangeType` with the contexts a check, a step, an outcome and the refusal and discard hooks are
-handed, `StepView` among them, and `drawn_notices_of`, which gathers the notices of the pictures a
-change's jobs drew for its outcome, and the decisions that govern them (a post's id saved with its
+handed, `StepView` among them, and `drawn_notices_of` and `drawn_notices_in`, which gather the notices of the
+pictures a change's jobs drew, of one kind and of every kind, for its outcome, and the decisions that govern them (a post's id saved with its
 mark, a step's four kinds, a job that ends on a fault); `framework/services/queue/queue_records.py` holds the bookkeeping over
 the queue's tables, what is in hand, what was ever asked, the job numbering and the emptying of a
 restored database, which a check, a recovery, a restore and a factory reset call without a queue.
@@ -127,10 +127,11 @@ The queue file keeps the constants the class reads: `RETRY_AFTER`, the bot's own
 `CONVERSATION_LANES_AT_ONCE`; `UPDATABLE_FOR`, how long a reply may be updated;
 `WORKER_PAUSE_AFTER_FAULT`; and `NOTICE_REPOST_EVERY`; with `_confine` and `QUEUE_TABLES`. The plain
 data is in `framework/models/change.py`: `StepKind` (`SAVE`, `ACT`, `DELETE`, `EDIT`), `Verdict`,
-`StepResult`, `DrawnNotices` (one picture's notices, as a reply lists them), `DrawnKept` and
+`StepResult`, `DrawnNotices` (one picture's notices, as a reply lists them), `NoticeBlock` (a picture's
+notices marked as such, so the job that drew it can open them), `DrawnKept` and
 `drawn_kept` (what a post job's earlier tries kept on their stops), `StepFailedOnDiscord`,
 `GuildUnavailable`, the lane names and the keys a job that drew puts on its result (`RESULT_NOTICES`,
-`RESULT_DRAWN`, `DRAWN_LINES`, `DRAWN_NOTICES`, `DRAWN_LINKED`). The engineering
+`RESULT_DRAWN`, `RESULT_PICTURES`, `DRAWN_LINES`, `DRAWN_NOTICES`, `DRAWN_LINKED`, `DRAWN_PICTURES`). The engineering
 decisions that govern the queue are in its module docstring, and those that govern a step's kinds,
 its record and a fault's ending in `change_types`', each pinned by a test in
 `tests/framework/test_change_queue.py`, `test_change_queue_lanes.py` or
@@ -167,10 +168,22 @@ its record and a fault's ending in `change_types`', each pinned by a test in
   returns each delivered line's link), the queue keeps the link for the job on the change's held
   reply (`_Held`) and hands it to the outcome as `StepView.log_link`, so the log message is written
   before the reply that points at it. A restart loses it with the reply it feeds, and a log channel
-  that refuses costs the link alone. An outcome lists the notices through `drawn_notices_of` and
-  `drawn_notices_section`, so every reply words them alike. *Rejected:* saving the link with the job,
+  that refuses costs the link alone. An outcome lists the notices through `drawn_notices_of` or
+  `drawn_notices_in` and `drawn_notices_section`, so every reply words them alike: the one section,
+  "Image notices", whichever change's reply it ends. *Rejected:* saving the link with the job,
   a column for a reply that cannot outlive the restart
   (`test_an_outcome_links_to_the_line_its_job_named`).
+- **The framework opens every notice block with the member and the change, and the job marks which
+  lines they are.** Image hands a drawing's notices back already grouped and headed, and knows no
+  member and no change; the job that drew it does, so it wraps them in `NoticeBlock` and
+  `framed_picture_lines` opens each with `named | what |` and joins a job's blocks in one line, so
+  that they reach the log in one message and the reply links to it once. The framing is done before
+  `StepFailedOnDiscord.carrying` keeps the lines, because a `str` subclass does not survive being
+  saved in a result; a job that drew several pictures keeps each one's label and notices
+  (`RESULT_PICTURES`, `DRAWN_PICTURES`), so a stop loses neither which picture a notice belongs to nor
+  the block's opening. *Rejected:* image writing the member into its own notices, which would give
+  it a notion of who asked, and a reply finding the notices again by reading the log
+  (`test_an_outcome_gathers_every_picture_s_notices_once_a_stopped_job_kept_each_label`).
 
 The stop notice's buttons are one persistent view, `QueueStopView`, registered as the queue
 starts. A message typed into a conversation's channel is answered through `typed_turns`. A line
@@ -433,5 +446,5 @@ listener's own arguments, which can hold a member's message, and never raises
 |---|---|---|
 | `Refused` | `framework/models/refusal.py` | a refusal whose text the member reads; subclasses `ValueError` |
 | `SwitchNotSignedUp` | `framework/services/switches/module_service.py` | a fault in the bot's assembly (`architecture.md`, "How modules and core fit together") |
-| `StepFailedOnDiscord` | `framework/models/change.py` | a step's failure on Discord, carrying what the job keeps (the lines a picture was drawn with, its notices and the index of the line holding them, for the try that posts) and a clause for the stop notice |
+| `StepFailedOnDiscord` | `framework/models/change.py` | a step's failure on Discord, carrying what the job keeps (the lines a picture was drawn with, its notices, or each picture's label and notices where it drew several, and the index of the line holding them, for the try that posts) and a clause for the stop notice |
 | `GuildUnavailable` | `framework/models/change.py` | the league's server missing from the cache: a failure on Discord's side |

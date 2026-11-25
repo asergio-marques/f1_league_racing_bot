@@ -329,7 +329,9 @@ are ordered by what each may fail at:
    sanction stands, and the fault goes to the host's log.
 4. **The cards, the lineups and the sheets,** results', core's and attendance's own jobs, which stop
    the lane where Discord refuses them.
-5. **The closing line,** written last, so that it carries what a discard left undone.
+5. **The closing line,** written last, so that it carries what a discard left undone, and, after the
+   sanctions applied and not applied, the notices of the pictures the jobs drew (`drawn_notices_in`),
+   each with the link to the log message holding it.
 
 The cards, lineups and sheets are jobs of the change and not work done after it, so a stop between
 the sanctions and their cards is finished by the queue when the bot is back. A second sync plans no

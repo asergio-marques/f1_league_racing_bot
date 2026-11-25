@@ -570,7 +570,7 @@ Your season is **ongoing** from the moment it is saved in step 1, before anythin
 - part of a division's opening standings left standing when the job stopped, naming the channel and the message — delete it by hand;
 - that notice, where it could not be deleted, with its link — delete it by hand.
 
-A calendar or lineup that was drawn with notices is named in the confirmation too, whatever else it says, under **⚠️ Image notices**: each picture (*calendar — Season 3 Pro*, *lineup — Pro*), a *see them in the log* link and each notice beneath. The same list goes to the log channel. A driver who has left the server is simply passed over.
+A picture the approval drew with notices is named in the confirmation too, whatever else it says, under **⚠️ Image notices**: each calendar, lineup, opening standings table and opening attendance sheet (*calendar — Season 3 Pro*, *lineup — Pro*), a *see them in the log* link and each notice beneath. The same list goes to the log channel. A driver who has left the server is simply passed over.
 
 > **If your confirmation never arrives**, look in the channel you ran the review in. Discord gives the bot fifteen minutes to answer a button, and an approval that waits on a stopped queue can outlast them, as can a restart of the bot while it ran. The bot then posts one line there instead, mentioning you: whether the season was approved, and that the log channel has the rest. The same line follows an approval refused when its turn came on the queue — the season, its dates, its channels or the drawing program having changed while it waited — with the reason it was refused, and one a league admin discarded before it began, saying it was not approved.
 
@@ -704,7 +704,7 @@ Where the window closes with nobody left to settle, the season goes straight bac
 6. each driver the save returned has their signup channel closed or their driver role taken back, one job each;
 7. the saved test-mode state, if there was one, is deleted.
 
-The season is announced in the log channel when the last job is done. Nothing is completed until the save in step 5 goes through; if a league admin discards it, the reply says so and you run `/season complete` again — its final classifications are posted again. Pressing `/season complete` while one is already waiting, running or stopped is refused, naming the job.
+A final classification or a final attendance sheet drawn with notices is named in the reply, under **⚠️ Image notices**: each picture, a *see them in the log* link and each notice beneath. The season is announced in the log channel when the last job is done. Nothing is completed until the save in step 5 goes through; if a league admin discards it, the reply says so and you run `/season complete` again — its final classifications are posted again. Pressing `/season complete` while one is already waiting, running or stopped is refused, naming the job.
 
 > **What "finalised" means here.** A round is finished once its **appeals review is approved** —
 > not when you submit its results, and not when you approve its penalties. Each stage in between

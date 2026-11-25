@@ -681,7 +681,8 @@ module's notice job, hands them.
 
 **Core's posts off the queue** are `architecture.md`'s exceptions ("Every post is made in a
 job"): `BotCog`'s factory reset; the framework's are `framework.md`'s.
-`/team lineup` answers the member with its picture as a reply and records nothing.
+`/team lineup` answers the member with its picture as a reply and records nothing but its notices,
+which go to the log opening with the member and the command, as every line there does.
 
 ---
 

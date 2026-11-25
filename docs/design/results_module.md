@@ -588,6 +588,12 @@ hands back (`PostedTable.fault`, `SentVerdict`)
 `test_a_standings_picture_that_fails_posts_the_standings_as_text_and_says_why_in_the_log`,
 `test_a_sync_s_sanction_card_whose_picture_fails_is_posted_as_text_and_says_why`).
 
+**A picture's notices are the job's to frame and keep.** A job that drew a table, the standings, a
+verdict or a banner wraps what image handed back in `NoticeBlock` and frames it with the member and
+the change (`framed_picture_lines`) before `carrying` keeps it, each picture under its own label
+(`RESULT_PICTURES`), so that a stop keeps them and the reply of an approval, an amendment or a
+`/results rounds sync` lists every one (`drawn_notices_in`) with its log link.
+
 **Results' posts off the queue** are `architecture.md`'s exceptions alone ("Every post is made in a
 job"): its replies, the configuration picker's edit of the message pressed (`_ConfigSelectView`),
 and the log lines the router delivers.
