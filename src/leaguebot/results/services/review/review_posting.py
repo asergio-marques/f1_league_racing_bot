@@ -845,7 +845,9 @@ async def _post_session_results(
             raise
         return StepResult(
             result={"new": line.new, "old": line.old, "drawn": False, "channel_id": channel_id},
-            then=_deletes(standing_posts.posted_in(line.old_channel_id, channel_id), line.old, what),
+            then=_deletes(
+                standing_posts.posted_in(line.old_channel_id, channel_id), line.old, what,
+            ),
         )
     driver_rows = await load_driver_rows(ctx.db_path, row["id"], session_type)
     points_map = {
@@ -892,7 +894,9 @@ async def _post_session_results(
         ),)
     return StepResult(
         result=result, lines=lines,
-        then=_deletes(standing_posts.posted_in(posted.old_channel_id, channel_id), posted.old, what),
+        then=_deletes(
+            standing_posts.posted_in(posted.old_channel_id, channel_id), posted.old, what,
+        ),
     )
 
 
@@ -991,7 +995,9 @@ async def _post_standings(
     then: list[PlannedStep] = []
     new: list[int] = []
     for table in tables:
-        then.extend(_deletes(standing_posts.posted_in(table.old_channel_id, channel_id), table.old, what))
+        then.extend(_deletes(
+            standing_posts.posted_in(table.old_channel_id, channel_id), table.old, what,
+        ))
         if not table.edited:
             new.extend(table.new)
     result = {

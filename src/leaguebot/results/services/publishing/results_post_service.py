@@ -1408,8 +1408,8 @@ async def set_standings_message_id_on(
     list_column = _STANDINGS_IDS_COLUMNS[championship]
     channel_column = _STANDINGS_CHANNEL_COLUMNS[championship]
     await db.execute(
-        f"INSERT INTO round_standings_posts (round_id, division_id, {column}, {list_column}, "  # noqa: S608
-        f"{channel_column}) VALUES (?, ?, ?, ?, ?) "
+        f"INSERT INTO round_standings_posts (round_id, division_id, {column}, "  # noqa: S608
+        f"{list_column}, {channel_column}) VALUES (?, ?, ?, ?, ?) "
         f"ON CONFLICT(round_id) DO UPDATE SET {column} = excluded.{column}, "
         f"{list_column} = excluded.{list_column}, {channel_column} = excluded.{channel_column}",
         (round_id, division_id, message_id, message_ids, channel_id if message_id else None),
@@ -1439,8 +1439,8 @@ async def set_classification_message_id_on(
     list_column = _STANDINGS_IDS_COLUMNS[championship]
     channel_column = _STANDINGS_CHANNEL_COLUMNS[championship]
     await db.execute(
-        f"INSERT INTO classification_posts (division_id, occasion, {column}, {list_column}, "  # noqa: S608
-        f"{channel_column}) VALUES (?, ?, ?, ?, ?) "
+        f"INSERT INTO classification_posts (division_id, occasion, {column}, "  # noqa: S608
+        f"{list_column}, {channel_column}) VALUES (?, ?, ?, ?, ?) "
         f"ON CONFLICT(division_id, occasion) DO UPDATE SET {column} = excluded.{column}, "
         f"{list_column} = excluded.{list_column}, {channel_column} = excluded.{channel_column}",
         (division_id, occasion.value, message_id, message_ids, channel_id if message_id else None),

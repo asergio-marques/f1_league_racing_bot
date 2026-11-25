@@ -319,7 +319,9 @@ def window_open_change(
                 text += f" Auto-close scheduled for {_stamp(moment)} ({_stamp(moment, 'R')})."
         closed = views.get(DELETE_CLOSED)
         if closed is not None and "discarded" in (closed.result or {}):
-            where = standing_posts.posted_in(ctx.payload.get("closed_channel_id"), ctx.payload["channel_id"])
+            where = standing_posts.posted_in(
+                ctx.payload.get("closed_channel_id"), ctx.payload["channel_id"],
+            )
             link = (closed.result or {}).get("link") or f"in <#{where}>"
             text += f"\nThe earlier signups closed notice could not be deleted ({link}): delete it by hand."
         return text

@@ -199,7 +199,8 @@ async def erase_season_on(db: aiosqlite.Connection) -> SeasonErase:
 
         cursor = await db.execute(
             "SELECT results_message_id, results_message_ids, results_message_channel_id "
-            "FROM session_results WHERE round_id = ? AND results_message_id IS NOT NULL ORDER BY id",
+            "FROM session_results WHERE round_id = ? AND results_message_id IS NOT NULL "
+            "ORDER BY id",
             (round_id,),
         )
         for posting in await cursor.fetchall():
