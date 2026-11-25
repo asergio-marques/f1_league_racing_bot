@@ -759,7 +759,12 @@ class TestModeCog(commands.Cog):
         for driver in result:
             mention = f"<@{driver.discord_user_id}>"
             state = driver.state.replace("_", " ").title()
-            seats = "; ".join(f"{team} ({name})" for team, name in driver.seats) or "none"
+            seats = (
+                "; ".join(
+                    f"{shorthand} = {team} ({name})" for shorthand, team, name in driver.seats
+                )
+                or "none"
+            )
             body.append(
                 f"{driver.display_name:<20} {mention:<30} {state:<26} "
                 f"{driver.nationality or '—':<14} {seats}"
@@ -770,7 +775,7 @@ class TestModeCog(commands.Cog):
             body_lines=body,
             footer=(
                 "Copy mention strings above when submitting results in the format:\n"
-                "`Position, <@user_id>, <@&role_id>, ...`"
+                "`Position, <@user_id>, <team shorthand>, ...`"
             ),
         ):
             await interaction.followup.send(page, ephemeral=True)

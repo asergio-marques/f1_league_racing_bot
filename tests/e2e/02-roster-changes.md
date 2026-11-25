@@ -73,14 +73,15 @@ rule of 110 `-`, and beneath it:
 
 ```
 Copy mention strings above when submitting results in the format:
-`Position, <@user_id>, <@&role_id>, ...`
+`Position, <@user_id>, <team shorthand>, ...`
 ```
 
 Every fake driver is listed, in the order they were created, or, where a division is given, only
 those seated in it. A state is shown in words (`Not Signed Up`, `Unassigned`, `Assigned`), a
-nationality is the one the driver's signup gave (`—` where none), and a seat is the team's full
-name with its division in brackets (`none` where the driver holds none). A long roster comes in
-more than one message. A step quotes the table alone.
+nationality is the one the driver's signup gave (`—` where none), and a seat is the team's
+shorthand, ` = `, its full name and its division in brackets, as `ALP = Alpha Racing (Division 1)`
+(`none` where the driver holds none), so the shorthand the footer names can be copied from it. A
+long roster comes in more than one message. A step quotes the table alone.
 
 **A role made by hand.** Before step 1, create one role in Discord, outside the bot:
 `@Lima Racing`, **below** the bot's own role and held by nobody. It is the free role a team is
@@ -273,7 +274,7 @@ driver who holds a confirmed seat. The team list is fixed, but a team's role is 
 
     **Expect:** as `00-base.md`'s listing of Division 2: headed `**Fake Driver Roster — Division 2**`,
     the 21 Division 2 drivers of the Fixture, each `Assigned`, with the Fixture's nationality, Aaron
-    Abbott alone seated in `Charlie GP (Division 2)` and nobody in `Bravo Motorsport`. Zoe Zimmer
+    Abbott alone seated in `CHL = Charlie GP (Division 2)` and nobody in `Bravo Motorsport`. Zoe Zimmer
     holds no seat, so a list of a division leaves her out. No log line.
 
 ### Other refusals of a running season
@@ -1166,10 +1167,10 @@ Each division holds the Fixture's eleven teams of two seats and a Reserve team, 
       ```
       Name                 Mention                        State                      Nationality    Seats
       --------------------------------------------------------------------------------------------------------------
-      Felix Fournier       <@9000000000000000021>         Assigned                   British        Alpha Racing (Division 1)
-      Gabriel Gomes        <@9000000000000000022>         Assigned                   Brazilian      Bravo Motorsport (Division 1)
-      Willem Wouters       <@9000000000000000023>         Assigned                   German         Reserve (Division 1)
-      Xavier Xu            <@9000000000000000024>         Assigned                   —              Reserve (Division 1)
+      Felix Fournier       <@9000000000000000021>         Assigned                   British        ALP = Alpha Racing (Division 1)
+      Gabriel Gomes        <@9000000000000000022>         Assigned                   Brazilian      BRV = Bravo Motorsport (Division 1)
+      Willem Wouters       <@9000000000000000023>         Assigned                   German         Reserve = Reserve (Division 1)
+      Xavier Xu            <@9000000000000000024>         Assigned                   —              Reserve = Reserve (Division 1)
       ```
       The four unseated drivers are left out of a list of a division.
     - **Log:** nothing.
