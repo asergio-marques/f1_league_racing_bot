@@ -321,6 +321,22 @@ NOTICE_CROP_POINT_OFF_CANVAS = "CROP_POINT_OFF_CANVAS"
 #: colours instead (051). Raised by the render, never by the fill: the palette is applied before it.
 NOTICE_TIER_COLOURS_NOT_APPLIED = "TIER_COLOURS_NOT_APPLIED"
 
+#: The words each notice kind is headed by wherever notices are reported, in the log and in a
+#: reply alike: a league never reads a kind's code. A true fallback and the bot's own artwork
+#: (a weather icon, a position arrow, the mystery flag) share the one neutral heading, each
+#: notice's own sentence saying which was drawn (image spec, The fallback image; XIV.13).
+#: A kind added above is added here (`test_every_notice_kind_has_a_heading_case`). Not named
+#: `NOTICE_...`: that test reads every such name as a kind.
+KIND_WORDS = {
+    NOTICE_FONT_SUBSTITUTED: "Font substituted",
+    NOTICE_FIELD_REDUCED: "Text set smaller",
+    NOTICE_ASSET_FALLBACK_USED: "Artwork not supplied by the league",
+    NOTICE_PACKAGED_ASSET_OFF_SHAPE: "Packaged artwork stretched",
+    NOTICE_OPTIONAL_FIELD_EMPTIED: "Field left empty",
+    NOTICE_CROP_POINT_OFF_CANVAS: "Crop point off the canvas",
+    NOTICE_TIER_COLOURS_NOT_APPLIED: "Tier colours not applied",
+}
+
 
 # ── Asset classes ─────────────────────────────────────────────────────────
 
