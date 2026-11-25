@@ -965,8 +965,10 @@ of each kind with every line before it ahead, and walks the lines one by one thr
 `SeatsAhead`, only where that overflows, so the lines refused are the same and the templates are
 read far less. The test-mode guard (`guard_assign_paste_test_mode`) runs before the seats are judged,
 so that a refused real driver takes no seat from the lines after it; the capacity guard
-(`guard_assign_paste`) runs after, on the lines judged sound. Both run in the check alone, being
-unable to run in a save, which reads templates off the loop; the save judges every line again on its
+(`guard_assign_paste`) runs after, on the lines judged sound. Neither can run in a save
+(`architecture.md`, "While a save is open, the bot waits on nothing but that save's own
+connection"), so both run in the check alone: the capacity guard reads templates off the loop, and
+the test-mode guard opens a connection of its own; the save judges every line again on its
 own connection and then writes (`assign_on`, `profile_for_placement_on`), one `DRIVER_ASSIGN` audit
 entry per driver, as an audit entry carries one division. *Rejected:* judging the list by writing it
 inside a SAVEPOINT and rolling back on a fault: a check is a read (`CheckContext`), and a save waits
