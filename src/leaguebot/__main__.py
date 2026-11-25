@@ -141,9 +141,12 @@ class LeaguePreviewSources(ResultsPreviewSources):
         return await self._attendance.check_in_deadline(scheduled_at)
 
     def attendance_sheet_order(
-        self, totals: Mapping[int, int], names: Mapping[int, str]
+        self,
+        totals: Mapping[int, int],
+        seats: Mapping[int, tuple[int, str]],
+        names: Mapping[int, str],
     ) -> list[int]:
-        return self._attendance.attendance_sheet_order(totals, names)
+        return self._attendance.attendance_sheet_order(totals, seats, names)
 
 
 def register_module_switches(modules: "ModuleService") -> None:

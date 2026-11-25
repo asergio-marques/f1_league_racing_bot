@@ -907,14 +907,7 @@ class TestAttendancePreview:
         "against_teams",
         [
             pytest.param(False, id="names-follow-teams"),
-            pytest.param(
-                True,
-                id="names-against-teams",
-                marks=pytest.mark.xfail(
-                    strict=True,
-                    reason="#641: the preview still orders drivers level on points by name alone",
-                ),
-            ),
+            pytest.param(True, id="names-against-teams"),
         ],
     )
     async def test_the_preview_draws_its_rows_in_the_sheet_s_order(

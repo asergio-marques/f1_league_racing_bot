@@ -8,8 +8,8 @@ is stored, writing nothing) and works the deadline out with `derive_checkin_dead
 preview draws the deadline a real call draws and holds no arithmetic of its own. It answers
 whether the module is on or off: a manager previewing the call before switching the module on
 sees the deadline the league configured. And the order of the attendance sheet's rows, by
-`after_round_order_key`, the key the textual sheet after a round sorts by, so that the preview
-draws rows in an order attendance owns and the image module works out none.
+`after_round_order`, the order the textual sheet after a round lists its drivers in, so that the
+preview draws rows in an order attendance owns and the image module works out none.
 """
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from leaguebot.attendance.services.check_in.attendance_config_service import (
     derive_checkin_deadline,
     windows_on,
 )
-from leaguebot.attendance.services.sheet.attendance_sheet import after_round_order_key
+from leaguebot.attendance.services.sheet.attendance_sheet import after_round_order
 from leaguebot.framework.db.database import get_connection
 
 
@@ -36,8 +36,14 @@ class AttendancePreviewSources:
         return derive_checkin_deadline(scheduled_at, windows.deadline_hours)
 
     def attendance_sheet_order(
-        self, totals: Mapping[int, int], names: Mapping[int, str]
+        self,
+        totals: Mapping[int, int],
+        seats: Mapping[int, tuple[int, str]],
+        names: Mapping[int, str],
     ) -> list[int]:
         """The keys of *totals* in the order the textual sheet after a round lists its drivers:
-        most points first, drivers level on points by name (*names*, by the same keys)."""
-        return sorted(totals, key=lambda key: after_round_order_key(totals[key], names[key]))
+        most points first, drivers level on points by team, then by name (*names*), then by key,
+        as the standings' final tiebreak orders them. *seats* maps a driver to ``(team rank,
+        team name)``, rank 0 a named team and 1 the reserve team, as `after_round_order` takes
+        them; a driver absent from it holds no seat."""
+        return after_round_order(totals, seats, names)

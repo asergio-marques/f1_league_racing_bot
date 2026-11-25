@@ -36,11 +36,16 @@ class PreviewSources(Protocol):
         ...
 
     def attendance_sheet_order(
-        self, totals: Mapping[int, int], names: Mapping[int, str]
+        self,
+        totals: Mapping[int, int],
+        seats: Mapping[int, tuple[int, str]],
+        names: Mapping[int, str],
     ) -> list[int]:
         """The keys of *totals* in the order the attendance sheet lists its rows: most points
-        first, drivers level on points by name, as the module's textual sheet after a round
-        lists them. *names* is by the same keys."""
+        first, drivers level on points by team, then by name, as the module's textual sheet after
+        a round lists them. *seats* maps a driver to ``(team rank, team name)``, rank 0 a named
+        team and 1 the reserve team; a driver absent from it holds no seat. *names* is by the
+        same keys."""
         ...
 
     def sample_sessions(self, round_format: str) -> Sequence[SampleSession]:

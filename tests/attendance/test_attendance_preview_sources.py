@@ -9,10 +9,6 @@ from __future__ import annotations
 import pytest
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#641: the previews' order takes no teams, and orders drivers level on points by name",
-)
 def test_the_previews_are_handed_the_sheet_s_order(tmp_path):
     """Three drivers: Zoe (1) of Apex on 2 points, Mike (2) of Bravo on 9 and Alice (3) of Bravo
     on 2. The previews are handed them as the textual sheet after a round lists them: Mike
