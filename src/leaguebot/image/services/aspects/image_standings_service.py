@@ -617,7 +617,8 @@ def _put_gap(
     text: dict[str, str],
     empty_quietly: list[str],
 ) -> None:
-    """The gap to the leader — empty for the first-placed entry, and never otherwise absent.
+    """The gap to the leader — empty for the first-placed entry and for any entry level on
+    points with it; never otherwise absent.
 
     It is worked out over the classification being drawn alone, so unlike the other two
     columns it is available even where no earlier round holds standings. Tying it to the
