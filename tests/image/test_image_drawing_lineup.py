@@ -21,6 +21,7 @@ from tests.attendance.test_uncommitted_drivers_outside_attendance import (
     DIVISION_ID,
     db_path,  # noqa: F401 — the fixture
 )
+from leaguebot.image.services.render.image_render_service import grouped_notice_lines
 from tests.support.switches import answer_switch
 
 TEMPLATES = Path(__file__).resolve().parents[2] / "resources" / "defaults" / "templates"
@@ -28,12 +29,32 @@ TEMPLATES = Path(__file__).resolve().parents[2] / "resources" / "defaults" / "te
 #: 1002 placed there mid-season and not yet confirmed, 1003 seated with no placement at all.
 NAMES = {1001: "Zara Quill", 1002: "Yuri Vexley", 1003: "Cal Cole"}
 
+#: Why `/team lineup`'s drawing fails until it is handed the member and the command.
+NOT_YET_NAMED = "#635: the command's drawing is not yet handed the member and the command"
+
+#: The member and the command `/team lineup` hands its drawing, for the log entry holding the
+#: picture's notices to open with, as every entry does.
+COMMANDED = {"named": "Alex (<@4242>)", "what": "`/team lineup`"}
+
+#: Why a drawing's notices fail until they come back grouped by kind, repeats counted.
+NOT_YET_GROUPED = "#635: a drawing hands back each notice's words, one apiece"
+
+
+def _asked(draw: str, **handed):
+    """What *draw* is handed beyond the guild and the division: *handed*, and for `/team lineup`'s
+    drawing the member and the command as well."""
+    return {**handed, **COMMANDED} if draw == "draw_lineup_for_command" else handed
+
+
 #: The lineup drawn as the lineup of record (`draw_lineup`), and as `/team lineup`'s output
 #: (`draw_lineup_for_command`); both draw the same seats, at the same trigger, and report their
 #: notices the same way.
 DRAWS = [
     pytest.param("draw_lineup", id="of_record"),
-    pytest.param("draw_lineup_for_command", id="for_command"),
+    pytest.param(
+        "draw_lineup_for_command", id="for_command",
+        marks=pytest.mark.xfail(strict=True, reason=NOT_YET_NAMED),
+    ),
 ]
 
 
@@ -176,7 +197,7 @@ async def test_a_drawn_lineup_leaves_out_a_driver_not_yet_confirmed(db_path, mon
     guild, *_ = _guild()
     drawing, captured, *_ = _drawing(db_path)
 
-    await getattr(drawing, draw)(guild, DIVISION_ID)
+    await getattr(drawing, draw)(guild, DIVISION_ID, **_asked(draw))
 
     assert captured["image_type"] == "lineup_template"
     spec = captured["builder"](load_svg(TEMPLATES / "lineup_template.svg"))
@@ -190,7 +211,10 @@ async def test_a_drawn_lineup_leaves_out_a_driver_not_yet_confirmed(db_path, mon
 #: (#407), and it draws Yuri, whose placement is not yet confirmed, beside Zara.
 PORTRAIT_TRIGGERS = [
     pytest.param("draw_lineup", {}, [1001], False, id="of_record"),
-    pytest.param("draw_lineup_for_command", {}, [1001], False, id="for_command"),
+    pytest.param(
+        "draw_lineup_for_command", {}, [1001], False, id="for_command",
+        marks=pytest.mark.xfail(strict=True, reason=NOT_YET_NAMED),
+    ),
     pytest.param(
         "draw_review_lineup", {"include_uncommitted": True}, [1001, 1002], True, id="for_review",
     ),
@@ -210,7 +234,7 @@ async def test_a_drawn_lineup_refreshes_portraits_only_at_the_league_s_trigger(
     guild, *_ = _guild()
     drawing, *_ = _drawing(db_path)
 
-    await getattr(drawing, draw)(guild, DIVISION_ID, **handed)
+    await getattr(drawing, draw)(guild, DIVISION_ID, **_asked(draw, **handed))
 
     spy.assert_awaited_once()
     assert sorted(m.id for m in spy.await_args.args[1]) == drawn
@@ -234,13 +258,16 @@ def _two_lineup_notices():
 NOTICES_LINK = "https://discord.test/4242/7"
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_NAMED)
 @pytest.mark.parametrize("log_channel", ["takes", "refuses"])
 async def test_a_lineup_drawn_for_a_command_reports_its_notices_to_the_log_channel_in_one_message(
     db_path, monkeypatch, log_channel,
 ):
     """Pro's lineup drawn with two notices as `/team lineup`'s output, which runs in no job: the
-    drawing itself reports them to the log channel, in one message headed with the lineup and the
-    division, and never to the lineup channel (Constitution XIV.4, "reported in one message").
+    drawing itself reports them to the log channel, in one message opening with the member and the
+    command, as every entry does, then the lineup and the division and the notices grouped by kind,
+    and never to the lineup channel (Constitution XIV.4, "reported in one message"; Constitution V).
+    The same grouped notices come back for the command's reply.
     It hands back the link to that message, for the command's reply to point to (image spec,
     Lineup); where the log channel would not take it, and no message was posted, it hands back
     no link."""
@@ -252,12 +279,14 @@ async def test_a_lineup_drawn_for_a_command_reports_its_notices_to_the_log_chann
     post_log.return_value = (MagicMock(jump_url=NOTICES_LINK) if log_channel == "takes"
                              else None)
 
-    picture = await drawing.draw_lineup_for_command(guild, DIVISION_ID)
+    picture = await drawing.draw_lineup_for_command(guild, DIVISION_ID, **COMMANDED)
 
+    grouped = grouped_notice_lines(_two_lineup_notices())
     [call] = post_log.await_args_list
-    assert call.args[0].startswith("Image render notices — lineup — Pro:\n"), call.args[0]
-    assert "a fallback flag stood in for Zara's" in call.args[0]
-    assert "a fallback portrait stood in for Zara's" in call.args[0]
+    assert call.args[0] == "\n".join(
+        ["Alex (<@4242>) | `/team lineup` | Image render notices — lineup — Pro:", *grouped]
+    )
+    assert tuple(picture.notices) == tuple(grouped)
     channel.send.assert_not_awaited()
     assert picture.log_link == (NOTICES_LINK if log_channel == "takes" else None)
 
@@ -270,13 +299,14 @@ IN_A_JOB_DRAWS = [
 ]
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_GROUPED)
 @pytest.mark.parametrize("draw", IN_A_JOB_DRAWS)
 async def test_a_lineup_drawn_inside_a_job_hands_its_notices_back_and_logs_nothing(
     db_path, monkeypatch, draw,
 ):
     """Pro's lineup drawn with two notices inside a change's job, as the lineup of record or for a
     season review: the drawing writes nothing to the log channel itself, and hands both notices
-    back with the picture, for the job that posts it to record once among its own lines (the
+    back with the picture, grouped by kind as the log and the reply show them, for the job that posts it to record once among its own lines (the
     owner's decision on #288: code inside a job never calls `post_log`). Nothing reaches the
     lineup channel. The review's lineup, which has no text to fall back to, asks the render for a
     fault in the bot raised; the lineup of record, which does, does not."""
@@ -290,10 +320,42 @@ async def test_a_lineup_drawn_inside_a_job_hands_its_notices_back_and_logs_nothi
     picture = await getattr(drawing, draw)(guild, DIVISION_ID, **more)
 
     post_log.assert_not_awaited()
-    assert "a fallback flag stood in for Zara's" in picture.notices
-    assert "a fallback portrait stood in for Zara's" in picture.notices
+    assert tuple(picture.notices) == tuple(grouped_notice_lines(_two_lineup_notices()))
     channel.send.assert_not_awaited()
     assert bool(captured["kwargs"].get("raise_faults")) is (draw == "draw_review_lineup")
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_YET_GROUPED)
+async def test_a_review_lineup_hands_back_identical_notices_counted_and_a_lone_one_naming_its_field(
+    db_path, monkeypatch,
+):
+    """Pro's lineup drawn for a season review with twenty-five identical font substitutions, one
+    for each name, and one team badge falling back: the drawing hands back one line for the
+    twenty-five, counted, and one naming the badge's field, each under its kind's heading, never
+    twenty-six lines of words (Constitution XIV.4, "How they are reported")."""
+    from leaguebot.image.models.image_module import RenderNotice
+
+    font = [
+        RenderNotice(image_type="lineup_template", notice_kind="FONT_SUBSTITUTED",
+                     detail="Formula1 Display was unavailable, so a substitute was drawn",
+                     field_id=f"team_{n}_driver_name")
+        for n in range(25)
+    ]
+    badge = RenderNotice(image_type="lineup_template", notice_kind="ASSET_FALLBACK_USED",
+                         detail="the directory's fallback was drawn for “Williams”",
+                         field_id="team_badge_1")
+    _portraits_spied(monkeypatch)
+    guild, *_ = _guild()
+    drawing, *_ = _drawing(db_path, outcome=NS(problem=None, notices=[*font, badge], png_paths=[]))
+
+    picture = await drawing.draw_review_lineup(guild, DIVISION_ID, include_uncommitted=True)
+
+    culprits = [line for line in picture.notices if "•" in line]
+    assert len(culprits) == 2, picture.notices
+    assert "(×25)" in culprits[0] and "Formula1 Display" in culprits[0]
+    assert "`team_badge_1`" in culprits[1] and "Williams" in culprits[1]
+    assert len(picture.notices) == 4, picture.notices
+    assert not any("lineup_template" in line for line in picture.notices)
 
 
 #: The problem's words /team lineup's refusal carries, as `Problem.message("the lineup")` gives
@@ -327,11 +389,13 @@ _ABSENT_WORDS = "Inkscape is not installed on this host."
                      id="for_command-a_converter_absent"),
     ],
 )
+@pytest.mark.xfail(strict=True, reason=NOT_YET_GROUPED)
 async def test_the_lineup_drawing_hands_back_the_picture_the_problem_and_the_notices(
     db_path, monkeypatch, tmp_path, draw, drawn, problem, source,
 ):
     """Pro's lineup drawn, with one notice: the drawing hands core the picture's path where it was
-    drawn, or the problem's words where it could not be, and the notices' words either way. It
+    drawn, or the problem's words where it could not be, and the notices grouped by kind either
+    way. It
     posts nothing to Pro's lineup channel. Drawn as the lineup of record, the problem is its bare
     detail, which the text lineup's fallback line carries. Drawn as `/team lineup`'s output, it
     is the words the command's refusal reads today: the lineup and the field at fault named before
@@ -370,12 +434,12 @@ async def test_the_lineup_drawing_hands_back_the_picture_the_problem_and_the_not
     guild, channel, _ = _guild()
     drawing, captured, *_ = _drawing(db_path, outcome=outcome)
 
-    picture = await getattr(drawing, draw)(guild, DIVISION_ID)
+    picture = await getattr(drawing, draw)(guild, DIVISION_ID, **_asked(draw))
 
     assert picture.path == (png if fault is None else None)
     assert picture.problem == problem
     assert picture.fault_source is FaultSource[source]
-    assert tuple(picture.notices) == ("a fallback flag stood in for Zara's",)
+    assert tuple(picture.notices) == tuple(grouped_notice_lines([notice]))
     channel.send.assert_not_awaited()
     assert bool(captured["kwargs"].get("raise_faults")) is (draw == "draw_lineup_for_command")
 
@@ -385,7 +449,7 @@ async def test_the_lineup_drawing_hands_back_the_picture_the_problem_and_the_not
 REFUSED_DRAWS = [
     pytest.param("draw_lineup", {}, "the division no longer exists", id="of_record"),
     pytest.param("draw_lineup_for_command", {}, "the lineup: the division no longer exists",
-                 id="for_command"),
+                 id="for_command", marks=pytest.mark.xfail(strict=True, reason=NOT_YET_NAMED)),
     pytest.param("draw_review_lineup", {"include_uncommitted": True},
                  "❌ the lineup: the division no longer exists", id="for_review"),
 ]
@@ -405,7 +469,7 @@ async def test_a_lineup_refused_before_its_render_comes_back_as_its_problem(
     guild, channel, _ = _guild()
     drawing, captured, *_ = _drawing(db_path)
 
-    picture = await getattr(drawing, draw)(guild, 999, **handed)
+    picture = await getattr(drawing, draw)(guild, 999, **_asked(draw, **handed))
 
     assert picture.problem == problem
     assert "999" not in picture.problem
@@ -415,6 +479,7 @@ async def test_a_lineup_refused_before_its_render_comes_back_as_its_problem(
     channel.send.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_NAMED)
 async def test_a_lineup_that_cannot_be_read_raises_out_of_the_commanded_draw(
     monkeypatch, tmp_path,
 ):
@@ -430,7 +495,7 @@ async def test_a_lineup_that_cannot_be_read_raises_out_of_the_commanded_draw(
     drawing, captured, post_log, _ = _drawing(str(tmp_path))
 
     with pytest.raises(sqlite3.OperationalError):
-        await drawing.draw_lineup_for_command(guild, DIVISION_ID)
+        await drawing.draw_lineup_for_command(guild, DIVISION_ID, **COMMANDED)
 
     assert "builder" not in captured
     post_log.assert_not_awaited()
