@@ -103,7 +103,9 @@ class PostedTable(NamedTuple):
     where this table went out as text in its place (a fault in drawing it, or Discord's refusal of
     it): the job returns it as a line of the log (:func:`picture_fallback_line`). *lines* is what
     the picture's drawing had to report, its render notices and the problem of a picture that was
-    due and not drawn, which the job returns as lines of its own.
+    due and not drawn, which the job returns as lines of its own. *old_channel_id* is the channel
+    *old* was recorded as posted in, ``None`` where none was recorded (`standing_posts.posted_in`
+    then takes the present channel).
     """
 
     new: list[int]
@@ -113,6 +115,7 @@ class PostedTable(NamedTuple):
     championship: str | None = None
     fault: str | None = None
     lines: tuple[str, ...] = ()
+    old_channel_id: int | None = None
 
     @property
     def at_discord(self) -> bool:
@@ -672,13 +675,16 @@ async def produce_session_results(
     # What stood before: read here so that the caller need not, and left standing.
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT results_message_id, results_message_ids FROM session_results WHERE id = ?",
+            "SELECT results_message_id, results_message_ids, results_message_channel_id "
+            "FROM session_results WHERE id = ?",
             (session_result.id,),
         )
         stored = await cursor.fetchone()
     previous: list[int] = []
+    previous_channel: int | None = None
     if stored is not None and stored["results_message_id"] is not None:
         previous = _parse_ids(stored["results_message_ids"]) or [int(stored["results_message_id"])]
+        previous_channel = stored["results_message_channel_id"]
 
     # ── The image path (039) ──────────────────────────────────────────────
     fault: str | None = None
@@ -729,7 +735,10 @@ async def produce_session_results(
                 log.error("results: could not post image for session %s: %s", session_result.id, exc)
                 fault = UploadFault.of(exc)
             else:
-                return PostedTable([message_id], previous, drawn=True, lines=lines)
+                return PostedTable(
+                    [message_id], previous, drawn=True, lines=lines,
+                    old_channel_id=previous_channel,
+                )
             finally:
                 drawing.discard_attachment(file)
 
@@ -743,7 +752,7 @@ async def produce_session_results(
         if fault is not None:
             setattr(failure, PICTURE_FAULTS_ATTRIBUTE, {"results": fault})
         raise
-    return PostedTable(sent, previous, fault=fault, lines=lines)
+    return PostedTable(sent, previous, fault=fault, lines=lines, old_channel_id=previous_channel)
 
 
 async def produce_cancelled_session_line(
@@ -767,19 +776,22 @@ async def produce_cancelled_session_line(
     async with get_connection(db_path) as db:
         stored = await (
             await db.execute(
-                "SELECT results_message_id, results_message_ids FROM session_results WHERE id = ?",
+                "SELECT results_message_id, results_message_ids, results_message_channel_id "
+                "FROM session_results WHERE id = ?",
                 (session_result.id,),
             )
         ).fetchone()
     previous: list[int] = []
+    previous_channel: int | None = None
     if stored is not None and stored["results_message_id"] is not None:
         previous = _parse_ids(stored["results_message_ids"]) or [int(stored["results_message_id"])]
+        previous_channel = stored["results_message_channel_id"]
     sent = await _send_chunked(
         results_channel,
         f"🚫 **Round {round_number} — {session_label}** ({division_name}): "
         "This session was cancelled.",
     )
-    return PostedTable(sent, previous)
+    return PostedTable(sent, previous, old_channel_id=previous_channel)
 
 
 # ---------------------------------------------------------------------------
@@ -1001,10 +1013,12 @@ async def produce_standings(
                         )
                         faults[name] = UploadFault.of(exc)
                         continue
+                    replaced, replaced_in = await _standings_replaced(
+                        db_path, division_id, round_id, name, occasion
+                    )
                     pictures.append(PostedTable(
-                        [message_id], await _standings_replaced(
-                            db_path, division_id, round_id, name, occasion
-                        ), drawn=True, championship=name,
+                        [message_id], replaced, drawn=True, championship=name,
+                        old_channel_id=replaced_in,
                     ))
             finally:
                 # Through the attachment, so the handle is closed before the file is removed, and
@@ -1046,6 +1060,12 @@ async def produce_standings(
 
     # Look for existing standings message (kept on the round's row in `round_standings_posts`)
     existing_msg_id = await get_standings_message_id(db_path, division_id, round_id)
+    existing_in = await get_standings_message_channel_id(db_path, division_id, round_id)
+    if existing_in is not None and existing_in != standings_channel.id:
+        # The division's standings channel has moved since this table was posted: it is posted
+        # afresh in the present channel and the old one deleted where it stands, never edited in
+        # place in a channel that is no longer the division's.
+        fresh = True
 
     # **A text table posted over standings that also stand as a constructors message** (a graphic
     # per championship, or a text table per championship) is posted afresh, and takes both
@@ -1055,6 +1075,9 @@ async def produce_standings(
         db_path, division_id, round_id, STANDINGS_CONSTRUCTORS
     )
     constructors_old: list[int] = []
+    constructors_in = await get_standings_message_channel_id(
+        db_path, division_id, round_id, STANDINGS_CONSTRUCTORS
+    )
     if constructors_id is not None:
         constructors_old = list(
             await get_standings_message_ids(
@@ -1111,15 +1134,21 @@ async def produce_standings(
 
         if sent_msg is None:
             sent = await _send_chunked(standings_channel, content)
-            tables = [PostedTable(sent, stale, championship=STANDINGS_DRIVERS, fault=fault)]
+            tables = [PostedTable(
+                sent, stale, championship=STANDINGS_DRIVERS, fault=fault, old_channel_id=existing_in
+            )]
             if constructors_old:
                 # Nothing new carries the constructors now: the table forgets its id and loses its
                 # messages with the drivers' (see `review_posting._record_standings_post`).
-                tables.append(PostedTable([], constructors_old, championship=STANDINGS_CONSTRUCTORS))
+                tables.append(PostedTable(
+                    [], constructors_old, championship=STANDINGS_CONSTRUCTORS,
+                    old_channel_id=constructors_in,
+                ))
             return tables
         # Edited in place, so it is the one message it always was and occupies no others.
         return [PostedTable(
-            [sent_msg.id], stale, edited=True, championship=STANDINGS_DRIVERS, fault=fault
+            [sent_msg.id], stale, edited=True, championship=STANDINGS_DRIVERS, fault=fault,
+            old_channel_id=existing_in,
         )]
     except Exception as failure:
         # The picture that gave way to this text is kept on the stop, as the pictures' path keeps
@@ -1144,9 +1173,10 @@ async def _round_is_cancelled(db_path: str, round_id: int) -> bool:
 async def _standings_replaced(
     db_path: str, division_id: int, round_id: int, championship: str,
     occasion: ClassificationOccasion,
-) -> list[int]:
+) -> tuple[list[int], int | None]:
     """The ids of the messages a championship's picture replaces and leaves standing, the anchor
-    first; empty where nothing stood and for a season-boundary sheet.
+    first, and the channel they were recorded as posted in (None where none was recorded);
+    empty where nothing stood and for a season-boundary sheet.
 
     A standings message id is keyed by round, on the round's row in `round_standings_posts`. A
     season-boundary sheet has no round and no such row to carry one, replaces nothing, and will
@@ -1154,16 +1184,16 @@ async def _standings_replaced(
     of them: the change queue's job takes them down once the picture stands.
     """
     if not occasion.names_a_round:
-        return []
+        return [], None
     previous_id = await get_standings_message_id(db_path, division_id, round_id, championship)
     if previous_id is None:
-        return []
+        return [], None
     # The whole posting it replaces, which may be a chunked textual one (#345).
     previous_ids = await get_standings_message_ids(db_path, division_id, round_id, championship)
     old = [int(each) for each in previous_ids or [previous_id]]
     if previous_id not in old:
         old.insert(0, previous_id)
-    return old
+    return old, await get_standings_message_channel_id(db_path, division_id, round_id, championship)
 
 
 async def _produce_standings_sections(
@@ -1223,7 +1253,10 @@ async def _produce_standings_sections(
             if previous_id not in old:
                 old.insert(0, previous_id)
         posted.append(PostedTable(
-            sent, old, championship=championship, fault=(faults or {}).get(championship)
+            sent, old, championship=championship, fault=(faults or {}).get(championship),
+            old_channel_id=await get_standings_message_channel_id(
+                db_path, division_id, round_id, championship
+            ),
         ))
     return posted
 
@@ -1260,6 +1293,13 @@ _STANDINGS_ID_COLUMNS = {
 _STANDINGS_IDS_COLUMNS = {
     STANDINGS_DRIVERS: "standings_message_ids",
     STANDINGS_CONSTRUCTORS: "constructor_standings_message_ids",
+}
+
+
+#: The same two, for the channel each championship was posted in.
+_STANDINGS_CHANNEL_COLUMNS = {
+    STANDINGS_DRIVERS: "standings_message_channel_id",
+    STANDINGS_CONSTRUCTORS: "constructor_standings_message_channel_id",
 }
 
 
@@ -1315,6 +1355,26 @@ async def get_standings_message_ids(
     return _parse_ids(row["message_ids"] if row else None)
 
 
+async def get_standings_message_channel_id(
+    db_path: str,
+    division_id: int,
+    round_id: int,
+    championship: str = STANDINGS_DRIVERS,
+) -> int | None:
+    """Return the channel *championship*'s posting for the round was recorded as posted in, or
+    None where none was recorded (`standing_posts.posted_in` then takes the present channel)."""
+    column = _STANDINGS_CHANNEL_COLUMNS[championship]
+    anchor_column = _STANDINGS_ID_COLUMNS[championship]
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            f"SELECT {column} AS channel_id FROM round_standings_posts "  # noqa: S608
+            f"WHERE division_id = ? AND round_id = ? AND {anchor_column} IS NOT NULL",
+            (division_id, round_id),
+        )
+        row = await cursor.fetchone()
+    return int(row["channel_id"]) if row and row["channel_id"] else None
+
+
 async def set_standings_message_id_on(
     db: aiosqlite.Connection,
     division_id: int,
@@ -1323,6 +1383,7 @@ async def set_standings_message_id_on(
     championship: str = STANDINGS_DRIVERS,
     *,
     message_ids: str | None = None,
+    channel_id: int | None = None,
 ) -> None:
     """Persist *message_id* for *championship* on the round's standings row, committing nothing.
 
@@ -1334,6 +1395,9 @@ async def set_standings_message_id_on(
     (#345). Clearing an id clears the list with it: a stale list outliving the message it
     described would send a delete at somebody else's posting.
 
+    *channel_id* is the channel the posting was made in, kept beside the id so that a later move of
+    the standings channel never aims the delete at the wrong one; clearing an id clears it too.
+
     The row is the round's: one for the round, found again whoever leads it and whatever a
     recomputation does to the snapshots, and a new posting replaces the old in place (#345).
 
@@ -1342,12 +1406,13 @@ async def set_standings_message_id_on(
     """
     column = _STANDINGS_ID_COLUMNS[championship]
     list_column = _STANDINGS_IDS_COLUMNS[championship]
+    channel_column = _STANDINGS_CHANNEL_COLUMNS[championship]
     await db.execute(
-        f"INSERT INTO round_standings_posts (round_id, division_id, {column}, {list_column}) "  # noqa: S608
-        "VALUES (?, ?, ?, ?) "
+        f"INSERT INTO round_standings_posts (round_id, division_id, {column}, "  # noqa: S608
+        f"{list_column}, {channel_column}) VALUES (?, ?, ?, ?, ?) "
         f"ON CONFLICT(round_id) DO UPDATE SET {column} = excluded.{column}, "
-        f"{list_column} = excluded.{list_column}",
-        (round_id, division_id, message_id, message_ids),
+        f"{list_column} = excluded.{list_column}, {channel_column} = excluded.{channel_column}",
+        (round_id, division_id, message_id, message_ids, channel_id if message_id else None),
     )
 
 
@@ -1359,6 +1424,7 @@ async def set_classification_message_id_on(
     championship: str = STANDINGS_DRIVERS,
     *,
     message_ids: str | None = None,
+    channel_id: int | None = None,
 ) -> None:
     """Persist *message_id* for *championship* on the division's row of *occasion* in
     ``classification_posts``, committing nothing: the opening or final classification the
@@ -1367,15 +1433,17 @@ async def set_classification_message_id_on(
     As :func:`set_standings_message_id_on`, but the row is the division's for the occasion, not a
     round's, since neither classification has a round to key it by. Written on the connection it
     is handed, so that the change queue saves the ids in the save that marks the post done.
+    *channel_id* is kept beside the id as there, and cleared with it.
     """
     column = _STANDINGS_ID_COLUMNS[championship]
     list_column = _STANDINGS_IDS_COLUMNS[championship]
+    channel_column = _STANDINGS_CHANNEL_COLUMNS[championship]
     await db.execute(
-        f"INSERT INTO classification_posts (division_id, occasion, {column}, {list_column}) "  # noqa: S608
-        "VALUES (?, ?, ?, ?) "
+        f"INSERT INTO classification_posts (division_id, occasion, {column}, "  # noqa: S608
+        f"{list_column}, {channel_column}) VALUES (?, ?, ?, ?, ?) "
         f"ON CONFLICT(division_id, occasion) DO UPDATE SET {column} = excluded.{column}, "
-        f"{list_column} = excluded.{list_column}",
-        (division_id, occasion.value, message_id, message_ids),
+        f"{list_column} = excluded.{list_column}, {channel_column} = excluded.{channel_column}",
+        (division_id, occasion.value, message_id, message_ids, channel_id if message_id else None),
     )
 
 

@@ -170,13 +170,15 @@ def _post_information(
     signup: "SignupModuleService", config: "ConfigService", queue: Callable[[], "ChangeQueue"]
 ) -> After:
     """The step after the permissions, planned where a window is open: post the information
-    message with its Sign Up button in the new channel and keep its id as the window's, so that
-    drivers can sign up in the channel at once.
+    message with its Sign Up button in the new channel and keep its id as the window's, with the
+    channel it was posted in, so that drivers can sign up in the channel at once. The old message
+    is not taken down: a move while the window is open is allowed only once the old channel is gone
+    from the server, and the message went with it.
 
-    The record saves the id in the save that marks the step done. Like every step after a setting's
-    save it ends on a fault and never stops the lane, so no later try finds an earlier copy to
-    remove; its reply says what was not done. The step is no longer due where the window has
-    closed or the signup channel has moved on since.
+    The record saves the id and its channel in the save that marks the step done. Like every step
+    after a setting's save it ends on a fault and never stops the lane, so no later try finds an
+    earlier copy to remove; its reply says what was not done. The step is no longer due where the
+    window has closed or the signup channel has moved on since.
     """
 
     async def due(ctx: StepContext) -> bool:
@@ -199,8 +201,9 @@ def _post_information(
         db: "aiosqlite.Connection", _ctx: StepContext, result: StepResult
     ) -> None:
         await db.execute(
-            "UPDATE signup_module_config SET signup_button_message_id = ?",
-            (int((result.result or {})["new"]),),
+            "UPDATE signup_module_config SET signup_button_message_id = ?, "
+            "signup_button_message_channel_id = ?",
+            (int((result.result or {})["new"]), int((result.result or {})["channel_id"])),
         )
 
     async def describe(ctx: StepContext) -> str:

@@ -596,13 +596,46 @@ async def test_a_stop_part_way_through_the_take_down_finishes_it_on_restart_and_
     assert "verdicts removed: 2" in closing
 
 
-async def test_every_message_is_taken_down_by_the_ids_saved_with_the_switch_off(tmp_path):
+#: The results and standings channels a division's were moved to after its posts went out.
+MOVED_RESULTS_CHANNEL_ID = 9004
+MOVED_STANDINGS_CHANNEL_ID = 9005
+
+
+async def _move_the_division_s_channels(db_path: str, division_id: int) -> None:
+    """Record every results table, standings post and classification as posted in the channel it
+    went out in (9001 and 9002), then move the division's results channel to 9004 and its
+    standings channel to 9005, as `/results channel` does."""
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "UPDATE session_results SET results_message_channel_id = ?", (RESULTS_CHANNEL_ID,)
+        )
+        for table in ("round_standings_posts", "classification_posts"):
+            await db.execute(
+                f"UPDATE {table} SET standings_message_channel_id = ?, "
+                "constructor_standings_message_channel_id = ?",
+                (STANDINGS_CHANNEL_ID, STANDINGS_CHANNEL_ID),
+            )
+        await db.execute(
+            "UPDATE division_results_config SET results_channel_id = ?, standings_channel_id = ? "
+            "WHERE division_id = ?",
+            (MOVED_RESULTS_CHANNEL_ID, MOVED_STANDINGS_CHANNEL_ID, division_id),
+        )
+        await db.commit()
+
+
+@pytest.mark.parametrize("moved", [
+    pytest.param(False, id="kept"),
+    pytest.param(True, id="moved"),
+])
+async def test_every_message_is_taken_down_by_the_ids_saved_with_the_switch_off(tmp_path, moved):
     """The rows naming the messages are gone with the switch-off; the steps keep their ids. The
     division's opening classification (messages 4000 and 4001 in the standings channel) goes with
     the round's standings (results specification, the switch-off rule), and is counted as they
     are, one per championship's posting: five results and standings messages (1000, 2000, 3000,
     4000, 4001) and two verdicts, the banner apart, in the Success line, the closing line and the
-    admin's reply."""
+    admin's reply. Where the division's results and standings channels were moved (to 9004 and
+    9005) after those messages went out, each is still taken down from the channel it was posted
+    in (9001 or 9002), and nothing is deleted from the new channels."""
     seeded = await _seed(tmp_path)
     await _announce_verdicts(seeded.db_path)
     await _post_opening_classification(seeded.db_path, seeded.division_id)
@@ -613,7 +646,11 @@ async def test_every_message_is_taken_down_by_the_ids_saved_with_the_switch_off(
             (seeded.round_ids[0], str(VERDICTS_CHANNEL_ID)),
         )
         await db.commit()
+    if moved:
+        await _move_the_division_s_channels(seeded.db_path, seeded.division_id)
     bot = _league(seeded.db_path)
+    for cid in (MOVED_RESULTS_CHANNEL_ID, MOVED_STANDINGS_CHANNEL_ID):
+        bot.channels[cid] = _FakeChannel(cid)
     interaction = await _confirm(bot)
 
     await run_queue(bot, steps=1)
@@ -625,6 +662,8 @@ async def test_every_message_is_taken_down_by_the_ids_saved_with_the_switch_off(
     assert _deleted(bot, RESULTS_CHANNEL_ID) == [1000]
     assert _deleted(bot, STANDINGS_CHANNEL_ID) == [2000, 3000, 4000, 4001]
     assert _deleted(bot, VERDICTS_CHANNEL_ID) == [5001, 6001, 7001]
+    assert _deleted(bot, MOVED_RESULTS_CHANNEL_ID) == []
+    assert _deleted(bot, MOVED_STANDINGS_CHANNEL_ID) == []
     assert await _count(seeded.db_path, "verdict_banner_messages") == 0
     switch_off = await _line_starting(bot, f"{NAMED} | /module disable results | Success")
     assert "  messages to remove: 5 results and standings, 2 verdicts" in switch_off

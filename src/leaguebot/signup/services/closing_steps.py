@@ -629,18 +629,21 @@ async def recover_correction_timeouts(
 
 
 def window_close_jobs(
-    cause: str, returned: int, *, channel_id: int | None, button_message_id: int | None
+    cause: str, returned: int, *, channel_id: int | None, button_message_id: int | None,
+    button_channel_id: int | None = None,
 ) -> tuple[PlannedStep, ...]:
-    """The jobs that close the signup window in its channel once a close nobody ran has returned
-    its drivers: the Sign Up button's deletion where one stands, then the "Signups are now
-    closed" post, whose record closes the window. *cause* is a key of `CLOSE_CAUSES`, *returned*
-    how many drivers the close returned, for the line the post's record writes."""
+    """The jobs that close the signup window once a close nobody ran has returned its drivers:
+    the Sign Up button's deletion where one stands, from *button_channel_id*, the channel it was
+    posted in (the signup channel where none is recorded), then the "Signups are now closed" post
+    in the signup channel, *channel_id*, whose record closes the window. *cause* is a key of
+    `CLOSE_CAUSES`, *returned* how many drivers the close returned, for the line the post's record
+    writes."""
     audit_action, head = CLOSE_CAUSES[cause]
     planned: list[PlannedStep] = []
     if button_message_id is not None and channel_id is not None:
         planned.append(PlannedStep(DELETE_BUTTON, {
-            "channel_id": channel_id, "message_id": button_message_id,
-            "what": "Sign Up button", "division_name": "signups",
+            "channel_id": standing_posts.posted_in(button_channel_id, channel_id),
+            "message_id": button_message_id, "what": "Sign Up button", "division_name": "signups",
         }))
     planned.append(PlannedStep(POST_CLOSED, {
         "channel_id": channel_id, "audit_action": audit_action, "head": head, "returned": returned,
@@ -689,7 +692,8 @@ def window_close_steps(
 
     async def record(db: aiosqlite.Connection, ctx: StepContext, result: StepResult) -> None:
         await signup_module_service().set_window_closed_on(
-            db, now=now(), closed_msg_id=int((result.result or {})["new"])
+            db, now=now(), closed_msg_id=int((result.result or {})["new"]),
+            closed_channel_id=int((result.result or {})["channel_id"]),
         )
         await record_system_change_on(
             db, change_type=str(ctx.step_payload["audit_action"]), old_value="open",

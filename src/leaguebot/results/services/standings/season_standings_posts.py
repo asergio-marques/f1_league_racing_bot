@@ -537,6 +537,7 @@ async def record_posted(db: "aiosqlite.Connection", _ctx: StepContext, result: S
             ClassificationOccasion(result.result["occasion"]),
             new[0] if new else None, table["championship"],
             message_ids=json.dumps(new) if new else None,
+            channel_id=result.result["channel_id"],
         )
 
 

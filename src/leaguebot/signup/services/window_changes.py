@@ -170,10 +170,11 @@ def window_open_change(
     """The `signup.open` change type, for the builder to register.
 
     The payload is ``track_ids`` (the tracks chosen, ids as text), ``close_at`` (the normalised
-    close time or None), and ``channel_id`` and ``closed_message_id`` (the signup channel and
-    the "signups closed" notice standing in it, each or None). *arm_once* arms the close
-    timer (`window_close.CLOSE_TIMER`) at the close time, and *queue* is the change queue the Sign
-    Up button is handed.
+    close time or None), and ``channel_id``, ``closed_message_id`` and ``closed_channel_id`` (the
+    signup channel, the "signups closed" notice and the channel that notice was posted in, each or
+    None; the notice is taken down from there, the signup channel since replaced or not).
+    *arm_once* arms the close timer (`window_close.CLOSE_TIMER`) at the close time, and *queue* is
+    the change queue the Sign Up button is handed.
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -233,7 +234,9 @@ def window_open_change(
             planned.append(PlannedStep(ARM_CLOSE, {"close_at": payload["close_at"]}))
         if payload["closed_message_id"] is not None and payload["channel_id"] is not None:
             planned.append(PlannedStep(DELETE_CLOSED, {
-                "channel_id": payload["channel_id"], "message_id": payload["closed_message_id"],
+                "channel_id": standing_posts.posted_in(
+                    payload.get("closed_channel_id"), int(payload["channel_id"])),
+                "message_id": payload["closed_message_id"],
                 "what": "signups closed notice", "division_name": "signups",
             }))
         return tuple(planned)
@@ -264,7 +267,7 @@ def window_open_change(
         payload = ctx.step_payload
         await signup.set_window_open_on(
             db, int((result.result or {})["new"]), [str(each) for each in payload["track_ids"]],
-            now=queue().now(),
+            now=queue().now(), channel_id=int(payload["channel_id"]),
         )
         await advance_on_window_open_on(db)
         if payload["close_at"]:
@@ -316,7 +319,10 @@ def window_open_change(
                 text += f" Auto-close scheduled for {_stamp(moment)} ({_stamp(moment, 'R')})."
         closed = views.get(DELETE_CLOSED)
         if closed is not None and "discarded" in (closed.result or {}):
-            link = (closed.result or {}).get("link") or f"in <#{ctx.payload['channel_id']}>"
+            where = standing_posts.posted_in(
+                ctx.payload.get("closed_channel_id"), ctx.payload["channel_id"],
+            )
+            link = (closed.result or {}).get("link") or f"in <#{where}>"
             text += f"\nThe earlier signups closed notice could not be deleted ({link}): delete it by hand."
         return text
 
@@ -394,28 +400,30 @@ def window_was_closed(steps: tuple[StepView, ...]) -> bool:
     ) and not any(view.name == RETURN_DRIVERS and discarded(view) for view in steps)
 
 
-#: What a close plans once it has returned its drivers: given the job, the signup channel and the
-#: Sign Up button's message where the configuration holds them, and each driver returned with the
-#: signup channel their wizard held, it gives the jobs that follow.
+#: What a close plans once it has returned its drivers: given the job, the signup channel, the Sign
+#: Up button's message and the channel it was posted in where the configuration holds them, and
+#: each driver returned with the signup channel their wizard held, it gives the jobs that follow.
 PlanAfter = Callable[
-    [StepContext, int | None, int | None, Sequence[tuple[str, int | None]]],
+    [StepContext, int | None, int | None, int | None, Sequence[tuple[str, int | None]]],
     tuple[PlannedStep, ...],
 ]
 
 
 def planned_by_a_member_s_close(
     ctx: StepContext, channel_id: int | None, button_id: int | None,
-    returned: Sequence[tuple[str, int | None]],
+    button_channel_id: int | None, returned: Sequence[tuple[str, int | None]],
 ) -> tuple[PlannedStep, ...]:
     """The jobs after the return of a close the queue was asked for: the Sign Up button's
-    deletion and the "Signups are now closed" post (whose record closes the window and moves the
-    season on), then for each driver whose wizard held a channel their notice, lock and deletion's
-    arming. The payload's ``audit_action`` is what the close is audited under."""
+    deletion, from the channel it was posted in (*button_channel_id*, the signup channel where
+    none is recorded), and the "Signups are now closed" post in the present signup channel (whose
+    record closes the window and moves the season on), then for each driver whose wizard held a
+    channel their notice, lock and deletion's arming. The payload's ``audit_action`` is what the
+    close is audited under."""
     planned: list[PlannedStep] = []
     if button_id is not None and channel_id is not None:
         planned.append(PlannedStep(DELETE_BUTTON, {
-            "channel_id": int(channel_id), "message_id": int(button_id),
-            "what": "Sign Up button", "division_name": "signups",
+            "channel_id": standing_posts.posted_in(button_channel_id, int(channel_id)),
+            "message_id": int(button_id), "what": "Sign Up button", "division_name": "signups",
         }))
     planned.append(PlannedStep(POST_CLOSED, {
         "channel_id": None if channel_id is None else int(channel_id),
@@ -435,7 +443,7 @@ def planned_by_a_member_s_close(
 
 def planned_by_a_season_s_end(
     ctx: StepContext, channel_id: int | None, button_id: int | None,
-    returned: Sequence[tuple[str, int | None]],
+    button_channel_id: int | None, returned: Sequence[tuple[str, int | None]],
 ) -> tuple[PlannedStep, ...]:
     """The jobs after the return of a close at a season's end: the Sign Up button's deletion and
     the "Signups are now closed" post (whose record closes the window, with its audit and the line
@@ -443,7 +451,7 @@ def planned_by_a_season_s_end(
     of their channel, which the season's end tells and locks itself."""
     planned = list(window_close_jobs(
         str(ctx.step_payload["cause"]), len(returned),
-        channel_id=channel_id, button_message_id=button_id,
+        channel_id=channel_id, button_message_id=button_id, button_channel_id=button_channel_id,
     ))
     for account, _wizard_channel in returned:
         planned.append(PlannedStep(SIGNUP_NOTICE, {"user_id": account, "notice": WINDOW_CLOSED_NOTICE}))
@@ -477,11 +485,13 @@ def return_drivers_step(
         states = [state.value for state in returned_by_close]
         rows = await drivers_in_states(db, states)
         cursor = await db.execute(
-            "SELECT signup_channel_id, signup_button_message_id FROM signup_module_config WHERE id = 1"
+            "SELECT signup_channel_id, signup_button_message_id, signup_button_message_channel_id "
+            "FROM signup_module_config WHERE id = 1"
         )
         config = await cursor.fetchone()
         channel_id = None if config is None else config["signup_channel_id"]
         button_id = None if config is None else config["signup_button_message_id"]
+        button_channel_id = None if config is None else config["signup_button_message_channel_id"]
         returned: list[tuple[str, int | None]] = []
         fake_names: dict[str, str] = {}
         for row in rows:
@@ -508,7 +518,7 @@ def return_drivers_step(
                 [account for account, _ in returned],
                 close_timer=disarm_close_timer,
             ),
-            *plan_after(ctx, channel_id, button_id, returned),
+            *plan_after(ctx, channel_id, button_id, button_channel_id, returned),
         )
         result: dict[str, Any] = {"returned": [account for account, _ in returned]}
         if fake_names:

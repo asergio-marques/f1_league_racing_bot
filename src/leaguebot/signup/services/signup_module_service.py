@@ -310,9 +310,10 @@ class SignupModuleService:
 
         **The configuration is kept**, signup channel included (constitution, Principle X,
         rule 3): so are the time slots and the three question settings, which no key joins to
-        it, and the closed notice's message (`signup_closed_message_id`), which the first opening
-        after the module is switched back on takes down. A channel can be deleted or given
-        another job while the module is off, which the switch-on checks (`kept_channels`).
+        it, and the closed notice's message (`signup_closed_message_id`) with its channel, which
+        the first opening after the module is switched back on takes down. A channel can be
+        deleted or given another job while the module is off, which the switch-on checks
+        (`kept_channels`).
 
         What is cleared is the window's state: the row reads the window closed, with no Sign Up
         button and no close time. The close clears it as a window closes (`set_window_closed_on`),
@@ -323,7 +324,8 @@ class SignupModuleService:
         """
         await db.execute(
             "UPDATE signup_module_config "
-            "SET signups_open = 0, signup_button_message_id = NULL, close_at = NULL"
+            "SET signups_open = 0, signup_button_message_id = NULL, "
+            "    signup_button_message_channel_id = NULL, close_at = NULL"
         )
         await db.execute(
             "UPDATE signup_windows SET closed_at = ? WHERE closed_at IS NULL",
@@ -411,10 +413,12 @@ class SignupModuleService:
         selected_tracks: list[str],
         *,
         now: datetime,
+        channel_id: int | None = None,
     ) -> None:
         """Open the window, and record it as a window of the server's active season, on the
-        caller's connection, committing nothing: the Sign Up button's message is kept, the
-        previous closed notice forgotten (it is taken down by this opening).
+        caller's connection, committing nothing: the Sign Up button's message is kept with
+        *channel_id*, the channel it was posted in, and the previous closed notice, with its
+        channel, forgotten (it is taken down by this opening).
 
         The record is what a signup made through this window is kept against (issue #220):
         the tracks it asked times for, and later its close time. A server with no active
@@ -424,9 +428,10 @@ class SignupModuleService:
         await db.execute(
             "UPDATE signup_module_config "
             "SET signups_open = 1, signup_button_message_id = ?, selected_tracks_json = ?, "
-            "    signup_closed_message_id = NULL "
+            "    signup_button_message_channel_id = ?, signup_closed_message_id = NULL, "
+            "    signup_closed_message_channel_id = NULL "
             "",
-            (button_message_id, json.dumps(selected_tracks)),
+            (button_message_id, json.dumps(selected_tracks), channel_id),
         )
         season_id = await self._live_season_id(db)
         if season_id is not None:
@@ -463,19 +468,22 @@ class SignupModuleService:
         ]
 
     async def set_window_closed_on(
-        self, db: aiosqlite.Connection, *, now: datetime, closed_msg_id: int | None = None
+        self, db: aiosqlite.Connection, *, now: datetime, closed_msg_id: int | None = None,
+        closed_channel_id: int | None = None,
     ) -> None:
         """Record the window closed on the caller's connection, committing nothing: the Sign Up
-        button's id and the close time are cleared, *closed_msg_id* is kept so the next opening
-        deletes the notice, and the open window's record is stamped closed at *now*. The
+        button's id, with its channel, and the close time are cleared, *closed_msg_id* is kept
+        with *closed_channel_id*, the channel it was posted in, so the next opening deletes the
+        notice from there, and the open window's record is stamped closed at *now*. The
         configuration is the one record of the notice: a switch-off keeps it, so the next
         opening still finds the notice there."""
         await db.execute(
             "UPDATE signup_module_config "
             "SET signups_open = 0, signup_button_message_id = NULL, "
-            "    signup_closed_message_id = ?, close_at = NULL "
+            "    signup_button_message_channel_id = NULL, signup_closed_message_id = ?, "
+            "    signup_closed_message_channel_id = ?, close_at = NULL "
             "",
-            (closed_msg_id,),
+            (closed_msg_id, closed_channel_id if closed_msg_id else None),
         )
         # The window record keeps the close time it carried; only its closing is stamped.
         await db.execute(
@@ -955,7 +963,8 @@ async def config_on(db: aiosqlite.Connection) -> SignupModuleConfig | None:
     cursor = await db.execute(
         "SELECT signup_channel_id, "
         "       signups_open, signup_button_message_id, selected_tracks_json, "
-        "       signup_closed_message_id, close_at "
+        "       signup_closed_message_id, close_at, "
+        "       signup_button_message_channel_id, signup_closed_message_channel_id "
         "FROM signup_module_config",
     )
     row = await cursor.fetchone()
@@ -968,6 +977,8 @@ async def config_on(db: aiosqlite.Connection) -> SignupModuleConfig | None:
         selected_tracks=json.loads(row["selected_tracks_json"] or "[]"),
         signup_closed_message_id=row["signup_closed_message_id"],
         close_at=row["close_at"],
+        signup_button_message_channel_id=row["signup_button_message_channel_id"],
+        signup_closed_message_channel_id=row["signup_closed_message_channel_id"],
     )
 
 
@@ -1208,7 +1219,7 @@ async def season_deleted_on(db: aiosqlite.Connection, season_id: int) -> None:
 async def bot_packed_on(db: aiosqlite.Connection) -> dict[str, Any]:
     """Clear signup's rows tied to the server the bot leaves, on *db*, committing nothing: every
     wizard record, and the signup channel, the Sign Up button's message and the closed post's
-    message in the configuration, if it has one.
+    message, each with its channel, in the configuration, if it has one.
 
     Core hands it the pack's connection, so that signup's rows go with the rest of the pack or
     not at all (architecture.md, "The database"). The module stays enabled with nothing
@@ -1220,7 +1231,8 @@ async def bot_packed_on(db: aiosqlite.Connection) -> dict[str, Any]:
     wizards = (await db.execute("DELETE FROM signup_wizard_records")).rowcount
     await db.execute(
         "UPDATE signup_module_config SET signup_channel_id = NULL, "
-        "signup_button_message_id = NULL, signup_closed_message_id = NULL"
+        "signup_button_message_id = NULL, signup_button_message_channel_id = NULL, "
+        "signup_closed_message_id = NULL, signup_closed_message_channel_id = NULL"
     )
     return {
         CLEARED_WIZARDS: wizards,

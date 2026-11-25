@@ -64,8 +64,12 @@ OPEN_KIND = "signup.open"
 SIGNUP_CHANNEL = 620
 BASE_ROLE = 555001
 DRIVER_ROLE = 555002
-#: The "signups closed" notice the last close left standing in the signup channel.
-CLOSED_NOTICE = 9001
+#: The "signups closed" notice the last close left standing in the signup channel, its id below
+#: those the fake channels give new posts (from 9000), so that no post made earlier in the run
+#: takes it.
+CLOSED_NOTICE = 8901
+#: The signup channel before `/signup channel` moved it, still on the server.
+OLD_SIGNUP_CHANNEL = 621
 #: The permissions the bot needs on the signup channel to post the Sign Up button.
 NEEDED = ("**View Channel**", "**Send Messages**", "**Embed Links**")
 
@@ -114,9 +118,12 @@ class _League:
 
 
 async def _league(tmp_path: Any, *, closed_notice: bool = False,
+                  closed_in: int = SIGNUP_CHANNEL,
                   perms: dict[str, bool] | None = None) -> _League:
     """The league of the module docstring; *closed_notice* leaves the last close's notice
-    standing; *perms* overrides the bot's permissions on the signup channel (all granted)."""
+    standing, in *closed_in*: the signup channel, or the channel it was in before a move (621),
+    still on the server, recorded as the notice's channel; *perms* overrides the bot's permissions
+    on the signup channel (all granted)."""
     db_path = os.path.join(str(tmp_path), "window.db")
     await run_migrations(db_path)
     await seed_server(db_path)
@@ -128,6 +135,9 @@ async def _league(tmp_path: Any, *, closed_notice: bool = False,
             "signup_closed_message_id) VALUES (1, ?, 0, ?)",
             (SIGNUP_CHANNEL, CLOSED_NOTICE if closed_notice else None),
         )
+        if closed_notice and closed_in != SIGNUP_CHANNEL:
+            await db.execute("UPDATE signup_module_config SET signup_closed_message_channel_id = ?",
+                             (closed_in,))
         await db.execute("INSERT INTO signup_availability_slots (day_of_week, time_hhmm) "
                          "VALUES (1, '19:00')")
         await db.execute("INSERT INTO seasons (start_date, status, season_number, stage) "
@@ -137,24 +147,27 @@ async def _league(tmp_path: Any, *, closed_notice: bool = False,
     events: list[Any] = []
     signup = channel(SIGNUP_CHANNEL, events)
     signup.mention = "#signups"
+    old = channel(OLD_SIGNUP_CHANNEL, events)
     if closed_notice:
-        signup.seed(CLOSED_NOTICE, "🔒 Signups are now closed.")
+        (signup if closed_in == SIGNUP_CHANNEL else old).seed(
+            CLOSED_NOTICE, "🔒 Signups are now closed.")
     granted = {"view_channel": True, "send_messages": True, "embed_links": True,
                **(perms or {})}
     signup.permissions_for = MagicMock(return_value=MagicMock(**granted))
     roles = {BASE_ROLE: _role(BASE_ROLE), DRIVER_ROLE: _role(DRIVER_ROLE)}
     guild = MagicMock()
     guild.id = 1
-    guild.get_channel = MagicMock(side_effect=lambda cid: signup if cid == SIGNUP_CHANNEL
-                                  else None)
+    on_server = {SIGNUP_CHANNEL: signup, OLD_SIGNUP_CHANNEL: old}
+    guild.get_channel = MagicMock(side_effect=on_server.get)
     guild.get_role = MagicMock(side_effect=roles.get)
     guild.me = MagicMock()
     signup.guild = guild
+    old.guild = guild
 
     bot = await league_bot(db_path, real_config=True)
     await set_module_flag(db_path, "signup", True)
     bot.get_guild = MagicMock(return_value=guild)
-    known = {SIGNUP_CHANNEL: signup, bot.log_channel.id: bot.log_channel,
+    known = {**on_server, bot.log_channel.id: bot.log_channel,
              bot.interaction_channel.id: bot.interaction_channel}
     bot.get_channel = MagicMock(side_effect=known.get)
     league_queue(bot, db_path, now=Clock(NOW))
@@ -211,8 +224,8 @@ async def test_signup_open_is_acknowledged_and_posts_the_information_with_its_bu
 async def test_the_window_is_opened_in_the_record_of_the_post_that_shows_it(tmp_path):
     """Manager 77 runs `/signup open`. Until the queue runs, signups stay closed and the season
     waits. When it runs, the `post_info` job is done, and with it the window is recorded open,
-    the Sign Up button's message id kept, the season moved to SIGNUPS and the SIGNUP_OPEN audit
-    row written naming him."""
+    the Sign Up button's message id kept with the channel it was posted in (620), the season
+    moved to SIGNUPS and the SIGNUP_OPEN audit row written naming him."""
     league = await _league(tmp_path)
 
     await _open(league)
@@ -228,16 +241,25 @@ async def test_the_window_is_opened_in_the_record_of_the_post_that_shows_it(tmp_
     config = await league.config()
     assert config["signups_open"]
     assert config["signup_button_message_id"] == posted.id
+    assert config["signup_button_message_channel_id"] == SIGNUP_CHANNEL
     assert await league.stage() == "SIGNUPS"
     [audit] = await league.audits()
     assert str(audit["actor_id"]) == "77"
 
 
-async def test_the_last_closed_notice_is_deleted_after_the_information_is_posted(tmp_path):
-    """The last close's "signups closed" notice still stands in the signup channel. Manager 77
-    runs `/signup open` and the queue runs: the information message is posted first, then the
-    closed notice is deleted by a `delete_closed` job of its own, done."""
-    league = await _league(tmp_path, closed_notice=True)
+@pytest.mark.parametrize("closed_in", [
+    pytest.param(SIGNUP_CHANNEL, id="in the signup channel"),
+    pytest.param(OLD_SIGNUP_CHANNEL, id="in a channel since replaced"),
+])
+async def test_the_last_closed_notice_is_deleted_after_the_information_is_posted(
+    tmp_path, closed_in,
+):
+    """The last close's "signups closed" notice still stands where it was posted: in the signup
+    channel (620), or in the channel the signup channel was before `/signup channel` moved it
+    (621, still on the server). Manager 77 runs `/signup open` and the queue runs: the information
+    message is posted in 620 first, then the closed notice is deleted from the channel it was
+    posted in by a `delete_closed` job of its own, done; nothing else is deleted."""
+    league = await _league(tmp_path, closed_notice=True, closed_in=closed_in)
 
     await _open(league)
     await run_queue(league.bot)
@@ -245,9 +267,12 @@ async def test_the_last_closed_notice_is_deleted_after_the_information_is_posted
     [posted] = league.posts()
     assert (await _jobs(league))["delete_closed"]["done_at"]
     sent = league.events.index(("send", SIGNUP_CHANNEL, posted.id))
-    deleted = league.events.index(("delete", SIGNUP_CHANNEL, CLOSED_NOTICE))
+    deleted = league.events.index(("delete", closed_in, CLOSED_NOTICE))
     assert sent < deleted
-    assert CLOSED_NOTICE not in league.signup.messages
+    assert [event for event in league.events if event[0] == "delete"] == [
+        ("delete", closed_in, CLOSED_NOTICE)
+    ]
+    assert CLOSED_NOTICE not in league.guild.get_channel(closed_in).messages
 
 
 async def test_signup_open_without_the_bot_s_permissions_is_refused_naming_them(tmp_path):
@@ -527,6 +552,54 @@ async def test_signup_close_returns_drivers_deletes_the_button_posts_the_notice_
     assert _deletion_armed(league)
     assert updated_reply(press).startswith("✅")
     assert await stopped_job(league.db_path) is None
+
+
+@pytest.mark.parametrize("close", ["/signup close", "the close time", "a restart past it",
+                                   "signup switched off"])
+async def test_a_close_takes_the_sign_up_button_down_from_the_channel_it_was_posted_in(
+    tmp_path, close,
+):
+    """Kimi is still filling in the wizard. The Sign Up button (6201) stands in the channel it
+    was posted in (621), recorded as its channel, and the signup channel has since been moved to
+    620. The window is closed: by manager 77 running `/signup close` and pressing Confirm Close,
+    by the close time passing, by the bot starting after it, or by manager 77 running
+    `/module disable signup` (the season in Configuration). When the queue runs, the button is
+    deleted from 621 and nothing from 620; "Signups are now closed" is posted in 620, the
+    present signup channel, and recorded as posted there."""
+    from leaguebot.core.cogs.module_cog import ModuleCog
+
+    stage = "CONFIGURATION" if close == "signup switched off" else "SIGNUPS"
+    league = await _close_league(tmp_path, SIGNING_UP, stage=stage)
+    del league.channel(LEAGUE_SIGNUP_CHANNEL).messages[SIGNUP_BUTTON]
+    old = league._recording(channel(OLD_SIGNUP_CHANNEL, league.events))
+    old.guild = league.guild
+    old.seed(SIGNUP_BUTTON, "Sign Up")
+    league.channels[OLD_SIGNUP_CHANNEL] = old
+    await league.write("UPDATE signup_module_config SET signup_button_message_channel_id = ?",
+                       OLD_SIGNUP_CHANNEL)
+
+    if close == "/signup close":
+        await _confirm_close(league)
+    elif close == "signup switched off":
+        cog = ModuleCog.__new__(ModuleCog)
+        cog.bot = league.bot
+        interaction = _manager(league)
+        interaction.command = MagicMock(qualified_name="module disable")
+        await cog._disable_signup(interaction)
+    else:
+        await _auto_close(league, "timer" if close == "the close time" else "restart")
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert SIGNUP_BUTTON not in old.messages
+    assert ("delete", OLD_SIGNUP_CHANNEL, SIGNUP_BUTTON) in league.events
+    assert not [event for event in league.events
+                if event[0] == "delete" and event[1] == LEAGUE_SIGNUP_CHANNEL]
+    [notice] = _closed_notices(league)
+    assert old.texts == []
+    window = await _window(league)
+    assert window["signup_closed_message_id"] == notice.id
+    assert window["signup_closed_message_channel_id"] == LEAGUE_SIGNUP_CHANNEL
 
 
 async def test_a_close_s_window_and_season_move_are_saved_together(tmp_path):

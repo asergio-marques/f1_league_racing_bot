@@ -908,7 +908,7 @@ async def replace_round_results_on(
     collected: list[CollectedSession],
     *,
     now: datetime,
-) -> list[int]:
+) -> list[tuple[int | None, int]]:
     """Replace every session of a round with a resubmission's on the connection handed, committing
     nothing: the resubmission's swap does it in a save of its own (#439).
 
@@ -922,13 +922,15 @@ async def replace_round_results_on(
     The table posted for an old session is carried onto the new session of the same type, as the
     message it replaces: the posting then takes the old table down once the new one stands, so an
     amended table replaces the original rather than standing beside it (results spec :412). The
-    message ids of an old session whose type the resubmission does not enter are returned, for the
-    caller to take down; they are otherwise lost with the old row. *now* is the time the new
+    message ids of an old session whose type the resubmission does not enter are returned, each
+    with the channel it was recorded as posted in (None where none was), for the caller to take
+    down; they are otherwise lost with the old row. *now* is the time the new
     sessions are recorded as submitted at, the queue's clock handed in by the swap."""
     earlier = {
         each["session_type"]: each
         for each in await (await db.execute(
-            "SELECT session_type, results_message_id, results_message_ids FROM session_results "
+            "SELECT session_type, results_message_id, results_message_ids, "
+            "results_message_channel_id FROM session_results "
             "WHERE round_id = ? AND results_message_id IS NOT NULL", (round_id,),
         )).fetchall()
     }
@@ -947,19 +949,22 @@ async def replace_round_results_on(
         carried = earlier.pop(session.session_type.value, None)
         if carried is not None:
             await db.execute(
-                "UPDATE session_results SET results_message_id = ?, results_message_ids = ? "
-                "WHERE id = ?",
-                (carried["results_message_id"], carried["results_message_ids"], session_result_id),
+                "UPDATE session_results SET results_message_id = ?, results_message_ids = ?, "
+                "results_message_channel_id = ? WHERE id = ?",
+                (
+                    carried["results_message_id"], carried["results_message_ids"],
+                    carried["results_message_channel_id"], session_result_id,
+                ),
             )
     await db.execute(
         "UPDATE round_submission_channels SET resubmitting = 0, results_posted = 0, "
         "resubmit_prompt_message_id = NULL WHERE round_id = ?",
         (round_id,),
     )
-    unplaced: list[int] = []
+    unplaced: list[tuple[int | None, int]] = []
     for each in earlier.values():
         ids = _parse_ids(each["results_message_ids"]) or [int(each["results_message_id"])]
-        unplaced.extend(ids)
+        unplaced.extend((each["results_message_channel_id"], message_id) for message_id in ids)
     return unplaced
 
 

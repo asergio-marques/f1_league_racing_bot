@@ -43,6 +43,10 @@ class SignupModuleConfig:
     selected_tracks: list[str]
     signup_closed_message_id: int | None = None
     close_at: str | None = None
+    #: The channel each of the two messages was posted in, kept beside its id: the signup channel
+    #: can be replaced after they went out, and the delete is aimed where the message stands.
+    signup_button_message_channel_id: int | None = None
+    signup_closed_message_channel_id: int | None = None
 
 
 @dataclass

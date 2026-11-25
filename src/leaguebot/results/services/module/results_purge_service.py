@@ -61,6 +61,7 @@ import discord
 from leaguebot.framework.db.database import sole_row
 from leaguebot.framework.models.change import GuildUnavailable, StepFailedOnDiscord
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
+from leaguebot.framework.services.posting import standing_posts
 from leaguebot.framework.services.posting.notice_handler import delete_notice
 from leaguebot.framework.services.posting.standing_post_handler import delete_standing
 from leaguebot.core.services.seasons.season_service import active_season_rounds_on
@@ -129,6 +130,11 @@ async def erase_season_on(db: aiosqlite.Connection) -> SeasonErase:
     too, through core's `league_server_id_on`, so that a message left standing can be linked
     even where the server is out of the bot's cache.
 
+    **Each table is taken down from the channel it was posted in** (`standing_posts.posted_in`),
+    so a division's results or standings channel moved since is no reason to look in the wrong one;
+    a post that recorded no channel falls back to the division's present channel, and is skipped
+    only where it has neither.
+
     Nothing here touches Discord, and nothing opens a connection: the caller's save holds the
     flag, the rows and the closing of the rounds together. Where no season is active, nothing is
     read further and nothing is touched.
@@ -139,6 +145,7 @@ async def erase_season_on(db: aiosqlite.Connection) -> SeasonErase:
     banner left standing keeps its record.
     """
     from leaguebot.results.services.publishing.results_post_service import (
+        _STANDINGS_CHANNEL_COLUMNS,
         _STANDINGS_ID_COLUMNS,
         _STANDINGS_IDS_COLUMNS,
         STANDINGS_CONSTRUCTORS,
@@ -190,35 +197,44 @@ async def erase_season_on(db: aiosqlite.Connection) -> SeasonErase:
     for row in rounds:
         round_id = row["round_id"]
 
-        if row["results_channel_id"]:
-            cursor = await db.execute(
-                "SELECT results_message_id, results_message_ids FROM session_results "
-                "WHERE round_id = ? AND results_message_id IS NOT NULL ORDER BY id",
-                (round_id,),
+        cursor = await db.execute(
+            "SELECT results_message_id, results_message_ids, results_message_channel_id "
+            "FROM session_results WHERE round_id = ? AND results_message_id IS NOT NULL "
+            "ORDER BY id",
+            (round_id,),
+        )
+        for posting in await cursor.fetchall():
+            posted = standing_posts.posted_in(
+                posting["results_message_channel_id"], row["results_channel_id"]
             )
-            for posting in await cursor.fetchall():
-                anchor = int(posting["results_message_id"])
-                item("results", "results message", row["results_channel_id"], anchor,
-                     _posting_ids(anchor, _parse_ids(posting["results_message_ids"])), round_id)
+            if not posted:
+                continue
+            anchor = int(posting["results_message_id"])
+            item("results", "results message", posted, anchor,
+                 _posting_ids(anchor, _parse_ids(posting["results_message_ids"])), round_id)
 
-        if row["standings_channel_id"]:
-            for championship in (STANDINGS_DRIVERS, STANDINGS_CONSTRUCTORS):
-                anchor_column = _STANDINGS_ID_COLUMNS[championship]
-                list_column = _STANDINGS_IDS_COLUMNS[championship]
-                cursor = await db.execute(
-                    f"""
-                    SELECT {anchor_column} AS anchor, {list_column} AS message_ids
-                    FROM round_standings_posts
-                    WHERE division_id = ? AND round_id = ? AND {anchor_column} IS NOT NULL
-                    """,  # noqa: S608 — columns come from constant maps
-                    (row["division_id"], round_id),
-                )
-                found = await cursor.fetchone()
-                if found is None or not found["anchor"]:
-                    continue
-                anchor = int(found["anchor"])
-                item("standings", "standings message", row["standings_channel_id"], anchor,
-                     _posting_ids(anchor, _parse_ids(found["message_ids"])), round_id)
+        for championship in (STANDINGS_DRIVERS, STANDINGS_CONSTRUCTORS):
+            anchor_column = _STANDINGS_ID_COLUMNS[championship]
+            list_column = _STANDINGS_IDS_COLUMNS[championship]
+            channel_column = _STANDINGS_CHANNEL_COLUMNS[championship]
+            cursor = await db.execute(
+                f"""
+                SELECT {anchor_column} AS anchor, {list_column} AS message_ids,
+                       {channel_column} AS channel_id
+                FROM round_standings_posts
+                WHERE division_id = ? AND round_id = ? AND {anchor_column} IS NOT NULL
+                """,  # noqa: S608 — columns come from constant maps
+                (row["division_id"], round_id),
+            )
+            found = await cursor.fetchone()
+            if found is None or not found["anchor"]:
+                continue
+            posted = standing_posts.posted_in(found["channel_id"], row["standings_channel_id"])
+            if not posted:
+                continue
+            anchor = int(found["anchor"])
+            item("standings", "standings message", posted, anchor,
+                 _posting_ids(anchor, _parse_ids(found["message_ids"])), round_id)
 
         # One announcement per anchor. No two records share one today, but deleting a message
         # twice would count it twice and log a failure for the second attempt.
@@ -266,14 +282,15 @@ async def erase_season_on(db: aiosqlite.Connection) -> SeasonErase:
     # final classification belongs to a completed season, which the purge never reaches.
     for division_id in sorted({int(row["division_id"]) for row in rounds}):
         standings_channel = channels[division_id]
-        if standings_channel is None or not standings_channel["standings_channel_id"]:
-            continue
+        present = None if standings_channel is None else standings_channel["standings_channel_id"]
         for championship in (STANDINGS_DRIVERS, STANDINGS_CONSTRUCTORS):
             anchor_column = _STANDINGS_ID_COLUMNS[championship]
             list_column = _STANDINGS_IDS_COLUMNS[championship]
+            channel_column = _STANDINGS_CHANNEL_COLUMNS[championship]
             cursor = await db.execute(
                 f"""
-                SELECT {anchor_column} AS anchor, {list_column} AS message_ids
+                SELECT {anchor_column} AS anchor, {list_column} AS message_ids,
+                       {channel_column} AS channel_id
                 FROM classification_posts
                 WHERE division_id = ? AND occasion = ? AND {anchor_column} IS NOT NULL
                 """,  # noqa: S608 — columns come from constant maps
@@ -282,9 +299,11 @@ async def erase_season_on(db: aiosqlite.Connection) -> SeasonErase:
             found = await cursor.fetchone()
             if found is None or not found["anchor"]:
                 continue
+            posted = standing_posts.posted_in(found["channel_id"], present)
+            if not posted:
+                continue
             anchor = int(found["anchor"])
-            item("classification", "opening classification",
-                 standings_channel["standings_channel_id"], anchor,
+            item("classification", "opening classification", posted, anchor,
                  _posting_ids(anchor, _parse_ids(found["message_ids"])), None)
 
     # A round's or a division's note of being called off: one item for each, the division's with

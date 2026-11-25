@@ -566,6 +566,87 @@ async def test_every_module_column_is_in_the_schema(db_path):
     assert missing == []
 
 
+# Each column keeping the id (or ids) of a message the bot posted, keyed by ``(table, column)``,
+# and the column beside it keeping the channel that message was posted in, so that a channel the
+# league moves afterwards never sends its edit or delete to the wrong one (architecture.md, "Every
+# post keeps three things").
+POSTED_IN = {
+    ("appeal_records", "announcement_message_id"): "announcement_channel_id",
+    ("appeal_records", "announcement_message_ids"): "announcement_channel_id",
+    ("attendance_division_config", "attendance_message_id"): "attendance_message_channel_id",
+    ("called_off_notes", "message_id"): "channel_id",
+    ("classification_posts", "standings_message_id"): "standings_message_channel_id",
+    ("classification_posts", "standings_message_ids"): "standings_message_channel_id",
+    ("classification_posts", "constructor_standings_message_id"):
+        "constructor_standings_message_channel_id",
+    ("classification_posts", "constructor_standings_message_ids"):
+        "constructor_standings_message_channel_id",
+    ("divisions", "calendar_message_id"): "calendar_message_channel_id",
+    ("divisions", "lineup_message_id"): "lineup_message_channel_id",
+    ("forecast_messages", "message_id"): "channel_id",
+    ("forecast_messages", "message_ids"): "channel_id",
+    ("penalty_records", "announcement_message_id"): "announcement_channel_id",
+    ("penalty_records", "announcement_message_ids"): "announcement_channel_id",
+    ("queued_change_steps", "notice_message_id"): "notice_channel_id",
+    ("review_lock_warnings", "message_id"): "channel_id",
+    ("round_standings_posts", "standings_message_id"): "standings_message_channel_id",
+    ("round_standings_posts", "standings_message_ids"): "standings_message_channel_id",
+    ("round_standings_posts", "constructor_standings_message_id"):
+        "constructor_standings_message_channel_id",
+    ("round_standings_posts", "constructor_standings_message_ids"):
+        "constructor_standings_message_channel_id",
+    ("round_submission_channels", "prompt_message_id"): "channel_id",
+    ("round_submission_channels", "resubmit_prompt_message_id"): "channel_id",
+    ("round_submission_channels", "appeals_prompt_message_id"): "channel_id",
+    ("round_submission_channels", "approval_message_id"): "channel_id",
+    ("rsvp_embed_messages", "message_id"): "channel_id",
+    ("rsvp_embed_messages", "last_notice_msg_id"): "last_notice_channel_id",
+    ("rsvp_embed_messages", "distribution_msg_id"): "distribution_channel_id",
+    ("season_review_prompts", "message_id"): "channel_id",
+    ("season_review_prompts", "report_message_ids"): "channel_id",
+    ("session_results", "results_message_id"): "results_message_channel_id",
+    ("session_results", "results_message_ids"): "results_message_channel_id",
+    ("signup_module_config", "signup_button_message_id"): "signup_button_message_channel_id",
+    ("signup_module_config", "signup_closed_message_id"): "signup_closed_message_channel_id",
+    ("verdict_banner_messages", "message_id"): "channel_id",
+}
+
+# The message ids kept with no channel beside them, each with its reason. The hub's id is cleared
+# when its channel is moved, so it is never looked for anywhere but the present channel.
+POSTED_IN_EXEMPT = {
+    ("server_configs", "hub_message_id"): "cleared when the hub channel moves",
+}
+
+_MESSAGE_ID_COLUMN = re.compile(r"(message|msg)_ids?$")
+
+
+async def test_every_posted_message_id_keeps_the_channel_it_was_posted_in(db_path):
+    """Every column of the built schema keeping a posted message's id is named in `POSTED_IN`
+    with a channel column the schema has, or in `POSTED_IN_EXEMPT` with its reason; an entry of
+    either naming a column the schema no longer has fails as well."""
+    db = sqlite3.connect(db_path)
+    try:
+        built = {
+            table: {column[1] for column in _columns(db, table)} for table in _built_tables(db)
+        }
+    finally:
+        db.close()
+    message_ids = {
+        (table, column)
+        for table, columns in built.items()
+        for column in columns
+        if _MESSAGE_ID_COLUMN.search(column)
+    }
+    assert set(POSTED_IN) | set(POSTED_IN_EXEMPT) == message_ids
+    assert set(POSTED_IN).isdisjoint(POSTED_IN_EXEMPT)
+    missing = sorted(
+        f"{table}.{channel}"
+        for (table, _column), channel in POSTED_IN.items()
+        if channel not in built[table]
+    )
+    assert missing == []
+
+
 async def test_no_column_defaults_to_sqlites_clock(db_path):
     """A stored time is written from the `now` handed in (architecture.md, "The time is always
     passed in"), and a column defaulting to SQLite's clock stamps one as `datetime('now')` in a

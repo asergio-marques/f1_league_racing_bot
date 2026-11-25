@@ -28,7 +28,7 @@ runs, on a connection the change queue or a core hook hands in.
 
 | Table | One row is | Held to it by |
 |---|---|---|
-| `signup_module_config` | the module's configuration: the signup channel, whether the window is open, the Sign Up button's message, the open window's tracks and close time, and the closed notice's message | `CHECK (id = 1)` |
+| `signup_module_config` | the module's configuration: the signup channel, whether the window is open, the Sign Up button's message and the channel it was posted in, the open window's tracks and close time, and the closed notice's message and its channel | `CHECK (id = 1)` |
 | `signup_module_settings` | the three question settings (nationality, time type, time image) | `CHECK (id = 1)`; the settings are `NOT NULL` with column defaults |
 | `signup_availability_slots` | one time slot a driver may give as available, by day and time | `UNIQUE (day_of_week, time_hhmm)` |
 | `signup_windows` | one opening of the window for a season: its tracks, its close time, when it opened and when it closed | `idx_signup_windows_one_open`, a partial unique index on the season where `closed_at IS NULL`: a season has one open window at a time |
@@ -39,7 +39,11 @@ runs, on a connection the change queue or a core hook hands in.
 **The configuration row and the settings row are apart.** The configuration holds the channel and
 the window's state, which a close and an opening write, and the settings hold what a manager chose,
 which no window touches. The switch-off keeps both ("What disabling keeps", below), and the closed
-notice has one record, the configuration's `signup_closed_message_id`, which the switch-off leaves.
+notice has one record, the configuration's `signup_closed_message_id` with
+`signup_closed_message_channel_id` beside it, which the switch-off leaves. The button's record has
+the same two, `signup_button_message_id` and `signup_button_message_channel_id`. Each channel is
+kept as `architecture.md` ("Posting to Discord", "Every post keeps three things") has it; where
+none was recorded the present channel is taken (`standing_posts.posted_in`).
 
 **One open window to a season is the schema's rule**, not a service's: a close time and a close are
 written to "the window whose `closed_at` is null", which is only one row because the index refuses a
@@ -456,7 +460,9 @@ cleared all the same, being no longer the signup channel. It is a repair setting
 (`repairs_the_bot`): where the stored channel is no longer on the server it is allowed though a
 confirmed season has fixed the configuration, and runs while the lane is stopped. Where a window is
 open, a second step (`POST_INFORMATION`) posts the information message with its Sign Up button in
-the new channel and keeps its id as the window's, so drivers can sign up there at once; a fault in
+the new channel and keeps its id, and the channel it was posted in, as the window's, so drivers can
+sign up there at once; the old message is not taken down, since a move while a window is open is
+allowed only once the old channel is gone from the server, and the message with it; a fault in
 it leaves the channel saved and the reply says what was not posted (`channel_setting`'s module
 docstring; the specification's "Enabling signup flow"). Pinned by
 `test_signup_channel_refuses_a_channel_lacking_what_the_bot_needs_before_anything_is_edited`,
@@ -600,17 +606,18 @@ channel is created by `WizardService._create_wizard_channel`, in the `create_cha
 
 | Post | Kind | Channel | Handler | Found again by |
 |---|---|---|---|---|
-| the information message with its Sign Up button | standing post | the signup channel | `post_standing_message`, pinging the base role | `signup_module_config.signup_button_message_id`, which also names the window a close was asked about |
-| the "signups are closed" notice | standing post | the signup channel | `post_standing_message` | `signup_module_config.signup_closed_message_id`, which a switch-off keeps |
+| the information message with its Sign Up button | standing post | the signup channel | `post_standing_message`, pinging the base role | `signup_module_config.signup_button_message_id` and its channel, which also name the window a close was asked about |
+| the "signups are closed" notice | standing post | the signup channel | `post_standing_message` | `signup_module_config.signup_closed_message_id` and its channel, which a switch-off keeps |
 | the welcome, the questions, the refusals, the review panel, the choices, the closing notice | bot-owned channel | the driver's signup channel | `post` (`post_in_owned_channel`), naming who each may mention | the channel itself; a divided panel's parts are kept by the job for a retry |
 | the driver's signup channel | bot-owned channel | in the signup channel's category | made by `WizardService`; deleted whole by `delete_channel` (`delete_owned_channel`) | `signup_wizard_records.signup_channel_id` |
 
 **The information message and the closed notice are the window's two standing posts**, and the
 channel always shows one or the other: an opening takes the notice down only once its message is up
-(`delete_closed`), and a close takes the button down before it posts the notice
-(`window_changes`' module docstring). One function posts the information message,
-`information_post.post_information`, for `signup.open` and for `/signup channel`, so a window moved
-to a new channel shows what an opened one does.
+(`delete_closed`), from the channel the notice was posted in, and a close takes the button down
+before it posts the notice, from the channel the button was posted in, the notice going up in the
+present signup channel (`window_changes`' module docstring). One function posts the information
+message, `information_post.post_information`, for `signup.open` and for `/signup channel`, so a
+window moved to a new channel shows what an opened one does.
 
 **A driver's channel is a bot-owned channel**, handled as `architecture.md`'s table of the kinds of
 post ("Posting to Discord") has one. The review panel notifies users, never a group

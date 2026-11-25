@@ -74,6 +74,7 @@ from leaguebot.framework.models.change import (
     Verdict,
 )
 from leaguebot.core.models.round import RoundFormat, RoundStatus
+from leaguebot.framework.services.posting import standing_posts
 from leaguebot.framework.services.queue.change_queue import (
     ChangeQueue,
 )
@@ -597,8 +598,9 @@ def submission_all_cancelled_change(
 
     The payload is the last turn's: ``round_id``, ``channel_id``, ``round_number`` and
     ``sessions``, each ``{"session_id", "session_type"}`` of the round's cancelled sessions in
-    running order. A resubmission's adds ``resubmission`` and ``old_tables``, the ids of the
-    earlier results tables the new sessions could not carry. *seasons* posts the calendar, drawn
+    running order. A resubmission's adds ``resubmission`` and ``old_tables``, each the channel an
+    earlier results table was recorded as posted in (None where none was) and its message id,
+    for the tables the new sessions could not carry. *seasons* posts the calendar, drawn
     through *drawing*, the image module's own answer to core's drawing protocol (#283),
     *attendance* is attendance's share of a round's review, asked inside the save, on its
     connection, to plan the reading of the round's check-in, *cancellation_notices* is the hook
@@ -656,7 +658,7 @@ def submission_all_cancelled_change(
         )).fetchone()
         # A resubmission leaves the standings its first submission posted: they are withdrawn
         # with the round, and the later rounds' worked out again without it.
-        held, standings_channel, standings_posts = await withdraw_round_standings_on(db, round_id)
+        held, standings_posts = await withdraw_round_standings_on(db, round_id)
         if held:
             await cascade_recompute_from_round_on(
                 db, int(target["division_id"]), round_id, display_names(ctx)
@@ -676,12 +678,15 @@ def submission_all_cancelled_change(
                 "channel_id": int(channel), "message_id": int(message_id), "what": what,
                 "kind": "standing",
             })
-            for channel, ids, what in (
-                (standings_channel, standings_posts, "standings post"),
-                (results_channel, payload.get("old_tables") or [], "results table"),
+            for what, pairs in (
+                ("standings post", standings_posts),
+                ("results table", [
+                    (standing_posts.posted_in(recorded, results_channel), message_id)
+                    for recorded, message_id in payload.get("old_tables") or []
+                ]),
             )
+            for channel, message_id in pairs
             if channel
-            for message_id in ids
         )
         reposts = (
             await review_posting.plan_posts(db, round_id, label="", later_rounds=True)

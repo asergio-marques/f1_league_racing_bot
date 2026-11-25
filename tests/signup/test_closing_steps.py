@@ -9,6 +9,8 @@ driver's lane; a refused notice stops that lane alone, with Retry and Discard.
 The league is `tests.support.season_league`'s `ongoing_league` with signups open: season 3
 ongoing, Kimi (105) part-way through signing up with his signup channel (6405) standing. The
 change is asked here as the bot, as the league change that hands it back would ask it.
+
+Last, the jobs a season's end plans to close the window in the signup channel.
 """
 
 from __future__ import annotations
@@ -19,6 +21,7 @@ from typing import Any
 from unittest.mock import AsyncMock
 
 import discord
+import pytest
 
 from tests.support.change_queue import (
     change_rows,
@@ -185,3 +188,36 @@ async def test_a_closing_notice_asked_back_runs_on_the_driver_s_lane_and_a_refus
     assert other["state"] == "DONE"
     assert len(_notices(league, OTHER_CHANNEL)) == 1
     assert _locked(league, OTHER_CHANNEL)
+
+
+#: The signup channel, and the one the Sign Up button was posted in before `/signup channel`
+#: moved it.
+SIGNUP_CHANNEL, BUTTON_POSTED_IN = 620, 621
+#: The Sign Up button's message.
+BUTTON = 6201
+
+
+@pytest.mark.parametrize(("recorded", "deleted_from"), [
+    pytest.param(BUTTON_POSTED_IN, BUTTON_POSTED_IN, id="moved since"),
+    pytest.param(None, SIGNUP_CHANNEL, id="no channel recorded"),
+])
+def test_a_season_end_s_close_deletes_the_button_where_it_was_posted(recorded, deleted_from):
+    """A season ends with signups open: the signup channel is 620 and the Sign Up button (6201)
+    was posted in 621 before the channel was moved, or has no channel recorded (a button posted
+    before channels were kept). The jobs the close plans delete the button from 621, or from the
+    present signup channel where none is recorded, and post "Signups are now closed" in 620."""
+    from leaguebot.signup.services.closing_steps import (
+        DELETE_BUTTON,
+        POST_CLOSED,
+        window_close_jobs,
+    )
+
+    delete, post = window_close_jobs(
+        "season end", 0, channel_id=SIGNUP_CHANNEL, button_message_id=BUTTON,
+        button_channel_id=recorded,
+    )
+
+    assert (delete.name, delete.payload["channel_id"], delete.payload["message_id"]) == (
+        DELETE_BUTTON, deleted_from, BUTTON
+    )
+    assert (post.name, post.payload["channel_id"]) == (POST_CLOSED, SIGNUP_CHANNEL)

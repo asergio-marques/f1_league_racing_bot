@@ -346,9 +346,13 @@ As `architecture.md` ("Posting to Discord", "Every post keeps three things") has
 named here are looked for in the channel they were posted in. The calendar, the lineup and the
 attendance sheet keep that channel beside the id (`*_message_channel_id`), their post jobs hand it
 back as `old_channel_id` and `replaced` plans the delete in `posted_in` of it. Weather's forecast
-(`forecast_messages.channel_id`) and a review's sheet and lineup call `posted_in` themselves. Where
-none was recorded the delete falls back to the present channel, and no constraint pairs an id with
-its channel; `posted_in`'s docstring holds the reasons, and
+(`forecast_messages.channel_id`), a review's sheet and lineup, a results table, a round's standings,
+a classification, the Sign Up button and the closed notice call `posted_in` themselves. In results
+a replaced table or standing goes through `_deletes` from `PostedTable.old_channel_id`, while the
+switch-off's erase (the purge), a resubmission's withdrawals and the cancelled change's old tables
+call `posted_in` on the recorded channel directly; signup passes it straight into the payload of
+its delete. Where none was recorded the delete falls back to the present channel, and no constraint
+pairs an id with its channel; `posted_in`'s docstring holds the reasons, and
 `test_replaced_plans_one_delete_of_the_old_message_in_the_channel_it_was_posted_in` pins the
 fallback.
 

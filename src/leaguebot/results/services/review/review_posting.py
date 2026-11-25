@@ -81,6 +81,7 @@ from leaguebot.framework.utils.channels import as_text_channel
 from leaguebot.framework.utils.league_server import league_guild
 from leaguebot.framework.services.posting.notice_handler import delete_notice, send_notice
 from leaguebot.framework.services.posting.owned_channel_handler import delete_in_owned_channel
+from leaguebot.framework.services.posting import standing_posts
 from leaguebot.framework.services.posting.standing_post_handler import delete_standing
 from leaguebot.framework.utils.hooks import AwaitedHook
 from leaguebot.framework.utils.league_bot import LeagueBot
@@ -98,6 +99,7 @@ from leaguebot.results.services.publishing.results_post_service import (
     _label_from_status,
     _parse_ids,
     _sr_from_row,
+    _STANDINGS_CHANNEL_COLUMNS,
     _STANDINGS_ID_COLUMNS,
     _STANDINGS_IDS_COLUMNS,
     delete_round_channel,
@@ -470,31 +472,36 @@ async def _rounds_with_active_session(db: aiosqlite.Connection, round_ids: list[
 
 async def withdraw_round_standings_on(
     db: aiosqlite.Connection, round_id: int
-) -> tuple[bool, int | None, list[int]]:
+) -> tuple[bool, list[tuple[int, int]]]:
     """Delete the standings *round_id* holds on *db*, committing nothing, and say what was posted.
 
     For a round that ends cancelled after a resubmission: its provisional standings no longer
-    stand for anything. Returns whether the round held any (a first submission holds none), the
-    division's standings channel (None where it has none) and the id of every message that
-    carried the round's standings, drivers' and constructors', for the caller to plan the
-    deletion of once the round's notes stand. The ids are read before their row is deleted.
+    stand for anything. Returns whether the round held any (a first submission holds none) and,
+    for every message that carried the round's standings, drivers' and constructors', the channel
+    it was posted in and its id, for the caller to plan the deletion of once the round's notes
+    stand. A message whose channel was never recorded is taken to be in the division's present
+    standings channel (`standing_posts.posted_in`), and is left out where the division has none.
+    The ids are read before their row is deleted.
     """
     facts = await season_service.round_facts_on(db, round_id)
     if facts is None:
-        return False, None, []
+        return False, []
     row = await (await db.execute(
         "SELECT standings_channel_id FROM division_results_config WHERE division_id = ?",
         (facts.division_id,),
     )).fetchone()
     held = False
-    ids: list[int] = []
+    posts: list[tuple[int, int]] = []
     for table in ("driver_standings_snapshots", "team_standings_snapshots"):
         count = await (await db.execute(
             f"SELECT COUNT(*) AS n FROM {table} WHERE round_id = ?", (round_id,)  # noqa: S608
         )).fetchone()
         held = held or bool(count and count["n"])
     if not held:
-        return False, None, []
+        return False, []
+    present = None if row is None or not row["standings_channel_id"] else int(
+        row["standings_channel_id"]
+    )
     posted_row = await (await db.execute(
         "SELECT * FROM round_standings_posts WHERE round_id = ?", (round_id,)
     )).fetchone()
@@ -504,14 +511,18 @@ async def withdraw_round_standings_on(
                 continue
             anchor = int(posted_row[anchor_column])
             posted = _parse_ids(posted_row[_STANDINGS_IDS_COLUMNS[championship]]) or [anchor]
+            channel = standing_posts.posted_in(
+                posted_row[_STANDINGS_CHANNEL_COLUMNS[championship]], present
+            )
+            if channel is None:
+                continue
             for message_id in (anchor, *posted):
-                if message_id not in ids:
-                    ids.append(message_id)
+                if (channel, message_id) not in posts:
+                    posts.append((channel, message_id))
     await db.execute("DELETE FROM round_standings_posts WHERE round_id = ?", (round_id,))
     await db.execute("DELETE FROM driver_standings_snapshots WHERE round_id = ?", (round_id,))
     await db.execute("DELETE FROM team_standings_snapshots WHERE round_id = ?", (round_id,))
-    channel = None if row is None else row["standings_channel_id"]
-    return True, (int(channel) if channel else None), ids
+    return True, posts
 
 
 def _in_division(payload: dict[str, Any]) -> str:
@@ -834,7 +845,9 @@ async def _post_session_results(
             raise
         return StepResult(
             result={"new": line.new, "old": line.old, "drawn": False, "channel_id": channel_id},
-            then=_deletes(channel_id, line.old, what),
+            then=_deletes(
+                standing_posts.posted_in(line.old_channel_id, channel_id), line.old, what,
+            ),
         )
     driver_rows = await load_driver_rows(ctx.db_path, row["id"], session_type)
     points_map = {
@@ -879,7 +892,12 @@ async def _post_session_results(
                 source=posted.fault_source,
             ),
         ),)
-    return StepResult(result=result, lines=lines, then=_deletes(channel_id, posted.old, what))
+    return StepResult(
+        result=result, lines=lines,
+        then=_deletes(
+            standing_posts.posted_in(posted.old_channel_id, channel_id), posted.old, what,
+        ),
+    )
 
 
 async def _round_format(db_path: str, round_id: int) -> str:
@@ -891,13 +909,15 @@ async def _round_format(db_path: str, round_id: int) -> str:
 async def _record_session_post(
     db: aiosqlite.Connection, ctx: StepContext, result: StepResult
 ) -> None:
-    """Save the new ids on the session, with the job's mark, a picture's as a text table's."""
+    """Save the new ids on the session, and the channel they were posted in, with the job's mark,
+    a picture's as a text table's."""
     new = result.result.get("new") or []
     if not new:
         return
     await db.execute(
-        "UPDATE session_results SET results_message_id = ?, results_message_ids = ? WHERE id = ?",
-        (new[0], json.dumps(new), ctx.step_payload["session_id"]),
+        "UPDATE session_results SET results_message_id = ?, results_message_ids = ?, "
+        "results_message_channel_id = ? WHERE id = ?",
+        (new[0], json.dumps(new), result.result["channel_id"], ctx.step_payload["session_id"]),
     )
 
 
@@ -975,7 +995,9 @@ async def _post_standings(
     then: list[PlannedStep] = []
     new: list[int] = []
     for table in tables:
-        then.extend(_deletes(channel_id, table.old, what))
+        then.extend(_deletes(
+            standing_posts.posted_in(table.old_channel_id, channel_id), table.old, what,
+        ))
         if not table.edited:
             new.extend(table.new)
     result = {
@@ -1114,7 +1136,7 @@ async def _record_standings_post(
         await set_standings_message_id_on(
             db, result.result["division_id"], result.result["round_id"],
             new[0] if new else None, table["championship"],
-            message_ids=json.dumps(new) if new else None,
+            message_ids=json.dumps(new) if new else None, channel_id=result.result["channel_id"],
         )
 
 

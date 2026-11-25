@@ -40,6 +40,7 @@ from tests.support.season_league import (
     ongoing_league,
     pending_completion_league,
 )
+from tests.support.review_league import channel
 
 
 PRO_CH = DIVISIONS[PRO][3]
@@ -90,6 +91,8 @@ async def test_a_sheet_with_attendance_off_is_still_dropped(tmp_path):
 
 #: The notice a closed window leaves in the signup channel.
 CLOSED_NOTICE = "🔒 Signups are now closed."
+#: The signup channel before `/signup channel` moved it, still on the server.
+OLD_SIGNUP_CHANNEL = 621
 
 
 async def _cancel_with_signups_open(tmp_path):
@@ -111,18 +114,43 @@ def _closed_notices(league) -> list:
             if message.content == CLOSED_NOTICE]
 
 
-async def test_a_season_end_s_close_deletes_the_sign_up_button_as_a_job(tmp_path):
-    """The season is ongoing with its signup window open, the Sign Up button standing in the
-    signup channel. Admin 77 cancels the season and the queue runs: the button is deleted by a
-    `delete_button` job of the cancellation, done, and the season is cancelled."""
-    league = await _cancel_with_signups_open(tmp_path)
+@pytest.mark.parametrize("posted_in", [
+    pytest.param(SIGNUP_CHANNEL, id="in the signup channel"),
+    pytest.param(OLD_SIGNUP_CHANNEL, id="in a channel since replaced"),
+])
+async def test_a_season_end_s_close_deletes_the_sign_up_button_as_a_job(tmp_path, posted_in):
+    """The season is ongoing with its signup window open, the Sign Up button standing where it
+    was posted: in the signup channel (620), or in the channel the signup channel was before
+    `/signup channel` moved it (621, still on the server), recorded as the button's channel.
+    Admin 77 cancels the season and the queue runs: the button is deleted from the channel it was
+    posted in by a `delete_button` job of the cancellation, done, and nothing else is deleted
+    from either, and the season is cancelled. Where the button stood in 621, "Signups are now
+    closed" is still posted in 620, the present signup channel."""
+    league = await ongoing_league(tmp_path, signups_open=True)
+    if posted_in == OLD_SIGNUP_CHANNEL:
+        del league.channel(SIGNUP_CHANNEL).messages[SIGNUP_BUTTON]
+        old = league._recording(channel(OLD_SIGNUP_CHANNEL, league.events))
+        old.guild = league.guild
+        old.seed(SIGNUP_BUTTON, "Sign Up")
+        league.channels[OLD_SIGNUP_CHANNEL] = old
+        await league.write(
+            "UPDATE signup_module_config SET signup_button_message_channel_id = ?",
+            OLD_SIGNUP_CHANNEL,
+        )
+    await cancel_season(league)
+    assert not league.errors, league.errors
 
     await run_queue(league.bot)
 
     jobs = await _cancellation_jobs(league)
     assert "delete_button" in jobs and jobs["delete_button"]["done_at"]
-    assert ("delete", SIGNUP_CHANNEL, SIGNUP_BUTTON) in league.events
-    assert SIGNUP_BUTTON not in league.channel(SIGNUP_CHANNEL).messages
+    assert [event for event in league.events if event[0] == "delete"
+            and event[1] in (SIGNUP_CHANNEL, OLD_SIGNUP_CHANNEL)] == [
+        ("delete", posted_in, SIGNUP_BUTTON)
+    ]
+    assert SIGNUP_BUTTON not in league.channel(posted_in).messages
+    if posted_in == OLD_SIGNUP_CHANNEL:
+        assert len(_closed_notices(league)) == 1
     assert (await league.season())["status"] == "CANCELLED"
 
 

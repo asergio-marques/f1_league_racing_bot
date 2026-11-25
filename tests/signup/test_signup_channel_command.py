@@ -41,6 +41,7 @@ from tests.support.change_queue import (
     league_queue,
     run_queue,
     seed_server,
+    stopped_job,
 )
 from tests.support.settings_league import (
     NOW,
@@ -488,17 +489,14 @@ async def test_a_signup_channel_deleted_mid_season_is_replaced(tmp_path, gone):
         await _assert_one_refusal_line(league, "/signup channel", "fixed for Season 3")
 
 
-async def test_a_signup_channel_replaced_while_signups_are_open_carries_the_sign_up_button(
-    tmp_path,
-):
-    """Season 3 is in its Signups stage with the window open, its information message (900)
-    posted in the league's signup channel, 650, which has since been deleted from the server. An
-    admin replaces it with 700 through `/signup channel`: 700 is saved, the information message
-    with its Sign Up button is posted in 700, and that post is kept as the window's information
-    message, so drivers can sign up again without the window being closed and reopened."""
-    from leaguebot.signup.services.signup_views import SignupButtonView
+#: The information message, with its Sign Up button, that the window was opened with in the old
+#: signup channel.
+OLD_INFORMATION = 900
 
-    league = await _league(tmp_path, held=OLD)
+
+async def _signups_open_in_the_old_channel(league) -> None:
+    """Season 3 in its Signups stage with the window open, its information message
+    (`OLD_INFORMATION`) recorded as posted in the old signup channel, 650."""
     async with get_connection(league.db_path) as db:
         cursor = await db.execute(
             "INSERT INTO seasons (start_date, status, season_number, stage) "
@@ -510,8 +508,41 @@ async def test_a_signup_channel_replaced_while_signups_are_open_carries_the_sign
             (cursor.lastrowid,),
         )
         await db.execute(
-            "UPDATE signup_module_config SET signups_open = 1, signup_button_message_id = 900, "
-            "selected_tracks_json = '[]'"
+            "UPDATE signup_module_config SET signups_open = 1, signup_button_message_id = ?, "
+            "selected_tracks_json = '[]'",
+            (OLD_INFORMATION,),
+        )
+        await db.commit()
+
+
+async def _sign_up_button_kept(db_path) -> tuple[int, int]:
+    """The window's information message as the configuration keeps it: its id and the channel it
+    was posted in."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT signup_button_message_id, signup_button_message_channel_id "
+            "FROM signup_module_config"
+        )
+        return tuple(await cursor.fetchone())
+
+
+async def test_a_signup_channel_replaced_while_signups_are_open_carries_the_sign_up_button(
+    tmp_path,
+):
+    """Season 3 is in its Signups stage with the window open, its information message (900)
+    posted in the league's signup channel, 650, which has since been deleted from the server. An
+    admin replaces it with 700 through `/signup channel`: 700 is saved, the information message
+    with its Sign Up button is posted in 700, and that post (901) is kept as the window's
+    information message with 700 as the channel it was posted in, so drivers can sign up again
+    without the window being closed and reopened. The old message went with its channel, so
+    nothing is left to delete by hand: the queue goes on and the admin is told the move succeeded."""
+    from leaguebot.signup.services.signup_views import SignupButtonView
+
+    league = await _league(tmp_path, held=OLD)
+    await _signups_open_in_the_old_channel(league)
+    async with get_connection(league.db_path) as db:
+        await db.execute(
+            "UPDATE signup_module_config SET signup_button_message_channel_id = ?", (OLD,)
         )
         await db.commit()
     new = _channel(NEW)
@@ -527,7 +558,7 @@ async def test_a_signup_channel_replaced_while_signups_are_open_carries_the_sign
     league.guild.fetch_channel = AsyncMock(side_effect=_fetch)
     league.bot.fetch_channel = AsyncMock(side_effect=_fetch)
 
-    await _run(league, new)
+    asked = await _run(league, new)
 
     assert await _stored(league.db_path) == NEW
     posted = [
@@ -535,9 +566,9 @@ async def test_a_signup_channel_replaced_while_signups_are_open_carries_the_sign
         if isinstance(call.kwargs.get("view"), SignupButtonView)
     ]
     assert len(posted) == 1
-    async with get_connection(league.db_path) as db:
-        cursor = await db.execute("SELECT signup_button_message_id FROM signup_module_config")
-        assert (await cursor.fetchone())[0] == 901
+    assert await _sign_up_button_kept(league.db_path) == (901, NEW)
+    assert await stopped_job(league.db_path) is None
+    assert last_said(asked).startswith("✅")
 
 
 @pytest.mark.parametrize(

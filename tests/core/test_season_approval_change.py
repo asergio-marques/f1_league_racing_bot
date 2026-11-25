@@ -410,9 +410,10 @@ async def test_the_opening_standings_are_posted_in_each_division_s_standings_cha
     `division_results_config`: each is sent the opening classification, the drivers' and the
     teams' championships. Pro's and Am's attendance channels, set too, are sent no opening
     sheet while attendance is off. The message each division's classification went out as is
-    recorded against the division as its opening classification, as a round's standings are
-    recorded, so that switching results off can find it; posted as text, both championships
-    share that one message and no constructors' message is recorded."""
+    recorded against the division as its opening classification, with the channel it was posted
+    in, as a round's standings are recorded, so that switching results off can find it where it
+    stands; posted as text, both championships share that one message and no constructors'
+    message, nor its channel, is recorded."""
     league = await _league_for(tmp_path, monkeypatch, results=True)
     await _pressed(league)
 
@@ -433,7 +434,9 @@ async def test_the_opening_standings_are_posted_in_each_division_s_standings_cha
         assert len(posted) == 1, posted
         assert recorded[division]["standings_message_id"] == posted[0]
         assert json.loads(recorded[division]["standings_message_ids"]) == posted
+        assert recorded[division]["standings_message_channel_id"] == chans.standings
         assert recorded[division]["constructor_standings_message_id"] is None
+        assert recorded[division]["constructor_standings_message_channel_id"] is None
 
 
 @pytest.mark.parametrize(
