@@ -4,7 +4,7 @@ One rule, held in one place, because it is asked in four different rooms — whe
 config is edited, when a season is approved, when a mid-season amendment is approved,
 and when an XML payload is imported. This returns the violations themselves rather than
 sentences; ``ordering_comparison`` words the pair at fault, so every caller that names one
-(the three refusals, and the two warnings an edit raises) reads it the same way.
+(every refusal, and the two warnings an edit raises) reads it the same way.
 
 It lives in ``utils`` rather than in either service that needs it:
 ``season_points_service`` already imports ``points_config_service``, so a helper in
