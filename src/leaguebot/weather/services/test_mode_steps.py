@@ -31,7 +31,7 @@ from datetime import datetime
 import aiosqlite
 
 from leaguebot.framework.db.database import get_connection
-from leaguebot.weather.models.forecast_kinds import FORECAST, FORECAST_CLEAN_UP
+from leaguebot.weather.models.forecast_kinds import CLEAN_UP_PHASES, FORECAST, FORECAST_CLEAN_UP
 from leaguebot.framework.services.queue.queue_records import unfinished
 from leaguebot.core.services.test_mode.test_mode_service import (
     PASSED_OVER,
@@ -59,7 +59,8 @@ _STEP_KINDS = {0: "weather_p1", **ADVANCE_KINDS}
 async def _standing_forecasts(db: aiosqlite.Connection) -> set[int]:
     """The rounds with a forecast of Phase 1 to 3 still standing."""
     cursor = await db.execute(
-        "SELECT DISTINCT round_id FROM forecast_messages WHERE phase_number IN (1, 2, 3)"
+        "SELECT DISTINCT round_id FROM forecast_messages "
+        f"WHERE phase_number IN ({', '.join(map(str, CLEAN_UP_PHASES))})"
     )
     return {int(row["round_id"]) for row in await cursor.fetchall()}
 

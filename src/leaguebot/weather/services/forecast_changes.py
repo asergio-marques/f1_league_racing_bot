@@ -902,14 +902,15 @@ async def amendment_clean_ups(
         return ()
     cursor = await db.execute(
         "SELECT DISTINCT phase_number FROM forecast_messages "
-        "WHERE round_id = ? AND phase_number IN (1, 2, 3) ORDER BY phase_number",
+        f"WHERE round_id = ? AND phase_number IN ({', '.join(map(str, CLEAN_UP_PHASES))}) "
+        "ORDER BY phase_number",
         (round_id,),
     )
     standing = [int(row["phase_number"]) for row in await cursor.fetchall()]
     if not standing:
         return ()
-    return (PlannedStep(CLEAN_UP_FORECAST, {"phases": [1, 2, 3], "clean_up": True,
-                                            "standing": standing}),)
+    return (PlannedStep(CLEAN_UP_FORECAST, {"phases": list(CLEAN_UP_PHASES),
+                                            "clean_up": True, "standing": standing}),)
 
 
 def forecast_kept(view: StepView) -> str:

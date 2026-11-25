@@ -32,7 +32,7 @@ from datetime import datetime
 import aiosqlite
 
 from leaguebot.framework.db.database import get_connection
-from leaguebot.weather.models.forecast_kinds import forecasts_named
+from leaguebot.weather.models.forecast_kinds import CLEAN_UP_PHASES, forecasts_named
 from leaguebot.core.models.division import DivisionStatus
 from leaguebot.core.models.round import RoundFormat, RoundStatus
 from leaguebot.framework.services.queue.change_queue import ChangeQueue
@@ -176,7 +176,8 @@ async def _standing_forecasts(db: aiosqlite.Connection) -> dict[int, list[int]]:
     and phase order. A mystery round's notice (phase 0) is no forecast the clean-up deletes."""
     cursor = await db.execute(
         "SELECT round_id, phase_number FROM forecast_messages "
-        "WHERE phase_number IN (1, 2, 3) ORDER BY round_id, phase_number"
+        f"WHERE phase_number IN ({', '.join(map(str, CLEAN_UP_PHASES))}) "
+        "ORDER BY round_id, phase_number"
     )
     standing: dict[int, list[int]] = {}
     for row in await cursor.fetchall():
