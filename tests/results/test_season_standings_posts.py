@@ -643,8 +643,9 @@ async def test_a_classification_drawn_without_inkscape_says_the_host_must_instal
     each championship's render comes back with the converter's absence ("Inkscape is not
     installed on this host."), so the opening classification (season 3 approved) or the final
     one (the season completed) goes out as text. Every line the log channel is given for a
-    picture not drawn keeps those words and ends saying that the host must install Inkscape, and
-    that no command posts the classification again and the text stands."""
+    picture not drawn opens with the member and the change, keeps those words and ends saying
+    that the host must install Inkscape, and that no command posts the classification again and
+    the text stands."""
     from types import SimpleNamespace
 
     from leaguebot.image.models.image_module import PROBLEM_CONVERTER_ABSENT, Problem
@@ -681,6 +682,7 @@ async def test_a_classification_drawn_without_inkscape_says_the_host_must_instal
     ]
     assert lines, "no line names the converter's absence"
     for line in lines:
+        assert f" | {_ASKED_BY[occasion]} | ⚠️ Standings image — " in line, line
         assert line.endswith(
             f"{absent} To put it right: Inkscape is not installed on the machine running the bot, "
             f"and the host must install it; no command posts the {word} again, and the text stands"
