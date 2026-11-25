@@ -1111,12 +1111,19 @@ async def build_attendance_preview(services: PreviewServices, context: PreviewCo
     records = fabricate_attendance_records(context.drivers, run_ordinals, limit)
     # The drawing keeps the order it is handed, so the fabricated rows are put in the order
     # attendance gives its sheet: most points first, drivers level on points by team, then name.
+    # A seat is ranked as the sheet ranks it: 1 for a driver of the reserve team, 0 for a named team.
+    reserve_teams = {
+        team.name for team in context.teams if getattr(team, "is_reserve", False)
+    }
     row_of = {record.key: record for record in records}
     records = [
         row_of[key]
         for key in services.preview_sources.attendance_sheet_order(
             {record.key: record.total for record in records},
-            {d.key: (0, d.team_name) for d in context.drivers},
+            {
+                d.key: (1 if (d.team_key or d.team_name) in reserve_teams else 0, d.team_name)
+                for d in context.drivers
+            },
             {record.key: names[record.key] for record in records},
         )
     ]
