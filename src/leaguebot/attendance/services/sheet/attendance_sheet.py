@@ -36,6 +36,7 @@ from leaguebot.framework.services.posting.standing_post_handler import post_stan
 from leaguebot.framework.utils.in_a_job import posts_in_a_job
 from leaguebot.framework.utils.interaction_errors import describe_fault
 from leaguebot.framework.utils.league_bot import LeagueBot
+from leaguebot.results.services.standings.standings_service import order_drivers
 
 if TYPE_CHECKING:
     from leaguebot.image.services.render.image_drawing import ImageDrawing
@@ -50,6 +51,37 @@ def after_round_order_key(total: int | None, name: str) -> tuple[int, str]:
     sheet sorts by this, and whatever draws the sheet is handed its rows in this order. The name is
     the one the sheet draws for the driver."""
     return (-(total or 0), name.lower())
+
+
+def after_round_order(
+    totals: Mapping[int, int | None],
+    seats: Mapping[int, tuple[int, str]],
+    names: Mapping[int, str],
+) -> list[int]:
+    """The keys of *totals* in the order of a sheet after a round and of the final one: most
+    attendance points first, drivers level on points as the standings' final tiebreak orders
+    them: by team, a named team before the reserve team and the reserve team before no seat, then
+    by driver, then by identifier. The textual sheet is ordered by this, and whatever draws the
+    sheet is handed its rows in this order. The opening sheet, all on nought, is ordered by it too.
+
+    *seats* maps a driver to ``(team rank, team name)``, as results' `order_drivers` takes them:
+    rank 0 a named team, 1 the reserve team; a driver absent from it holds no seat. *names* are
+    the names the sheet draws, by the same keys.
+
+    The order is results' own `order_drivers`, called with the attendance points and no finishes,
+    so that only the points and then the final tiebreak decide: the countback and the step for
+    having taken part in a session are the standings' alone and do not apply to attendance. A step
+    added to `order_drivers` after the points would reach this sheet too, which
+    `test_drivers_level_on_points_are_ordered_by_the_standings_final_tiebreak` pins."""
+    return order_drivers(
+        totals,
+        points={key: total or 0 for key, total in totals.items()},
+        finish_counts={},
+        first_finish_rounds={},
+        participants=(),
+        seats=seats,
+        names=names,
+    )
 
 
 @posts_in_a_job
@@ -429,7 +461,9 @@ async def _sheet_rows(db, round_id: int, division_id: int) -> list:
     Having held a seat for a round is read from the attendance record itself: a round scores
     the full-time drivers and the Reserves placed into a seat, and nobody else, so a total
     recorded for the driver in this division is the evidence. Each driver's total is the one
-    recorded at their latest scored round up to this one, and nought where none is.
+    recorded at their latest scored round up to this one, and nought where none is. Each row
+    carries ``seat`` too, the seat the driver holds now as `after_round_order` takes it: a named
+    team, the reserve team, or None where they hold none.
     """
     current = await round_facts_on(db, round_id)
     number_of = {
@@ -451,10 +485,11 @@ async def _sheet_rows(db, round_id: int, division_id: int) -> list:
         profile_id = int(row["driver_profile_id"])
         if profile_id not in latest or number > latest[profile_id][0]:
             latest[profile_id] = (number, row["total_points_after"])
-    seated = {
-        driver.profile_id
-        for driver in await TeamService.seat_holders_on(db, division_id)
-        if not driver.is_reserve
+    holders = await TeamService.seat_holders_on(db, division_id)
+    seated = {driver.profile_id for driver in holders if not driver.is_reserve}
+    seat_of = {
+        driver.profile_id: (1 if driver.is_reserve else 0, driver.team_name)
+        for driver in holders
     }
     identities = await driver_identities_on(db, latest.keys() | seated)
     return [
@@ -463,6 +498,7 @@ async def _sheet_rows(db, round_id: int, division_id: int) -> list:
             "discord_user_id": account,
             "test_display_name": name,
             "total_points_after": latest[profile_id][1] if profile_id in latest else 0,
+            "seat": seat_of.get(profile_id),
         }
         for profile_id, (account, name) in sorted(identities.items())
     ]
@@ -472,7 +508,7 @@ async def _opening_attendance_rows(db, division_id: int) -> list[dict]:
     """The division's seated drivers, all on zero, shaped like the ordinary sheet's rows.
 
     Posted once, when the season is approved. Selects the same drivers the sheet after a
-    round does — seated, non-reserve — and carries the team name besides, which is what the
+    round does — seated, non-reserve — and carries each driver's seat besides, which is what the
     opening order is taken on.
     """
     seated = [
@@ -488,6 +524,7 @@ async def _opening_attendance_rows(db, division_id: int) -> list[dict]:
             "discord_user_id": identities[driver.profile_id][0],
             "test_display_name": identities[driver.profile_id][1],
             "team_name": driver.team_name,
+            "seat": (0, driver.team_name),
         }
         for driver in seated
         if driver.profile_id in identities

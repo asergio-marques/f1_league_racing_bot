@@ -863,10 +863,6 @@ def _render_service(config_service, module_service):
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#641: the sample attendance sheet is ordered by after_round_order, not yet written",
-)
 @pytest.mark.rasteriser
 async def test_render_without_season(
     db_path, module_service, config_service, template_dir, monkeypatch, tmp_path,
