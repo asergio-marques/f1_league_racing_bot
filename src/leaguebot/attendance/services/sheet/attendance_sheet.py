@@ -45,14 +45,6 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
-def after_round_order_key(total: int | None, name: str) -> tuple[int, str]:
-    """The order of a sheet after a round and of the final one: most attendance points first, drivers
-    level on points by name. The opening sheet is ordered by team then driver instead. The textual
-    sheet sorts by this, and whatever draws the sheet is handed its rows in this order. The name is
-    the one the sheet draws for the driver."""
-    return (-(total or 0), name.lower())
-
-
 def after_round_order(
     totals: Mapping[int, int | None],
     seats: Mapping[int, tuple[int, str]],
