@@ -217,7 +217,7 @@ Clears any guild-scoped command overrides and pushes the latest global slash com
 1. Clears any guild-specific command overrides for the current server (sent in a direct message there is no server, so none is cleared and the global commands are left as they are)
 2. Syncs the cleared guild state (removes leftover duplicates)
 3. Pushes the full global command tree to Discord, and leaves the server showing the right [`/driver`](#driver-commands) and `/signup`: with test mode on, the test-mode ones on the server and none on the global list; off, the member ones on the global list and none on the server. Where no server is claimed it syncs the global commands, the member `/driver` and `/signup` among them, and takes both off every server the bot is on, as a start-up does
-4. Confirms with the count of synced commands (message auto-deletes after 15 seconds)
+4. Confirms with the count of synced commands, and ends the reply with the notice to reload Discord (Ctrl+R on desktop) before using `/driver` and `/signup` (message auto-deletes after 15 seconds)
 
 If the sync fails, it replies "⚠️ The commands could not be synced; the failure is in the log channel." (also auto-deleted after 15 seconds), and posts the failure to the log channel.
 
