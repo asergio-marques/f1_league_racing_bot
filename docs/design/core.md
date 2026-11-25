@@ -365,8 +365,12 @@ before the change types that carry it, so that a service imports no cog and find
 and it names no group of its own: each is removed by its own group's name, so a further group is a
 further pair and no change to the swap. The notice a factory reset and `/bot init` add, where no
 swap runs, is built where it is needed from one fixed piece of text naming both commands
-(`COMMANDS_NAMED`), which also feeds the swap's refusal line (`SWAP_PROBLEM`); only the step's
-describe line names them in words. It runs as the step after the save of the toggle and of a test
+(`COMMANDS_NAMED`), which also feeds the swap's refusal line (`SWAP_PROBLEM`) and the notice that
+ends the reply of each change that plans the swap, to reload Discord (`RELOAD`); only the step's
+describe line names them in words. The reload notice is given by `reload_reply`, read off the
+swap's step in the outcome, where the step is done with no problem: a refused swap changed nothing
+for a client to reload, and a real season's end plans no swap, so the notice follows from the plan
+and no outcome tests the season's kind. It runs as the step after the save of the toggle and of a test
 season's completion, abort and cancellation, and off the queue as start-up's command sync and
 `!sync`'s, both trees. How a refusal is met in each, the swap being a fifth exception to the lane
 stop, is `architecture.md`'s. The moments of the swap, and the restart a factory reset's and
