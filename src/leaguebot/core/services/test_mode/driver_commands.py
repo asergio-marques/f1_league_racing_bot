@@ -160,9 +160,14 @@ def swap_not_done_reply(views: Sequence[StepView]) -> str:
 def reload_reply(views: Sequence[StepView]) -> str:
     """The notice ending a change's reply that the commands have changed and Discord must be
     reloaded: where the swap among *views* is done with no problem, none where it ran not at all,
-    is not done or was refused."""
+    is not done, was discarded or was refused."""
     for view in views:
-        if view.name == SWAP_TEST_MODE_COMMANDS and view.done and swap_problem([view]) is None:
+        if (
+            view.name == SWAP_TEST_MODE_COMMANDS
+            and view.done
+            and "discarded" not in (view.result or {})
+            and swap_problem([view]) is None
+        ):
             return f"\n\n{RELOAD}"
     return ""
 

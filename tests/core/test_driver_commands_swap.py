@@ -219,6 +219,33 @@ async def test_an_unclaimed_bot_takes_driver_off_every_server_it_is_on(tmp_path)
     )
 
 
+@pytest.mark.parametrize(
+    ("result", "done", "told"),
+    [
+        pytest.param({}, True, True, id="done"),
+        pytest.param(None, False, False, id="not-done"),
+        pytest.param({"problem": "refused"}, True, False, id="refused"),
+        pytest.param({"discarded": {"by": 77}}, True, False, id="discarded"),
+    ],
+)
+def test_the_reload_notice_follows_a_swap_done_with_no_problem_and_nothing_else(
+    result, done, told
+):
+    """A swap job done with an empty result is followed by the notice; one not done, one that
+    Discord refused and one a league admin discarded are not, nor is a reply with no swap job."""
+    from leaguebot.core.services.test_mode.driver_commands import (
+        RELOAD,
+        SWAP_TEST_MODE_COMMANDS,
+        reload_reply,
+    )
+    from leaguebot.framework.services.queue.change_types import StepView
+
+    swap = StepView(SWAP_TEST_MODE_COMMANDS, {}, result, done)
+
+    assert reload_reply([swap]) == (f"\n\n{RELOAD}" if told else "")
+    assert reload_reply([StepView("save", {}, {}, True)]) == ""
+
+
 # ── After the toggle ──────────────────────────────────────────────────────────
 
 
