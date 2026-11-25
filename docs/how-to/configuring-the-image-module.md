@@ -114,7 +114,7 @@ Four settings, none of which need any artwork, so they are easy to get out of th
 | `/images config date-format` | Eleven formats, picked from a dropdown that shows each one written out. Short: `Sun 14 Jun 2026`, `14 Jun 2026`, `14/06/2026`, `06/14/2026`, `2026-06-14`. Written out: `Sunday 14th June 2026`, `14th June 2026`, `Sunday 14 June 2026`, `14 June 2026`, `June 14, 2026`, `Sunday, June 14th, 2026` | `Sun 14 Jun 2026` |
 | `/images config fastest-lap-colour` | The colour marking the fastest lap. A `#` and six characters | `#A020F0` (purple) |
 
-When you set the fastest-lap colour, the bot also tells you whether it will be easy to read against the background behind it, and warns you if not. It saves your choice either way — it is your league's look, not the bot's.
+When you change the fastest-lap colour, the bot also tells you whether it will be easy to read against the background behind the fastest lap, and warns you if not. Where several shapes make up that background, you are told the figure for the hardest to read. It saves your choice either way — it is your league's look, not the bot's. Setting the colour the league already has changes nothing and measures nothing.
 
 > **Everyone sees the same time zone.** When the bot posts times as text, Discord shows each driver the time in their own local zone. A picture cannot do that. Whatever zone you pick here is printed on the picture for everybody, with its short name after the time. Set it to the zone your league actually races in. This is the one thing a picture tells drivers *less* clearly than the text it replaces.
 
@@ -501,6 +501,8 @@ Do it in this order. Turning it on before the colours are set will stop your pic
 
 That states each colour once instead of on every element, and is how the drawings supplied in `resources/league/templates` are built. Either way the file still opens in Inkscape drawing its own colours.
 
+**Marking the background behind the fastest lap.** The bot tells you how readable the fastest-lap colour is only against the shapes your race results drawing marks for it. Add the class `fastest-lap-background` to every shape that lies behind the fastest-lap times of the rows — the canvas, and any band behind a row. The shipped race drawing marks its canvas and its row bands. Leave off a plate that sits behind something else, such as the block at the top right of the shipped drawing. Where you mark several shapes, the bot measures the colour against each and reports the lowest. A marked shape needs a plain colour (`fill="#14171C"`, or one in the stylesheet); a gradient or a missing fill makes the whole reading "could not be measured". A drawing that marks nothing gets the same reply. The colour itself is saved either way.
+
 > **Every slot you mark is one you must then set, for every division.** Slotting your whole palette means ten colours per tier before anything posts. Mark what you actually want to vary.
 
 **2. Set a colour for every division, for every slot you marked.**
@@ -565,7 +567,7 @@ It tells you straight away if any slot is still unset, and for which tier.
 
 **Check it before you trust it.** `/images test` draws a preview for a division you name, in that tier's colours. Use it on two different tiers and compare.
 
-**Then set the fastest-lap colour again, if the plate behind it takes a tier's colour.** The contrast you were told in step 3 was measured against your drawing as it stands. Run `/images config fastest-lap-colour` again with the same colour: it now measures the plate in every tier's colours and names the tier it is hardest to read on — or tells you it is the same for every tier.
+**A change of tier colours is not measured against the fastest-lap colour again.** The contrast you were told in step 3 was measured when you changed the fastest-lap colour, in the colours the tiers had then. Changing a tier's colours afterwards does not repeat it, and setting the fastest-lap colour to the value it already holds changes nothing. To measure again, change the fastest-lap colour: with per-tier colours on, the bot measures the background in every tier's colours and names the tier it is hardest to read on — or tells you it is the same for every tier.
 
 ### Working out a tier's palette
 
