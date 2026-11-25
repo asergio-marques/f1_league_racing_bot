@@ -52,7 +52,6 @@ def test_identical_culprits_are_counted_rather_than_repeated():
     assert "(×20)" in lines[1]
 
 
-@pytest.mark.xfail(strict=True, reason="#635: a culprit line still carries the template's key")
 def test_a_lone_notice_still_names_its_field():
     """XIV.4: a notice that stands alone says where it happened. Grouping must not cost
     that — it is only the twenty-way repetition that has nothing to say. It names the field
@@ -66,7 +65,6 @@ def test_a_lone_notice_still_names_its_field():
     assert not any("standings_drivers" in line for line in lines), lines
 
 
-@pytest.mark.xfail(strict=True, reason="#635: a kind is still headed by its code")
 def test_different_kinds_get_their_own_heading():
     """Each kind is headed in plain words, never by its code."""
     notices = [
@@ -109,13 +107,7 @@ def test_every_notice_kind_has_a_heading_case():
 
 @pytest.mark.parametrize(
     ("kind", "words"),
-    [
-        pytest.param(
-            kind, words,
-            marks=pytest.mark.xfail(strict=True, reason="#635: a kind is still headed by its code"),
-        )
-        for kind, words in KIND_HEADINGS
-    ],
+    KIND_HEADINGS,
 )
 def test_each_kind_is_headed_in_plain_words(kind, words):
     lines = grouped_notice_lines([_notice(kind=kind, detail="something", field_id="f")])

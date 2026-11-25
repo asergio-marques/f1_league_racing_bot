@@ -2531,7 +2531,6 @@ async def test_a_clean_render_posts_the_image(
     assert decision.png_paths
 
 
-@pytest.mark.xfail(strict=True, reason="#635: the block still heads a kind by its code")
 def test_notice_formatting_names_field_and_kind():
     """The notice block names the kind in plain words and the field, never the kind's code nor the
     template's internal name, which a league never reads."""

@@ -136,7 +136,6 @@ def test_final_crop_point_off_the_canvas_raises_a_notice_and_still_cuts():
     assert not result.unresolved, "a misplaced crop point must not be fatal"
 
 
-@pytest.mark.xfail(strict=True, reason="#635: the crop notice names the template by its key")
 def test_the_crop_notice_names_the_template_in_words():
     """With the template's key gone from the notice lines, the crop notice's own words say which
     template to put right."""
