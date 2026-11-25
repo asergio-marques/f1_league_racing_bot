@@ -899,8 +899,8 @@ async def amendment_clean_ups(
     **_context: Any,
 ) -> tuple[PlannedStep, ...]:
     """The clean-up of the round's forecast a day after the round, planned where that day has
-    come and a forecast stands (whichever of Phases 1 to 3, or a mystery round's notice), named by the phases standing. Read on
-    *db*. Subscribed to core's `round_clean_ups_due`."""
+    come and a forecast stands (whichever of Phases 1 to 3, or a mystery round's notice), named
+    by the phases standing. Read on *db*. Subscribed to core's `round_clean_ups_due`."""
     if clean_up_moment(rnd.scheduled_at) > now():
         return ()
     cursor = await db.execute(
