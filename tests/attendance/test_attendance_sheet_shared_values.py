@@ -23,20 +23,27 @@ from leaguebot.image.services.aspects.image_attendance_service import resolve_dr
 # ── The values both paths draw (FR-013) ───────────────────────────────────
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#598: the textual sheet orders by a Discord member lookup of its own",
+)
 def test_the_driver_name_is_resolved_by_the_shared_convention_not_a_second_one():
-    """One person is drawn under one name wherever a graphic names them.
+    """One person is named by one name wherever the sheet names them.
 
-    The sheet calls ``image_results_post._driver_names``, which is the same chain the results
-    and standings graphics use. A private name resolver here would be a second implementation
-    of the wip-spec's "name of a person".
+    ``post_attendance_sheet`` calls core's ``read_driver_names``, the chain the results and
+    standings graphics use, and orders the text and draws the picture by what it hands back. A
+    private name resolver in either would be a second implementation of the wip-spec's "name of
+    a person", and would part the text's order from the picture's.
     """
-    source = inspect.getsource(attendance_sheet._sheet_attachment)
-    assert "_driver_names" in source
-    assert "get_member" not in source, (
-        "the sheet must not reach for a Discord member itself: the shared convention falls "
-        "through the recorded names and the user id, and a local lookup would stop at the "
-        "first of those"
-    )
+    text_source = inspect.getsource(attendance_sheet.post_attendance_sheet)
+    picture_source = inspect.getsource(attendance_sheet._sheet_attachment)
+    assert "read_driver_names(" in text_source
+    for source in (text_source, picture_source):
+        assert "get_member" not in source, (
+            "the sheet must not reach for a Discord member itself: the shared convention falls "
+            "through the recorded names and the user id, and a local lookup would stop at the "
+            "first of those"
+        )
 
 
 def test_the_team_name_is_the_seat_held_at_generation_in_both_paths():
