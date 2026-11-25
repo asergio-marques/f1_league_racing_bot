@@ -282,6 +282,71 @@ async def test_a_retried_repost_posts_the_text(tmp_path):
     assert await _session_ids(league) == new
 
 
+#: The words of the one render notice round 3's Feature Race picture is drawn with.
+SESSION_NOTICE = "Font7 was unavailable, so a substitute was drawn"
+
+
+@pytest.mark.parametrize("refused", [
+    pytest.param(False, id="first try"),
+    pytest.param(True, id="retried as text"),
+])
+@pytest.mark.xfail(
+    strict=True,
+    reason="#635: the sync's reply lists no Image notices, its session job keeping nothing of "
+           "its picture's notices for it",
+)
+async def test_a_rounds_sync_s_reply_names_the_session_picture_drawn_with_notices(
+    tmp_path, refused,
+):
+    """Images on and the results picture's template sound: Admin runs `/results rounds sync` for
+    Pro, and round 3's Feature Race picture draws as a PNG with one font substituted. Either it
+    posts at the first try, or (*refused*) Discord refuses every post, the queue stops at the
+    session's table, and once Discord takes posts again Retry posts the table as text. The
+    notice reaches the log channel once, in a block opening with the member and the command
+    ("| /results rounds sync |"), then "Image render notices — <picture>:" and the notice grouped
+    beneath "Font substituted", naming its field. The reply says the results synced and ends in
+    one "Image notices" section listing the picture under the name its log line gives it, linked
+    to the log channel's message holding it, and the notice beneath, once (owner decision
+    2026-11-24; image spec, Errors and the rejection of input, #550; issue #635)."""
+    from leaguebot.image.models.image_module import RenderNotice
+
+    league = await _league(tmp_path)
+    results = league.channel(RESULTS_CHANNEL)
+    stack, render = _results_drawn(league, tmp_path)
+    render.return_value.notices = [RenderNotice(
+        image_type="results_race_template", notice_kind="FONT_SUBSTITUTED",
+        field_id="driver_name_1", detail=SESSION_NOTICE,
+    )]
+    if refused:
+        results.send_fails = http_error(discord.Forbidden, status=403, text="Missing Access")
+    with stack:
+        interaction = await _sync(league)
+        await run_queue(league.bot)
+        if refused:
+            assert (await stopped_job(league.db_path))["name"] == "post_session_results"
+            results.send_fails = None
+            await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    told = _outcome(interaction)
+    assert told.startswith("✅ Results for all rounds in **Pro** synced to the results channel."), told
+    assert told.count("⚠️ **Image notices**") == 1, told
+    assert "\n\n⚠️ **Image notices**\n" in told, told
+    held = [(n, line) for n, line in enumerate(league.bot.log_channel.sent, 1)
+            if SESSION_NOTICE in line]
+    assert len(held) == 1, league.bot.log_channel.sent
+    n, line = held[0]
+    opening = "Admin (`<@4242>`) | /results rounds sync | Image render notices — "
+    assert line.startswith(opening), line
+    label, grouped = line.removeprefix(opening).split(":\n", 1)
+    assert grouped.splitlines()[:2] == [
+        "  Font substituted",
+        f"    • `driver_name_1` — {SESSION_NOTICE}",
+    ], line
+    assert f"  **{label}** ([see them in the log](https://discord.test/{n}))" in told, told
+    assert told.count(SESSION_NOTICE) == 1, told
+
+
 async def test_a_rounds_sync_waiting_while_an_amendment_opens_is_refused_when_it_runs(tmp_path):
     """The queue is stopped ahead of the sync; meanwhile an amendment of round 3 opens in
     channel 705. Once the queue moves, the sync is refused in the command's own words, and
