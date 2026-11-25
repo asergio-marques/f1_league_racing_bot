@@ -276,7 +276,7 @@ the grouped lines alone, for core's jobs to head and open. The rules a league re
 plain words, repeats counted, a lone notice naming its field and no template's key, are the image
 specification's "Errors and the rejection of input". The one drawing that writes its own notices,
 the lineup a command draws, is `ImageDrawing.draw_lineup_for_command`, which, handed the member and
-the command, writes them to the log opening with both, and hands back the link to the message it
+the command, writes its notices to the log, opening with both, and hands back the link to the message it
 logs, for the command to tell its manager the notices with (`LineupPicture.log_link`). The `/images
 test` previews write their notices through the writer the runner is handed (`preview_runner`),
 opening with the member and the preview's command and naming what each picture drew. A new kind of

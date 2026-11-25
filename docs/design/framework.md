@@ -52,8 +52,8 @@ one-league claim and the base classes of the command tree, views and modals (`le
 the hook types (`hooks.py`), the failure paths (`interaction_errors.py`, `answering.py`, the job
 runner `job_runner.py`), the helper that starts background work and holds it (`background.py`), the
 standard log lines, the words a reply uses to link to a logged line and to list the notices of the
-pictures its work drew, and the frame a job puts round those notices (`notices_block`,
-`job_notice_lines`, `framed_picture_lines` and its `PictureLines`) (`log_lines.py`), a member as the
+pictures its work drew, and the heading and body a job puts round those notices (`notices_block`,
+`job_notice_lines`, `framed_picture_lines` and its `PictureLines`, all in `log_lines.py`), a member as the
 log channel names them (`member_names.py`), the log filters, `bounded_autocomplete`
 (`autocomplete.py`), the guard that refuses a post made outside a job (`in_a_job.py`), the wait for
 the catch-up after a restart (`catch_up_gate.py`), the channel cast (`channels.py`) and the path
@@ -174,10 +174,10 @@ each pinned by a test in
   that refuses costs the link alone. An outcome lists the notices through `drawn_notices_of` or
   `drawn_notices_in` and `drawn_notices_section`, so every reply words them alike, in one section,
   "Image notices", whichever change's reply it ends (the image specification's "Errors and the
-  rejection of input"). *Rejected:* saving the link with the job,   a column for a reply that cannot
-  outlive the restart   (`test_an_outcome_links_to_the_line_its_job_named`).
+  rejection of input"). *Rejected:* saving the link with the job, a column for a reply that cannot
+  outlive the restart (`test_an_outcome_links_to_the_line_its_job_named`).
 - **A notice block is opened with the member and the change by the job that drew the picture, and
-  image marks which lines they are.** A drawing knows no member and no change, so image hands its
+  image marks a post aspect's block.** A drawing knows no member and no change, so image hands its
   notices back grouped by kind and never opened. A post aspect's drawing (results, attendance and
   weather) comes back headed, as a `NoticeBlock` (`ImageRenderService.format_notices`), and the job
   that posted it opens each block through `framed_picture_lines`, with `named | what |`, and joins
