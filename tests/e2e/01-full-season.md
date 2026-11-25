@@ -2806,7 +2806,7 @@ Image render notices — <label of the next picture> — <division>, round <R>:
      **Expect:** title `Lineup`, one picture, `✅ Lineup`: eleven team blocks and a reserve block;
      `Bravo Motorsport` with both seats blank, `Charlie GP` with `Aaron Abbott` and a blank seat,
      `Hotel Racing` with `Jonas Janssen` and a blank seat since Kai Kimura was sacked (step
-     129), and `Rory Reid` and `Stefan Sommer` in the reserve block: the lineup draws seats, not a round's
+     130), and `Rory Reid` and `Stefan Sommer` in the reserve block: the lineup draws seats, not a round's
      placements. **Log:** headed `Image render notices — Lineup — Division 2:`.
 
 143. **Do:** `/images test results division:Division 2 round:2`
