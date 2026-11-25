@@ -9,11 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-#: Why every test here fails until #633 is built.
-NOT_BUILT = "#633: there is no reader for a pasted list of placements"
 
-
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 def test_a_paste_is_read_line_by_line_and_trimmed():
     """Two lines: `<@101>` into Pro's Red Bull Racing, padded with spaces, then `<@102>` into Am as
     a Reserve. Both are read, in the order pasted, each field without its spaces, and nothing is
@@ -31,7 +27,6 @@ def test_a_paste_is_read_line_by_line_and_trimmed():
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 def test_a_line_is_numbered_as_the_box_shows_it():
     """`<@101>` into Pro's Ferrari on line 1, two blank lines, then `<@102>` into Pro's Ferrari on
     line 4. The blank lines are skipped, but counted: the second driver is line 4, not line 2."""
@@ -43,7 +38,6 @@ def test_a_line_is_numbered_as_the_box_shows_it():
     assert [placement.line for placement in placements] == [1, 4]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 def test_a_comma_in_a_division_name_survives():
     """`<@101>, Pro, Europe, Red Bull Racing`: the division is everything between the first comma
     and the last, so a division named "Pro, Europe" is read whole and the team is Red Bull
@@ -56,7 +50,6 @@ def test_a_comma_in_a_division_name_survives():
     assert [(p.division, p.team) for p in placements] == [("Pro, Europe", "Red Bull Racing")]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 @pytest.mark.parametrize(
     "paste",
     [
@@ -79,7 +72,6 @@ def test_a_line_that_cannot_be_read_is_named(paste):
     assert errors[0].startswith("Line 1:")
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 def test_every_line_that_cannot_be_read_is_named_at_once():
     """Four lines: `<@101>` into Pro's Ferrari, then a bare ID, a line with no team and a name in
     place of a mention. Lines 2, 3 and 4 are each refused, by their number, in one go."""
@@ -92,7 +84,6 @@ def test_every_line_that_cannot_be_read_is_named_at_once():
     assert [error.split(":")[0] for error in errors] == ["Line 2", "Line 3", "Line 4"]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 @pytest.mark.parametrize("paste", ["", "\n   \n"], ids=["nothing", "blank_lines"])
 def test_an_empty_paste_is_refused(paste):
     """A paste holding nothing, or blank lines alone, places nobody and is refused."""
@@ -104,7 +95,6 @@ def test_an_empty_paste_is_refused(paste):
     assert errors
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 def test_the_refusal_names_every_fault():
     """Forty lines that cannot be read. The refusal the manager reads names all forty, with no
     "…and N more" line; a reply too long for one message is divided as it is sent."""
