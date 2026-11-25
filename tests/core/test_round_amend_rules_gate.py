@@ -334,16 +334,12 @@ async def _called(path: str, *, notified: bool = False) -> None:
         await db.commit()
 
 
-_NOT_YET = "#606: the check-in warning does not yet say what the amendment will do"
-
-
 @pytest.mark.parametrize("called, warning", [
     pytest.param(
         False,
         "\u26a0\ufe0f The check-in call for that moment is already due, so it will be posted at "
         "once.",
         id="no-call-posted",
-        marks=pytest.mark.xfail(strict=True, reason=_NOT_YET),
     ),
     pytest.param(
         True,
@@ -351,7 +347,6 @@ _NOT_YET = "#606: the check-in warning does not yet say what the amendment will 
         "posted will be posted again at once, carrying what changed and keeping every answer "
         "given to it.",
         id="a-call-standing",
-        marks=pytest.mark.xfail(strict=True, reason=_NOT_YET),
     ),
 ])
 async def test_the_check_in_warnings_follow_the_forecasts_line(tmp_path, called, warning):
@@ -482,7 +477,6 @@ async def test_a_window_passing_while_the_confirmation_stands_refuses_it(tmp_pat
     assert await _amendments(path) == []
 
 
-@pytest.mark.xfail(strict=True, reason="#606: a posted last notice does not yet refuse a move")
 async def test_a_last_notice_posted_while_the_confirmation_stands_refuses_the_move(tmp_path):
     """Round 1 of Div A races in twenty hours, attendance on (call 5 days, last notice 24 hours,
     deadline 2 hours), its check-in call posted. A manager is offered a move to two days out,
@@ -626,14 +620,10 @@ ROUND_AMEND_REFUSALS = [
                  id="the-first-forecast-stands"),
     pytest.param("moment held", {}, "already holds round 2", id="the-moment-is-held"),
     pytest.param("last notice passed", {},
-                 "last notice for that moment has already passed", id="the-last-notice-passed",
-                 marks=pytest.mark.xfail(strict=True, reason="#606: a move past the check-in "
-                                         "last notice is not yet refused")),
+                 "last notice for that moment has already passed", id="the-last-notice-passed"),
     pytest.param("last notice posted", {},
                  "last notice for this round has already been posted",
-                 id="the-last-notice-is-posted",
-                 marks=pytest.mark.xfail(strict=True, reason="#606: a move after the check-in "
-                                         "last notice is posted is not yet refused")),
+                 id="the-last-notice-is-posted"),
     pytest.param("confirm by another", {}, "Not your action", id="confirm-not-your-action"),
     pytest.param("confirm round gone", {}, "no longer exists", id="confirm-round-gone"),
     pytest.param("confirm window passed", {}, "can no longer be amended",

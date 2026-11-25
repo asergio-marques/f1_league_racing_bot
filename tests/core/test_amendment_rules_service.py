@@ -28,7 +28,6 @@ NOW = datetime(2026, 6, 1, 12, 0, tzinfo=timezone.utc)
 DEFAULT_ATTENDANCE = AttendanceWindows(notice_days=5, last_notice_hours=24, deadline_hours=2)
 #: The packaged forecast horizons.
 DEFAULT_WEATHER = WeatherWindows(phase_1_days=5, phase_2_days=2, phase_3_hours=2)
-_NOT_YET = "#606: the check-in judgement does not yet take called, notified and moved"
 
 
 def _round(
@@ -55,7 +54,6 @@ def _round(
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 def test_a_round_well_ahead_may_be_amended():
     """A round 30 days out given another track, attendance on: nothing is refused."""
     rnd = _round(scheduled_at=NOW + timedelta(days=30))
@@ -101,7 +99,6 @@ def test_a_field_that_is_not_amendable_is_refused():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 def test_moving_a_round_forward_lets_its_track_be_amended_in_the_same_change():
     """The league's remedy, and the reason a change set is judged as one change.
 
@@ -134,7 +131,6 @@ def test_moving_a_round_forward_lets_its_track_be_amended_in_the_same_change():
         (DEFAULT_ATTENDANCE, DEFAULT_WEATHER),
     ],
 )
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 def test_moving_a_round_into_the_past_is_refused_whatever_the_modules(attendance, weather):
     """Decided 2026-09-14: the answer shall not turn on which modules a league runs.
 
@@ -164,7 +160,6 @@ def test_a_moment_falling_exactly_now_counts_as_the_past():
     assert any("cannot be moved into the past" in r for r in verdict.refusals)
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 def test_a_round_already_in_the_past_may_still_be_moved_forward():
     """The escape, and the guard against over-tightening: forward is always still open."""
     rnd = _round(scheduled_at=NOW - timedelta(days=2))
@@ -288,7 +283,6 @@ def test_a_mystery_round_changed_to_another_type_amends_both_at_once():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 def test_one_refused_field_refuses_the_whole_change_set():
     """Track and format together, with phase 2 out: the format alone is what refuses it, and the
     track goes with it. None of the amendment happens."""

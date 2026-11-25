@@ -74,8 +74,9 @@ def sign_up_to_review_sections(bot: "LeagueBot") -> None:
 
 def sign_up_to_amendment_judged(bot: "LeagueBot") -> None:
     """Sign attendance's judgement of its check-in up to the hook a round's amendment is judged
-    through. Core hands it no lead times: asked in a save, it reads them on the save's connection,
-    and asked outside one, through the module's own reader of them."""
+    through. Core hands it no lead times: asked in a save, it reads them, and what has been posted
+    of the round's check-in, on the save's connection; asked outside one, it reads the lead times
+    through the module's own reader of them and what is posted on the database at *db_path*."""
     from leaguebot.attendance.services.check_in import check_in_amendment
     from leaguebot.attendance.services.hooks import attendance_hooks
 
@@ -86,7 +87,9 @@ def sign_up_to_amendment_judged(bot: "LeagueBot") -> None:
             await attendance_hooks.lead_times(bot.attendance_service, bot.module_service)
             if handed[0] is None else None
         )
-        return await check_in_amendment.amendment_judged(*handed, windows=windows, **context)
+        return await check_in_amendment.amendment_judged(
+            *handed, db_path=bot.db_path, windows=windows, **context
+        )
 
     bot.amendment_judged.subscribe(judged)
 

@@ -674,8 +674,7 @@ async def test_a_discarded_check_in_call_take_down_is_named_and_the_call_is_stil
     "results entered",
     "the round cancelled",
     "round 4 takes the moment",
-    pytest.param("the last notice is posted", marks=pytest.mark.xfail(
-        strict=True, reason="#606: a move is not yet refused once its last notice is posted")),
+    pytest.param("the last notice is posted"),
 ])
 async def test_an_amendment_judged_again_when_it_runs_is_refused_in_today_s_words(
     tmp_path, meanwhile,

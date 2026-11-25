@@ -65,7 +65,6 @@ _NOT_YET = "#606: the check-in judgement is not yet told whether a call or last 
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 def test_a_delay_is_allowed_however_close_the_round_stood():
     """The participation case: a league delays a round by a week to get more drivers.
 
@@ -79,7 +78,6 @@ def test_a_delay_is_allowed_however_close_the_round_stood():
     assert all(w.rearm for w in judgement.windows.values())
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 def test_bringing_a_round_inside_its_check_in_deadline_is_refused():
     """A round brought to an hour away, its deadline two hours before it, an hour ago: a check-in
     that opens and closes in the same instant asks a question nobody can answer, so it is refused
@@ -88,7 +86,6 @@ def test_bringing_a_round_inside_its_check_in_deadline_is_refused():
     assert any("check-in deadline" in r for r in judgement.part.refusals)
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 def test_a_deadline_falling_exactly_now_counts_as_passed():
     """A round brought to two hours away, its deadline landing exactly now: refused, the same
     threshold `approval_window_service` holds to, so the two cannot disagree."""
@@ -97,35 +94,25 @@ def test_a_deadline_falling_exactly_now_counts_as_passed():
 
 @pytest.mark.parametrize("hours_out, windows, standing, refusals, warnings", [
     pytest.param(48, DEFAULT_ATTENDANCE, dict(called=False, notified=False, moved=True),
-                 (), (POSTED_AT_ONCE,), id="no-call-yet-last-notice-ahead",
-                 marks=pytest.mark.xfail(strict=True, reason=_NOT_YET)),
+                 (), (POSTED_AT_ONCE,), id="no-call-yet-last-notice-ahead"),
     pytest.param(48, DEFAULT_ATTENDANCE, dict(called=True, notified=False, moved=True),
-                 (), (POSTED_AGAIN,), id="call-standing-last-notice-ahead",
-                 marks=pytest.mark.xfail(strict=True, reason=_NOT_YET)),
+                 (), (POSTED_AGAIN,), id="call-standing-last-notice-ahead"),
     pytest.param(3, DEFAULT_ATTENDANCE, dict(called=False, notified=False, moved=True),
-                 (LAST_NOTICE_PASSED,), (), id="no-call-yet-last-notice-passed",
-                 marks=pytest.mark.xfail(strict=True, reason=_NOT_YET)),
+                 (LAST_NOTICE_PASSED,), (), id="no-call-yet-last-notice-passed"),
     pytest.param(3, DEFAULT_ATTENDANCE, dict(called=True, notified=False, moved=True),
-                 (LAST_NOTICE_PASSED,), (), id="call-standing-last-notice-passed",
-                 marks=pytest.mark.xfail(strict=True, reason=_NOT_YET)),
+                 (LAST_NOTICE_PASSED,), (), id="call-standing-last-notice-passed"),
     pytest.param(48, DEFAULT_ATTENDANCE, dict(called=True, notified=True, moved=True),
-                 (LAST_NOTICE_POSTED,), (), id="last-notice-posted",
-                 marks=pytest.mark.xfail(strict=True, reason=_NOT_YET)),
+                 (LAST_NOTICE_POSTED,), (), id="last-notice-posted"),
     pytest.param(3, DEFAULT_ATTENDANCE, dict(called=True, notified=True, moved=True),
-                 (LAST_NOTICE_POSTED,), (), id="last-notice-posted-and-its-moment-passed",
-                 marks=pytest.mark.xfail(strict=True, reason=_NOT_YET)),
+                 (LAST_NOTICE_POSTED,), (), id="last-notice-posted-and-its-moment-passed"),
     pytest.param(1, DEFAULT_ATTENDANCE, dict(called=True, notified=True, moved=True),
-                 (DEADLINE_PASSED,), (), id="deadline-passed",
-                 marks=pytest.mark.xfail(strict=True, reason=_NOT_YET)),
+                 (DEADLINE_PASSED,), (), id="deadline-passed"),
     pytest.param(144, DEFAULT_ATTENDANCE, dict(called=True, notified=True, moved=True),
-                 (), (), id="call-ahead-again-after-the-last-notice",
-                 marks=pytest.mark.xfail(strict=True, reason=_NOT_YET)),
+                 (), (), id="call-ahead-again-after-the-last-notice"),
     pytest.param(3, NO_LAST_NOTICE, dict(called=False, notified=False, moved=True),
-                 (), (POSTED_AT_ONCE,), id="no-last-notice-at-all",
-                 marks=pytest.mark.xfail(strict=True, reason=_NOT_YET)),
+                 (), (POSTED_AT_ONCE,), id="no-last-notice-at-all"),
     pytest.param(3, DEFAULT_ATTENDANCE, dict(called=True, notified=True, moved=False),
-                 (), (POSTED_AGAIN,), id="circuit-corrected-after-the-last-notice",
-                 marks=pytest.mark.xfail(strict=True, reason=_NOT_YET)),
+                 (), (POSTED_AGAIN,), id="circuit-corrected-after-the-last-notice"),
 ])
 def test_a_round_inside_its_call_window_is_offered_or_refused_by_its_last_notice(
     hours_out, windows, standing, refusals, warnings
@@ -150,7 +137,6 @@ def test_a_round_inside_its_call_window_is_offered_or_refused_by_its_last_notice
     assert judgement.part.warnings == warnings
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 def test_a_move_refused_for_its_last_notice_keeps_what_an_allowed_one_keeps():
     """A round three hours out on the default windows, its call posted and its last notice not.
     Moved there, it is refused for its last notice; corrected there without moving, it is allowed.
@@ -168,7 +154,6 @@ def test_a_move_refused_for_its_last_notice_keeps_what_an_allowed_one_keeps():
         assert judgement.windows["deadline"].rearm
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 def test_the_deadline_is_not_judged_while_attendance_is_disabled():
     """With the module off the round has no check-in to lose: a round brought to an hour away is
     refused nothing for it, and none of its windows is judged."""
@@ -188,7 +173,6 @@ def test_a_deadline_of_zero_hours_is_the_rounds_own_moment():
     assert judgement.windows["deadline"].fire_at == NOW + timedelta(minutes=30)
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 def test_a_disabled_last_notice_carries_no_window():
     """A last notice of zero hours disables the reminder outright, exactly as the scheduler reads
     it: a round 30 days out carries no last-notice window."""
@@ -201,7 +185,6 @@ def test_a_disabled_last_notice_carries_no_window():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 def test_a_round_moved_well_out_has_its_check_in_called_again():
     """The amended moment 30 days out, the default windows (the round's earlier moment is not
     judged): its call is posted again, and its check-in does not stay closed."""
@@ -210,7 +193,6 @@ def test_a_round_moved_well_out_has_its_check_in_called_again():
     assert not judgement.stays_closed
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 def test_a_round_nudged_within_its_closed_check_in_stays_closed():
     """The amended moment an hour away, the default windows: the same input as
     `test_bringing_a_round_inside_its_check_in_deadline_is_refused`, here asserting what the save
