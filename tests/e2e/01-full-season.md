@@ -2939,7 +2939,7 @@ backup is gone.
        > UNVERIFIED: what the final pictures hold beside the classification (the rounds' grid, the
        > reserves). Look at each as a PNG and record it.
      - **Roles:** none taken back: roles are taken back from real drivers only.
-     - **Log:** any notice blocks, each opening `<you> | /season complete |` and headed
+     - **Log:** any notice blocks, each opening ``<you> | `/season complete` |`` and headed
        `Image render notices — Season 1 Division 1 — Final Classification — drivers standings:`,
        `… — constructors standings:` and
        `Image render notices — Season 1 Division 1 — attendance, Final Classification:`, and the
