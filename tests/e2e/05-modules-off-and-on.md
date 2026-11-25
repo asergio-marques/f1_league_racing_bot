@@ -111,7 +111,7 @@ channel, so nothing is posted for it.
    **Expect:**
    - **Reply:**
      ```
-     ✅ The backup is staged. **Restart the bot** and it will come back on the restored database — under a service it will restart itself; from a terminal, stop it and run it again.
+     ✅ The backup is staged. **Restart the bot** and it will come back on the restored database — under a service it will restart itself; from a terminal, stop it and run it again. Once it is back, reload Discord (Ctrl+R on desktop) before using the `/driver` and `/signup` commands, which the restart may change.
      The database being replaced was copied to `bot.prerestore.db` first, so this can be walked back by hand if it was not what you wanted.
      ```
    - **Log:**
