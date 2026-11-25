@@ -636,6 +636,66 @@ async def test_a_closed_notice_that_cannot_be_carried_stays_where_it_was(tmp_pat
         assert "by hand" in replied
     [failed] = [line for line in await log_lines(league) if line.startswith("❌ ")]
     assert failed.startswith(f"❌ `/signup channel` failed for {NAMED} (")
+    said = (
+        f"The closed notice was not carried to <#{NEW}>" if refused == "post"
+        else "The old closed notice could not be"
+    )
+    assert replied.count(said) == 1
+
+
+@pytest.mark.parametrize("step, warning", [
+    pytest.param(
+        "carry",
+        f"⚠️ The closed notice was not carried to <#{NEW}>: check where it stands in the signup "
+        "channels, and delete any copy by hand.",
+        id="carry-posted-but-not-recorded",
+    ),
+    pytest.param(
+        "take-down",
+        "⚠️ The old closed notice could not be taken down: delete it from the earlier signup "
+        "channel by hand.",
+        id="take-down-server-unavailable",
+    ),
+])
+async def test_a_closed_notice_carry_or_take_down_that_fails_without_a_refusal_is_named_in_the_reply(
+    tmp_path, step, warning
+):
+    """Signups are closed and the last close's notice (950) stands in the signup channel, 650. The
+    manager moves the signup channel to 700, and one of the notice's two steps fails with no
+    refusal from Discord: the copy is posted in 700 but the database will not record it (*carry*),
+    or the league's server is unavailable as the old notice is taken down from 650 (*take-down*).
+    700 is saved as the signup channel, the queue goes on, and the manager's reply carries that
+    step's warning line, once, saying what was not done and what to do by hand."""
+    from leaguebot.framework.models.change import GuildUnavailable
+
+    league = await _league(tmp_path, held=OLD)
+    await _closed_notice(league)
+    if step == "carry":
+        async with get_connection(league.db_path) as db:
+            await db.execute(
+                "CREATE TRIGGER refuse_the_notice BEFORE UPDATE OF signup_closed_message_id "
+                "ON signup_module_config BEGIN SELECT RAISE(ABORT, 'database or disk is full'); "
+                "END"
+            )
+            await db.commit()
+    events: list[tuple] = []
+    old = _holding(
+        _channel(OLD), events, OLD_NOTICE,
+        delete_fault=(
+            GuildUnavailable("the league's server is not in the cache")
+            if step == "take-down" else None
+        ),
+    )
+    new = _holding(_channel(NEW), events)
+    _discord(league, old, new)
+
+    asked = await _run(league, new)
+
+    assert await _stored(league.db_path) == NEW
+    assert await stopped_job(league.db_path) is None
+    replied = last_said(asked)
+    assert f"Signup channel set to <#{NEW}>" in replied
+    assert replied.count(warning) == 1
 
 
 @pytest.mark.parametrize("gone", [
