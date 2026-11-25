@@ -103,10 +103,10 @@ def test_a_following_entry_shows_how_far_behind_it_is():
     assert format_gap_to_leader(25, is_leader=False) == "-25"
 
 
-def test_an_entry_level_with_the_leader_still_shows_a_gap():
-    """Level on points but not the leader — the gap is zero and is drawn, because the
-    empty field means "leader" and this entry is not one."""
-    assert format_gap_to_leader(0, is_leader=False) == "-0"
+def test_an_entry_level_with_the_leader_has_no_gap_drawn():
+    """Level on points but not the leader — a zero gap is no gap, so the field is left
+    empty as the leader's is rather than drawn as "-0"."""
+    assert format_gap_to_leader(0, is_leader=False) == ""
 
 
 # ---------------------------------------------------------------------------
