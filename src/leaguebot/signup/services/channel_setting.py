@@ -351,8 +351,9 @@ def _delete_carried_closed() -> After:
     The delete is the standing-post handler's (`standing_posts.delete_replaced_step`), which this
     step runs with the notice and its channel the carry kept in its result (`old`,
     `old_channel_id`) as its payload: a message or a channel already gone counts as done, which is
-    what a replacement for a deleted channel finds. The step is due only where the carry posted. Like
-    every step after a setting's save it ends on a fault and never stops the lane.
+    what a replacement for a deleted channel finds. The step is due only where the carry posted.
+    It is a `DELETE` step, not an `ACT` one, so that a `NotFound` completes it. Like every step
+    after a setting's save it ends on a fault and never stops the lane.
     """
     inner = standing_posts.delete_replaced_step(DELETE_CARRIED_CLOSED)
 
@@ -377,7 +378,8 @@ def _delete_carried_closed() -> After:
         try:
             return await inner.run(deleting)
         except StepFailedOnDiscord as error:
-            link = (error.result or {}).get("link") or f"in <#{deleting.step_payload['channel_id']}>"
+            where = deleting.step_payload["channel_id"]
+            link = (error.result or {}).get("link") or f"in <#{where}>"
             raise StepFailedOnDiscord(
                 error.reason,
                 notice=f"The old closed notice could not be deleted ({link}): delete it by hand.",
@@ -518,6 +520,6 @@ def channel_setting(
 
 
 __all__ = [
-    "CARRY_CLOSED", "COMMAND", "DELETE_CARRIED_CLOSED", "KIND", "NOT_CONFIGURED", "POST_INFORMATION", "SET_PERMISSIONS", "channel_setting",
-    "may_not_edit",
+    "CARRY_CLOSED", "COMMAND", "DELETE_CARRIED_CLOSED", "KIND", "NOT_CONFIGURED",
+    "POST_INFORMATION", "SET_PERMISSIONS", "channel_setting", "may_not_edit",
 ]

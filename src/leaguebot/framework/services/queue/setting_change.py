@@ -177,7 +177,8 @@ RENAMED_OUTCOME = "renamed_outcome"
 class After:
     """A step after the save that the setting does not need: it may fail without holding the lane.
 
-    *step* is an `ACT` step; *fault_reply* takes the payload and the reply so far and returns the
+    *step* is an `ACT` step, or a `DELETE` step where a `NotFound` should complete it (the old
+    message is gone already); *fault_reply* takes the payload and the reply so far and returns the
     reply that says what was not done; *carries_line* makes the success line wait for the step
     and be written by it once it succeeds. A carrying step may rename the outcome word itself
     (`"Success, with faults"`) by putting it under `RENAMED_OUTCOME` in its own result, for a
