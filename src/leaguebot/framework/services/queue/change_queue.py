@@ -1505,7 +1505,7 @@ class ChangeQueue:
         if change["origin"] == ChangeOrigin.MEMBER.value:
             await self._refuse(change, verdict, pending)
         elif verdict.kind is VerdictKind.NOT_DUE:
-            await self._drop(change, verdict.reason, pending)
+            await self._drop(change, verdict.reason, pending, line=verdict.line)
         else:
             await self._stop(change, pending, ChangeRefused(verdict.reason or verdict.reply))
         return False
@@ -1642,16 +1642,19 @@ class ChangeQueue:
         self._release(change)
 
     async def _drop(
-        self, change: aiosqlite.Row, reason: str, pending: aiosqlite.Row | None = None
+        self, change: aiosqlite.Row, reason: str, pending: aiosqlite.Row | None = None,
+        *, line: str = "",
     ) -> None:
-        """Drop a bot change that is no longer due: the host's log says so.
+        """Drop a bot change that is no longer due: the host's log says so, and the log channel
+        where the check gave a *line* for it, written in the save that ends the change.
 
         Where the check had stopped the queue on the change, the drop clears the stop: a line
         in the log channel says so, and the stop notice loses its buttons.
         """
         cleared = self._cleared(change, pending, "it is no longer due, so it was dropped")
         ids = await self._end(
-            change, ChangeState.DROPPED, *([cleared] if cleared is not None else [])
+            change, ChangeState.DROPPED,
+            *([line] if line else []), *([cleared] if cleared is not None else []),
         )
         log.info("%s is no longer due, so it was dropped: %s", change["what"], reason)
         await self._router.deliver_queued(ids, interaction=self._answerable(change))
