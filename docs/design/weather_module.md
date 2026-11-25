@@ -72,7 +72,8 @@ done: its notice where it is a mystery round, Phase 1 otherwise. So a mystery ro
 another type is judged by the forecasts drawn for it, of which there are none, and its Phase 1 is
 still owed (weather specification, "Mystery rounds"). The notice's flag is lowered
 as the notice's record is dropped (`forget_forecast_on`), so a round that is mystery again is owed
-its notice again. Core carries none of the four flags.
+its notice again, except under a clean-up, which keeps it: a notice taken down a day after the round
+is not owed again to a round amended later. Core carries none of the four flags.
 
 ### The switch
 
@@ -103,12 +104,12 @@ again, which the confirmation's faults and the check both use.
 | `phase_results` | `phase1_service`, `phase2_service`, `phase3_service` | a phase's draw, with its flag, in the draw's save |
 | | `phase_withdrawal` | a withdrawn phase's rows set `INVALIDATED`, inside an amendment's save |
 | | `forecast_cleanup_service` (`rounds_deleted_on`) | a deleted round's rows |
-| `forecast_messages` | `forecast_cleanup_service` | a row as a post is recorded (`store_forecast_message_on`), dropped as its message is deleted (`forget_forecast_on`, which lowers `mystery_notice_given` with a notice's row), a deleted round's rows, and every row when the bot is packed (`bot_packed_on`) |
+| `forecast_messages` | `forecast_cleanup_service` | a row as a post is recorded (`store_forecast_message_on`), dropped as its message is deleted (`forget_forecast_on`, which lowers `mystery_notice_given` with a notice's row, except under a clean-up), a deleted round's rows, and every row when the bot is packed (`bot_packed_on`) |
 | `weather_pipeline_config` | `weather_config_service` (`set_deadline_on`) | one horizon, in a setting's save |
 | `rounds.phaseN_done` | the draws | raised with the draw |
 | | `phase_withdrawal` | lowered with the withdrawal |
 | `rounds.mystery_notice_given` | `mystery_notice_service` | raised in the save that goes before the notice's post |
-| | `forecast_cleanup_service` (`forget_forecast_on`) | lowered as the notice's record is dropped |
+| | `forecast_cleanup_service` (`forget_forecast_on`) | lowered as the notice's record is dropped, except under a clean-up |
 | `sessions.phase2_slot_type` | `phase2_service`; `phase_withdrawal` | written with the draw; cleared with the withdrawal |
 | `divisions.forecast_channel_id` | `forecast_channel` (`set_division_forecast_channel`) | the channel, in the setting's save |
 | `server_configs.weather_module_enabled` | `module_switch_settings` | the flag, naming only it |
@@ -255,9 +256,11 @@ weather specification's "Supersession and cleanup". Every moment is judged at th
 ### The clean-up change
 
 `weather.forecast.clean_up` plans a `delete_forecast` job for each of a round's phase 1 to 3
-forecasts that stands, at `clean_up_moment`. Which rounds are owed it, and that a mystery round's
-notice is not, is the weather specification's "Supersession and cleanup" and "Changes to a round
-after generation".
+forecasts that stands, and for a mystery round's notice, at `clean_up_moment`; the phases it reads
+are one set, `CLEAN_UP_PHASES` in `forecast_kinds`, which the amendment, the recovery and the
+test-mode steps read too, so that none can leave the notice out. A clean-up keeps the notice's
+flag (`keep_notice_given`), the notice being no forecast to owe again. Which rounds are owed it is
+the weather specification's "Supersession and cleanup" and "Changes to a round after generation".
 
 ### The settings and the switch
 
