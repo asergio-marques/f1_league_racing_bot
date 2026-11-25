@@ -1264,9 +1264,9 @@ async def review_section(
     """Signup's section of a season review: its channel, settings and available slots, or None
     where the module is off.
 
-    Subscribed to core's `review_sections_read`. The placements review also hands the signup
-    channel it shows beside the module's line in its Modules section, where signup has a
-    configuration; the configuration review shows none. Reads only.
+    Subscribed to core's `review_sections_read`. Both reviews also get the signup channel they
+    show beside the module's line in their Modules section, where signup has a configuration.
+    Reads only.
     """
     if not await modules.is_enabled(SWITCH_KEY):
         return None
@@ -1293,5 +1293,5 @@ async def review_section(
             f"  • Available slots: {', '.join(labels)}",
             "",
         ],
-        modules_note=f"Channel: {channel}" if review is Review.PLACEMENTS and config else None,
+        modules_note=f"Channel: {channel}" if config else None,
     )

@@ -543,7 +543,7 @@ Creates a season dated today — the date in UTC — in **configuration**. It is
 #### `/season config-review` — Review and confirm the configuration
 *Access: League manager · Configuration only*
 
-No parameters. Posts a report of the season in configuration — test mode, the enabled modules, the league's base role and driver role, the team list with its roles (warning where the Reserve team has none), and the configuration of each enabled module in the words of `/season placements-review`: the signup settings, the attendance settings, the attached points configurations, the weather deadlines and the image outputs — and checks everything that can be checked before the season has divisions:
+No parameters. Posts a report of the season in configuration — test mode, each module on or off and whether that can still change (Signup is fixed once the configuration is confirmed; any other module can be switched on only until placements are confirmed, and off later, but never back on once placements are confirmed), the league's base role and driver role, the team list with its roles (warning where the Reserve team has none), and the configuration of each enabled module in the words of `/season placements-review`: the signup settings, the attendance settings, the attached points configurations, the weather deadlines and the image outputs — and checks everything that can be checked before the season has divisions:
 
 - where the signup module is enabled, its channel and the league's base role and driver role — the channel still on the server and holding the permissions the bot needs there, both roles still on the server, and the driver role one the bot can grant — each fault naming the command that puts it right, and the **✅ Confirm configuration** button withheld while one stands;
 - every team's shorthand, as a filename;
@@ -685,7 +685,7 @@ Deletes the round and renumbers remaining rounds by date.
 #### `/season placements-review` — Review pending configuration
 *Access: League manager · Placements only*
 
-No parameters. Displays the pending season configuration, ending with a message asking whether you accept it and carrying the **✅ Approve** button. Refused unless the season is in **placements** — a season still in configuration is reviewed with `/season config-review`.
+No parameters. Displays the pending season configuration, ending with a message asking whether you accept it and carrying the **✅ Approve** button. Each module is listed on or off, in the same words as in `/season config-review`, with whether that can still change: approving fixes every module other than Signup, so one left off stays off, and one switched off later stays off. Refused unless the season is in **placements** — a season still in configuration is reviewed with `/season config-review`.
 
 **The review is posted on the change queue, in order**: a notice that the graphics are being drawn, the pictures, the report and, last, the question with its button. Your reply says it is under way, and a stopped queue holds the whole review. A post Discord refuses stops the queue like any other, with Retry and Discard on its notice.
 

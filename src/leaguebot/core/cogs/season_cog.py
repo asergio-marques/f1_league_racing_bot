@@ -28,7 +28,9 @@ from leaguebot.framework.services.switches.module_service import SwitchNotSigned
 from leaguebot.core.services.rounds.round_moments import read_phases_drawn, read_round_leads
 from leaguebot.core.services.seasons.confirmation_refusals import Confirmation, read_refusals
 from leaguebot.core.services.seasons.review_sections import (
+    MODULE_ORDER,
     Review,
+    module_review_lines,
     read_division_lines,
     read_review_sections,
 )
@@ -129,6 +131,13 @@ class SeasonCog(commands.Cog):
         False there and needs no catch-all here."""
         drawing = self.bot.image_drawing
         return await drawing.calendar_wanted(), await drawing.lineup_wanted()
+
+    async def _module_states(self) -> list[tuple[str, bool]]:
+        """Each module's switch by its key, in the reviews' one order (`MODULE_ORDER`), as both
+        reviews' Modules section is written from."""
+        return [
+            (key, await self.bot.module_service.is_enabled(key)) for key in MODULE_ORDER
+        ]
 
     async def _ask_review(
         self,
@@ -454,24 +463,11 @@ class SeasonCog(commands.Cog):
 
         # ── Modules ───────────────────────────────────────────────
         # Each module's line, with the note its section hands to show beside it where it is on.
-        weather_on = await self.bot.module_service.is_enabled("weather")
-        results_on = await self.bot.module_service.is_enabled("results")
         images_on = await self.bot.module_service.is_enabled("images")
-        notes = {section.module: section.modules_note for section in sections}
-        on = "✅ Enabled"
-        off = "❌ Disabled"
-        header_lines.append("**Modules**")
-        for name, enabled in (
-            ("Weather", weather_on),
-            ("Signup", await self.bot.module_service.is_enabled("signup")),
-            ("Results", results_on),
-            ("Attendance", await self.bot.module_service.is_enabled("attendance")),
-            ("Images", images_on),
-        ):
-            note = notes.get(name.lower()) if enabled else None
-            state = on if enabled else off
-            header_lines.append(f"  {name}: {state} | {note}" if note else f"  {name}: {state}")
-        header_lines.append("")
+        header_lines += module_review_lines(
+            await self._module_states(),
+            {section.module: section.modules_note for section in sections},
+        )
 
         # ── Image module (FR-033, FR-034) ─────────────────────────
         # When disabled, report that and omit the detail. When enabled, render the
@@ -982,7 +978,14 @@ class SeasonCog(commands.Cog):
 
         await interaction.response.defer(ephemeral=True)
         module = self.bot.module_service
-        on, off = "✅ Enabled", "❌ Disabled"
+        # Every module's configuration, subsection by subsection, in the words and the
+        # order of the placements review — save the divisions, which do not exist yet.
+        sections = await read_review_sections(
+            self.bot.review_sections_read,
+            Review.CONFIGURATION,
+            season_id=season.id,
+            division_ids=[],
+        )
         server_config = await self.bot.config_service.get_server_config()
         test_mode = bool(server_config is not None and server_config.test_mode_active)
         lines = [
@@ -990,13 +993,10 @@ class SeasonCog(commands.Cog):
             "",
             f"  Test mode: {'✅ On' if test_mode else '❌ Off'}",
             "",
-            "**Modules**",
-            f"  Signup: {on if await module.is_enabled("signup") else off}",
-            f"  Results: {on if await module.is_enabled("results") else off}",
-            f"  Attendance: {on if await module.is_enabled("attendance") else off}",
-            f"  Weather: {on if await module.is_enabled("weather") else off}",
-            f"  Images: {on if await module.is_enabled("images") else off}",
-            "",
+            *module_review_lines(
+                await self._module_states(),
+                {section.module: section.modules_note for section in sections},
+            ),
         ]
         lines += await self._league_roles_review_lines()
         teams = await self.bot.team_service.get_teams_with_roles()
@@ -1012,14 +1012,6 @@ class SeasonCog(commands.Cog):
                 "",
             ]
 
-        # Every module's configuration, subsection by subsection, in the words and the
-        # order of the placements review — save the divisions, which do not exist yet.
-        sections = await read_review_sections(
-            self.bot.review_sections_read,
-            Review.CONFIGURATION,
-            season_id=season.id,
-            division_ids=[],
-        )
         section_lines: list[list[str]] = [lines, *[section.lines for section in sections]]
         if await module.is_enabled("images"):
             section_lines.append(await self._build_image_review_section())

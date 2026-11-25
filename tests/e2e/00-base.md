@@ -403,9 +403,12 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
       believed a bot defect: record it, and carry on.
     - **Posts** (`#bot-commands`, public), one message per section; the parts that identify them:
       - the first, opening `**Configuration Review (Season #1 — F1 25)**`, then
-        `  Test mode: ✅ On`, then under `**Modules**` the five lines `  Signup: ✅ Enabled`,
-        `  Results: ✅ Enabled`, `  Attendance: ✅ Enabled`, `  Weather: ✅ Enabled`,
-        `  Images: ✅ Enabled`; then `**Roles**` with `  Base role: <@&<Members role id>>` and
+        `  Test mode: ✅ On`, then under `**Modules**` the five lines in the order Weather, Signup,
+        Results, Attendance, Images, each `✅ Enabled` and then its note on whether the choice can
+        still change: Signup's `  Signup: ✅ Enabled — fixed for the season once the configuration
+        is confirmed | Channel: <#<signup id>>`, and every other module's
+        `  <Module>: ✅ Enabled — can be switched off later, but not back on once placements are
+        confirmed`; then `**Roles**` with `  Base role: <@&<Members role id>>` and
         `  Driver role: <@&<Driver role id>>`; then `**Teams**`, one line per team of the form
         ``  <full name> — `<shorthand>` → <@&<role id>>``: the eleven teams of the Fixture, in shorthand
         order (`ALP` to `KLO`), then ``  Reserve — `Reserve` → <@&<Reserve role id>>``. No line reading
@@ -817,8 +820,9 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
         image notice (`image_lineup_service.put_seat_name`);
       - the report, one message per section: the first opening
         `**Season Review (Season #1 — F1 25)**` and `**Modules**`, with the five modules in the
-        order Weather, Signup, Results, Attendance, Images, each `✅ Enabled` and possibly ending
-        ` | <note>` (a note is not a fault); one per module's settings, one headed `**Image output**`; then, for each
+        order Weather, Signup, Results, Attendance, Images, each `✅ Enabled` and then the same note as
+        the configuration review's line for it, Signup's ending ` | Channel: <#<signup id>>` (a
+        note is not a fault); one per module's settings, one headed `**Image output**`; then, for each
         division, a banner `# DIVISION 1 (Tier 1)` (or `# DIVISION 2 (Tier 2)`) between two
         rules of `─`, and a message opening `📂 **Configuration**` with
         `  Role: <@&<Division N role id>>`, `  Calendar channel: <#<dN-calendar id>>`,

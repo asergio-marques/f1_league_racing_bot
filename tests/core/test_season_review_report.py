@@ -470,14 +470,22 @@ async def test_the_heading_names_the_season_and_the_game(db_path):
 
 
 async def test_every_module_is_listed_as_on_or_off(db_path):
+    """Weather and results on, signup, attendance and images off: the Modules section lists the
+    five in the one order, each saying whether it is on or off and until when that can change."""
     cog = _cog(db_path, weather=True, results=True)
     messages = await _review(cog, _interaction())
 
     public = _public(messages)
-    assert "Weather: ✅ Enabled" in public
-    assert "Results: ✅ Enabled" in public
-    assert "Signup: ❌ Disabled" in public
-    assert "Attendance: ❌ Disabled" in public
+    assert (
+        "**Modules**\n"
+        "  Weather: ✅ Enabled — can be switched off later, but not back on once placements are"
+        " confirmed\n"
+        "  Signup: ❌ Disabled — fixed for the season once the configuration is confirmed\n"
+        "  Results: ✅ Enabled — can be switched off later, but not back on once placements are"
+        " confirmed\n"
+        "  Attendance: ❌ Disabled — can be switched on only until placements are confirmed\n"
+        "  Images: ❌ Disabled — can be switched on only until placements are confirmed\n"
+    ) in public
 
 
 async def test_a_disabled_modules_configuration_is_not_reviewed(db_path):
@@ -1359,7 +1367,10 @@ async def test_the_review_reaches_each_module_through_its_section_alone(db_path)
 
     public = _public(await _review(cog, _interaction()))
 
-    assert "  Signup: ✅ Enabled | Channel: <#900>" in public
+    assert (
+        "  Signup: ✅ Enabled — fixed for the season once the configuration is confirmed"
+        " | Channel: <#900>"
+    ) in public
     assert "**Signup Config**" in public
     assert "  • Available slots: Sunday 20:00" in public
     assert "**Attendance Config**" in public

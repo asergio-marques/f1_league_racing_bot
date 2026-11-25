@@ -120,3 +120,44 @@ async def test_the_builder_signs_results_division_lines_up_before_attendance_s(t
         {10: ["  RSVP channel: <#130>", "  Attendance channel: *(not set)*"]},
         {10: ["  Weather channel: *(none)*"]},
     ]
+
+
+_SIGNUP_ON = (
+    "  Signup: ✅ Enabled — fixed for the season once the configuration is confirmed"
+    " | Channel: <#900>"
+)
+_SIGNUP_OFF = "  Signup: ❌ Disabled — fixed for the season once the configuration is confirmed"
+_RESULTS_ON = (
+    "  Results: ✅ Enabled — can be switched off later, but not back on once placements are"
+    " confirmed"
+)
+_RESULTS_OFF = "  Results: ❌ Disabled — can be switched on only until placements are confirmed"
+
+
+@pytest.mark.parametrize(("module", "on", "line"), [
+    pytest.param("signup", True, _SIGNUP_ON, id="signup-on"),
+    pytest.param("signup", False, _SIGNUP_OFF, id="signup-off"),
+    pytest.param("results", True, _RESULTS_ON, id="other-on"),
+    pytest.param("results", False, _RESULTS_OFF, id="other-off"),
+])
+def test_each_module_line_says_whether_its_state_can_still_change(module, on, line):
+    """The five modules' switches handed in no particular order, the one under test on or off
+    and the rest the other way, with signup's channel as its note: the Modules section is its
+    heading, one line per module in the one order (Weather, Signup, Results, Attendance, Images)
+    and a blank line. Signup's line says it is fixed for the season once the configuration is
+    confirmed, on or off; another module's says, on, that it can be switched off later but not
+    back on once placements are confirmed, and, off, that it can be switched on only until then.
+    A module's own note follows the permanence note, and only where the module is on."""
+    from leaguebot.core.services.seasons.review_sections import module_review_lines
+
+    states = [(name, on if name == module else not on)
+              for name in ("images", "attendance", "results", "signup", "weather")]
+
+    lines = module_review_lines(states, {"signup": "Channel: <#900>"})
+
+    assert lines[0] == "**Modules**"
+    assert lines[-1] == ""
+    assert [entry.split(":")[0].strip() for entry in lines[1:-1]] == [
+        "Weather", "Signup", "Results", "Attendance", "Images"
+    ]
+    assert lines[1 + ["weather", "signup", "results", "attendance", "images"].index(module)] == line
