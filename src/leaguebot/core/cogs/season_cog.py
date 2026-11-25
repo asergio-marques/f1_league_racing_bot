@@ -859,7 +859,8 @@ class SeasonCog(commands.Cog):
         ]
         # The divisions whose lineup confirming posts: those holding a new driver. Where the
         # league conveys its lineup as a picture, theirs is asked of the queue, drawn with the
-        # new drivers in it, the section's text carried to stand in for it.
+        # new drivers in it, the section's text carried to stand in for it, and posted under the
+        # division's heading.
         posted = {p["division_id"] for p in placements}
         _, draws_lineup = await self._review_picture_gates()
         for division in divisions:
@@ -877,9 +878,13 @@ class SeasonCog(commands.Cog):
                 ]
                 block.append(f"  **{team['name']}**: {', '.join(seated) or '*(empty)*'}")
             if draws_lineup and division.id in posted:
+                # The picture stands in its division's place: under the division's heading, which
+                # is a section of the report and so is not in the text that stands in for it.
+                report.append(block[0])
                 pictures.append({
                     "name": f"{division.name} lineup", "division_id": division.id,
-                    "kind": "lineup", "text": "\n".join(block), "include_uncommitted": True,
+                    "kind": "lineup", "text": "\n".join(block[1:]), "include_uncommitted": True,
+                    "after_sections": len(report),
                 })
             else:
                 report.extend(chunk_message("\n".join(block)))

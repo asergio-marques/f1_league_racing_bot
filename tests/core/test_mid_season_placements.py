@@ -571,8 +571,6 @@ async def test_every_fault_is_named_at_once(monkeypatch):
     assert "Inkscape is not installed" in private
 
 
-@pytest.mark.xfail(strict=True, reason="#638: a drawn lineup is posted ahead of the whole "
-                   "report, its division's heading inside its text-if-it-cannot-be-drawn")
 async def test_the_new_drivers_lineup_is_drawn_with_them_in_it_and_in_place_of_its_text(
     monkeypatch,
 ):
