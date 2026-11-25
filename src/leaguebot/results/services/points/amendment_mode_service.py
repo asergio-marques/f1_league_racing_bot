@@ -33,7 +33,11 @@ from leaguebot.results.services.points.points_amendment_faults import (
 )
 from leaguebot.results.services.points.season_points_service import staged_points_changes_on
 from leaguebot.results.services.round_amendment.amendment_writes import open_amendment_in_season
-from leaguebot.results.utils.points_ordering import ordering_message, ordering_violations
+from leaguebot.results.utils.points_ordering import (
+    ordering_comparison,
+    ordering_message,
+    ordering_violations,
+)
 
 if TYPE_CHECKING:
     from leaguebot.framework.services.switches.module_service import ModuleService
@@ -82,10 +86,8 @@ async def modification_ordering_warnings_on(
     )
     rows = await cursor.fetchall()
     return [
-        f"position {position} ({points} pts) < position {next_position} ({next_points} pts)"
-        for position, points, next_position, next_points in ordering_violations(
-            [(r["position"], r["points"]) for r in rows]
-        )
+        ordering_comparison(violation)
+        for violation in ordering_violations([(r["position"], r["points"]) for r in rows])
     ]
 
 

@@ -367,11 +367,7 @@ async def test_a_bulk_paste_that_applies_nothing_is_not_warned_about(tmp_path):
     ("points", "comparison"),
     [
         (30, "position 1 (25 pts) < position 2 (30 pts)"),
-        pytest.param(
-            25,
-            "position 1 (25 pts) = position 2 (25 pts)",
-            marks=pytest.mark.xfail(strict=True, reason="#669: a tie is warned about as <, not ="),
-        ),
+        (25, "position 1 (25 pts) = position 2 (25 pts)"),
     ],
     ids=["rise", "tie"],
 )
