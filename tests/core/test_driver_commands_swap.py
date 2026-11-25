@@ -388,21 +388,27 @@ async def test_a_test_seasons_end_swaps_driver_back_and_a_real_ones_does_not(
     """The season ends through `/season complete`, `/season abort` or `/season cancel`, run by
     admin 77 and carried out by the queue. A test season's end, which switches test mode off,
     leaves both member groups on the global tree and no `/driver` or `/signup` on the server,
-    where the test-mode groups stood, both trees synced. A real season's end syncs nothing."""
+    where the test-mode groups stood, both trees synced, and its reply ends with the notice to
+    reload Discord. A real season's end syncs nothing and its reply has no such notice."""
+    from leaguebot.core.services.test_mode.driver_commands import RELOAD
+    from tests.support.season_league import reply
+
     league, ending = await _ENDS[end](tmp_path, test_mode)
     bot, guild = league.bot, league.guild
     if test_mode:
         _test_mode_groups_shown(bot, guild)
 
-    await ending(league)
+    asked = await ending(league)
     await run_queue(bot)
 
     if test_mode:
         assert _shown(bot, guild) == _called_for(_groups(bot), False)
         assert call() in bot.tree.sync.await_args_list
         assert call(guild=guild) in bot.tree.sync.await_args_list
+        assert reply(asked).endswith(f"\n\n{RELOAD}")
     else:
         bot.tree.sync.assert_not_awaited()
+        assert RELOAD not in reply(asked)
 
 
 #: What each end leaves of season 7: completed, cancelled, or deleted by its abort.
