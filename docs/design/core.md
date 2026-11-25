@@ -914,7 +914,7 @@ roles", "Test mode"); this is the mechanism. The widening above is the one move 
 profile of a member holding none is made in the save that places them, by `profile_for_placement_on`,
 the one place a profile is made for a placement: it resolves the account through every account a
 driver has held and inserts only where none names a driver, so a past account never gains a profile
-beside its driver's. Assign, unassign, reject and reassign read signup's switch as
+beside its driver's. Assign, assign-bulk, unassign, reject and reassign read signup's switch as
 `architecture.md`'s "How modules and core fit together" has it, on a connection of the check's or the
 save's, and the command's own read at the ask is judged again by the check. The switch is fixed for
 the season once its configuration is confirmed, so a read in the check and another in the save
@@ -947,10 +947,11 @@ the portrait's discard follow the save as jobs of their own.
 driver or none (the core specification's "Placement into a division and team"). The list is read in
 three passes, each naming every fault of its kind: the text at the form (`parse_placement_paste`, a
 line that is not `<@id>, division, team`), the names by the command (the driver, the division, the
-team, the profile), and the seats, the stage and the capacity by the change. The command takes a
-driver by mention alone in both groups, as the member group's picker would name a member and the
-test-mode group's field a fake driver; the member group's resolver also requires the account to be in
-the server and swaps a past account for the current one, as a single `/driver assign` does.
+team, the profile), and the seats, the stage and the capacity by the change. Each group hands
+`AssignBulkModal` a `Resolver` for the mention on a line: the member group's checks that the account
+is in the server and swaps a past account for the current one, as a single `/driver assign` does;
+the test-mode group's goes through `resolve_driver`. The core specification's "Placement into a
+division and team" and "Fake drivers and rosters" give the rule.
 
 A line is judged by `judge_assign_on`, which reads the database, and the database does not yet hold
 what the lines above it take. `PlacementService.judge_assign_paste_on` therefore walks the list with
@@ -960,14 +961,18 @@ down, the lines past the last refused in the words `_find_free_seat` uses; the R
 runs out. The capacity guards count the same way: `SeatsAhead` (drivers, reserves, classified) is
 added to the count inside each guard of `TemplateCapacityService`, so `_ask_drawing` stays the one
 catch around the image module's reads. The check asks capacity, per division, only of the last line
-of each kind with every line before it ahead, and walks the lines one by one through `guard_assign`'s `ahead` only where that overflows, so the lines
-refused are the same and the templates are read far less. `guard_assign_paste_test_mode` and
-`guard_assign_paste` run first and in the check alone, being unable to run in a save; the save judges
-every line again on its own connection and then writes (`assign_on`, `profile_for_placement_on`),
-one `DRIVER_ASSIGN` audit entry per driver, as an audit entry carries one division. *Rejected:*
-judging the list by writing it inside a SAVEPOINT and rolling back on a fault, which finds the same
-refusals but writes in the judging, so a check would no longer be a read and the one-connection
-rule of a save could not be kept for the guards that ask the templates.
+of each kind with every line before it ahead, and walks the lines one by one through `TemplateCapacityService.guard_image_capacity`, each with its
+`SeatsAhead`, only where that overflows, so the lines refused are the same and the templates are
+read far less. The test-mode guard (`guard_assign_paste_test_mode`) runs before the seats are judged,
+so that a refused real driver takes no seat from the lines after it; the capacity guard
+(`guard_assign_paste`) runs after, on the lines judged sound. Both run in the check alone, being
+unable to run in a save, which reads templates off the loop; the save judges every line again on its
+own connection and then writes (`assign_on`, `profile_for_placement_on`), one `DRIVER_ASSIGN` audit
+entry per driver, as an audit entry carries one division. *Rejected:* judging the list by writing it
+inside a SAVEPOINT and rolling back on a fault: a check is a read (`CheckContext`), and a save waits
+on nothing but its own connection (`architecture.md`, "While a save is open, the bot waits on nothing
+but that save's own connection"), so a trial write inside the save could not ask the templates for
+the capacity refusals.
 
 **A driver's history outlives the profile.** `driver_history_entries` names the driver by account
 and lets go of the profile on delete. `delete_driver_profiles` (`season_lifecycle_service`) is the
@@ -1003,8 +1008,8 @@ What the reply of a discarded save needs is read into the payload at the ask (`f
 in a save stops the lane. What each kind judges and writes is its docstring's. A roster the file
 shows wrong on its own is refused by the form before the ask. A roster command is judged in no stage
 of the season, only on test mode being on and a season standing: a fake driver is created unsigned,
-and the signup and `/driver assign` after it, or `/driver assign` alone with the signup module
-off, carry every rule of the stage (`sign-up-bulk`, which makes the signup, being the exception,
+and the signup and `/driver assign` or `/driver assign-bulk` after it, or those alone with the
+signup module off, carry every rule of the stage (`sign-up-bulk`, which makes the signup, being the exception,
 below). Removal asks whether the driver has raced through core's reader of the divisions a driver
 raced in (`divisions_raced_read`) and the former-driver flag, and whether it holds a committed
 seat, never the results tables, so core reads no table another module owns.
@@ -1027,9 +1032,9 @@ queue's clock is passed in.
 
 **Fake drivers are seeded, not moved through the state machine.** `test_roster_service` inserts a
 fake driver at Not Signed Up with no seat, flagged as a test driver, with a synthetic id above any
-real Discord id; the signup, or with the signup module off `/driver assign` alone, then moves it
-through the state machine, and its docstring says why the insert bypasses `write_transition`. They
-are removed through `delete_driver_profiles`, keeping their history. A fake driver always has its
+real Discord id; the signup, or with the signup module off `/driver assign` or `/driver assign-bulk`
+alone, then moves it through the state machine, and its docstring says why the insert bypasses
+`write_transition`. They are removed through `delete_driver_profiles`, keeping their history. A fake driver always has its
 row, so the test-mode guard of `PlacementService` reads a missing profile as a real member and
 refuses it (core specification, "Test mode").
 
