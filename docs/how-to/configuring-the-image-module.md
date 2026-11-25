@@ -700,6 +700,7 @@ Lists every setting and whether it is usable, and each of the nine outputs as âœ
 /images test weather-p3      division:<name>  round:<number>
 /images test weather-mystery division:<name>  round:<number>
 /images test verdict         division:<name>  round:<number>
+/images test verdict-banner  division:<name>  round:<number>
 ```
 
 One command per kind, sent only to you. The calendar and the lineup take a division alone; every other kind also takes a round number. **Both are required**, and your server needs a season for them to name.
