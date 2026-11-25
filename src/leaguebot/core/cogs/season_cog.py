@@ -29,6 +29,7 @@ from leaguebot.core.services.rounds.round_moments import read_phases_drawn, read
 from leaguebot.core.services.seasons.confirmation_refusals import Confirmation, read_refusals
 from leaguebot.core.services.seasons.review_sections import (
     Review,
+    module_review_lines,
     read_division_lines,
     read_review_sections,
 )
@@ -454,24 +455,11 @@ class SeasonCog(commands.Cog):
 
         # ── Modules ───────────────────────────────────────────────
         # Each module's line, with the note its section hands to show beside it where it is on.
-        weather_on = await self.bot.module_service.is_enabled("weather")
-        results_on = await self.bot.module_service.is_enabled("results")
         images_on = await self.bot.module_service.is_enabled("images")
-        notes = {section.module: section.modules_note for section in sections}
-        on = "✅ Enabled"
-        off = "❌ Disabled"
-        header_lines.append("**Modules**")
-        for name, enabled in (
-            ("Weather", weather_on),
-            ("Signup", await self.bot.module_service.is_enabled("signup")),
-            ("Results", results_on),
-            ("Attendance", await self.bot.module_service.is_enabled("attendance")),
-            ("Images", images_on),
-        ):
-            note = notes.get(name.lower()) if enabled else None
-            state = on if enabled else off
-            header_lines.append(f"  {name}: {state} | {note}" if note else f"  {name}: {state}")
-        header_lines.append("")
+        header_lines += module_review_lines(
+            await self._module_states(),
+            {section.module: section.modules_note for section in sections},
+        )
 
         # ── Image module (FR-033, FR-034) ─────────────────────────
         # When disabled, report that and omit the detail. When enabled, render the
@@ -931,6 +919,13 @@ class SeasonCog(commands.Cog):
     # ------------------------------------------------------------------
     # /season config-review — confirming the configuration
     # ------------------------------------------------------------------
+
+    async def _module_states(self) -> list[tuple[str, bool]]:
+        """Each module's switch by its key, as the reviews' Modules section is written from."""
+        return [
+            (key, await self.bot.module_service.is_enabled(key))
+            for key in ("weather", "signup", "results", "attendance", "images")
+        ]
 
     async def _league_roles_review_lines(self) -> list[str]:
         """The league's base role and driver role, as the configuration review reports them.
