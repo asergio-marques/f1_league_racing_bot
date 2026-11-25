@@ -1245,6 +1245,26 @@ async def test_a_posted_placements_review_writes_no_line_of_its_own_and_asks_the
 # ---------------------------------------------------------------------------
 
 
+#: Why a review's pictures do not yet follow the sections they belong under.
+_NOT_PLACED = ("#638: a review's pictures are posted ahead of its whole report, not each after "
+               "its division's sections")
+
+
+def _laid_out(cog) -> list[str]:
+    """The review asked of the queue as its channel will read it: the report's sections in order,
+    each picture, as ``picture: <name>``, after the number of sections it follows (none where it
+    says nothing of it, as the queue reads a review asked before pictures were placed)."""
+    report = _asked(cog)["report"]
+    pictures = _pictures(cog)
+    laid_out: list[str] = []
+    for count in range(len(report) + 1):
+        laid_out += [f"picture: {p['name']}" for p in pictures
+                     if p.get("after_sections", 0) == count]
+        if count < len(report):
+            laid_out.append(report[count])
+    return laid_out
+
+
 def _pictures_wanted(monkeypatch, cog) -> None:
     """The league's calendar and lineup pictures are switched on, as answered by the drawing the
     builder attached to *cog*'s bot."""
@@ -1252,6 +1272,7 @@ def _pictures_wanted(monkeypatch, cog) -> None:
     cog.bot.image_drawing.lineup_wanted = AsyncMock(return_value=True)
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_PLACED)
 async def test_a_switched_on_calendar_and_lineup_are_asked_as_pictures_in_place_of_their_text(
         db_path, monkeypatch):
     """Reverses 038 FR-027 (decided 2026-08-27): where an aspect is switched on, its picture
@@ -1260,7 +1281,8 @@ async def test_a_switched_on_calendar_and_lineup_are_asked_as_pictures_in_place_
     and then its lineup as pictures, each carrying the section's text it stands in for (posted
     only where Discord refuses the picture); the report itself carries neither text. Each is named
     as its notices are headed in the log: the calendar with season 4 and Pro, the lineup with Pro
-    alone (image spec, Calendar and Lineup)."""
+    alone (image spec, Calendar and Lineup). Each follows Pro's configuration, the calendar
+    first: with nothing found of either, both are placed straight after that section."""
     cog = _cog(db_path, images=True)
     _pictures_wanted(monkeypatch, cog)
 
@@ -1277,6 +1299,9 @@ async def test_a_switched_on_calendar_and_lineup_are_asked_as_pictures_in_place_
     assert "Round 1: Normal @ Silverstone" not in _public(messages)
     assert "*(no drivers assigned)*" not in _public(messages)
     assert _offered(cog)
+    report = _asked(cog)["report"]
+    assert calendar["after_sections"] == lineup["after_sections"]
+    assert report[calendar["after_sections"] - 1].startswith("\U0001f4c2 **Configuration**")
 
 
 async def test_with_the_image_module_off_no_picture_is_asked_and_the_sections_are_text(db_path):
@@ -1292,11 +1317,12 @@ async def test_with_the_image_module_off_no_picture_is_asked_and_the_sections_ar
     assert "*(no drivers assigned)*" in _public(messages)
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_PLACED)
 async def test_a_lineup_shown_as_a_picture_still_warns_of_a_team_without_a_role(
         db_path, monkeypatch):
     """A finding the picture cannot show is posted either way. Pro's team Ghost has no role and
     its lineup is a picture: the report the review asks of the queue still warns that Ghost has
-    no role."""
+    no role, in the section placed straight after the lineup."""
     cog = _cog(
         db_path,
         images=True,
@@ -1311,23 +1337,73 @@ async def test_a_lineup_shown_as_a_picture_still_warns_of_a_team_without_a_role(
 
     messages = await _review(cog, _interaction())
 
-    assert "lineup" in [p["kind"] for p in _pictures(cog)]
+    [lineup] = [p for p in _pictures(cog) if p["kind"] == "lineup"]
     assert 'No role assigned:** "Ghost"' in _public(messages)
+    assert 'No role assigned:** "Ghost"' in _asked(cog)["report"][lineup["after_sections"]]
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_PLACED)
 async def test_a_calendar_shown_as_a_picture_still_names_a_round_gone_by(db_path, monkeypatch):
     """#181: a calendar picture is drawn from the very rounds that are wrong and says nothing of
     which have gone by, so the finding is posted whichever form the calendar takes. Pro's round 1
     was three days ago and its calendar is a picture: the report the review asks of the queue
-    still says round 1 has already run, and the question is not offered."""
+    still says round 1 has already run, in the section placed straight after the calendar, and
+    the question is not offered."""
     cog = _cog(db_path, images=True, rounds=[_round(1, days_away=-3)])
     _pictures_wanted(monkeypatch, cog)
 
     messages = await _review(cog, _interaction())
 
-    assert "calendar" in [p["kind"] for p in _pictures(cog)]
+    [calendar] = [p for p in _pictures(cog) if p["kind"] == "calendar"]
     assert "Round 1 has already run" in _public(messages)
+    assert "Round 1 has already run" in _asked(cog)["report"][calendar["after_sections"]]
     assert not _offered(cog)
+
+
+@pytest.mark.xfail(strict=True, reason=_NOT_PLACED)
+async def test_each_division_s_pictures_follow_its_own_configuration(db_path, monkeypatch):
+    """Season 4 has two divisions, Pro (tier 1) and Am (tier 2), each with round 1 three days ago
+    and the team Ghost, which has no role; the calendar and lineup pictures are switched on. The
+    review asked of the queue reads, division by division: Pro's banner, its configuration, its
+    calendar picture, its date fault, its lineup picture and its warning that Ghost has no role;
+    then the same for Am."""
+    cog = _cog(
+        db_path,
+        images=True,
+        divisions=[
+            _division(),
+            _division(id=DIVISION_ID + 1, name="Am", tier=2, mention_role_id=556,
+                      calendar_channel_id=711, lineup_channel_id=712),
+        ],
+        rounds=[_round(1, days_away=-3)],
+        teams=[{"name": "Red", "full_name": "Red"}, {"name": "Ghost", "full_name": "Ghost"}],
+        teams_with_roles=[
+            {"name": "Red", "full_name": "Red", "role_id": 3001, "is_reserve": False},
+            {"name": "Ghost", "full_name": "Ghost", "role_id": None, "is_reserve": False},
+            {"name": "Reserves", "full_name": "Reserves", "role_id": 3009, "is_reserve": True},
+        ],
+    )
+    _pictures_wanted(monkeypatch, cog)
+
+    await _review(cog, _interaction())
+
+    def _named(entry: str) -> str:
+        for mark, name in (("# PRO (Tier 1)", "Pro banner"), ("# AM (Tier 2)", "Am banner"),
+                           ("has already run", "date fault"), ("No role assigned", "role warning")):
+            if mark in entry:
+                return name
+        if entry.startswith("\U0001f4c2 **Configuration**"):
+            return "configuration"
+        return entry if entry.startswith("picture: ") else "another section"
+
+    named = [_named(entry) for entry in _laid_out(cog)]
+    start = named.index("Pro banner")
+    assert named[start:start + 12] == [
+        "Pro banner", "configuration", "picture: Season 4 Pro calendar", "date fault",
+        "picture: Pro lineup", "role warning",
+        "Am banner", "configuration", "picture: Season 4 Am calendar", "date fault",
+        "picture: Am lineup", "role warning",
+    ]
 
 
 async def test_the_question_asked_says_who_may_answer(db_path):

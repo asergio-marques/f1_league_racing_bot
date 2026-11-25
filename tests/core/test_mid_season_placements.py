@@ -571,6 +571,8 @@ async def test_every_fault_is_named_at_once(monkeypatch):
     assert "Inkscape is not installed" in private
 
 
+@pytest.mark.xfail(strict=True, reason="#638: a drawn lineup is posted ahead of the whole "
+                   "report, its division's heading inside its text-if-it-cannot-be-drawn")
 async def test_the_new_drivers_lineup_is_drawn_with_them_in_it_and_in_place_of_its_text(
     monkeypatch,
 ):
@@ -578,7 +580,10 @@ async def test_the_new_drivers_lineup_is_drawn_with_them_in_it_and_in_place_of_i
     picture is asked — with the new drivers in it, as it will be posted. With the image module
     on and the lineup picture switched on, a driver placed in Pro and none in Am: the review
     asks one picture, Pro's lineup drawn with its uncommitted drivers, carrying Pro's lineup
-    text it stands in for; the report carries Am's lineup as text and not Pro's."""
+    text it stands in for; the report carries Am's lineup as text and not Pro's. Pro keeps its
+    place: the report holds Pro's heading, "📂 **Pro** — lineup once confirmed", as a section of
+    its own, the picture follows it, Am's block comes next, and the picture's text does not repeat
+    the heading."""
     divisions = [
         SimpleNamespace(id=DIVISION_ID, name="Pro", status="ACTIVE"),
         SimpleNamespace(id=77, name="Am", status="ACTIVE"),
@@ -592,9 +597,14 @@ async def test_the_new_drivers_lineup_is_drawn_with_them_in_it_and_in_place_of_i
     (picture,) = cog.review_asked["pictures"]
     assert (picture["kind"], picture["division_id"]) == ("lineup", DIVISION_ID)
     assert picture["include_uncommitted"] is True
-    assert "**Pro** — lineup once confirmed" in picture["text"]
-    assert "**Pro** — lineup once confirmed" not in text, "the picture stands in its place"
-    assert "**Am** — lineup once confirmed" in text, "a division with no new driver stays text"
+    assert "**Alpha**: <@1001>, <@1002>" in picture["text"]
+    assert "**Pro** — lineup once confirmed" not in picture["text"], "the heading is not repeated"
+    report = cog.review_asked["report"]
+    assert report[picture["after_sections"] - 1] == "\U0001f4c2 **Pro** — lineup once confirmed"
+    assert report[picture["after_sections"]].startswith(
+        "\U0001f4c2 **Am** — lineup once confirmed"
+    ), "a division with no new driver stays text, after the picture"
+    assert "**Am** — lineup once confirmed" in text
     assert _offered(cog)
 
 
