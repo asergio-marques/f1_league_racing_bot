@@ -488,23 +488,24 @@ async def test_the_sheet_lists_the_most_points_first_then_by_name(sheet_db, monk
     reason="#598: a driver the server does not show is ordered by account number",
 )
 @pytest.mark.parametrize(
-    "occasion_name,alpha_is_fake",
+    "occasion_name,zulu_left",
     [
-        pytest.param("AFTER_ROUND", True, id="two-fake-drivers-after-a-round"),
-        pytest.param("SEASON_OPENING", True, id="two-fake-drivers-on-the-opening-sheet"),
-        pytest.param("AFTER_ROUND", False, id="a-driver-who-left-after-a-round"),
+        pytest.param("AFTER_ROUND", False, id="two-fake-drivers-after-a-round"),
+        pytest.param("SEASON_OPENING", False, id="two-fake-drivers-on-the-opening-sheet"),
+        pytest.param("AFTER_ROUND", True, id="a-driver-who-left-after-a-round"),
     ],
 )
 @pytest.mark.asyncio
 async def test_a_driver_off_the_server_is_ordered_by_the_name_the_bot_holds(
-    sheet_db, occasion_name, alpha_is_fake
+    sheet_db, occasion_name, zulu_left
 ):
-    """Division 1's textual sheet, with neither of its two drivers on the server: Zulu (111), a
-    fake driver, and Alpha (333), seated in the same team and level with Zulu on 4 points. Alpha
+    """Division 1's textual sheet, with neither of its two drivers on the server: Alpha (333), a
+    fake driver, and Zulu (111), seated in the same team and level with Alpha on 4 points. Zulu
     is a fake driver too, or a real driver who has left the server, named by their signup. The
     sheet lists Alpha before Zulu, by the name the bot holds for each (image spec, "The name of a
-    person"), and not by account number, which sorts the other way: on the opening sheet, within
-    a team, and after a round, among drivers level on points."""
+    person"), and not by account number, which sorts the other way (111 sorts before both 333 and
+    "Alpha"): on the opening sheet, within a team, and after a round, among drivers level on
+    points."""
     from types import SimpleNamespace
 
     from leaguebot.core.models.driver_names import SignupName, SignupNames
@@ -514,22 +515,22 @@ async def test_a_driver_off_the_server_is_ordered_by_the_name_the_bot_holds(
     await _seat(sheet_db, profile_id=3, user_id="333", seat=2, total=4)
     async with get_connection(sheet_db) as db:
         await db.execute(
-            "UPDATE driver_profiles SET is_test_driver = 1, test_display_name = 'Zulu' "
-            "WHERE id = 1"
+            "UPDATE driver_profiles SET is_test_driver = 1, test_display_name = 'Alpha' "
+            "WHERE id = 3"
         )
-        if alpha_is_fake:
+        if not zulu_left:
             await db.execute(
-                "UPDATE driver_profiles SET is_test_driver = 1, test_display_name = 'Alpha' "
-                "WHERE id = 3"
+                "UPDATE driver_profiles SET is_test_driver = 1, test_display_name = 'Zulu' "
+                "WHERE id = 1"
             )
         await db.commit()
 
     names_read = AwaitedHook()
-    if not alpha_is_fake:
+    if zulu_left:
 
         async def _signups(_profile_ids, _season_id):
             return SignupNames(
-                drivers={3: SignupName(name="Alpha", username=None, nationality=None)},
+                drivers={1: SignupName(name="Zulu", username=None, nationality=None)},
                 nationality_collected=True,
             )
 
