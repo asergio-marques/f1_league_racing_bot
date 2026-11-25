@@ -402,6 +402,34 @@ async def test_a_carried_table_discord_refuses_stops_the_lane_and_leaves_the_old
 
 
 @pytest.mark.xfail(strict=True, reason=NOT_CARRIED)
+async def test_a_carry_whose_new_channel_has_gone_stops_the_lane(tmp_path):
+    """The league's lane is stopped at a job of another change. Admin moves Pro's results channel
+    from 700 to 703: the setting runs past the stop and saves 703, and its carry waits behind the
+    stop. Meanwhile channel 703 is deleted from the server. Once the stop is retried and the queue
+    moves, the carry is refused at its check, stopping the league's lane at the carry: it is
+    neither done nor dropped, nothing is deleted from 700, the old table 8800 still stands there
+    and the session still records it, and 703 stays saved."""
+    league = await _league(tmp_path)
+    holder = await block_queue(league)
+    await _move(league, "results")
+    await run_queue(league.bot)
+    assert await _carries(league)
+    del league.channels[NEW_RESULTS]
+
+    holder["fail"] = False
+    await retry_job(league.bot)
+
+    [carry] = await _carries(league)
+    assert carry["state"] not in ("DONE", "DROPPED"), carry
+    job = await stopped_job(league.db_path)
+    assert job is not None and job["change_id"] == carry["id"], job
+    assert await _held(league, "results") == NEW_RESULTS
+    assert OLD_RESULTS in league.channel(RESULTS_CHANNEL).messages
+    assert await _results_id(league, ROUND_ID) == OLD_RESULTS
+    assert league.deleted_in(RESULTS_CHANNEL) == []
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_CARRIED)
 async def test_a_discarded_carried_table_ends_the_carry_incomplete(tmp_path):
     """Discord refuses every post in 703, so the carry stops at round 3's table, and a league
     admin discards it. The carry's line is Incomplete: it says round 3's Feature Race results
