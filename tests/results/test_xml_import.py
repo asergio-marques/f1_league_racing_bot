@@ -331,7 +331,6 @@ def test_validate_monotonic_pass(payload):
             SessionType.SPRINT_RACE,
             {1: 8, 2: 8},
             ["Config 'Test', Sprint Race: position 1 (8 pts) = position 2 (8 pts)"],
-            marks=pytest.mark.xfail(strict=True, reason="#669: a tie reads as <, not ="),
         ),
         (
             SessionType.FEATURE_RACE,

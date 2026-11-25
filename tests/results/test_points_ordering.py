@@ -68,9 +68,6 @@ def test_an_empty_table_has_no_violations():
     assert ordering_violations([]) == []
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#669: no shared wording for a violation, and a tie reads as <"
-)
 @pytest.mark.parametrize(
     ("violation", "expected"),
     [
