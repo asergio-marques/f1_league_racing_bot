@@ -412,10 +412,11 @@ def format_race_table(
 def format_gap_to_leader(gap: int, *, is_leader: bool) -> str:
     """The points separating an entry from the leader, with a leading minus.
 
-    Empty for the leader itself: there is no gap to draw, and XIV.3 has the graphic empty a
-    field rather than draw a placeholder where a value does not apply.
+    Empty for the leader itself and for any entry level on points with it: a zero gap is no
+    gap to draw, and XIV.3 has the graphic empty a field rather than draw a placeholder where
+    a value does not apply.
     """
-    if is_leader:
+    if is_leader or gap == 0:
         return ""
     return f"-{gap}"
 

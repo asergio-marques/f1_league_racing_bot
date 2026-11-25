@@ -321,9 +321,12 @@ def test_a_determined_movement_fills_its_three_fields():
 
 
 def test_the_leaders_gap_is_empty():
-    spec = build_fill_spec(_drawing([_entry(1)]), _template(2))
+    spec = build_fill_spec(_drawing([_entry(1), _entry(2, gap_to_leader=0)]), _template(2))
     assert "row_1_gap_to_leader" not in spec.text
     assert "row_1_gap_to_leader" in spec.empty_quietly
+    # An entry level on points with the leader has no gap to draw either.
+    assert "row_2_gap_to_leader" not in spec.text
+    assert "row_2_gap_to_leader" in spec.empty_quietly
 
 
 def test_an_absent_movement_removes_the_block_whole():
