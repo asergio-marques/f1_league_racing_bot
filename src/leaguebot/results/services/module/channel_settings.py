@@ -107,6 +107,9 @@ CHANNEL_CARRY = "results.channel.carry"
 
 NOT_ENABLED = "❌ The Results & Standings module is not enabled."
 
+#: The sync command that moves each kind of post, named where the step that asks the carry faults.
+_SYNCS = {"results": "/results rounds sync", "standings": "/results standings sync"}
+
 
 def carry_what(payload: dict[str, Any]) -> str:
     """What the carry of *payload* is called in the log: the posts, the division and both channels."""
@@ -271,7 +274,9 @@ def _channel_setting(
         )
 
     def carry_fault_reply(_payload: dict[str, Any], reply: str) -> str:
-        return reply
+        # The step reads the server and the database before it asks, so it can fail, and then no
+        # carry is asked: the reply says what was not done and the sync that does it.
+        return f"{reply} The {posts} already up were not moved: run `{_SYNCS[key]}` to move them."
 
     return Setting(
         kind=kind,
