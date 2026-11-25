@@ -620,8 +620,6 @@ POSTED_IN_EXEMPT = {
 _MESSAGE_ID_COLUMN = re.compile(r"(message|msg)_ids?$")
 
 
-@pytest.mark.xfail(strict=True, reason="#645: results tables, standings, classifications and "
-                   "signup posts keep no channel beside their message id")
 async def test_every_posted_message_id_keeps_the_channel_it_was_posted_in(db_path):
     """Every column of the built schema keeping a posted message's id is named in `POSTED_IN`
     with a channel column the schema has, or in `POSTED_IN_EXEMPT` with its reason; an entry of

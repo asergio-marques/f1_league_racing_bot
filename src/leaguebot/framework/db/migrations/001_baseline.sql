@@ -213,6 +213,10 @@ CREATE TABLE session_results (
     -- recorded; the posting is then deleted by results_message_id alone, and nothing
     -- guesses at the messages after it.
     results_message_ids TEXT,
+    -- results_message_channel_id: the channel the posting was made in, so that a results channel
+    -- moved afterwards never sends its deletion to the wrong one. NULL where none was recorded;
+    -- the present results channel is then taken.
+    results_message_channel_id INTEGER,
     UNIQUE (round_id, session_type)
 );
 
@@ -247,7 +251,10 @@ CREATE TABLE round_standings_posts (
     standings_message_id              INTEGER,
     constructor_standings_message_id  INTEGER,
     standings_message_ids             TEXT,
-    constructor_standings_message_ids TEXT
+    constructor_standings_message_ids TEXT,
+    -- The channel each championship was posted in, as session_results' above.
+    standings_message_channel_id             INTEGER,
+    constructor_standings_message_channel_id INTEGER
 );
 
 -- classification_posts: the opening and final classifications a division's standings channel was
@@ -265,6 +272,8 @@ CREATE TABLE classification_posts (
     constructor_standings_message_id  INTEGER,
     standings_message_ids             TEXT,
     constructor_standings_message_ids TEXT,
+    standings_message_channel_id             INTEGER,
+    constructor_standings_message_channel_id INTEGER,
     PRIMARY KEY (division_id, occasion)
 );
 
@@ -768,7 +777,12 @@ CREATE TABLE "signup_module_config" (
     signup_button_message_id    INTEGER,
     selected_tracks_json        TEXT    NOT NULL DEFAULT '[]',
     signup_closed_message_id    INTEGER,
-    close_at                    TEXT
+    close_at                    TEXT,
+    -- The channel each of the two posts was made in, so that a signup channel moved afterwards
+    -- never sends a deletion to the wrong one. NULL where none was recorded; the present signup
+    -- channel is then taken.
+    signup_button_message_channel_id INTEGER,
+    signup_closed_message_channel_id INTEGER
 );
 
 -- signup_wizard_records
