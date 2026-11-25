@@ -635,8 +635,9 @@ def window_close_jobs(
     """The jobs that close the signup window once a close nobody ran has returned its drivers:
     the Sign Up button's deletion where one stands, from *button_channel_id*, the channel it was
     posted in (the signup channel where none is recorded), then the "Signups are now closed" post
-    in the signup channel, *channel_id*, whose record closes the window. *cause* is a key of `CLOSE_CAUSES`, *returned*
-    how many drivers the close returned, for the line the post's record writes."""
+    in the signup channel, *channel_id*, whose record closes the window. *cause* is a key of
+    `CLOSE_CAUSES`, *returned* how many drivers the close returned, for the line the post's record
+    writes."""
     audit_action, head = CLOSE_CAUSES[cause]
     planned: list[PlannedStep] = []
     if button_message_id is not None and channel_id is not None:

@@ -173,9 +173,8 @@ def window_open_change(
     close time or None), and ``channel_id``, ``closed_message_id`` and ``closed_channel_id`` (the
     signup channel, the "signups closed" notice and the channel that notice was posted in, each or
     None; the notice is taken down from there, the signup channel since replaced or not).
-    *arm_once* arms the close
-    timer (`window_close.CLOSE_TIMER`) at the close time, and *queue* is the change queue the Sign
-    Up button is handed.
+    *arm_once* arms the close timer (`window_close.CLOSE_TIMER`) at the close time, and *queue* is
+    the change queue the Sign Up button is handed.
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -413,10 +412,11 @@ def planned_by_a_member_s_close(
     button_channel_id: int | None, returned: Sequence[tuple[str, int | None]],
 ) -> tuple[PlannedStep, ...]:
     """The jobs after the return of a close the queue was asked for: the Sign Up button's
-    deletion, from the channel it was posted in (*button_channel_id*, the signup channel where none
-    is recorded), and the "Signups are now closed" post in the present signup channel (whose record
-    closes the window and moves the season on), then for each driver whose wizard held a channel their notice, lock and deletion's
-    arming. The payload's ``audit_action`` is what the close is audited under."""
+    deletion, from the channel it was posted in (*button_channel_id*, the signup channel where
+    none is recorded), and the "Signups are now closed" post in the present signup channel (whose
+    record closes the window and moves the season on), then for each driver whose wizard held a
+    channel their notice, lock and deletion's arming. The payload's ``audit_action`` is what the
+    close is audited under."""
     planned: list[PlannedStep] = []
     if button_id is not None and channel_id is not None:
         planned.append(PlannedStep(DELETE_BUTTON, {
