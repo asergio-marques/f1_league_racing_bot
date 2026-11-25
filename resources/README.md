@@ -41,7 +41,7 @@ then point the bot at it.
 **Drop a file in and it is drawn.** There is nothing to configure:
 
 ```
-resources/league/teams/red_bull_racing.svg
+resources/league/teams/red_bull.svg
 ```
 
 **Mixing is the ordinary case, and it is now the default.** Fill `teams` and `drivers` with
@@ -157,12 +157,14 @@ The bot takes the value it wants to draw, normalises it, and appends `.svg`:
 > trim → lowercase → strip accents → every run of non-alphanumeric characters becomes a
 > single underscore → drop leading and trailing underscores
 
-So `Red Bull Racing` is looked up as `red_bull_racing.svg` in whichever directory the team
-badge class points at, and `São Paulo` as `sao_paulo.svg` in the track directory. A name may
-begin with a digit: `2Fast Motorsport` is looked up as `2fast_motorsport.svg`. Driver portraits are the one exception: they are keyed on the
-Discord user ID. The ID is immutable, where both a Discord username and the display name an
-account carries on your server can be changed by the driver at any moment — a portrait keyed
-on either would go missing the day they changed it, so neither is worth keying on.
+So a team whose shorthand is `Red Bull` is looked up as `red_bull.svg` in whichever directory
+the team badge class points at — a team's badge is keyed on its shorthand, never its full
+name — and `São Paulo` as `sao_paulo.svg` in the track directory. A name may begin with a
+digit: the shorthand `2 Fast` is looked up as `2_fast.svg`. Driver portraits are the one
+exception: they are keyed on the Discord user ID. The ID is immutable, where both a Discord
+username and the display name an account carries on your server can be changed by the driver
+at any moment — a portrait keyed on either would go missing the day they changed it, so
+neither is worth keying on.
 
 **The bot can fill `league/drivers/` for you.** `/images use-pfp toggle` lets it obtain each
 driver's portrait from the profile picture they present on your server, saving it under that
