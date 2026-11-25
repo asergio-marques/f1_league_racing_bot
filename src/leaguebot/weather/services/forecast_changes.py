@@ -81,7 +81,9 @@ from leaguebot.core.services.test_mode.test_mode_service import (
     test_mode_on,
 )
 from leaguebot.weather.models.forecast import Drawn, PhaseResultStatus
-from leaguebot.weather.models.forecast_kinds import FORECAST, FORECAST_CLEAN_UP, forecasts_named
+from leaguebot.weather.models.forecast_kinds import (
+    CLEAN_UP_PHASES, FORECAST, FORECAST_CLEAN_UP, forecasts_named,
+)
 from leaguebot.weather.services import (
     forecast_cleanup_service,
     mystery_notice_service,
@@ -619,11 +621,6 @@ async def ask_forecast(
     }
     change = await queue.ask(FORECAST, payload, what=_doing(payload), origin=ChangeOrigin.BOT)
     return ForecastAsked(phase, change)
-
-
-#: The phases whose forecasts a clean-up deletes: whichever of them still stands a day after the
-#: race. A mystery round's notice (phase 0) is no forecast, and stands.
-CLEAN_UP_PHASES = [1, 2, 3]
 
 
 def _clean_up_doing(payload: dict[str, Any]) -> str:
