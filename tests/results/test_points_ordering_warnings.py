@@ -192,15 +192,28 @@ async def test_warnings_are_silent_on_a_table_running_down(db_path):
 
 
 @pytest.mark.asyncio
-async def test_warnings_name_a_lower_position_worth_more(db_path):
-    await _set(db_path, 1, 10)
-    await _set(db_path, 2, 25)
+@pytest.mark.parametrize(
+    ("first", "second", "expected"),
+    [
+        (10, 25, "position 1 (10 pts) < position 2 (25 pts)"),
+        pytest.param(
+            25,
+            25,
+            "position 1 (25 pts) = position 2 (25 pts)",
+        ),
+    ],
+    ids=["rise", "tie"],
+)
+async def test_warnings_name_a_lower_position_worth_more(db_path, first, second, expected):
+    """A lower position worth more is warned about as `<`; one worth the same, as `=`."""
+    await _set(db_path, 1, first)
+    await _set(db_path, 2, second)
 
     warnings = await points_config_service.ordering_warnings(
         db_path, CONFIG, SessionType.FEATURE_RACE
     )
 
-    assert warnings == ["position 1 (10 pts) < position 2 (25 pts)"]
+    assert warnings == [expected]
 
 
 @pytest.mark.asyncio
@@ -354,20 +367,33 @@ async def test_a_bulk_paste_that_applies_nothing_is_not_warned_about(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-async def test_amend_session_warns_and_still_stages_the_change(tmp_path):
-    """The season holds 25 and 18 in amendment mode; Admin stages P2 at 30: once the change has
-    run it is staged, with the warning naming the refusal that is coming."""
+@pytest.mark.parametrize(
+    ("points", "comparison"),
+    [
+        (30, "position 1 (25 pts) < position 2 (30 pts)"),
+        pytest.param(
+            25,
+            "position 1 (25 pts) = position 2 (25 pts)",
+        ),
+    ],
+    ids=["rise", "tie"],
+)
+async def test_amend_session_warns_and_still_stages_the_change(tmp_path, points, comparison):
+    """The season holds 25 and 18 in amendment mode; Admin stages P2 at 30 (a rise) or at 25 (a
+    tie): once the change has run it is staged, with the warning naming the two positions — `<`
+    for a rise, `=` for a tie — and the refusal that is coming."""
     league = await _league(tmp_path)
 
     asked = await _command(
-        league, "amend_session", "results amend session", CONFIG, RACE, 2, 30
+        league, "amend_session", "results amend session", CONFIG, RACE, 2, points
     )
 
     replies = _replies(asked)
     assert "✅ Updated in modification store" in replies, "the edit is staged, not refused"
     assert "out of order" in replies
+    assert comparison in replies
     assert "amendment cannot be approved" in replies, "and it names the refusal that is coming"
-    assert (await _table("amend", league.db_path))[2] == 30
+    assert (await _table("amend", league.db_path))[2] == points
 
 
 async def test_amend_session_says_nothing_extra_about_a_clean_change(tmp_path):

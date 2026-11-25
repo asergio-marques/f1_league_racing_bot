@@ -17,7 +17,7 @@ from leaguebot.results.models.points_config import (
     PointsConfigStore,
     SessionType,
 )
-from leaguebot.results.utils.points_ordering import ordering_violations
+from leaguebot.results.utils.points_ordering import ordering_comparison, ordering_violations
 
 log = logging.getLogger(__name__)
 
@@ -261,10 +261,8 @@ async def ordering_warnings_on(
     )
     rows = await cursor.fetchall()
     return [
-        f"position {position} ({points} pts) < position {next_position} ({next_points} pts)"
-        for position, points, next_position, next_points in ordering_violations(
-            [(r["position"], r["points"]) for r in rows]
-        )
+        ordering_comparison(violation)
+        for violation in ordering_violations([(r["position"], r["points"]) for r in rows])
     ]
 
 

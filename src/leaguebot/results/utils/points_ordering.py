@@ -2,8 +2,9 @@
 
 One rule, held in one place, because it is asked in four different rooms — when a
 config is edited, when a season is approved, when a mid-season amendment is approved,
-and when an XML payload is imported. Each caller phrases the answer for the reader it
-is speaking to, so this returns the violations themselves rather than sentences.
+and when an XML payload is imported. This returns the violations themselves rather than
+sentences; ``ordering_comparison`` words the pair at fault, so every caller that names one
+(every refusal, and the two warnings an edit raises) reads it the same way.
 
 It lives in ``utils`` rather than in either service that needs it:
 ``season_points_service`` already imports ``points_config_service``, so a helper in
@@ -51,6 +52,22 @@ def ordering_violations(entries: Sequence[tuple[int, int]]) -> list[Violation]:
     ]
 
 
+def ordering_comparison(violation: Violation) -> str:
+    """The pair at fault, as a league reads it, in one of two forms.
+
+    ``position 1 (10 pts) < position 2 (25 pts)`` where the lower position is worth more,
+    and ``position 1 (25 pts) = position 2 (25 pts)`` where the two are worth the same: a
+    tie is refused by the rule too, but it is not one position worth less than the other,
+    so it is never worded as one.
+    """
+    position, points, next_position, next_points = violation
+    operator = "=" if points == next_points else "<"
+    return (
+        f"position {position} ({points} pts) {operator} "
+        f"position {next_position} ({next_points} pts)"
+    )
+
+
 def ordering_message(config_name: str, session_type: str, violation: Violation) -> str:
     """The one sentence a league reads when a points table is out of order.
 
@@ -59,11 +76,10 @@ def ordering_message(config_name: str, session_type: str, violation: Violation) 
     all describe the same fault in the same words, naming the session as a league reads it
     ("Feature Race"), not as it is stored. A manager who has read one has read all four.
     (A config edit words its notice through `ordering_notice`, which names the session
-    the same way.)
+    the same way.) The pair at fault is worded by `ordering_comparison`, which the two
+    edit-time warnings (`ordering_warnings_on`, `modification_ordering_warnings_on`) share.
     """
-    position, points, next_position, next_points = violation
     return (
         f"Config '{config_name}', {SessionType(session_type).label()}: "
-        f"position {position} ({points} pts) < "
-        f"position {next_position} ({next_points} pts)"
+        f"{ordering_comparison(violation)}"
     )
