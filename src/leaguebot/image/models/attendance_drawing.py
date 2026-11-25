@@ -257,7 +257,8 @@ def resolve_drawing(
     *records* are the drivers the textual sheet composes — every non-reserve driver of the
     division, every reserve distributed into a seat for the round, and every driver sanctioned
     upon this posting. Composing them is the caller's, as it is the textual sheet's; a driver
-    sacked at an earlier round holds no seat and never reaches here.
+    sacked or moved to Reserve at an earlier round keeps their row (#220), their team being the
+    seat they hold now: the reserve team, or none.
 
     The rows are drawn in the order *records* are handed, ordinals ``1..n``. That order is
     attendance's, the textual sheet's for the occasion, and the drawing never re-orders it: an
