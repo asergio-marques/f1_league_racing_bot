@@ -172,11 +172,12 @@ def _channel_setting(
 ) -> Setting:
     """The setting of the *key* channel (the channel registry's key and the word the command and
     its replies use), *held_column* the column holding it where the setting moves posts that stand
-    in it (results, standings) and None where it carries none (verdicts), *write* its column's upsert, *audit* the entry of the channel moving from
-    one to another in a division, *said* the reply's words for a verb, the division as typed, the
-    channel's id and its name. *channel_uses_read* is core's hook that names the module holding a
-    channel, and *drawing* the image module's, which says whether the channel's graphic could be a
-    picture attaching a file."""
+    in it (results, standings) and None where it carries none (verdicts), *write* its column's
+    upsert, *audit* the entry of the channel moving from one to another in a division, *said* the
+    reply's words for a verb, the division as typed, the channel's id and its name.
+    *channel_uses_read* is core's hook that names the module holding a channel, and *drawing* the
+    image module's, which says whether the channel's graphic could be a picture attaching a
+    file."""
 
     async def check(ctx: CheckContext) -> Verdict:
         payload = ctx.payload
@@ -279,7 +280,8 @@ def _channel_setting(
             "new_channel_id": int(ctx.payload["value"]),
         }
         return StepResult(
-            result={"carrying": True}, follow_ons=(FollowOn(CHANNEL_CARRY, carry, carry_what(carry)),)
+            result={"carrying": True},
+            follow_ons=(FollowOn(CHANNEL_CARRY, carry, carry_what(carry)),),
         )
 
     def carry_fault_reply(_payload: dict[str, Any], reply: str) -> str:
@@ -378,14 +380,16 @@ def results_channel_settings(
     through *channel_uses_read*, and whether a graphic could be a picture through *drawing*."""
     return (
         _channel_setting(
-            kind=RESULTS_CHANNEL, key="results", held_column="results_channel_id", said=_mentioned("Results"),
+            kind=RESULTS_CHANNEL, key="results", held_column="results_channel_id",
+            said=_mentioned("Results"),
             write=set_division_results_channel, not_found=division_not_found,
             audit=typed_channel_audit("results"), modules=modules,
             seasons=seasons,
             channel_uses_read=channel_uses_read, drawing=drawing,
         ),
         _channel_setting(
-            kind=STANDINGS_CHANNEL, key="standings", held_column="standings_channel_id", said=_mentioned("Standings"),
+            kind=STANDINGS_CHANNEL, key="standings", held_column="standings_channel_id",
+            said=_mentioned("Standings"),
             write=set_division_standings_channel, not_found=division_not_found,
             audit=typed_channel_audit("standings"), modules=modules,
             seasons=seasons,
@@ -402,7 +406,8 @@ def results_channel_settings(
 
 
 __all__ = [
-    "ASK_CARRY", "CHANNEL_CARRY", "carry_what", "held_channel", "NOT_ENABLED", "RESULTS_CHANNEL", "STANDINGS_CHANNEL", "VERDICTS_CHANNEL",
+    "ASK_CARRY", "CHANNEL_CARRY", "carry_what", "held_channel", "NOT_ENABLED",
+    "RESULTS_CHANNEL", "STANDINGS_CHANNEL", "VERDICTS_CHANNEL",
     "results_channel_settings", "typed_channel_audit", "verdicts_channel_audit",
     "verdicts_division_not_found",
 ]

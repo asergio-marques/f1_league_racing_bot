@@ -2,12 +2,13 @@
 
 `/results channel results` and `standings` save the new channel as any setting does, never holding
 up the queue, and ask this change as the bot's own follow-on where the channel the posts stand in
-still stands (`channel_settings._where_posts_stand`). The carry is a change of its own on the league
-lane, so it waits behind any stopped job as a sync does, and it posts as a sync does: `plan_division_posts` plans
-every round's tables (the results carry) or standings (the standings carry), each posted in the new
-channel and its old message then deleted from the old one, the table that Discord refuses stopping
-the lane. Its scope is what the syncs repost. The payload is `{"division_id", "division_name",
-"which", "old_channel_id", "new_channel_id"}`, `which` being "results" or "standings".
+still stands (`channel_settings._where_posts_stand`). The carry is a change of its own on the
+league lane, so it waits behind any stopped job as a sync does, and it posts as a sync does:
+`plan_division_posts` plans every round's tables (the results carry) or standings (the standings
+carry), each posted in the new channel and its old message then deleted from the old one, the
+table that Discord refuses stopping the lane. Its scope is what the syncs repost. The payload is
+`{"division_id", "division_name", "which", "old_channel_id", "new_channel_id"}`, `which` being
+"results" or "standings".
 
 **Whether the carry is still due is judged as it starts, never at the ask**, for a change ahead of
 it may have switched results off, opened an amendment, ended the season's racing or moved the
@@ -199,7 +200,9 @@ def channel_move_change(
             f"  to: <#{ctx.payload['new_channel_id']}>",
             *(f"  {each}" for each in left),
         ))
-        return StepResult(result={"closed": True}, lines=(review_posting.with_drawn_notices(ctx, line),))
+        return StepResult(
+            result={"closed": True}, lines=(review_posting.with_drawn_notices(ctx, line),)
+        )
 
     async def describe_note(_ctx: StepContext) -> str:
         return "noting the channel the posts stand in"
