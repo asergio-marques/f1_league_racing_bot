@@ -761,6 +761,44 @@ async def test_a_second_press_while_one_is_being_worked_is_refused(
     assert " refused for Alex (<@4242>) — " in refusals[0], refusals
 
 
+@pytest.mark.xfail(strict=True, reason="#622: a press during a take-down is refused as another press")
+@pytest.mark.parametrize("kind,label,review,helper,verb", _BUTTONS)
+async def test_a_press_while_the_review_is_being_taken_down_is_refused_as_such(
+    tmp_path, monkeypatch, kind, label, review, helper, verb
+):
+    """Alex's review stands in channel 700, its question Q posted a moment ago and well inside its
+    five minutes, the season as the review described it. The bot has asked the queue to take the
+    review down, as it does after a restart, and the queue has not yet run, so Q is still up.
+    Nobody else has pressed. Alex presses his button.
+
+    He is refused, privately, told the review is being taken down, not that another press is
+    answering it: nothing has been approved (or confirmed) by this press, and where it was not,
+    he is to run the review's command again. The workflow is not run, and the log holds exactly
+    one refusal line, naming the take-down as its reason."""
+    from leaguebot.core.services.seasons.season_review_changes import RESTART, take_review_down
+    from tests.support.change_queue import acknowledgement
+
+    env = await _standing(tmp_path, review)
+    await _season_since_the_review(env, monkeypatch)
+    view, workflows = _view_on(env, kind, helper, monkeypatch)
+    await take_review_down(env.bot.change_queue, env.db_path, env.channel.q.id, RESTART)
+    interaction = _press_on(env)
+
+    await type(view).approve(view, interaction, MagicMock())
+
+    getattr(workflows, helper).assert_not_awaited()
+    reply = acknowledgement(interaction)
+    assert "being taken down" in reply, reply
+    assert f"Nothing has been {verb}" in reply, reply
+    assert f"`{review}`" in reply, reply
+    assert "already being answered" not in reply, reply
+    _answered_privately(interaction)
+    [line] = _lines(env, "⛔ ")
+    refused, _, reason = line.partition(" refused for Alex (<@4242>) — ")
+    assert label in refused and review in refused, line
+    assert "the review was being taken down" in reason, line
+
+
 @pytest.mark.parametrize("kind,label,review,helper,verb", _BUTTONS)
 async def test_a_review_expired_twice_at_once_posts_one_notice(
     tmp_path, kind, label, review, helper, verb
