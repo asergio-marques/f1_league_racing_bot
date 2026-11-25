@@ -15,7 +15,10 @@ is posted. Its jobs are three:
   message stands, so that the channel always shows one or the other.
 
 The command reads the close time and the tracks it was given, which are its own input, and the
-signup channel and the notice standing in it, which the plan of the jobs reads from the payload.
+notice standing in the signup channel, which the plan of the jobs reads from the payload. The
+signup channel itself is read by `post_info` as it runs, never taken from the payload: a
+`/signup channel` run ahead of it on the queue, or run to repair a post Discord refused before
+a Retry, is where the information is posted, the window recorded and the reply points.
 
 `signup.close` closes it again, for `/signup close` (and its Confirm Close), the close timer and
 the restart past the close time. Its jobs, in order, are:
@@ -172,8 +175,11 @@ def window_open_change(
 
     The payload is ``track_ids`` (the tracks chosen, ids as text), ``close_at`` (the normalised
     close time or None), and ``channel_id``, ``closed_message_id`` and ``closed_channel_id`` (the
-    signup channel, the "signups closed" notice and the channel that notice was posted in, each or
-    None; the notice is taken down from there, the signup channel since replaced or not).
+    signup channel when the change was asked, the "signups closed" notice and the channel that
+    notice was posted in, each or None; the notice is taken down from there, the signup channel
+    since replaced or not). ``channel_id`` only stands in for a notice that kept no channel and
+    names the channel in a reply whose post kept none: ``post_info`` posts in the signup channel
+    as it stands when the job runs.
     *arm_once* arms the close timer (`window_close.CLOSE_TIMER`) at the close time, and *queue* is
     the change queue the Sign Up button is handed.
     """
