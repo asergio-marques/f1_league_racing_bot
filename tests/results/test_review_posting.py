@@ -452,7 +452,6 @@ async def test_a_replacement_is_posted_before_the_old_message_is_deleted(
     assert notified(sent.kwargs.get("allowed_mentions")) == USERS_ONLY
 
 
-@pytest.mark.xfail(strict=True, reason="#645: a results table keeps no channel it was posted in")
 async def test_the_new_message_id_is_saved_with_the_post(tmp_path):
     """The new table's ids are saved with the post, and the channel it was posted in (700) beside
     them, before the old table's delete has run."""

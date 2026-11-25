@@ -891,13 +891,15 @@ async def _round_format(db_path: str, round_id: int) -> str:
 async def _record_session_post(
     db: aiosqlite.Connection, ctx: StepContext, result: StepResult
 ) -> None:
-    """Save the new ids on the session, with the job's mark, a picture's as a text table's."""
+    """Save the new ids on the session, and the channel they were posted in, with the job's mark,
+    a picture's as a text table's."""
     new = result.result.get("new") or []
     if not new:
         return
     await db.execute(
-        "UPDATE session_results SET results_message_id = ?, results_message_ids = ? WHERE id = ?",
-        (new[0], json.dumps(new), ctx.step_payload["session_id"]),
+        "UPDATE session_results SET results_message_id = ?, results_message_ids = ?, "
+        "results_message_channel_id = ? WHERE id = ?",
+        (new[0], json.dumps(new), result.result["channel_id"], ctx.step_payload["session_id"]),
     )
 
 
