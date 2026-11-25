@@ -684,3 +684,97 @@ async def test_a_classification_drawn_without_inkscape_says_the_host_must_instal
             f"{absent} To put it right: Inkscape is not installed on the machine running the bot, "
             f"and the host must install it; no command posts the {word} again, and the text stands"
         ), line
+
+
+#: What each occasion's job lines name the change by: the approval's button, or the completion.
+_ASKED_BY = {
+    ClassificationOccasion.SEASON_OPENING: "the ✅ Approve button of `/season placements-review`",
+    ClassificationOccasion.SEASON_FINAL: "/season complete",
+}
+
+
+@pytest.mark.parametrize("occasion, job, word", _OCCASIONS)
+@pytest.mark.xfail(
+    strict=True,
+    reason="#635: a classification's notices reach the log as a bare block, the member and the "
+           "change unnamed, and its job keeps nothing of them for the reply",
+)
+async def test_a_classification_s_notices_open_with_member_and_change_and_are_kept_for_the_reply(
+    tmp_path, monkeypatch, occasion, job, word,  # noqa: ARG001 — word is the other tests'
+):
+    """Images and results on, the standings aspect on and its templates sound. Season 3 is
+    approved (the opening classification) or completed (the final one), and every championship
+    picture of Pro and Am draws as a PNG with one font substituted, a font of its own. Each
+    division's job writes one log line holding both its pictures' notices: each picture's block
+    opens with the member and the change ("| the ✅ Approve button of `/season placements-review`
+    |" or "| /season complete |"), then "Image render notices — <picture>:" naming the division and the championship, and
+    beneath it the notice grouped under "Font substituted", naming its field, every font once.
+    The job keeps each picture's name and its grouped notices on its result, for the change's
+    reply to list (issue #635; Constitution V; image spec, Errors and the rejection of input)."""
+    from types import SimpleNamespace
+
+    from leaguebot.framework.models.change import RESULT_DRAWN, RESULT_NOTICES, RESULT_PICTURES
+    from leaguebot.image.models.image_module import RenderNotice
+    from leaguebot.image.services.aspects import image_standings_post
+    from tests.support.change_queue import step_rows
+    from tests.support.season_league import standings_pictures_are_due
+
+    if occasion is ClassificationOccasion.SEASON_OPENING:
+        league = await season_league(tmp_path, monkeypatch=monkeypatch, results=True, images=True)
+    else:
+        league = await pending_completion_league(tmp_path, images=True)
+    league.bot.image_config_service.is_aspect_enabled = AsyncMock(return_value=True)
+    standings_pictures_are_due(monkeypatch)
+    fonts: list[str] = []
+
+    async def _drawn(*_args, **_kwargs):
+        fonts.append(f"Font{len(fonts) + 1}")
+        png = tmp_path / f"standings_{len(fonts)}.png"
+        png.write_bytes(b"\x89PNG\r\n\x1a\n")
+        notice = RenderNotice(
+            image_type="standings", notice_kind="FONT_SUBSTITUTED", field_id="driver_name_1",
+            detail=f"{fonts[-1]} was unavailable, so a substitute was drawn",
+        )
+        return SimpleNamespace(notices=[notice], problem=None, posts_image=True, png_paths=[png])
+
+    monkeypatch.setattr(image_standings_post, "render_png", _drawn)
+    if occasion is ClassificationOccasion.SEASON_OPENING:
+        await press_approve(league)
+    else:
+        await complete_season(league)
+
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert len(fonts) == 2 * len(DIVISIONS), fonts
+    opening = f" | {_ASKED_BY[occasion]} | Image render notices — "
+    kept = [row["result"] for row in await step_rows(league.db_path) if row["name"] == job]
+    assert len(kept) == len(DIVISIONS), kept
+    pictures = {
+        each[RESULT_DRAWN]: tuple(each[RESULT_NOTICES])
+        for result in kept for each in result[RESULT_PICTURES]
+    }
+    assert len(pictures) == len(fonts), pictures
+    for name, *_rest in DIVISIONS.values():
+        labels = {
+            championship: [label for label in pictures
+                           if f" {name} " in f" {label} " and championship in label]
+            for championship in ("drivers", "constructors")
+        }
+        assert all(len(found) == 1 for found in labels.values()), (name, pictures)
+        blocks = [
+            f"{opening}{label}:\n" + "\n".join(pictures[label])
+            for [label] in labels.values()
+        ]
+        held = [line for line in league.bot.log_channel.sent if blocks[0] in line]
+        assert len(held) == 1, (blocks[0], league.bot.log_channel.sent)
+        assert blocks[1] in held[0], held[0]
+        assert "<@77>" in held[0].split(" | ", 1)[0], held[0]
+    for notices in pictures.values():
+        assert notices[0] == "  Font substituted", pictures
+        [font] = [font for font in fonts if f"`driver_name_1` — {font} was" in notices[1]]
+        assert notices[1:] == (
+            f"    • `driver_name_1` — {font} was unavailable, so a substitute was drawn",
+        ), pictures
+    every = "\n".join(league.bot.log_channel.sent)
+    assert all(every.count(font + " ") == 1 for font in fonts), every
