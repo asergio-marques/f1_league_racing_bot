@@ -5,8 +5,8 @@ function up to `LeagueBot.review_sections_read`; at the moment a review gathers 
 makes one call, handing every subscriber which review is gathered, the season and the divisions
 the review shows, and `read_review_sections` returns what they hand back: each module's section
 (`ReviewSection`) or nothing, in the order the modules signed up. That order is the order the
-review lays the sections out in, so the builder's order is the review's, and core sorts by no
-module's name.
+review lays the sections out in, so the builder's order is the review's, and core sorts the
+sections by no module's name.
 
 Each subscriber reads its own module's switch and decides what it hands back while its module is
 off, so core never asks whether a module is on before asking for its section: most hand nothing,
