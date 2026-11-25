@@ -25,9 +25,6 @@ TRACKS = {
 }
 TEMPLATES = Path(__file__).resolve().parents[2] / "resources" / "defaults" / "templates"
 
-#: Why a drawing's notices fail until they come back grouped by kind, repeats counted.
-NOT_YET_GROUPED = "#635: a drawing hands back each notice's words, one apiece"
-
 
 def _rounds(count=2):
     return [

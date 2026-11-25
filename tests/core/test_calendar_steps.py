@@ -502,11 +502,6 @@ async def test_a_calendar_whose_drawing_fails_says_what_puts_it_right_by_where_t
         assert sum(each.startswith(line) for each in logged) == 1, logged
 
 
-#: Why the calendar's notice tests fail until the job carries the drawing's grouped notices as
-#: they came.
-NOT_YET_GROUPED = "#635: the calendar job bullets each of the drawing's grouped lines again"
-
-
 def _notices_told(league: Any) -> str:
     """The "Image notices" section a reply ends in for Pro's calendar drawn with `NOTICE`, grouped
     as the drawing hands it back: Pro's calendar labelled as its log line names it, linked to the

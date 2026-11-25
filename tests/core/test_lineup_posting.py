@@ -514,11 +514,6 @@ async def _placements_confirmed(tmp_path: Any, monkeypatch: Any, drawing: Any) -
     return league, press
 
 
-#: Why the lineup's notice tests fail until the job carries the drawing's grouped notices as
-#: they came.
-NOT_YET_GROUPED = "#635: the lineup job bullets each of the drawing's grouped lines again"
-
-
 async def test_a_drawn_lineup_s_notices_reach_the_log_once_in_its_posting_job(
     tmp_path, monkeypatch,
 ):

@@ -434,6 +434,20 @@ def _notices_index(kept: DrawnKept, notices: tuple[str, ...]) -> int | None:
     return len(kept.lines) if notices else None
 
 
+def lineup_step_result(
+    ctx: StepContext, kept: DrawnKept, result: dict[str, Any], *, then: tuple[PlannedStep, ...],
+) -> StepResult:
+    """What a job that posted a lineup hands back for *result*, its post (`posted_result`): the
+    lines the tries before kept (*kept*, `drawn_kept`) and this one's (`fallen_back_to_text_line`),
+    the index of the one holding the picture's notices, and *then*, the jobs planned after the
+    post. The reply lists the notices of every try, while the log line holds this try's alone."""
+    lines = kept.lines + fallen_back_to_text_line(ctx, result)
+    drawn = tuple(result.get(RESULT_NOTICES) or ())
+    if result:
+        result = {**result, RESULT_NOTICES: [*kept.notices, *drawn]}
+    return StepResult(result=result, lines=lines, linked=_notices_index(kept, drawn), then=then)
+
+
 def _then(result: Mapping[str, Any] | None) -> tuple[PlannedStep, ...]:
     """The `delete_replaced` job for the lineup a post replaced, in `result`'s own words."""
     if not result or result.get("new") is None:
@@ -508,14 +522,7 @@ def lineup_step(
         except StepFailedOnDiscord as stop:
             raise carry_lineup_lines(ctx, stop, kept) from stop.__cause__
         result = posted_result(posted)
-        lines = kept.lines + fallen_back_to_text_line(ctx, result)
-        drawn = tuple(result.get(RESULT_NOTICES) or ())
-        if result:
-            # The reply lists the notices of every try; the log line above holds this try's alone.
-            result = {**result, RESULT_NOTICES: [*kept.notices, *drawn]}
-        return StepResult(
-            result=result, lines=lines, linked=_notices_index(kept, drawn), then=_then(result),
-        )
+        return lineup_step_result(ctx, kept, result, then=_then(result))
 
     async def describe(ctx: StepContext) -> str:
         return f"posting the lineup of **{value_of(ctx, 'division_name', 'the division')}**"

@@ -893,10 +893,6 @@ async def test_the_builder_s_drawing_of_a_review_lineup_that_will_not_draw_keeps
         assert raised.value.source is FaultSource.LEAGUE
 
 
-#: Why the review's notice tests fail until its job carries a picture's grouped notices as they came.
-NOT_YET_GROUPED = "#635: the review's job bullets each of the drawing's grouped lines again"
-
-
 @pytest.mark.parametrize("outcome", ["posted", "refused-then-retried", "lineup-not-drawn"])
 async def test_a_review_s_lineup_and_calendar_notices_reach_the_log_once_in_its_posting_job(
         posting, monkeypatch, tmp_path, outcome):
@@ -1183,7 +1179,6 @@ async def test_a_review_whose_take_down_is_in_hand_is_not_asked_again_at_a_secon
 
 #: The area of the season the tests change, as the review's evidence names it.
 PRO_ROUNDS = "Division Pro's rounds"
-
 
 
 def _approve_view(env: Any, monkeypatch: Any) -> tuple[Any, Any]:
