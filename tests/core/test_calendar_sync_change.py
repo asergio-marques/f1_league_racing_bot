@@ -184,19 +184,24 @@ async def test_a_calendar_sync_that_cannot_post_stops_the_queue_and_queues_nothi
     assert await _retried_posts(league) == []
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#635: the calendar job bullets each of the drawing's grouped lines again"
+)
 async def test_a_retried_calendar_sync_posts_the_text(tmp_path, monkeypatch):
     """Images on: Discord refuses the picture, drawn with one notice (round 12 not fitting), and
     the queue stops; Retry posts the textual calendar, drawing nothing again, and the log channel
-    holds the notice once, in one line naming the calendar and Pro, never lost with the refused
-    try. The reply still lists it, linked to that message (#550)."""
+    holds the notice once, in one line naming the calendar and Pro and carrying the notice grouped
+    as the drawing handed it back, never lost with the refused try. The reply still lists it,
+    grouped, linked to that message (#550)."""
     from tests.support.change_queue import queued_log_lines
+    from tests.support.drawn_notices import GROUPED_NOTICE, logged_block, told_section
+    from tests.support.drawn_notices import NOTICE as notice
 
     league = await ongoing_league(tmp_path, images=True)
     png = tmp_path / "calendar.png"
     png.write_bytes(b"\x89PNG")
-    notice = "round 12 did not fit"
     drawn = draw_calendars_with(league.bot, monkeypatch,
-                                CalendarDrawingStub(picture=png, notices=(notice,))).drawn
+                                CalendarDrawingStub(picture=png, notices=GROUPED_NOTICE)).drawn
     league.channel(PRO_CALENDAR).fail_when = lambda _content, kwargs: bool(
         kwargs.get("file") or kwargs.get("files")
     )
@@ -214,11 +219,10 @@ async def test_a_retried_calendar_sync_posts_the_text(tmp_path, monkeypatch):
     logged = [*league.bot.log_channel.sent, *await queued_log_lines(league.db_path)]
     named = [line for line in logged if notice in line]
     assert len(named) == 1, logged
-    assert "| Image render notices — calendar — Season 3 Pro:\n" in named[0], named[0]
+    assert f"| {logged_block('calendar — Season 3 Pro')}" in named[0], named[0]
     held = league.bot.log_channel.sent.index(named[0]) + 1
-    assert (
-        f"  **calendar — Season 3 Pro** ([see them in the log](https://discord.test/{held}))\n"
-        f"  • {notice}"
+    assert told_section(
+        "calendar — Season 3 Pro", f"https://discord.test/{held}"
     ) in _outcome(interaction)
 
 
