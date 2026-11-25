@@ -327,10 +327,11 @@ def test_validate_monotonic_pass(payload):
             {1: 10, 2: 20},
             ["Config 'Test', Feature Race: position 1 (10 pts) < position 2 (20 pts)"],
         ),
-        (
+        pytest.param(
             SessionType.SPRINT_RACE,
             {1: 8, 2: 8},
-            ["Config 'Test', Sprint Race: position 1 (8 pts) < position 2 (8 pts)"],
+            ["Config 'Test', Sprint Race: position 1 (8 pts) = position 2 (8 pts)"],
+            marks=pytest.mark.xfail(strict=True, reason="#669: a tie reads as <, not ="),
         ),
         (
             SessionType.FEATURE_RACE,
@@ -342,7 +343,7 @@ def test_validate_monotonic_pass(payload):
 )
 def test_validate_monotonic_fail(session_type, positions, expected):
     """An increasing sequence produces an error, and so do equal adjacent positive values
-    (non-strictly-decreasing). The error is the shared ordering sentence: it names the config
+    (non-strictly-decreasing): a rise reads `<`, a tie `=`. The error is the shared ordering sentence: it names the config
     and the session, and the positions at fault by their ids, not by their place in the sorted
     list, so ids with gaps send the manager to the right rows."""
     payload = XmlImportPayload(positions={session_type: positions})

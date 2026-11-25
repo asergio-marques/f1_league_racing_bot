@@ -7,6 +7,8 @@ the answer is*, so the rule can be read in one place rather than inferred from t
 """
 from __future__ import annotations
 
+import pytest
+
 from leaguebot.results.utils.points_ordering import ordering_violations
 
 
@@ -64,3 +66,22 @@ def test_a_single_entry_has_nothing_to_compare():
 def test_an_empty_table_has_no_violations():
     """A config that has been created and not yet filled in is not broken."""
     assert ordering_violations([]) == []
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#669: no shared wording for a violation, and a tie reads as <"
+)
+@pytest.mark.parametrize(
+    ("violation", "expected"),
+    [
+        ((1, 10, 2, 25), "position 1 (10 pts) < position 2 (25 pts)"),
+        ((1, 25, 2, 25), "position 1 (25 pts) = position 2 (25 pts)"),
+    ],
+    ids=["rise", "tie"],
+)
+def test_a_violation_reads_as_a_rise_or_a_tie(violation, expected):
+    """A lower position worth more reads `<`; two positions worth the same read `=`, so a tie
+    refused or warned about is never described as one position worth less than the other."""
+    from leaguebot.results.utils.points_ordering import ordering_comparison
+
+    assert ordering_comparison(violation) == expected
