@@ -581,6 +581,7 @@ async def signup_open(
             "close_at": close_at_iso,
             "channel_id": cfg.signup_channel_id,
             "closed_message_id": cfg.signup_closed_message_id,
+            "closed_channel_id": cfg.signup_closed_message_channel_id,
         },
         interaction=interaction,
         what="Opening signups",

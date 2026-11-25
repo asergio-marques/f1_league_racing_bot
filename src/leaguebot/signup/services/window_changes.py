@@ -170,8 +170,10 @@ def window_open_change(
     """The `signup.open` change type, for the builder to register.
 
     The payload is ``track_ids`` (the tracks chosen, ids as text), ``close_at`` (the normalised
-    close time or None), and ``channel_id`` and ``closed_message_id`` (the signup channel and
-    the "signups closed" notice standing in it, each or None). *arm_once* arms the close
+    close time or None), and ``channel_id``, ``closed_message_id`` and ``closed_channel_id`` (the
+    signup channel, the "signups closed" notice and the channel that notice was posted in, each or
+    None; the notice is taken down from there, the signup channel since replaced or not).
+    *arm_once* arms the close
     timer (`window_close.CLOSE_TIMER`) at the close time, and *queue* is the change queue the Sign
     Up button is handed.
     """
@@ -233,7 +235,9 @@ def window_open_change(
             planned.append(PlannedStep(ARM_CLOSE, {"close_at": payload["close_at"]}))
         if payload["closed_message_id"] is not None and payload["channel_id"] is not None:
             planned.append(PlannedStep(DELETE_CLOSED, {
-                "channel_id": payload["channel_id"], "message_id": payload["closed_message_id"],
+                "channel_id": standing_posts.posted_in(
+                    payload.get("closed_channel_id"), int(payload["channel_id"])),
+                "message_id": payload["closed_message_id"],
                 "what": "signups closed notice", "division_name": "signups",
             }))
         return tuple(planned)
@@ -264,7 +268,7 @@ def window_open_change(
         payload = ctx.step_payload
         await signup.set_window_open_on(
             db, int((result.result or {})["new"]), [str(each) for each in payload["track_ids"]],
-            now=queue().now(),
+            now=queue().now(), channel_id=int(payload["channel_id"]),
         )
         await advance_on_window_open_on(db)
         if payload["close_at"]:
@@ -316,7 +320,8 @@ def window_open_change(
                 text += f" Auto-close scheduled for {_stamp(moment)} ({_stamp(moment, 'R')})."
         closed = views.get(DELETE_CLOSED)
         if closed is not None and "discarded" in (closed.result or {}):
-            link = (closed.result or {}).get("link") or f"in <#{ctx.payload['channel_id']}>"
+            where = standing_posts.posted_in(ctx.payload.get("closed_channel_id"), ctx.payload["channel_id"])
+            link = (closed.result or {}).get("link") or f"in <#{where}>"
             text += f"\nThe earlier signups closed notice could not be deleted ({link}): delete it by hand."
         return text
 

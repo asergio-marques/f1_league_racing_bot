@@ -224,7 +224,6 @@ async def test_signup_open_is_acknowledged_and_posts_the_information_with_its_bu
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason="#645: the Sign Up button's channel is not recorded")
 async def test_the_window_is_opened_in_the_record_of_the_post_that_shows_it(tmp_path):
     """Manager 77 runs `/signup open`. Until the queue runs, signups stay closed and the season
     waits. When it runs, the `post_info` job is done, and with it the window is recorded open,
@@ -253,8 +252,7 @@ async def test_the_window_is_opened_in_the_record_of_the_post_that_shows_it(tmp_
 
 @pytest.mark.parametrize("closed_in", [
     pytest.param(SIGNUP_CHANNEL, id="in the signup channel"),
-    pytest.param(OLD_SIGNUP_CHANNEL, id="in a channel since replaced",
-                 marks=pytest.mark.xfail(strict=True, reason=NO_CHANNEL_KEPT)),
+    pytest.param(OLD_SIGNUP_CHANNEL, id="in a channel since replaced"),
 ])
 async def test_the_last_closed_notice_is_deleted_after_the_information_is_posted(
     tmp_path, closed_in,
