@@ -267,19 +267,20 @@ is `architecture.md`'s ("How modules and core fit together"). On image's side, t
 picture that was due was not drawn is headed by the aspect's own name (each post module's
 `*_TOGGLE_NAME`, the weather forecast's written in place), and its notices by what was drawn ("Image
 render notices — …", `ImageRenderService.format_notices`). Image hands the notices back grouped by
-kind, each kind headed in plain words (`KIND_WORDS` in `image_constants`, one neutral heading for a
-true fallback and the bot's own artwork alike, each notice's sentence saying which), repeats
-counted and a lone notice naming its field, and with no template's key: image knows no member, so
-it never opens a block, and the module or core job that drew it does, with the member and the
-change (`architecture.md`; `framework.md`, `NoticeBlock`). The one drawing that writes its own
-notices, the lineup a command draws, is `ImageDrawing.draw_lineup_for_command`, through the log
+kind (`grouped_notice_lines`), each kind headed by its words (`KIND_WORDS` in `image_constants`), as
+a `NoticeBlock` it has marked and left unopened: a drawing knows no member, so the job that drew
+the picture opens the block with the member and the change (`framework.md`, "Posting to Discord"). The
+rules a league reads, the headings in plain words, repeats counted, a lone notice naming its field
+and no template's key, are the image specification's "Errors and the rejection of input". The one
+drawing that writes its own notices, the lineup a command draws, is `ImageDrawing.draw_lineup_for_command`, through the log
 writer the builder hands it, which is given the member and the command to open them with, and it
 hands back the link to the message it logs, for the command to tell its manager the notices with
 (`LineupPicture.log_link`). The `/images test` previews write their notices through the writer the
 runner is handed (`preview_runner`), opening with the member and the preview's command and naming
 what each picture drew. A new kind of notice takes its words from `KIND_WORDS`
-(`test_every_notice_kind_has_a_heading_case`). *Rejected:* a heading per kind of artwork fallback,
-which would have told a league more than the sentence beneath it already does.
+(`test_every_notice_kind_has_a_heading_case`). *Rejected:* one heading, "Artwork fell back", for a
+fallback and the bot's own artwork alike, which would state a fallback where the bot's own artwork
+was drawn (the image specification's "The fallback image").
 
 ---
 
