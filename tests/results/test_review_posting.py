@@ -401,18 +401,11 @@ async def _session_posted_in(db_path: str) -> int | None:
     return row[0]
 
 
-#: Why a moved results channel's case fails until the table keeps the channel it was posted in.
-TABLE_POSTED_IN = (
-    "#645: a results table keeps no channel it was posted in, so its old message is looked for "
-    "in the present results channel"
-)
-
 #: Each case of a results channel kept, or moved from 700 to 703 since the old table was posted:
 #: (the present results channel, the channel recorded beside the old table, or None).
 CHANNEL_KEPT_OR_MOVED = [
     pytest.param(RESULTS_CHANNEL, None, id="kept"),
-    pytest.param(NEW_RESULTS_CHANNEL, RESULTS_CHANNEL, id="moved",
-                 marks=pytest.mark.xfail(strict=True, reason=TABLE_POSTED_IN)),
+    pytest.param(NEW_RESULTS_CHANNEL, RESULTS_CHANNEL, id="moved"),
 ]
 
 

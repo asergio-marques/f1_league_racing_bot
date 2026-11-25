@@ -81,6 +81,7 @@ from leaguebot.framework.utils.channels import as_text_channel
 from leaguebot.framework.utils.league_server import league_guild
 from leaguebot.framework.services.posting.notice_handler import delete_notice, send_notice
 from leaguebot.framework.services.posting.owned_channel_handler import delete_in_owned_channel
+from leaguebot.framework.services.posting import standing_posts
 from leaguebot.framework.services.posting.standing_post_handler import delete_standing
 from leaguebot.framework.utils.hooks import AwaitedHook
 from leaguebot.framework.utils.league_bot import LeagueBot
@@ -834,7 +835,7 @@ async def _post_session_results(
             raise
         return StepResult(
             result={"new": line.new, "old": line.old, "drawn": False, "channel_id": channel_id},
-            then=_deletes(channel_id, line.old, what),
+            then=_deletes(standing_posts.posted_in(line.old_channel_id, channel_id), line.old, what),
         )
     driver_rows = await load_driver_rows(ctx.db_path, row["id"], session_type)
     points_map = {
@@ -879,7 +880,10 @@ async def _post_session_results(
                 source=posted.fault_source,
             ),
         ),)
-    return StepResult(result=result, lines=lines, then=_deletes(channel_id, posted.old, what))
+    return StepResult(
+        result=result, lines=lines,
+        then=_deletes(standing_posts.posted_in(posted.old_channel_id, channel_id), posted.old, what),
+    )
 
 
 async def _round_format(db_path: str, round_id: int) -> str:

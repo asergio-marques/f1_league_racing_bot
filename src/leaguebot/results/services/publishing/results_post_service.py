@@ -103,7 +103,9 @@ class PostedTable(NamedTuple):
     where this table went out as text in its place (a fault in drawing it, or Discord's refusal of
     it): the job returns it as a line of the log (:func:`picture_fallback_line`). *lines* is what
     the picture's drawing had to report, its render notices and the problem of a picture that was
-    due and not drawn, which the job returns as lines of its own.
+    due and not drawn, which the job returns as lines of its own. *old_channel_id* is the channel
+    *old* was recorded as posted in, ``None`` where none was recorded (`standing_posts.posted_in`
+    then takes the present channel).
     """
 
     new: list[int]
@@ -113,6 +115,7 @@ class PostedTable(NamedTuple):
     championship: str | None = None
     fault: str | None = None
     lines: tuple[str, ...] = ()
+    old_channel_id: int | None = None
 
     @property
     def at_discord(self) -> bool:
@@ -672,13 +675,16 @@ async def produce_session_results(
     # What stood before: read here so that the caller need not, and left standing.
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT results_message_id, results_message_ids FROM session_results WHERE id = ?",
+            "SELECT results_message_id, results_message_ids, results_message_channel_id "
+            "FROM session_results WHERE id = ?",
             (session_result.id,),
         )
         stored = await cursor.fetchone()
     previous: list[int] = []
+    previous_channel: int | None = None
     if stored is not None and stored["results_message_id"] is not None:
         previous = _parse_ids(stored["results_message_ids"]) or [int(stored["results_message_id"])]
+        previous_channel = stored["results_message_channel_id"]
 
     # ── The image path (039) ──────────────────────────────────────────────
     fault: str | None = None
@@ -729,7 +735,10 @@ async def produce_session_results(
                 log.error("results: could not post image for session %s: %s", session_result.id, exc)
                 fault = UploadFault.of(exc)
             else:
-                return PostedTable([message_id], previous, drawn=True, lines=lines)
+                return PostedTable(
+                    [message_id], previous, drawn=True, lines=lines,
+                    old_channel_id=previous_channel,
+                )
             finally:
                 drawing.discard_attachment(file)
 
@@ -743,7 +752,7 @@ async def produce_session_results(
         if fault is not None:
             setattr(failure, PICTURE_FAULTS_ATTRIBUTE, {"results": fault})
         raise
-    return PostedTable(sent, previous, fault=fault, lines=lines)
+    return PostedTable(sent, previous, fault=fault, lines=lines, old_channel_id=previous_channel)
 
 
 async def produce_cancelled_session_line(
@@ -767,19 +776,22 @@ async def produce_cancelled_session_line(
     async with get_connection(db_path) as db:
         stored = await (
             await db.execute(
-                "SELECT results_message_id, results_message_ids FROM session_results WHERE id = ?",
+                "SELECT results_message_id, results_message_ids, results_message_channel_id "
+                "FROM session_results WHERE id = ?",
                 (session_result.id,),
             )
         ).fetchone()
     previous: list[int] = []
+    previous_channel: int | None = None
     if stored is not None and stored["results_message_id"] is not None:
         previous = _parse_ids(stored["results_message_ids"]) or [int(stored["results_message_id"])]
+        previous_channel = stored["results_message_channel_id"]
     sent = await _send_chunked(
         results_channel,
         f"🚫 **Round {round_number} — {session_label}** ({division_name}): "
         "This session was cancelled.",
     )
-    return PostedTable(sent, previous)
+    return PostedTable(sent, previous, old_channel_id=previous_channel)
 
 
 # ---------------------------------------------------------------------------
