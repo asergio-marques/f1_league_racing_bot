@@ -345,7 +345,9 @@ A replaced standing post is deleted by a job after the new one, built by `standi
 As `architecture.md` ("Posting to Discord", "Every post keeps three things") has it, the posts
 named here are looked for in the channel they were posted in. The calendar, the lineup and the
 attendance sheet keep that channel beside the id (`*_message_channel_id`), their post jobs hand it
-back as `old_channel_id` and `replaced` plans the delete in `posted_in` of it. Weather's forecast
+back as `old_channel_id` and `replaced` plans the delete in `posted_in` of it. So do a results
+table, a round's standings and a classification, and the Sign Up button and the closed notice.
+Weather's forecast
 (`forecast_messages.channel_id`) and a review's sheet and lineup call `posted_in` themselves. Where
 none was recorded the delete falls back to the present channel, and no constraint pairs an id with
 its channel; `posted_in`'s docstring holds the reasons, and

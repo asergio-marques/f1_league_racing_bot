@@ -1420,7 +1420,11 @@ The exceptions, each with its reason:
   message it replaces in the step after, so each table keeps one writer. A message nobody recorded
   can never be found again, to be edited or deleted. The id is kept with the channel it was posted
   in, since the channel a post belongs to can move before the post is next edited, replaced or
-  deleted, and a message looked for in another channel is not found there. Where a module's
+  deleted, and a message looked for in another channel is not found there. The schema is held to
+  it: a column keeping a posted message's id has the column keeping its channel beside it, and the
+  one column that does not, the hub's message id, is named with its reason, that it is cleared when
+  the hub channel moves, so it is never looked for anywhere but the present channel
+  (`test_every_posted_message_id_keeps_the_channel_it_was_posted_in`). Where a module's
   specification takes its output down when the module is switched off, every post in that output
   counts as one that might later be deleted. A posted message's ids are kept on a row whose
   identity is the posting or the thing posted, never on a row a recalculation deletes or rewrites,
@@ -1859,9 +1863,11 @@ later on its own.
   **`tests/repository/test_import_roots.py`** check the one-league rule, the schema's own rules, and
   that the bot is imported from one place: the installed package, never through `src`. The schema's
   checks, that every table has an owner, that every column a module keeps on a core table is in the
-  schema, and that no column's default is SQLite's clock, live in `test_schema_rules.py` and read
-  the schema the migrations build, not a migration file's text; the rules they hold are under "The
-  database" and, for the clock, "The time is always passed in".
+  schema, that no column's default is SQLite's clock, and that every column keeping a posted
+  message's id has its channel beside it, the hub's message id alone excepted, live in
+  `test_schema_rules.py` and read the schema the migrations build, not a migration file's text; the
+  rules they hold are under "The database", for the clock "The time is always passed in", and for
+  the channel "Posting to Discord", "Every post keeps three things".
 
 How the checks run, and how to work with the lists of today's breaches they hold, is CLAUDE.md's,
 under "Testing".

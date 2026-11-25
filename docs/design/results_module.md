@@ -63,6 +63,14 @@ there is one).
 | `round_standings_posts` | the standings a round posted: each championship's anchor and chunk list | keyed by the round |
 | `classification_posts` | a division's opening or final classification as posted, each championship's anchor and chunk list | `PRIMARY KEY (division_id, occasion)` |
 
+Each posting keeps the channel it was posted in beside its ids (`session_results.results_message_channel_id`,
+and `standings_message_channel_id` and `constructor_standings_message_channel_id` on both posting
+tables), so that a results or standings channel moved afterwards does not aim the delete at the
+channel that is now the division's: a replacement or a switch-off takes the old message down from
+where it stands (`standing_posts.posted_in`), and a post that recorded no channel falls back to
+the present one. A resubmission rebuilds `session_results`, so it carries each table's ids and
+channel across by hand.
+
 A round's standings posting is a row of its own, keyed by the round, and not a column on the
 snapshot of whoever leads it: a posting's ids sit on a row whose identity is the posting
 (`architecture.md`, "Posting to Discord", "Every post keeps three things"), and a recomputation
@@ -503,9 +511,9 @@ results makes is a job of a change, and every function that posts carries `posts
 
 | Post | Kind | Channel | May mention | Found again by | The switch-off |
 |---|---|---|---|---|---|
-| A session's results table, or its "cancelled" line | standing post | the division's results channel | as text, the drivers it names; as a picture, nobody | `session_results.results_message_id` and `results_message_ids`, saved in the job's `record` (`_record_session_post`) | takes it down |
-| A round's standings | standing post | the division's standings channel | as for a table | `round_standings_posts`, saved in the job's `record` (`set_standings_message_id_on`) | takes it down |
-| The opening and final classifications | standing post | the division's standings channel | as for a table | `classification_posts`, written in the record that marks the posting done; a part posted before a failure is kept on the job and removed by its next try | takes the opening one down; a final classification belongs to a completed season, which the switch-off never reads |
+| A session's results table, or its "cancelled" line | standing post | the division's results channel | as text, the drivers it names; as a picture, nobody | `session_results.results_message_id` and `results_message_ids`, and the channel it was posted in, saved in the job's `record` (`_record_session_post`) | takes it down, from the channel it was posted in |
+| A round's standings | standing post | the division's standings channel | as for a table | `round_standings_posts`, with each championship's channel, saved in the job's `record` (`set_standings_message_id_on`) | takes it down, from the channel it was posted in |
+| The opening and final classifications | standing post | the division's standings channel | as for a table | `classification_posts`, with each championship's channel, written in the record that marks the posting done; a part posted before a failure is kept on the job and removed by its next try | takes the opening one down, from the channel it was posted in; a final classification belongs to a completed season, which the switch-off never reads |
 | A verdict | notice | the division's verdicts channel | the driver it names, and no role (`_VERDICT_MENTIONS`) | `penalty_records` or `appeal_records`, announcement columns, saved in the job's `record` (`_record_announcement_on`) | takes it down |
 | The heading over a round's verdicts | notice, through `send_notice`, its picture drawn by `ImageDrawing.draw_banner` | the verdicts channel | — | `verdict_banner_messages`, saved in the job's `record` | takes it down, but where it heads a sanction card |
 | An attendance sanction card | notice | the verdicts channel | the driver it names | not kept; its banner is marked `heads_sanctions` | leaves it, as attendance's |
@@ -560,9 +568,11 @@ that fails part-way takes its first chunks down, and what it could not take down
 failure for the next try to remove first
 (`test_a_posting_that_fails_part_way_takes_its_first_chunks_down`).
 
-**The text standings are edited in place** where the new text fits in one message and the job is not
-a fresh repost; a shorter table hands back the chunks it no longer fills for deletion
-(`produce_standings`).
+**The text standings are edited in place** where the new text fits in one message, the job is not
+a fresh repost and the standings channel is still the one they were posted in; a shorter table
+hands back the chunks it no longer fills for deletion (`produce_standings`). Where the channel has
+moved they are posted afresh in the present one and the old message is handed back for deletion
+from where it stands, since an edit would keep them in a channel that is no longer the division's.
 
 ### Pictures and their fallbacks
 
