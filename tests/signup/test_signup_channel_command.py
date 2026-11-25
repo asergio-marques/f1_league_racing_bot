@@ -645,14 +645,7 @@ async def test_a_closed_notice_that_cannot_be_carried_stays_where_it_was(tmp_pat
 
 
 @pytest.mark.parametrize("gone", [
-    pytest.param(
-        True, id="gone",
-        marks=pytest.mark.xfail(
-            strict=True,
-            reason="#665: a replacement of a deleted signup channel does not yet carry the closed "
-            "notice",
-        ),
-    ),
+    pytest.param(True, id="gone"),
     pytest.param(False, id="standing"),
 ])
 async def test_a_signup_channel_deleted_mid_season_is_replaced(tmp_path, gone):
