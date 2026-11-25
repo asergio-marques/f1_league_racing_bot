@@ -461,7 +461,7 @@ def build_attendance_drawing(root, teams, *, limits: bool = True):
     reach are simply not drawn, which is what "insofar as the number of rows declared allows"
     means.
     """
-    from leaguebot.attendance.services.sheet.attendance_sheet import after_round_order_key
+    from leaguebot.attendance.services.sheet.attendance_sheet import after_round_order
     from leaguebot.image.models.image_catalogues import CapacityError, catalogue_for
     from leaguebot.image.services.aspects.image_attendance_service import (
         ATTENDANCE_TEMPLATE_KEY,
@@ -528,6 +528,7 @@ def build_attendance_drawing(root, teams, *, limits: bool = True):
 
     display_names = {}
     team_names = {}
+    seats = {}
     nationalities = {}
     records = []
 
@@ -542,6 +543,7 @@ def build_attendance_drawing(root, teams, *, limits: bool = True):
             if index == reserve_index
             else configurable[(index - 1) % len(configurable)].name
         )
+        seats[key] = (1 if index == reserve_index else 0, team_names[key])
         nationalities[key] = SAMPLE_LINEUP_NATIONALITIES[
             (index - 1) % len(SAMPLE_LINEUP_NATIONALITIES)
         ]
@@ -571,8 +573,15 @@ def build_attendance_drawing(root, teams, *, limits: bool = True):
         )
 
     # The drawing keeps the order it is handed, which is attendance's: the textual sheet's
-    # after a round, most points first and drivers level on points by name.
-    records.sort(key=lambda record: after_round_order_key(record.total, display_names[record.key]))
+    # after a round, most points first and drivers level on points by the standings' final
+    # tiebreak, team first.
+    record_of = {record.key: record for record in records}
+    records = [
+        record_of[key]
+        for key in after_round_order(
+            {record.key: record.total for record in records}, seats, display_names
+        )
+    ]
 
     return resolve_drawing(
         division_name="Test Division",

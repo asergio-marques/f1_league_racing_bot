@@ -479,6 +479,85 @@ async def test_the_sheet_lists_the_most_points_first_then_by_name(sheet_db, monk
     assert [entry.driver_name for entry in sheet.entries] == ["Mike", "Aaron", "Zoe"]
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#641: drivers level on attendance points are still ordered by name alone",
+)
+@pytest.mark.parametrize("occasion_name", ["AFTER_ROUND", "SEASON_FINAL"])
+@pytest.mark.asyncio
+async def test_drivers_level_on_points_are_ordered_by_the_standings_final_tiebreak(
+    sheet_db, monkeypatch, occasion_name
+):
+    """Division 1's sheet after round 3, and its final sheet, the images module on. Mike (222,
+    Apex Racing) is on 5. Level on 3: two drivers both named Zoe (333 and 666, Apex Racing), Aaron
+    (111, Bravo GP), Rex (444, in the reserve team) and Sam (555, sacked earlier, holding no
+    seat). Ties are ordered as the standings' final tiebreak orders them (attendance spec,
+    Updating attendance sheets): by team, a named team before the reserve team and the reserve
+    team before no seat, then by name, then by identifier. The text lists 222, 333, 666, 111,
+    444, 555, and the picture draws its rows in the same order."""
+    from types import SimpleNamespace
+
+    from leaguebot.core.services.drivers import driver_names
+
+    async def _names(*_args, **_kwargs):
+        return {111: "Aaron", 222: "Mike", 333: "Zoe", 444: "Rex", 555: "Sam", 666: "Zoe"}
+
+    async def _empty(*_args, **_kwargs):
+        return {}
+
+    monkeypatch.setattr(driver_names, "read_driver_names", _names)
+    monkeypatch.setattr(driver_names, "read_driver_nationalities", _empty)
+    await _config(sheet_db, prior=None)
+    async with get_connection(sheet_db) as db:
+        await db.executemany(
+            "INSERT INTO team_instances (id, division_id, name, full_name, is_reserve) "
+            "VALUES (?, 7, ?, ?, ?)",
+            [(101, "Bravo", "Bravo GP", 0), (102, "Reserve", "Reserve", 1)],
+        )
+        # Aaron (111) drives for Bravo GP, on 3.
+        await db.execute("UPDATE team_seats SET team_instance_id = 101 WHERE id = 200")
+        await db.execute("UPDATE driver_round_attendance SET total_points_after = 3")
+        await db.commit()
+    await _seat(sheet_db, profile_id=2, user_id="222", seat=2, total=5)
+    await _seat(sheet_db, profile_id=3, user_id="333", seat=3, total=3)
+    await _seat(sheet_db, profile_id=6, user_id="666", seat=4, total=3)
+    await _seat(sheet_db, profile_id=4, user_id="444", seat=1, total=3, team=102)
+    async with get_connection(sheet_db) as db:
+        # Sam (555) was sacked after scoring round 3: a record and no seat.
+        await db.execute(
+            "INSERT INTO driver_profiles (id, discord_user_id, current_state) "
+            "VALUES (5, '555', 'NOT_SIGNED_UP')"
+        )
+        await db.execute(
+            "INSERT INTO driver_round_attendance "
+            "(round_id, division_id, driver_profile_id, total_points_after) VALUES (3, 7, 5, 3)"
+        )
+        await db.commit()
+    channel = _FakeChannel([])
+    guild = _FakeGuild(
+        channel,
+        {111: "Aaron", 222: "Mike", 333: "Zoe", 444: "Rex", 555: "Sam", 666: "Zoe"},
+    )
+    drawing = _drawing_that_draws_nothing("none")
+
+    with in_a_job():
+        await post_attendance_sheet(
+            SimpleNamespace(db_path=sheet_db), guild, sheet_db, round_id=3, division_id=7,
+            occasion=_occasion(occasion_name), drawing=drawing,
+        )
+
+    listed = [
+        line.split(" ")[0]
+        for line in channel.sent_content.splitlines()
+        if line.startswith("<@")
+    ]
+    assert listed == ["<@222>", "<@333>", "<@666>", "<@111>", "<@444>", "<@555>"]
+    [sheet], _asked = drawing.draw_attendance_sheet.await_args
+    assert [entry.driver_name for entry in sheet.entries] == [
+        "Mike", "Zoe", "Zoe", "Aaron", "Rex", "Sam",
+    ]
+
+
 @pytest.mark.parametrize(
     "occasion_name,zulu_left",
     [

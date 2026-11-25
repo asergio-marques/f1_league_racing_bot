@@ -214,6 +214,10 @@ def _lightness(rgb):
     return 116 * (y ** (1 / 3)) - 16 if y > 0.008856 else 903.3 * y
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#641: the sample attendance sheet is ordered by after_round_order, not yet written",
+)
 @pytest.mark.rasteriser
 def test_the_two_marks_reach_the_raster_and_are_told_apart_by_hue(tmp_path):
     """Rule XIV.14 — the marks are verified as pixels, never as markup.
