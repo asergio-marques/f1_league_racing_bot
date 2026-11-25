@@ -521,20 +521,20 @@ async def _cancel_division(league: Any) -> Any:
 
 
 @pytest.mark.xfail(strict=True, reason=NOT_YET_GROUPED)
-@pytest.mark.parametrize("cancel", [
-    pytest.param(_cancel, id="/round cancel"),
-    pytest.param(_cancel_division, id="/division cancel"),
-    pytest.param(cancel_season, id="/season cancel"),
+@pytest.mark.parametrize(("cancel", "change"), [
+    pytest.param(_cancel, "`/round cancel`", id="/round cancel"),
+    pytest.param(_cancel_division, "`/division cancel`", id="/division cancel"),
+    pytest.param(cancel_season, "`/season cancel`", id="/season cancel"),
 ])
 async def test_a_drawn_calendar_s_notices_reach_the_log_once_in_its_posting_job(
-    tmp_path, monkeypatch, cancel,
+    tmp_path, monkeypatch, cancel, change,
 ):
     """Season 3 being raced with the images module on; the drawing the builder handed the calendar
     job draws Pro's calendar as a PNG with one notice, round 12 not fitting. Pro's round 3, Pro, or
     season 3 is cancelled, and Pro's calendar is posted again as a picture. The queue does not
-    stop; the log channel holds the notice once, in one line naming the calendar, season 3 and
-    Pro and carrying the notice grouped as the drawing handed it back, never bulleted again, which
-    the posting job carries among its own lines (Constitution XIV.4; the owner's
+    stop; the log channel holds the notice once, in one line opening with the admin and the
+    command, naming the calendar, season 3 and Pro and carrying the notice grouped as the drawing
+    handed it back, never bulleted again, which the posting job carries among its own lines (Constitution XIV.4; the owner's
     decision on #288: code inside a job never calls `post_log`). The admin's reply ends in one
     "Image notices" section listing the grouped notice under `calendar — Season 3 Pro`, linked to that
     message (image spec, Calendar)."""
@@ -554,6 +554,7 @@ async def test_a_drawn_calendar_s_notices_reach_the_log_once_in_its_posting_job(
     logged = [*league.bot.log_channel.sent, *await queued_log_lines(league.db_path)]
     named = [line for line in logged if NOTICE in line]
     assert len(named) == 1, logged
+    assert named[0].startswith(f"Admin (`<@{ADMIN_ID}>`) | {change} |"), named[0]
     assert f"| {logged_block('calendar — Season 3 Pro')}" in named[0], named[0]
     told = reply(interaction)
     assert told.count("⚠️ **Image notices**") == 1, told

@@ -906,7 +906,7 @@ async def test_a_review_s_lineup_and_calendar_notices_reach_the_log_once_in_its_
     one notice (round 12 not fitting) and Pro's lineup with two (Zara's flag and portrait falling
     back), each grouped by kind as the drawing hands them back. Once the queue runs, both pictures
     are posted and the queue does not stop; the log channel holds each picture's notices once, in
-    a line naming what was drawn (the calendar or the lineup, and Pro) and carrying them grouped as
+    a line opening with Alex and `/season placements-review` and naming what was drawn (the calendar or the lineup, and Pro) and carrying them grouped as
     they came, never bulleted again, which the job that drew and posted it carries among its own lines (Constitution XIV.4;
     the owner's decision on #288: code inside a job never calls `post_log`).
 
@@ -987,6 +987,8 @@ async def test_a_review_s_lineup_and_calendar_notices_reach_the_log_once_in_its_
     for notice, name in ((calendar_notice, "Pro calendar"), (lineup_notice, "Pro lineup")):
         named = [line for line in logged if notice in line]
         assert len(named) == 1, logged
+        opening = named[0].split(" | Image render notices", 1)[0].replace("`", "")
+        assert opening.startswith(f"Alex (<@{REVIEWER}>) | {PLACEMENTS}"), named[0]
         assert f"| {logged_block(name, grouped[name])}" in named[0], named[0]
     if not_drawn:
         not_drawn_lines = [line for line in logged if "Picture not drawn" in line]
