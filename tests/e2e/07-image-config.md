@@ -187,7 +187,6 @@ magenta (`#FF00FF`).
      sed 's/y="93" \(width="[0-9]*"\) height="3" fill="#E8113C"/y="93" \1 height="3" fill="#00C853"/' "$f" > "e2e_$name"
    done
    sed -i 's|<rect x="0" y="0" width="1496" height="1260" fill="#0B0D10"/>|<rect class="colour-fill-accent" x="0" y="0" width="1496" height="1260" fill="#0B0D10"/>\n  <image id="division_logo" inkscape:label="division_logo" x="1360" y="108" width="88" height="88" preserveAspectRatio="xMidYMid meet"/>|' e2e_calendar_template.svg
-   sed -i 's|<rect x="892" y="108" width="360" height="120"|<rect id="fastest_lap_background" x="892" y="108" width="360" height="120"|' e2e_results_race_template.svg
    printf '%s\n' '<svg xmlns="http://www.w3.org/2000/svg" width="1300" height="900"><g></svg>' > e2e_broken.svg
    printf '%s\n' '<svg xmlns="http://www.w3.org/2000/svg" width="1300" height="900" viewBox="0 0 1300 900"><rect width="1300" height="900" fill="#0B0D10"/></svg>' > e2e_blank.svg
    ```
@@ -199,7 +198,6 @@ magenta (`#FF00FF`).
    | the sixteen `<kind>_template.svg` | a plain copy of what ships | a league folder holding every template; "back to the default" names these |
    | the sixteen `e2e_<kind>_template.svg` | the copy, its heading rule `#E8113C` → `#00C853` | naming a league template: the rule under each picture's heading turns green |
    | `e2e_calendar_template.svg`, besides | the page background marked with the colour slot `accent` (`class="colour-fill-accent"`), and an 88 × 88 image box with the id `division_logo` at the top right | per-tier colours (Part E) and division logos (Part C) |
-   | `e2e_results_race_template.svg`, besides | the plate behind the fastest-lap block given the id `fastest_lap_background` (fill `#14171C`) | the fastest-lap colour's contrast (Part D): the shipped template declares no such id |
    | `e2e_broken.svg` | not well-formed: a `<g>` never closed | a malformed template |
    | `e2e_blank.svg` | a well-formed SVG with a canvas and nothing to fill | a drawing missing what a template must carry |
 
@@ -890,10 +888,10 @@ The calendar is the preview that shows the first three: every round's date and t
 
 ### The fastest-lap colour
 
-The colour is checked against the plate the race results template draws behind the fastest
-lap, located by the id `fastest_lap_background`. The shipped template declares no such id;
-`e2e_results_race_template.svg`, named since step 23, gives it to the fastest-lap block's
-plate (`#14171C`), so the contrast can be measured.
+The colour is checked against the background behind the fastest lap: every shape the race
+results template marks with the class `fastest-lap-background`, the lowest contrast reported.
+The shipped template marks its canvas (`#0B0D10`) and its row bands (`#14171C`), so the contrast
+is measured on it; the lighter band gives the lowest figure for any colour lighter than it.
 
 59. **A refusal: a colour name.** **Do:** `/images config fastest-lap-colour colour:purple`
 
@@ -916,7 +914,7 @@ plate (`#14171C`), so the contrast can be measured.
     - **Then:**
       ```
       ✅ Fastest-lap colour set to `#00FF00`.
-      Contrast against the template's plate (`#14171C`): **13.09:1**
+      Contrast against the background behind the fastest lap (`#14171C`): **13.09:1**
       ```
     - **Log:**
       ```
@@ -937,7 +935,7 @@ plate (`#14171C`), so the contrast can be measured.
     - **Then:**
       ```
       ✅ Fastest-lap colour set to `#202020`.
-      Contrast against the template's plate (`#14171C`): **1.10:1**
+      Contrast against the background behind the fastest lap (`#14171C`): **1.10:1**
       ⚠️ That is below 4.5:1, the threshold at which text of this size stays legible. The colour is stored all the same — it is your league's to choose.
       ```
     - **Log:** the success line with `Fastest-lap colour: #202020` beneath it.
@@ -1297,11 +1295,6 @@ per-tier colours are off and no template marks the slot. The next spec's restore
         Fastest-lap colour: #00FF00
       ```
 
-    The image guide (`docs/how-to/configuring-the-image-module.md`, "Then set the fastest-lap
-    colour again") and the README tell a league to set the **same** colour again to have it
-    measured in every tier's colours; the bot answers as above instead. Believed a defect of
-    those documents: record it, and carry on.
-
 89. **Do:** `/images config fastest-lap-colour colour:#00E676`
 
     **Expect:**
@@ -1309,10 +1302,10 @@ per-tier colours are off and no template marks the slot. The next spec's restore
     - **Then:**
       ```
       ✅ Fastest-lap colour set to `#00E676`.
-      Contrast against the template's plate (`#14171C`) is the same for every division: **10.76:1**
+      Contrast against the background behind the fastest lap (`#14171C`) is the same for every division: **10.76:1**
       ```
-      Each tier's palette is painted onto the plate before it is measured; nothing on the race
-      template takes the `accent` slot, so both tiers read alike.
+      Each tier's palette is painted onto the background before it is measured; nothing on the
+      race template takes the `accent` slot, so both tiers read alike.
     - **Log:** the success line with `Fastest-lap colour: #00E676` beneath it.
 
     **Then do:** `/images test results division:Division 1 round:1`
@@ -1572,11 +1565,9 @@ spec put in `resources/league/`.
      - **Then:**
        ```
        ✅ Fastest-lap colour set to `#A020F0`.
-       ℹ️ Contrast could not be measured: the race results template declares no `fastest_lap_background` element to measure against.
+       Contrast against the background behind the fastest lap (`#14171C`): **3.39:1**
+       ⚠️ That is below 4.5:1, the threshold at which text of this size stays legible. The colour is stored all the same — it is your league's to choose.
        ```
-       The shipped race template marks no plate, so a league on the shipped templates is never
-       told the contrast, though the image guide's step 3 says it is. Believed a defect of the
-       shipped template or of the guide: record it, and carry on.
      - **Log:** the success line with `Fastest-lap colour: #A020F0` beneath it.
 
      **Then do:** `/images test results division:Division 1 round:1`
