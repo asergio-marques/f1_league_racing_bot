@@ -66,6 +66,7 @@ from tests.support.review_league import (
     stopped_at,
     verdict_headings,
 )
+from tests.support.settings_league import unruled
 from tests.support.switches import answer_switch
 
 APPEALS_PROMPT = 8902
@@ -1051,7 +1052,7 @@ _POSTED_BY = {"verdicts": "announce_verdict", "verdict_banner": "announce_headin
 
 #: What a verdict picture's notice block opens with: Alex, then the button he pressed.
 _NOTICE_OPENING = (
-    "Admin (<@4242>) | ✅ Approve on round 3's penalty review | Image render notices — "
+    "Admin (`<@4242>`) | ✅ Approve on round 3's penalty review | Image render notices — "
 )
 
 #: Why the two tests below fail until #635 is built.
@@ -1073,7 +1074,7 @@ async def _notice_is_framed_and_kept(league: ReviewLeague, aspect: str) -> None:
     assert log.count(NOTICE_DETAIL) == 1, log
     [block] = [message for message in league.bot.log_channel.sent if NOTICE_DETAIL in message]
     assert block.startswith(_NOTICE_OPENING), block
-    heading, *grouped = block.splitlines()
+    heading, *grouped = unruled(block).splitlines()
     assert "Pro" in heading and "round 3" in heading.lower(), block
     assert grouped == [
         "  Artwork not supplied by the league", f"    • `flag` — {NOTICE_DETAIL}",

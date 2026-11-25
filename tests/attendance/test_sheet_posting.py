@@ -43,6 +43,7 @@ from tests.support.season_league import (
     round_id,
     run_attendance_channel_command,
 )
+from tests.support.settings_league import unruled
 from tests.support.undecorate import undecorate
 from tests.support.switches import answer_switch
 
@@ -451,7 +452,7 @@ async def _sheet_notice_is_framed_and_kept(league: Any) -> None:
     log = await _said(league)
     assert log.count(SHEET_NOTICE) == 1, log
     [block] = [message for message in league.bot.log_channel.sent if SHEET_NOTICE in message]
-    heading, *grouped = block.splitlines()
+    heading, *grouped = unruled(block).splitlines()
     assert heading.count(" | ") >= 2, block
     named, what, drawn = heading.split(" | ", 2)
     assert "<@4242>" in named and "/attendance sync" in what, block

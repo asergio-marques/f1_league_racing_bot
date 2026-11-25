@@ -62,6 +62,7 @@ from tests.support.change_queue import (
 from tests.support.channel_uses import sign_up_channel_uses_read
 from tests.support.mentions import NOBODY, USERS_ONLY, notified
 from tests.support.season_league import set_module_flag
+from tests.support.settings_league import unruled
 from tests.support.undecorate import undecorate
 from tests.support.switches import answer_switch
 
@@ -2202,7 +2203,7 @@ async def test_a_drawn_picture_s_render_notices_reach_the_log_once_naming_the_ro
     """Round 3's results and standings in Pro are posted again with the *picture* picture drawn,
     its render coming back with one notice, a flag falling back. The picture is posted and the
     queue runs to the end; the log channel carries the notice once, in a line that opens with the
-    member and the change ("Admin (<@4242>) | the test's republication |"), then "Image render
+    member and the change ("Admin (`<@4242>`) | the test's republication |"), then "Image render
     notices — <picture>:" naming Pro and round 3, and beneath it the notice under "Artwork not
     supplied by the league", naming its field `flag`, with no kind code and no template name. The
     job that posted the picture keeps the picture's name and its grouped notices on its result,
@@ -2235,9 +2236,9 @@ async def test_a_drawn_picture_s_render_notices_reach_the_log_once_naming_the_ro
     log = "\n".join(league.bot.log_channel.sent)
     assert log.count(NOTICE_DETAIL) == 1, log
     [block] = [message for message in league.bot.log_channel.sent if NOTICE_DETAIL in message]
-    opening = "Admin (<@4242>) | the test's republication | Image render notices — "
+    opening = "Admin (`<@4242>`) | the test's republication | Image render notices — "
     assert block.startswith(opening), block
-    heading, *grouped = block.splitlines()
+    heading, *grouped = unruled(block).splitlines()
     assert "Pro" in heading and "round 3" in heading.lower(), block
     assert grouped == [
         "  Artwork not supplied by the league", f"    • `flag` — {NOTICE_DETAIL}",
