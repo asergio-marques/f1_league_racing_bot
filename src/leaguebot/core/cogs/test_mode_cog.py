@@ -770,7 +770,7 @@ class TestModeCog(commands.Cog):
             body_lines=body,
             footer=(
                 "Copy mention strings above when submitting results in the format:\n"
-                "`Position, <@user_id>, <@&role_id>, ...`"
+                "`Position, <@user_id>, <team shorthand>, ...`"
             ),
         ):
             await interaction.followup.send(page, ephemeral=True)

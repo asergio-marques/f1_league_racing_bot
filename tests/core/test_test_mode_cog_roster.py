@@ -532,6 +532,16 @@ class TestRosterListShowsIt:
         assert "State" in rendered
         assert "Nationality" in rendered
 
+    async def test_the_footer_names_a_team_by_its_shorthand(self, cog):
+        """Mock Alpha is created; the listing's footer gives the results paste format with a
+        team named by its shorthand, never by a role mention, which the paste refuses."""
+        await _add(cog)
+
+        rendered = await self._list(cog)
+
+        assert "`Position, <@user_id>, <team shorthand>, ...`" in rendered
+        assert "<@&" not in rendered
+
     async def test_an_unseated_driver_is_listed_with_its_id_and_state(self, cog):
         """Mock Alpha is created and nothing more: no seat, no signup. The listing, no division
         named, shows Mock Alpha on a line of its own with the mention its ID makes, its state Not
