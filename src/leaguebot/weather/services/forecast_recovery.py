@@ -176,8 +176,9 @@ async def _standing_forecasts(db: aiosqlite.Connection) -> dict[int, list[int]]:
     Phases 1 to 3, and a mystery round's notice (phase 0), which the clean-up deletes."""
     cursor = await db.execute(
         "SELECT round_id, phase_number FROM forecast_messages "
-        f"WHERE phase_number IN ({', '.join(map(str, CLEAN_UP_PHASES))}) "
-        "ORDER BY round_id, phase_number"
+        "WHERE phase_number IN (?, ?, ?, ?) "
+        "ORDER BY round_id, phase_number",
+        CLEAN_UP_PHASES,
     )
     standing: dict[int, list[int]] = {}
     for row in await cursor.fetchall():

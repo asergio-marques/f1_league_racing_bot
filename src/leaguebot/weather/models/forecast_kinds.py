@@ -12,6 +12,8 @@ FORECAST_CLEAN_UP = "weather.forecast.clean_up"
 
 #: The phases a clean-up deletes: whichever of them still stands a day after the race. A mystery
 #: round's notice (phase 0) is no forecast and is taken down like one.
+#: The reads of `forecast_messages` bind it as four parameters, in a plain string the architecture
+#: check on table ownership can scan, so a change to its length changes theirs.
 CLEAN_UP_PHASES = (0, 1, 2, 3)
 
 

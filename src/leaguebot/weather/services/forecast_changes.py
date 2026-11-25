@@ -905,9 +905,9 @@ async def amendment_clean_ups(
         return ()
     cursor = await db.execute(
         "SELECT DISTINCT phase_number FROM forecast_messages "
-        f"WHERE round_id = ? AND phase_number IN ({', '.join(map(str, CLEAN_UP_PHASES))}) "
+        "WHERE round_id = ? AND phase_number IN (?, ?, ?, ?) "
         "ORDER BY phase_number",
-        (round_id,),
+        (round_id, *CLEAN_UP_PHASES),
     )
     standing = [int(row["phase_number"]) for row in await cursor.fetchall()]
     if not standing:

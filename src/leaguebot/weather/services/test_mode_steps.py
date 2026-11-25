@@ -62,7 +62,8 @@ async def _standing_forecasts(db: aiosqlite.Connection) -> set[int]:
     """The rounds with a forecast of Phase 1 to 3, or a mystery round's notice, still standing."""
     cursor = await db.execute(
         "SELECT DISTINCT round_id FROM forecast_messages "
-        f"WHERE phase_number IN ({', '.join(map(str, CLEAN_UP_PHASES))})"
+        "WHERE phase_number IN (?, ?, ?, ?)",
+        CLEAN_UP_PHASES,
     )
     return {int(row["round_id"]) for row in await cursor.fetchall()}
 
