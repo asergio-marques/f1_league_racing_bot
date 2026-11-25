@@ -3175,8 +3175,6 @@ _UNDONE_STEPS = [
         [("forecast channel", "the mystery round notice was not deleted a day after the round, "
           "and a league admin discarded it; it is deleted when the bot next starts")],
         id="clean-up-mystery-notice",
-        marks=pytest.mark.xfail(strict=True, reason="#595: a mystery round's notice left by the "
-                                "clean-up is named as a phase"),
     ),
     pytest.param(
         [("clean_up_forecast", {"standing": [0, 3]}, _GONE)],
@@ -3184,8 +3182,6 @@ _UNDONE_STEPS = [
           "deleted a day after the round, and a league admin discarded it; they are deleted when "
           "the bot next starts")],
         id="clean-up-mystery-notice-and-a-forecast",
-        marks=pytest.mark.xfail(strict=True, reason="#595: a mystery round's notice left by the "
-                                "clean-up is named as a phase"),
     ),
     pytest.param(
         [("clean_up_check_in", {}, _GONE)],
