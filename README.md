@@ -1066,7 +1066,7 @@ It makes no signup channel, wizard or review panel, grants no role and posts not
 |-----------|------|----------|-------------|
 | `division` | String | — | Division name. Omit to list every fake driver |
 
-Prints each fake driver with their synthetic user ID, their state, the nationality its signup gave and each seat it holds, or none — the cheat sheet for result submission. A driver whose signup gave no nationality shows a dash. A roster too long for one Discord message is sent as several, each a complete table with the heading repeated.
+Prints each fake driver with their synthetic user ID, their state, the nationality its signup gave and each seat it holds, or none, each seat as the team's shorthand, its full name and its division (`ALP = Alpha Racing (Pro)`) so the shorthand a results paste takes can be copied from it — the cheat sheet for result submission. A driver whose signup gave no nationality shows a dash. A roster too long for one Discord message is sent as several, each a complete table with the heading repeated.
 
 #### `/test-mode roster clear` — Remove every fake driver from a division
 *Access: League admin · Requires test mode active*
