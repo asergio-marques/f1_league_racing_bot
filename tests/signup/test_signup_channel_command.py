@@ -512,9 +512,6 @@ def _deleted(events) -> list[tuple]:
     return [event for event in events if event[0] == "delete"]
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#665: a move while signups are closed does not yet carry the closed notice"
-)
 @pytest.mark.parametrize("recorded, standing", [
     pytest.param(OLD, True, id="recorded-in-the-old-channel"),
     pytest.param(None, True, id="no-channel-recorded"),

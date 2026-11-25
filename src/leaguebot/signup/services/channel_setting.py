@@ -44,6 +44,7 @@ posted.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any
@@ -74,6 +75,7 @@ from leaguebot.core.services.settings.channel_registry_service import (
     refusal,
     unusable_refusal,
 )
+from leaguebot.framework.services.posting import standing_posts
 from leaguebot.framework.services.posting.standing_posts import posted_in
 from leaguebot.framework.utils.interaction_errors import describe_fault
 from leaguebot.framework.utils.league_server import league_guild
@@ -104,6 +106,9 @@ POST_INFORMATION = "post_information"
 #: The name of the step, after the permissions, that posts the closed notice again in the new
 #: channel where signups are closed and the notice the last close posted stands in another.
 CARRY_CLOSED = "carry_closed"
+#: The name of the step, after the carry, that takes the old closed notice down from the channel it
+#: stood in.
+DELETE_CARRIED_CLOSED = "delete_carried_closed"
 
 NOT_CONFIGURED = "❌ Signup module is not configured."
 
@@ -313,6 +318,50 @@ def _carry_closed(signup: "SignupModuleService") -> After:
     )
 
 
+def _delete_carried_closed() -> After:
+    """The step after the carry: take the old closed notice down from the channel it stood in, once
+    the copy is posted in the new one.
+
+    The delete is the standing-post handler's (`standing_posts.delete_replaced_step`), which this
+    step runs with the notice and its channel the carry kept in its result (`old`,
+    `old_channel_id`) as its payload: a message or a channel already gone counts as done, which is
+    what a replacement for a deleted channel finds. The step is due only where the carry posted. Like
+    every step after a setting's save it ends on a fault and never stops the lane.
+    """
+    inner = standing_posts.delete_replaced_step(DELETE_CARRIED_CLOSED)
+
+    def carried(ctx: StepContext) -> StepContext | None:
+        posted = next(
+            ((view.result or {}) for view in ctx.steps if view.name == CARRY_CLOSED), {}
+        )
+        if "new" not in posted:
+            return None
+        return dataclasses.replace(ctx, step_payload={
+            "channel_id": int(posted["old_channel_id"]), "message_id": int(posted["old"]),
+            "what": "closed notice", "division_name": "signups",
+        })
+
+    async def due(ctx: StepContext) -> bool:
+        return carried(ctx) is not None
+
+    async def run(ctx: StepContext) -> StepResult:
+        deleting = carried(ctx)
+        if deleting is None:
+            raise RuntimeError("no closed notice was carried to take down the old one of")
+        return await inner.run(deleting)
+
+    async def describe(ctx: StepContext) -> str:
+        return "taking down the old closed notice from the earlier signup channel"
+
+    def fault_reply(_payload: dict[str, Any], reply: str) -> str:
+        return reply
+
+    return After(
+        step=dataclasses.replace(inner, run=run, still_due=due, describe=describe),
+        fault_reply=fault_reply,
+    )
+
+
 def channel_setting(
     *,
     modules: "ModuleService",
@@ -387,7 +436,7 @@ def channel_setting(
         elif row["signup_closed_message_id"] is not None:
             standing_in = posted_in(row["signup_closed_message_channel_id"], old_id)
             if standing_in is not None and standing_in != new_id:
-                then.append(PlannedStep(CARRY_CLOSED))
+                then.extend((PlannedStep(CARRY_CLOSED), PlannedStep(DELETE_CARRIED_CLOSED)))
         return Saved(
             changed=True,
             audits=(
@@ -421,12 +470,13 @@ def channel_setting(
             SET_PERMISSIONS: _set_permissions(config),
             POST_INFORMATION: _post_information(signup, config, queue),
             CARRY_CLOSED: _carry_closed(signup),
+            DELETE_CARRIED_CLOSED: _delete_carried_closed(),
         },
         repairs_the_bot=True,
     )
 
 
 __all__ = [
-    "CARRY_CLOSED", "COMMAND", "KIND", "NOT_CONFIGURED", "POST_INFORMATION", "SET_PERMISSIONS", "channel_setting",
+    "CARRY_CLOSED", "COMMAND", "DELETE_CARRIED_CLOSED", "KIND", "NOT_CONFIGURED", "POST_INFORMATION", "SET_PERMISSIONS", "channel_setting",
     "may_not_edit",
 ]
