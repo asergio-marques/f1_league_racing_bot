@@ -1081,8 +1081,10 @@ async def cancellation_changes(league: SeasonLeague) -> list[dict[str, Any]]:
 
 #: The kind of a round's amendment on the change queue.
 ROUND_AMEND_KIND = "season.round.amend"
-#: Each phase's flag, set by a statement of its own.
+#: Each phase's flag, set by a statement of its own; phase 0, a mystery round's notice, makes the
+#: round a mystery round and marks its notice given.
 _PHASE_DONE = {
+    0: "UPDATE rounds SET format = 'MYSTERY', mystery_notice_given = 1 WHERE id = ?",
     1: "UPDATE rounds SET phase1_done = 1 WHERE id = ?",
     2: "UPDATE rounds SET phase2_done = 1 WHERE id = ?",
     3: "UPDATE rounds SET phase3_done = 1 WHERE id = ?",
@@ -1128,7 +1130,8 @@ async def accept_session(league: SeasonLeague, round_: int, *, session: str = "F
 async def posted_forecast(league: SeasonLeague, round_: int, phase: int, message_id: int) -> None:
     """Phase *phase*'s forecast for round *round_* was posted as *message_id* in its division's
     forecast channel, and the phase is marked performed; Discord refuses to delete the message
-    while its id is in `league.undeletable`.
+    while its id is in `league.undeletable`. Phase 0 is a mystery round's notice: the round is
+    made a mystery round, its notice marked given.
 
     The record names the channel it was posted in, as every forecast's does once
     `forecast_messages` carries its channel (#439, slice 6b); until then it is written without."""

@@ -329,12 +329,15 @@ async def test_the_catch_up_s_log_line_names_the_forecast_it_deletes(
             in lines), lines
 
 
-async def test_a_mystery_round_s_notice_asks_no_forecast_cleanup(tmp_path):
-    """A mystery round's notice (phase 0) is not a forecast the clean-up deletes: with nothing
-    else recorded, the catch-up asks no clean-up of it."""
+@pytest.mark.xfail(
+    strict=True, reason="#595: the catch-up does not yet ask a mystery round's notice cleaned up")
+async def test_a_mystery_round_s_notice_asks_its_forecast_cleanup(tmp_path):
+    """A mystery round a day past, with its notice (phase 0) still recorded and nothing else: the
+    catch-up asks its forecast clean-up, which deletes the notice as it deletes a forecast, and
+    its check-in clean-up as of any round."""
     db_path = await _make_db(tmp_path, phases=(0,), round_format="MYSTERY")
 
-    assert await _recover(_bot(db_path)) == ([], [ROUND_ID])
+    assert await _recover(_bot(db_path)) == ([ROUND_ID], [ROUND_ID])
 
 
 # ---------------------------------------------------------------------------

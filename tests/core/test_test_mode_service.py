@@ -969,8 +969,11 @@ async def test_the_review_lists_a_division_s_rounds_in_the_order_they_race(tmp_p
     assert summary.index(_round_row(summary, 2)) < summary.index(_round_row(summary, 1))
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#595: the review gives a mystery round no Cleanup cell yet")
 async def test_the_review_marks_every_queued_job_as_queued(tmp_path, paused_round_jobs) -> None:
-    """Every step of a season armed as approval arms it has its job queued, and reads ⏳."""
+    """Every step of a season armed as approval arms it has its job queued, and reads ⏳: a
+    mystery round's notice and its clean-up among them."""
     db_path = await _season_armed_as_approval_arms_it(tmp_path, paused_round_jobs)
 
     summary = await build_review_summary(
@@ -979,7 +982,7 @@ async def test_the_review_marks_every_queued_job_as_queued(tmp_path, paused_roun
 
     check_in = "Results: ⏳  |  RSVP: ⏳  Last: ⏳  Deadline: ⏳  Cleared: ⏳"
     assert _round_row(summary, 1).endswith(f"P1: ⏳  P2: ⏳  P3: ⏳  Cleanup: ⏳  |  {check_in}")
-    assert _round_row(summary, 2).endswith(f"Notice: ⏳  |  {check_in}")
+    assert _round_row(summary, 2).endswith(f"Notice: ⏳  Cleanup: ⏳  |  {check_in}")
     assert _round_row(summary, 3).endswith(f"P1: ⏳  P2: ⏳  P3: ⏳  Cleanup: ⏳  |  {check_in}")
 
 
@@ -996,17 +999,20 @@ async def test_the_review_marks_every_queued_job_as_queued(tmp_path, paused_roun
         (1, "rsvp_deadline", "Deadline"),
         (1, "rsvp_cleanup", "Cleared"),
         (2, "weather_p1", "Notice"),
+        pytest.param(2, "cleanup", "Cleanup", marks=pytest.mark.xfail(
+            strict=True, reason="#595: the review gives a mystery round no Cleanup cell yet")),
     ],
     ids=[
         "p1", "p2", "p3", "forecast-cleanup", "results", "call", "last-notice", "deadline",
-        "check-in-cleanup", "mystery-notice",
+        "check-in-cleanup", "mystery-notice", "mystery-cleanup",
     ],
 )
 async def test_a_job_taken_from_the_store_reads_as_missing(
     tmp_path, paused_round_jobs, round_id, event_type, cell
 ) -> None:
     """Each cell reads its own job and no other. A mystery round's notice is armed as
-    `weather_p1`, so taking that job away is what leaves its `Notice` without one."""
+    `weather_p1`, so taking that job away is what leaves its `Notice` without one; its clean-up
+    is armed as `cleanup`, as any round's is."""
     db_path = await _season_armed_as_approval_arms_it(tmp_path, paused_round_jobs)
     paused_round_jobs.cancel_round(round_id, only=frozenset({event_type}))
 
