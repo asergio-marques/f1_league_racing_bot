@@ -134,7 +134,13 @@ every division before it records the season's end (`cancellation_changes`, `seas
    **Expect:** as `02-roster-changes.md` step 31, in full:
    - **Ack:** `Cancelling season 1`
    - **Then:** `✅ Season cancelled.`, followed, where a calendar drew with notices, by a blank line
-     and a `⚠️ **Image notices**` section naming each calendar with its notices.
+     and a `⚠️ **Image notices**` section naming each calendar with its notices, and last, after a
+     blank line, the reload notice, the cancellation having swapped `/driver` and `/signup` back:
+     ```
+     🔄 Reload Discord (Ctrl+R on desktop) before using the `/driver` and `/signup` commands, which have just changed. Reloading clears every reply only you can see, this one included.
+     ```
+     No step until step 20 uses either command: reload Discord then, once step 16 has swapped them
+     again, not now.
    - **Posts**, Division 1 then Division 2, `N` being the division's number: in `#dN-rsvp`
      `<@&<Division N role id>>` and `📢 **Season Cancelled**` with
      `The season has been cancelled. There are no further check-ins to answer.`; in `#dN-weather`
@@ -258,7 +264,9 @@ opened and closed, and two fake drivers: one signed up and approved, one never s
 16. **Do:** `/test-mode toggle`
 
     **Expect:** as `02-roster-changes.md` step 49: ``✅ Test mode **enabled**. …``, with no
-    `📌 Added default point configs` line, the server already holding `Standard` and `Half Points`.
+    `📌 Added default point configs` line, the server already holding `Standard` and `Half Points`,
+    and the reload notice last. **Reload Discord now**, once you have read it: step 20 is the first
+    to use `/signup`.
 
 17. **The backup survived the cancellation.** **Do:** `/test-mode backup status`
 
@@ -368,6 +376,13 @@ opened and closed, and two fake drivers: one signed up and approved, one never s
     **Expect:**
     - **Ack:** `Aborting the season being set up`
     - **Then:** ``✅ The season has been aborted. Nothing of it remains, and a new season may be set up with `/season setup`.``
+      After a blank line the reply ends with the reload notice, the abort of a test season having
+      swapped `/driver` and `/signup` back (step 14's, of a season in no test mode, ends with none):
+      ```
+      🔄 Reload Discord (Ctrl+R on desktop) before using the `/driver` and `/signup` commands, which have just changed. Reloading clears every reply only you can see, this one included.
+      ```
+      No later step of this spec uses either command, so nothing is owed a reload before the next
+      spec's first.
     - **Posts:** nothing. No signup window stands open, and under test mode the abort first clears
       what test mode posted, and nothing was posted.
     - **Roles:** none taken. Fake drivers hold none.

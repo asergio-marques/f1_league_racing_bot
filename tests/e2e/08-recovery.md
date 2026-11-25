@@ -739,14 +739,17 @@ that the cancellation reads as that spec gives it.
 
     **Expect:** as `02-roster-changes.md` step 31: `Cancelling season 1`, `✅ Season cancelled.`,
     the cancellation notices in each division's channels, and `<you> | /season cancel | Success`.
-    Test mode is off and the fake drivers deleted; `bot.bkup.db`, `scheduler.bkup.db` and
+    The reply ends with the reload notice, and no step after it uses `/driver` or `/signup`, so
+    there is nothing to reload for. Test mode is off and the fake drivers deleted; `bot.bkup.db`, `scheduler.bkup.db` and
     `backup.lock` remain.
 
 42. **Do:** `/season setup game_edition:25`, then `/test-mode toggle`, then
     `/results config append name:Standard`, each once the last has answered.
 
     **Expect:** as `02-roster-changes.md` steps 47, 49 and 53: Season #2 (F1 25) set up, test
-    mode on with no configurations seeded, and `Standard` attached.
+    mode on with no configurations seeded, and `Standard` attached. The toggle's reply ends with the
+    reload notice (step 49 there quotes it); no later step of this spec uses `/driver` or
+    `/signup`, so a reload is owed only before the next spec's first.
 
 ### A review standing, and its five minutes run out while the bot is down
 

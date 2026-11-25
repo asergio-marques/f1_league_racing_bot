@@ -466,7 +466,14 @@ roster change posts nothing, and in placements no lineup is posted until approva
     **Expect:**
     - **Ack:** `Cancelling season 1`
     - **Then:** `✅ Season cancelled.`, followed, where a calendar drew with notices, by a blank
-      line and a `⚠️ **Image notices**` section naming each calendar with its notices.
+      line and a `⚠️ **Image notices**` section naming each calendar with its notices, and
+      last, after a blank line, the reload notice, the cancellation having swapped `/driver` and
+      `/signup` back:
+      ```
+      🔄 Reload Discord (Ctrl+R on desktop) before using the `/driver` and `/signup` commands, which have just changed. Reloading clears every reply only you can see, this one included.
+      ```
+      No step until step 57 uses either command: reload Discord then, once step 49 has swapped them
+      again, not now.
     - **Posts**, for each division in turn, Division 1 then Division 2 (`N` being its number):
       - `#dN-rsvp`:
         ```
@@ -712,7 +719,13 @@ cancelled, so this is Season #2.
     - **Then:** ``✅ Test mode **enabled**. Use `/test-mode advance` to step through phases, or `/test-mode review` to inspect season status.``
       No `📌 Added default point configs` line: the server already holds `Standard` and
       `Half Points` from Season #1, and test mode seeds them only on a server holding none
-      (`seed_test_configs_on`). Nor are they attached to Season #2: step 53 attaches one.
+      (`seed_test_configs_on`). Nor are they attached to Season #2: step 53 attaches one. After a
+      blank line the reply ends with the reload notice:
+      ```
+      🔄 Reload Discord (Ctrl+R on desktop) before using the `/driver` and `/signup` commands, which have just changed. Reloading clears every reply only you can see, this one included.
+      ```
+      **Reload Discord now**, once you have read it: step 57 is the first to use `/signup`, and a
+      client loaded before the swap answers it `Unknown Integration`.
     - **Log:**
       ```
       <you> | /test-mode toggle | Success

@@ -2923,7 +2923,15 @@ backup is gone.
        final classification or a final attendance sheet drew with notices (each picture named as
        the log's block names it, a *see them in the log* link, its notices beneath), and by nothing
        else: the other lines that may follow name only a job a league admin discarded, or a real
-       driver with no signup channel left, and this season has neither.
+       driver with no signup channel left, and this season has neither. The reply ends, after a
+       blank line, with the reload notice, the completion having swapped `/driver` and `/signup`
+       back:
+       ```
+
+       🔄 Reload Discord (Ctrl+R on desktop) before using the `/driver` and `/signup` commands, which have just changed. Reloading clears every reply only you can see, this one included.
+       ```
+       Reload Discord once you have read it. No later step of this spec uses either command, but the
+       next spec's first does.
      - **Posts**, one division at a time, Division 1 then Division 2:
        - `#d1-standings`, `#d2-standings`: the **final classification**, two pictures, drivers then
          constructors, each posted with no message text, the occasion `Final Classification` drawn

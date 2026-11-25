@@ -716,7 +716,13 @@ their channels is told; with images off, the calendars go out as text.
 
     **Expect:**
     - **Ack:** `Cancelling season 1`
-    - **Then:** `✅ Season cancelled.` No `⚠️ **Image notices**` section: nothing was drawn.
+    - **Then:** `✅ Season cancelled.` No `⚠️ **Image notices**` section: nothing was drawn. After a
+      blank line the reply ends with the reload notice, the cancellation having swapped `/driver`
+      and `/signup` back:
+      ```
+      🔄 Reload Discord (Ctrl+R on desktop) before using the `/driver` and `/signup` commands, which have just changed. Reloading clears every reply only you can see, this one included.
+      ```
+      **Reload Discord now**, once you have read it: step 63 is the first to use `/signup`.
     - **Posts**, for each division:
       - `#d1-calendar`: the calendar again, as text, as step 36 gave it but with Rounds 2 and 3
         struck through and marked, and step 36's text calendar deleted:
@@ -971,7 +977,12 @@ while a season is in configuration. A Season #2 is set up for that alone, as
     - **Ack:** `Turning test mode on`
     - **Then:** ``✅ Test mode **enabled**. Use `/test-mode advance` to step through phases, or `/test-mode review` to inspect season status.``
       No `📌 Added default point configs` line: the server still holds `Standard` and
-      `Half Points` (step 50).
+      `Half Points` (step 50). After a blank line the reply ends with the reload notice:
+      ```
+      🔄 Reload Discord (Ctrl+R on desktop) before using the `/driver` and `/signup` commands, which have just changed. Reloading clears every reply only you can see, this one included.
+      ```
+      **Reload Discord after the restart of step 72**, once you have read it: step 75 is the first
+      to use `/signup`.
     - **Log:**
       ```
       <you> | /test-mode toggle | Success

@@ -361,6 +361,8 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
       ```
       ✅ Test mode **enabled**. Use `/test-mode advance` to step through phases, or `/test-mode review` to inspect season status.
       📌 Added default point configs: **Standard, Half Points**
+
+      🔄 Reload Discord (Ctrl+R on desktop) before using the `/driver` and `/signup` commands, which have just changed. Reloading clears every reply only you can see, this one included.
       ```
     - **Log:**
       ```
@@ -368,6 +370,9 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
         test_mode: enabled
         seeded_configs: Standard, Half Points
       ```
+    - **Then reload Discord** (Ctrl+R on desktop), once you have read the reply: the toggle swapped
+      `/driver` and `/signup` for their test-mode forms, and a client loaded before it still offers
+      the old ones, which Discord answers with `Unknown Integration`. Step 20 is the first to need it.
 
 ### The signup's availability slot
 

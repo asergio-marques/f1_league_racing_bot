@@ -1010,7 +1010,8 @@ sets up Season #2 with test mode on, leaving it in configuration.
     **Expect:** as `02-roster-changes.md` step 31: `Cancelling season 1`, then
     `✅ Season cancelled.`, the cancellation notices in each division's check-in, weather and
     results channels, each calendar posted again with its rounds cancelled, and the line
-    `<you> | /season cancel | Success`. Test mode is off and the fake drivers deleted. **The saved
+    `<you> | /season cancel | Success`. The reply ends with the reload notice (step 76 says when to
+    act on it). Test mode is off and the fake drivers deleted. **The saved
     backup is kept**: `bot.bkup.db`, `scheduler.bkup.db` and `backup.lock` are still in the bot
     host folder.
 
@@ -1033,6 +1034,8 @@ sets up Season #2 with test mode on, leaving it in configuration.
     **Expect:** as `02-roster-changes.md` step 49: test mode **enabled**, with no `📌 Added default
     point configs` line, and the line `<you> | /test-mode toggle | Success` with
     `test_mode: enabled` beneath. This switches test mode **on**; never run it again in this spec.
+    The reply ends, after a blank line, with the reload notice, which `02-roster-changes.md` step 49
+    quotes. **Reload Discord now**, once you have read it: step 77 is the first to use `/signup`.
 
 ### The three toggles
 
