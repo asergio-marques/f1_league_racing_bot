@@ -509,7 +509,7 @@ Frees the bot from this server so that `/bot init` on another can claim it. What
 Erases the league entire and cleans the bot out of this server. Only the server's **owner** may run it — no role and no permission lets anybody else, however much of the server they administer.
 
 1. **A backup first, always.** Both of the bot's databases are copied on the host, beside the live ones, as `bot.factory-<moment>.db` and `scheduler.factory-<moment>.db`. If the backup cannot be taken, nothing is erased: the reply says so and the failure is written to the log channel. Each factory reset keeps its own backup. **Restoring one is done on the host**, not by a command.
-2. **Then the wipe.** The bot holds only the packaged circuit list afterwards — no seasons, drivers, teams, settings or scheduled work — and serves no server. `/bot init` starts again from the beginning.
+2. **Then the wipe.** The bot holds only the packaged circuit list and the Reserve team afterwards — no seasons, drivers, other teams, settings or scheduled work — and serves no server. `/bot init` starts again from the beginning.
 3. **Then the clean-up.** The bot deletes the channels it created (signup wizard channels, results submission and amendment channels), and **its own messages** in every channel it posts to, in every season. Nobody else's messages are touched.
 4. **Then one line in the log channel**, once the clean-up ends however it ends, naming you, what was erased and how the clean-up ended. It is the one message of the bot's left standing; if it cannot be posted it goes to the host's log.
 
