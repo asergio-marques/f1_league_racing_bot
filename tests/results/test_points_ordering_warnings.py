@@ -192,15 +192,29 @@ async def test_warnings_are_silent_on_a_table_running_down(db_path):
 
 
 @pytest.mark.asyncio
-async def test_warnings_name_a_lower_position_worth_more(db_path):
-    await _set(db_path, 1, 10)
-    await _set(db_path, 2, 25)
+@pytest.mark.parametrize(
+    ("first", "second", "expected"),
+    [
+        (10, 25, "position 1 (10 pts) < position 2 (25 pts)"),
+        pytest.param(
+            25,
+            25,
+            "position 1 (25 pts) = position 2 (25 pts)",
+            marks=pytest.mark.xfail(strict=True, reason="#669: a tie is warned about as <, not ="),
+        ),
+    ],
+    ids=["rise", "tie"],
+)
+async def test_warnings_name_a_lower_position_worth_more(db_path, first, second, expected):
+    """A lower position worth more is warned about as `<`; one worth the same, as `=`."""
+    await _set(db_path, 1, first)
+    await _set(db_path, 2, second)
 
     warnings = await points_config_service.ordering_warnings(
         db_path, CONFIG, SessionType.FEATURE_RACE
     )
 
-    assert warnings == ["position 1 (10 pts) < position 2 (25 pts)"]
+    assert warnings == [expected]
 
 
 @pytest.mark.asyncio
