@@ -452,3 +452,90 @@ async def test_a_fault_in_the_save_places_nobody(tmp_path):
 
     assert "Nothing was assigned" in last_said(asked)
     assert await stopped_job(league.db_path) is None
+
+
+# ---------------------------------------------------------------------------
+# The form
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
+async def test_the_command_opens_the_form_without_deferring(tmp_path):
+    """The league admin runs `/driver assign-bulk`. The form opens as the interaction's first
+    response, which a deferral would forbid, so the command does not defer."""
+    league = await _placing_bulk(tmp_path)
+
+    opened, form = await _open_form(league)
+
+    assert form is not None
+    opened.response.send_modal.assert_awaited_once()
+    opened.response.defer.assert_not_awaited()
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
+async def test_the_form_stays_within_discord_s_limits(tmp_path):
+    """The form `/driver assign-bulk` opens: Discord refuses a form whose title or label runs past
+    45 characters, or whose placeholder runs past 100, with an error rather than a message. Its
+    one box is a paragraph taking 4000 characters, Discord's most."""
+    league = await _placing_bulk(tmp_path)
+
+    _opened, form = await _open_form(league)
+    box = _box(form)
+
+    assert len(form.title) <= 45
+    assert len(box.label) <= 45
+    assert box.placeholder is None or len(box.placeholder) <= 100
+    assert box.style == discord.TextStyle.paragraph
+    assert box.max_length == 4000
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
+async def test_a_submission_defers_before_it_replies(tmp_path):
+    """The league admin submits a paste of Valtteri into McLaren in Am. The form's interaction is
+    deferred before anything else is said to it, as the lines are resolved against the server
+    and the database, which can outrun Discord's three seconds."""
+    from unittest.mock import AsyncMock
+
+    from tests.support.settings_league import interaction
+
+    league = await _placing_bulk(tmp_path)
+    _opened, form = await _open_form(league)
+    _box(form)._value = "<@106>, Am, McLaren"
+    asked = interaction(league.bot, user=_admin())
+    asked.guild = league.guild
+    order = []
+    deferring, following = asked.response.defer.side_effect, asked.followup.send.side_effect
+
+    async def _defer(*args, **kwargs):
+        order.append("defer")
+        return await deferring(*args, **kwargs)
+
+    async def _follow(*args, **kwargs):
+        order.append("follow-up")
+        return await following(*args, **kwargs)
+
+    asked.response.defer = AsyncMock(side_effect=_defer)
+    asked.followup.send = AsyncMock(side_effect=_follow)
+    await form.on_submit(asked)
+
+    assert order[0] == "defer"
+    asked.response.send_message.assert_not_awaited()
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
+async def test_a_paste_that_cannot_be_read_is_refused_at_the_form(tmp_path):
+    """The league admin pastes three lines: Valtteri with a division but no team, a bare Discord
+    ID in place of a mention, and Oscar into Williams in Am. The form refuses the paste, naming
+    lines 1 and 2 and not line 3; nothing is asked of the queue and nobody is placed."""
+    from tests.support.change_queue import change_rows
+
+    league = await _placing_bulk(tmp_path)
+    placements = await _placements(league)
+
+    asked = await _paste(league, "<@106>, Am\n102, Am, McLaren\n<@108>, Am, Williams")
+
+    reply = _reply(asked)
+    assert "Line 1:" in reply and "Line 2:" in reply
+    assert "Line 3:" not in reply
+    assert await change_rows(league.db_path) == []
+    assert await _placements(league) == placements
