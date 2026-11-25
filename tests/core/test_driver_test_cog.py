@@ -385,6 +385,36 @@ async def test_a_pasted_mention_naming_no_driver_is_refused_as_a_numbered_line(t
     assert await change_rows(league.db_path) == []
 
 
+
+@pytest.mark.xfail(strict=True, reason=NO_BULK)
+async def test_a_real_driver_pasted_beside_a_fake_one_is_refused(tmp_path):
+    """Test mode is on and the season in Placements; McLaren in Am has a third seat free. Admin
+    runs the test-mode `/driver assign-bulk` and pastes Ghost, a fake driver, into McLaren in Am,
+    then Valtteri, a real driver approved and never placed, by mention into McLaren in Am. The
+    reply names line 2, refused as the single `/driver assign` refuses a real driver under test
+    mode ("Test mode is active — a real driver cannot be assigned to a team."), and not line 1;
+    nobody is placed, Ghost included; and nothing is left on the queue."""
+    from tests.core.test_driver_assign_bulk import _names_line, _reply
+    from tests.support.change_queue import change_rows, run_queue
+    from tests.support.season_league import MCLAREN
+
+    league = await _league(tmp_path)
+    await league.write(
+        "INSERT INTO team_seats (team_instance_id, seat_number) VALUES (?, 3)", MCLAREN
+    )
+    placements = await league.rows("SELECT * FROM driver_season_assignments ORDER BY id")
+
+    asked = await _paste_bulk(league, f"<@{GHOST}>, Am, McLaren\n<@106>, Am, McLaren")
+    await run_queue(league.bot)
+
+    reply = _reply(asked)
+    assert _names_line(
+        reply, 2, "Test mode is active — a real driver cannot be assigned to a team."
+    )
+    assert "Line 1:" not in reply
+    assert await league.rows("SELECT * FROM driver_season_assignments ORDER BY id") == placements
+    assert await change_rows(league.db_path) == []
+
 @pytest.mark.parametrize(
     "old_user, new_user", [(str(TESTER), "555"), ("103", str(TESTER))], ids=["old", "new"]
 )
