@@ -32,6 +32,7 @@ from leaguebot.framework.db.database import get_connection
 from leaguebot.framework.models.change import StepFailedOnDiscord
 from leaguebot.results.models.points_config import SessionType
 from tests.support.change_queue import (
+    MEMBER_ID,
     acknowledgement,
     discard_job,
     http_error,
@@ -531,6 +532,58 @@ async def test_a_repost_discord_refuses_is_retried_and_the_approval_finishes_onc
     assert OLD_RESULTS not in league.channel(RESULTS_CHANNEL).messages
     assert (await changes_of(league.db_path, KIND))[0]["state"] == "DONE"
     assert "Round 3's reports are approved" in updated_reply(interaction)
+
+
+#: The words of the one render notice round 3's republished Feature Race picture is drawn with.
+SESSION_NOTICE = "Font7 was unavailable, so a substitute was drawn"
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#635: the approval's reply lists no Image notices, its session job keeping nothing "
+           "of its picture's notices for it",
+)
+async def test_the_approval_s_reply_names_the_session_picture_drawn_with_notices(tmp_path):
+    """Images on and the results picture's template sound: the league manager Alex presses
+    Approve on round 3's penalty review, and the republished Feature Race picture draws as a PNG
+    with one font substituted. The notice reaches the log channel once, in a block opening with
+    Alex and the press ("| ✅ Approve on round 3's penalty review |"), then "Image render notices
+    — <picture>:" and the notice grouped beneath "Font substituted", naming its field. The reply
+    says the reports are approved and ends in one "Image notices" section listing the picture
+    under the name its log line gives it, linked to the log channel's message holding it, and the
+    notice beneath, once (owner decision 2026-11-24; image spec, Errors and the rejection of
+    input, #550; issue #635)."""
+    from leaguebot.image.models.image_module import RenderNotice
+    from tests.results.test_rounds_sync_change import _results_drawn
+
+    league = await review_league(tmp_path)
+    stack, render = _results_drawn(league, tmp_path)
+    render.return_value.notices = [RenderNotice(
+        image_type="results_race_template", notice_kind="FONT_SUBSTITUTED",
+        field_id="driver_name_1", detail=SESSION_NOTICE,
+    )]
+    with stack:
+        interaction = await _approve(league)
+        await run_queue(league.bot)
+
+    assert await stopped_at(league) is None
+    told = updated_reply(interaction)
+    assert "✅ Round 3's reports are approved" in told, told
+    assert told.count("⚠️ **Image notices**") == 1, told
+    held = [(n, line) for n, line in enumerate(league.bot.log_channel.sent, 1)
+            if SESSION_NOTICE in line]
+    assert len(held) == 1, league.bot.log_channel.sent
+    n, line = held[0]
+    opening = (f"Alex (`<@{MEMBER_ID}>`) | ✅ Approve on round 3's penalty review | "
+               "Image render notices — ")
+    assert line.startswith(opening), line
+    label, grouped = line.removeprefix(opening).split(":\n", 1)
+    assert grouped.splitlines()[:2] == [
+        "  Font substituted",
+        f"    • `driver_name_1` — {SESSION_NOTICE}",
+    ], line
+    assert f"  **{label}** ([see them in the log](https://discord.test/{n}))" in told, told
+    assert told.count(SESSION_NOTICE) == 1, told
 
 
 # ---------------------------------------------------------------------------
