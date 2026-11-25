@@ -143,7 +143,7 @@ Three penalties, all starting at 1 point, all settable at any time — these are
 
 Set a penalty to `0` to stop charging for that case entirely.
 
-**Changing a penalty mid-season recalculates the season you are in.** Every round whose penalties have been approved is worked out again at the new value, in every division, just as `/attendance sync` would do it; each division's sheet is posted again, and anyone the new value takes over a limit is sanctioned once, at the latest round. Lowering a penalty never undoes a sanction already applied. If a round's results are being amended, finish the amendment first: the change is refused until then.
+**Changing a penalty mid-season recalculates the season you are in.** Every round whose penalties have been approved is worked out again at the new value, in every division, just as `/attendance sync` would do it; each division's sheet is posted again, and anyone the new value takes over a limit is sanctioned once, at the latest round. A sheet drawn with notices is listed beneath the reply, under **⚠️ Image notices**, as `/attendance sync`'s reply lists it. Lowering a penalty never undoes a sanction already applied. If a round's results are being amended, finish the amendment first: the change is refused until then.
 
 **How a round adds up**, for a full-time driver:
 
@@ -335,7 +335,7 @@ The call is a job of the change queue, so a call Discord refuses, or whose check
 1. **Read the reason** in the log entry. A connection to Discord that failed is reported like a refusal. Where the post timed out, the entry says the call may have landed all the same: look in the check-in channel first, and if the call is there, delete it before you post again.
 2. **Put the cause right** — usually restoring the channel in `/attendance channel rsvp`, or giving the bot permission to post and embed links there. The command refuses a channel where the bot still lacks a permission, and names it.
 3. **Post the call** with `/attendance post-check-in`, naming the division and the round. The log entry gives you the command with both already filled in, so you can copy it straight out.
-4. **Check the reply.** It is acknowledged as under way and then updated with whether a call is now standing once the queue has run it, not merely that the command was accepted — so a second failure is not mistaken for a success.
+4. **Check the reply.** It is acknowledged as under way and then updated with whether a call is now standing once the queue has run it, not merely that the command was accepted — so a second failure is not mistaken for a success. Where the call's picture was drawn with notices, the reply ends with **⚠️ Image notices**, naming the picture with a *see them in the log* link and its notices.
 
 The call goes out exactly as the scheduled one would have, opens the round's attendance records, and the deadline and reminder already scheduled for the round still apply.
 
