@@ -99,16 +99,6 @@ async def standing_call_row(db: aiosqlite.Connection, round_id: int) -> aiosqlit
     return await cursor.fetchone()
 
 
-async def check_in_posted_on(db: aiosqlite.Connection, round_id: int) -> tuple[bool, bool]:
-    """Whether the round's check-in call stands and whether its last notice has been posted, read
-    on *db*, in that order: a round with no call has no last notice either."""
-    cursor = await db.execute(
-        "SELECT last_notice_msg_id FROM rsvp_embed_messages WHERE round_id = ?", (round_id,)
-    )
-    row = await cursor.fetchone()
-    return (row is not None, row is not None and row["last_notice_msg_id"] is not None)
-
-
 def round_not_owed(row: CallRow | None) -> str | None:
     """Why the round is owed nothing of its check-in (no call, no notice), else None."""
     if row is None:

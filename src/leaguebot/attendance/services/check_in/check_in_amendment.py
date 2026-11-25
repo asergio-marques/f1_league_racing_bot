@@ -71,7 +71,6 @@ from leaguebot.attendance.services.check_in.check_in_changes import (
     TAKE_DOWN_CALL,
     CheckInViewFactory,
     call_row,
-    check_in_posted_on,
     standing_call_row,
 )
 from leaguebot.attendance.services.check_in.check_in_amendment_rules import judge_check_in
@@ -177,6 +176,16 @@ async def round_amended_on(
     if reopened:
         await rsvp_service.reopen_check_in_on(db, round_id)
     return {"called": called, "reopened": reopened}
+
+
+async def check_in_posted_on(db: aiosqlite.Connection, round_id: int) -> tuple[bool, bool]:
+    """Whether the round's check-in call stands and whether its last notice has been posted, read
+    on *db*, in that order: a round with no call has no last notice either."""
+    cursor = await db.execute(
+        "SELECT last_notice_msg_id FROM rsvp_embed_messages WHERE round_id = ?", (round_id,)
+    )
+    row = await cursor.fetchone()
+    return (row is not None, row is not None and row["last_notice_msg_id"] is not None)
 
 
 def _call_fell_due(
