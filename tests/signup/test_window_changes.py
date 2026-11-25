@@ -304,10 +304,6 @@ async def test_the_last_closed_notice_is_deleted_after_the_information_is_posted
 CARRIED_NOTICE = 8902
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#665: an opening still deletes the closed notice it read when it was asked",
-)
 async def test_an_opening_takes_down_the_closed_notice_a_move_carried_since_it_was_asked(tmp_path):
     """The signup channel is 621, where Discord refuses every post, and the last close's notice
     (8901) stands there. Manager 77 runs `/signup open` and the queue stops at `post_info`. While
