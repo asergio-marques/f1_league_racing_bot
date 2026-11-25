@@ -358,7 +358,8 @@ async def test_a_pasted_mention_naming_no_driver_is_refused_as_a_numbered_line(t
     """Test mode is on and the season in Placements; McLaren in Am has a third seat free. Admin
     runs the test-mode `/driver assign-bulk` and pastes Ghost into McLaren in Am, then a mention
     of 555, an account no driver has held, into McLaren in Am. The reply names line 2, saying no
-    driver was found for 555, and not line 1; nobody is placed; the log channel takes the refusal
+    driver was found for 555 without inviting an ID (the paste takes mentions only), and not
+    line 1; nobody is placed; the log channel takes the refusal
     as its one line for the paste; and nothing is asked of the queue."""
     from tests.core.test_driver_assign_bulk import _reply
     from tests.support.change_queue import change_rows
@@ -376,6 +377,7 @@ async def test_a_pasted_mention_naming_no_driver_is_refused_as_a_numbered_line(t
     reply = _reply(asked)
     [line] = [line for line in reply.splitlines() if "Line 2:" in line]
     assert "No driver found for" in line and "555" in line
+    assert "an ID" not in line, "the paste takes mentions only, so the reason invites no ID"
     assert "Line 1:" not in reply
     assert await league.rows("SELECT * FROM driver_season_assignments ORDER BY id") == placements
     [logged] = [line for line in await log_lines(league) if "/driver assign-bulk" in line]
