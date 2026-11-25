@@ -15,10 +15,13 @@ built, so every test here is marked.
 """
 from __future__ import annotations
 
+import re
+
 import discord
 import pytest
 
 from tests.core.test_driver_assign import _approve_placements, _fill_mclaren, _placing
+from tests.core.test_driver_move import _ADMIN
 
 #: Why every test here fails until #633 is built.
 NOT_BUILT = "#633: there is no /driver assign-bulk"
@@ -151,7 +154,8 @@ async def test_a_clean_paste_seats_every_driver_in_one_save_in_list_order(tmp_pa
     it. Once it has, the three sit where the list put them, not confirmed, their placements made
     in list order; one `DRIVER_ASSIGN` audit entry per driver, by Admin, on each driver's division,
     stamped with the queue's clock, in list order; the log channel holds one success line for the
-    paste; no role is given and no lineup posted; and the reply reads "✅ Assigned **3**
+    paste, naming Admin and `/driver assign-bulk`, and stating beneath it the count and each
+    driver's placement (driver, team, division) in list order; no role is given and no lineup posted; and the reply reads "✅ Assigned **3**
     driver(s).\""""
     from tests.support.change_queue import change_rows, run_queue
     from tests.support.season_league import AM, DIVISIONS, NEWCOMER, PRO
@@ -177,7 +181,21 @@ async def test_a_clean_paste_seats_every_driver_in_one_save_in_list_order(tmp_pa
     ]
     assert all(e["timestamp"] == league.clock.now.isoformat() for e in entries)
     [line] = await _bulk_lines(league)
-    assert "Success" in line
+    head, *beneath = line.splitlines()
+    assert head == f"{_ADMIN} | /driver assign-bulk | Success"
+    assert any(re.search(r"\b3\b", value) for value in beneath), "the count is not stated"
+    at = [
+        next(
+            (i for i, value in enumerate(beneath) if all(word in value for word in placement)),
+            None,
+        )
+        for placement in (
+            ("Valtteri", "McLaren F1 Team", "Am"),
+            ("Oscar", "Williams Racing", "Am"),
+            ("Charles", "BWT Alpine F1 Team", "Pro"),
+        )
+    ]
+    assert None not in at and at == sorted(at), f"placements not stated in list order: {line}"
     assert league.granted == {} and league.revoked == {}
     assert league.texts(DIVISIONS[AM][3].lineup) == []
     assert league.texts(DIVISIONS[PRO][3].lineup) == []
