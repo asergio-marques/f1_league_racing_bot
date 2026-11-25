@@ -1313,3 +1313,68 @@ async def test_a_review_s_attendance_sheet_drawn_with_notices_is_framed_kept_and
     assert "faults" not in kept, kept
     _told_once(interaction, _SHEET_DRAWN, held)
 
+
+@pytest.mark.parametrize("refused", [False, True], ids=["posted", "refused_then_retried"])
+async def test_a_review_s_refreshed_lineup_drawn_with_notices_keeps_them_across_a_retry_and_links_them(
+    tmp_path, refused,
+):
+    """Attendance is on, and Max is owed an autoreserve. Alex approves round 3's reports with a
+    five-second penalty for Lewis, so the sanction applies and the review's refresh-lineup job
+    posts Pro's lineup afresh. The lineup is drawn with one notice, a flag falling back. Run
+    twice: posted as a picture on the first try; and on the first try Discord refusing the
+    picture and then the text (Missing Access), stopping the queue, and a Retry posting the
+    lineup as text, which draws no picture. Either way the queue runs to the end; the log
+    channel carries the notice once, in one message opening with Alex and the button he pressed,
+    then "Image render notices — lineup — Pro:" and the grouped notice beneath; the job keeps the
+    lineup's notice, the refused try's included; and Alex's reply ends in one "Image notices"
+    section listing "lineup — Pro" linked to that log message, its notice told once (issue #635;
+    owner decision 2026-11-25)."""
+    from leaguebot.core.services.drivers.lineup_posting import LINEUP_DRAWN_ATTRIBUTE
+    from leaguebot.framework.models.change import (
+        RESULT_DRAWN,
+        RESULT_NOTICES,
+        StepFailedOnDiscord,
+    )
+    from tests.support.change_queue import step_rows
+
+    league = await review_league(tmp_path, attendance=True)
+    league.attendance.candidates = [candidate(MAX_PROFILE, MAX)]
+    asked: list[bool] = []
+
+    async def _refresh(division_id: int, *, as_text: bool = False) -> dict[str, Any]:
+        asked.append(as_text)
+        if refused and not as_text:
+            stop = StepFailedOnDiscord(
+                "the lineup could not be posted: 403 Forbidden: Missing Access"
+            )
+            setattr(stop, LINEUP_DRAWN_ATTRIBUTE, {
+                "division_name": "Pro", "notices": list(_GROUPED_NOTICE),
+                "problem": "Discord refused the picture (403 Forbidden: Missing Access)",
+                "refused": True, "fault_source": "league",
+            })
+            raise stop
+        return {
+            "new": 9101, "old": None, "old_channel_id": None, "channel_id": 4343,
+            "division_name": "Pro", "form": "text" if as_text else "image", "problem": None,
+            RESULT_NOTICES: [] if as_text else list(_GROUPED_NOTICE),
+            RESULT_DRAWN: "lineup — Pro", "refused": False, "fault_source": "league",
+        }
+
+    league.attendance.refresh_lineup = _refresh
+    interaction = await _approve_reports(league, [penalty(LEWIS)])
+    await run_queue(league.bot)
+    if refused:
+        assert await stopped_at(league) == "refresh_lineup"
+        await retry_job(league.bot)
+
+    assert await stopped_at(league) is None
+    assert asked == ([False, True] if refused else [False])
+    held, message = _held(league)
+    assert message.count(NOTICE_DETAIL) == 1, league.log()
+    assert unruled(message) == _NOTICE_OPENING + "\n".join(
+        ["lineup — Pro:", *_GROUPED_NOTICE]
+    ), message
+    [kept] = [row["result"] for row in await step_rows(league.db_path)
+              if row["name"] == "refresh_lineup"]
+    assert kept[RESULT_NOTICES] == list(_GROUPED_NOTICE), kept
+    _told_once(interaction, "lineup — Pro", held)
