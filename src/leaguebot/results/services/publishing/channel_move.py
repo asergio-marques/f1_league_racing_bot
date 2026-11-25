@@ -1,9 +1,9 @@
 """`results.channel.carry`: the posts already up follow a results or standings channel that moved.
 
 `/results channel results` and `standings` save the new channel as any setting does, never holding
-up the queue, and ask this change as the bot's own follow-on where the channel they moved away from
-still stands (`channel_settings`). The carry is a change of its own on the league lane, so it waits
-behind any stopped job as a sync does, and it posts as a sync does: `plan_division_posts` plans
+up the queue, and ask this change as the bot's own follow-on where the channel the posts stand in
+still stands (`channel_settings._where_posts_stand`). The carry is a change of its own on the league
+lane, so it waits behind any stopped job as a sync does, and it posts as a sync does: `plan_division_posts` plans
 every round's tables (the results carry) or standings (the standings carry), each posted in the new
 channel and its old message then deleted from the old one, the table that Discord refuses stopping
 the lane. Its scope is what the syncs repost. The payload is `{"division_id", "division_name",

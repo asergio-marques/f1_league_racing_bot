@@ -31,11 +31,12 @@ audit entry stamped by the queue's clock (`division_channels` holds the upserts)
 replaces is read in the save, never at the ask, so a change waiting behind another for the same
 division records what that one left, and its reply reads "set" or "updated" by it.
 
-**A save that moved a channel which still stands asks the carry.** The results and the standings
-channel each plan an `After` step, `ask_carry`, where the save replaced a channel (never a first
-set). It finds again that the channel the posts stand in stands, as the check did (the channel
-moved away from, or, where a carry still waiting was to move the posts there, the channel that
-carry takes them from), and that the sync's own plan (`plan_division_posts`) has posts to move, and
+**A save that replaced a channel asks the carry where the posts stand in a channel that stands.**
+The results and the standings channel each plan an `After` step, `ask_carry`, where the save
+replaced a channel (never a first set). It finds the channel the posts stand in (the channel moved
+away from, or, where a carry still waiting was to move the posts there, the channel that carry
+takes them from) and that it stands, which the check, testing only the channel replaced, did not
+settle; it finds too that the sync's own plan (`plan_division_posts`) has posts to move, and
 only then asks `results.channel.carry` (`publishing/channel_move`) as the bot's own follow-on, whose
 job it is to move the tables or standings already up across, as a sync would; the setting's reply
 then says so. The step asks and does nothing else, so the setting never stops the queue. A channel
