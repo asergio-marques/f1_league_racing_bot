@@ -1200,18 +1200,25 @@ async def test_the_approval_s_reply_names_a_calendar_s_notices_and_not_its_fallb
     tmp_path, monkeypatch,
 ):
     """Season 3 approved with its calendars and lineups drawn as pictures: Pro's calendar drawing
-    fails, Am's calendar draws with a notice, and Am's lineup draws with a notice of its own. The
-    reply ends in one "Image notices" section listing Am's calendar and Am's lineup, each labelled
-    as its log line names it and linked to the log channel's message holding its notice, and not
+    fails, Am's calendar draws with a notice, and Am's lineup draws with a notice of its own, each
+    grouped by kind as the drawing hands it back. The log channel holds each in its job's line as
+    it came, never bulleted again. The reply ends in one "Image notices" section listing Am's
+    calendar and Am's lineup, each labelled as its log line names it, linked to the log channel's
+    message holding its notice and listing it grouped, and not
     Pro's fallback, which is its job's own line (Constitution XIV.4; image spec, Calendar and
     Lineup). No line of the approval's own in the log channel names a notice or the fallback: the
     drawing reports its notices itself (`tests/image/test_image_drawing_calendar.py`), and the job
     its fallback."""
+    from tests.support.drawn_notices import logged_block, told_section
     from tests.support.lineup_drawing import LineupDrawingStub, draw_lineups_with
 
     league = await _league_for(tmp_path, monkeypatch, images=True)
     notice = "a fallback flag stood in for Monaco's"
     lineup_notice = "a fallback portrait stood in for Charles's"
+    grouped = ("  Artwork not supplied by the league", f"    • `round_1_flag` — {notice}")
+    lineup_grouped = (
+        "  Artwork not supplied by the league", f"    • `driver_portrait_1` — {lineup_notice}"
+    )
     png = tmp_path / "lineup.png"
     png.write_bytes(b"\x89PNG\r\n\x1a\n")
 
@@ -1222,37 +1229,104 @@ async def test_the_approval_s_reply_names_a_calendar_s_notices_and_not_its_fallb
             self.fault = RuntimeError("the template has no rows") if division.name == "Pro" else None
             return await super().draw_calendar(division, *args, **kwargs)
 
-    draw_calendars_with(league.bot, monkeypatch, _ProFails(notices=(notice,)))
+    draw_calendars_with(league.bot, monkeypatch, _ProFails(notices=grouped))
     draw_lineups_with(league.bot, monkeypatch, LineupDrawingStub(
-        by_division={AM: {"picture": png, "notices": (lineup_notice,)}},
+        by_division={AM: {"picture": png, "notices": lineup_grouped}},
     ))
     press = await _pressed(league)
 
     await run_queue(league.bot)
 
-    def _link(words: str, drawn: str) -> str:
-        [held] = [n for n, line in enumerate(_log_lines(league), 1)
-                  if words in line and drawn in line]
+    def _link(words: str, drawn: str, notices: tuple[str, ...]) -> str:
+        [(held, line)] = [(n, line) for n, line in enumerate(_log_lines(league), 1)
+                          if words in line and drawn in line]
+        assert f"| {logged_block(drawn, notices)}" in line, line
         return f"https://discord.test/{held}"
+
+    def _listed(drawn: str, words: str, notices: tuple[str, ...]) -> str:
+        section = told_section(drawn, _link(words, drawn, notices), notices)
+        return section.removeprefix("⚠️ **Image notices**\n")
 
     told = reply(press)
     assert told.count("⚠️ **Image notices**") == 1, told
     assert "\n\n⚠️ **Image notices**\n" in told, told
     am_calendar = "calendar — Season 3 Am"
-    assert (
-        f"  **{am_calendar}** ([see them in the log]({_link(notice, am_calendar)}))\n"
-        f"  • {notice}"
-    ) in told, told
-    assert (
-        f"  **lineup — Am** ([see them in the log]({_link(lineup_notice, 'lineup — Am')}))\n"
-        f"  • {lineup_notice}"
-    ) in told, told
+    assert _listed(am_calendar, notice, grouped) in told, told
+    assert _listed("lineup — Am", lineup_notice, lineup_grouped) in told, told
     assert "Calendar images" not in told
     assert "the template has no rows" not in told
     assert "calendar — Season 3 Pro" not in told
     assert not [line for line in _log_lines(league)
                 if "| /season placements-review |" in line
                 and (notice in line or lineup_notice in line or "the template has no rows" in line)]
+
+
+async def test_the_approval_s_reply_names_the_opening_standings_and_sheet_drawn_with_notices(
+    tmp_path, monkeypatch,
+):
+    """Season 3 approved with images, results and attendance on, the standings and attendance
+    graphics switched on and their templates sound, and the calendars and lineups posted as text.
+    Each opening standings picture (the drivers' and the teams' championships of Pro and of Am)
+    and each opening attendance sheet (Pro's and Am's) draws as a PNG with one font substituted,
+    a font of its own. In the log channel, every picture's notice is held once, in a block that
+    opens with the member and the change ("| the ✅ Approve button of `/season
+    placements-review` |") and then "Image render notices — <picture>:". The reply ends in one "Image notices" section listing every one of the
+    six pictures under the name its log line gives it, each linked to the log channel's message
+    holding it, and its notice beneath (image spec, Errors and the rejection of input; issue
+    #635)."""
+    from leaguebot.image.models.image_module import RenderNotice
+    from leaguebot.image.services.aspects import image_attendance_post, image_standings_post
+    from leaguebot.image.services.aspects.image_attendance_post import SheetRender
+    from tests.support.lineup_drawing import LineupDrawingStub, draw_lineups_with
+
+    league = await _league_for(
+        tmp_path, monkeypatch, images=True, results=True, attendance=True,
+    )
+    league.bot.image_config_service.is_aspect_enabled = AsyncMock(return_value=True)
+    standings_pictures_are_due(monkeypatch)
+    draw_calendars_with(league.bot, monkeypatch, CalendarDrawingStub(wanted=False))
+    draw_lineups_with(league.bot, monkeypatch, LineupDrawingStub(wanted=False))
+    monkeypatch.setattr(league.bot.image_drawing, "attendance_wanted",
+                        AsyncMock(return_value=True))
+    fonts: list[str] = []
+
+    def _drawn(stem: str) -> tuple[Any, RenderNotice]:
+        fonts.append(f"Font{len(fonts) + 1}")
+        png = tmp_path / f"{stem}_{len(fonts)}.png"
+        png.write_bytes(b"\x89PNG\r\n\x1a\n")
+        return png, RenderNotice(
+            image_type=stem, notice_kind="FONT_SUBSTITUTED", field_id="driver_name_1",
+            detail=f"{fonts[-1]} was unavailable, so a substitute was drawn",
+        )
+
+    async def _standings(*_args: Any, **_kwargs: Any) -> Any:
+        png, notice = _drawn("standings_drivers")
+        return SimpleNamespace(notices=[notice], problem=None, posts_image=True, png_paths=[png])
+
+    async def _sheet(*_args: Any, **_kwargs: Any) -> Any:
+        png, notice = _drawn("attendance_sheet")
+        return SheetRender(png=png, notices=[notice])
+
+    monkeypatch.setattr(image_standings_post, "render_png", _standings)
+    monkeypatch.setattr(image_attendance_post, "render_sheet", _sheet)
+    press = await _pressed(league)
+
+    await run_queue(league.bot)
+
+    assert await _stopped_at(league) is None
+    assert len(fonts) == 6, fonts
+    told = reply(press)
+    assert told.count("⚠️ **Image notices**") == 1, told
+    assert "\n\n⚠️ **Image notices**\n" in told, told
+    opening = "| the ✅ Approve button of `/season placements-review` | Image render notices — "
+    for font in fonts:
+        held = [(n, line) for n, line in enumerate(_log_lines(league), 1) if font + " " in line]
+        assert len(held) == 1, (font, _log_lines(league))
+        n, line = held[0]
+        block = line[line.rindex(opening, 0, line.index(font + " ")):]
+        label = block.removeprefix(opening).split(":\n", 1)[0]
+        assert f"  **{label}** ([see them in the log](https://discord.test/{n}))" in told, told
+        assert told.count(font + " ") == 1, told
 
 
 #: Each post retried: its job, its channel, the modules it needs, and where it reaches for its

@@ -15,6 +15,7 @@ from types import SimpleNamespace as NS
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from leaguebot.image.services.render.image_render_service import grouped_notice_lines
 from tests.support.switches import answer_switch
 
 TRACKS = {
@@ -151,8 +152,8 @@ async def test_a_rejected_directory_is_carried_through_as_a_fault():
 async def test_a_calendar_drawing_hands_its_notices_back_and_logs_nothing():
     """Elite's calendar drawn with a notice. Every calendar is drawn inside a change's job, so the
     drawing writes nothing to the log channel itself and hands the notice back with the picture,
-    for the posting job to record once among its own lines (the owner's decision on #288: code
-    inside a job never calls `post_log`)."""
+    grouped under its kind's heading, for the posting job to record once among its own lines (the
+    owner's decision on #288: code inside a job never calls `post_log`)."""
     from leaguebot.image.models.image_module import RenderNotice
 
     notice = RenderNotice(image_type="calendar", notice_kind="ASSET_FALLBACK_USED",
@@ -164,7 +165,7 @@ async def test_a_calendar_drawing_hands_its_notices_back_and_logs_nothing():
     picture = await drawing.draw_calendar(_division(), _rounds(), TRACKS)
 
     post_log.assert_not_awaited()
-    assert "a fallback flag stood in for Monaco's" in picture.notices
+    assert tuple(picture.notices) == tuple(grouped_notice_lines([notice]))
 
 
 #: The converter's absence, in the words the render gives it.
@@ -188,7 +189,8 @@ async def test_the_drawing_hands_back_the_picture_the_problem_and_the_notices(
     was drawn, or the problem's words where it could not be, and the notices' words either way.
     The picture says where its fault lies: the league's for a field at fault or none, the bot's
     for an internal fault, which comes back named by its kind alone, and the host's for the
-    converter's absence, which keeps its words."""
+    converter's absence, which keeps its words. The notices come back grouped under their kind's
+    heading."""
     from leaguebot.core.models.fault_source import FaultSource
     from leaguebot.image.models.image_module import (
         PROBLEM_CONVERTER_ABSENT,
@@ -218,7 +220,7 @@ async def test_the_drawing_hands_back_the_picture_the_problem_and_the_notices(
     assert picture.path == (png if fault is None else None)
     assert picture.problem == problem
     assert picture.fault_source is FaultSource[source]
-    assert tuple(picture.notices) == ("a fallback flag stood in for Monaco's",)
+    assert tuple(picture.notices) == tuple(grouped_notice_lines([notice]))
 
 
 async def test_a_calendar_whose_track_cannot_be_named_comes_back_as_its_problem():

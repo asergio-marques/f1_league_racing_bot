@@ -43,6 +43,7 @@ from leaguebot.attendance.services.hooks.attendance_after_review import sanction
 from leaguebot.framework.db.database import get_connection
 from leaguebot.results.services.publishing.results_post_service import set_standings_message_id_on
 from tests.support.change_queue import (
+    MEMBER_ID,
     acknowledgement,
     discard_job,
     http_error,
@@ -710,6 +711,54 @@ async def test_the_rebuild_goes_in_the_order_a_league_reads_it(tmp_path):
     appeals = [i for i, text in enumerate(said) if "Track limits" in text]
     assert len(reports) == 2 and len(appeals) == 1
     assert max(reports) < min(appeals)
+
+
+#: The words of the one render notice round 3's rebuilt Feature Race picture is drawn with.
+SESSION_NOTICE = "Font7 was unavailable, so a substitute was drawn"
+
+
+async def test_the_amendment_s_reply_names_the_session_picture_drawn_with_notices(tmp_path):
+    """Images on and the results picture's template sound: round 3's amendment has its reports
+    approved, and the league manager Alex presses Approve on its appeals stage. The rebuild's
+    Feature Race picture draws as a PNG with one font substituted. The notice reaches the log
+    channel once, in a block opening with Alex and the press ("| ✅ Approve on round 3's
+    amendment appeals |"), then "Image render notices — <picture>:" and the notice grouped
+    beneath "Font substituted", naming its field. The reply says the amendment is applied and the
+    channels rebuilt, and ends in one "Image notices" section listing the picture under the name
+    its log line gives it, linked to the log channel's message holding it, and the notice
+    beneath, once (owner decision 2026-11-24; image spec, Errors and the rejection of input,
+    #550; issue #635)."""
+    from leaguebot.image.models.image_module import RenderNotice
+    from tests.results.test_rounds_sync_change import _results_drawn
+
+    league = await _amend_league(tmp_path, reports_approved=True)
+    stack, render = _results_drawn(league, tmp_path)
+    render.return_value.notices = [RenderNotice(
+        image_type="results_race_template", notice_kind="FONT_SUBSTITUTED",
+        field_id="driver_name_1", detail=SESSION_NOTICE,
+    )]
+    with stack:
+        interaction = await _approve_appeals(league)
+        await run_queue(league.bot)
+
+    held = [(n, line) for n, line in enumerate(league.bot.log_channel.sent, 1)
+            if SESSION_NOTICE in line]
+    assert len(held) == 1, league.bot.log_channel.sent
+    assert await stopped_at(league) is None
+    told = updated_reply(interaction)
+    assert "✅ Amendment applied, and the division's channels rebuilt in round order." in told, told
+    assert told.count("⚠️ **Image notices**") == 1, told
+    n, line = held[0]
+    opening = (f"Alex (`<@{MEMBER_ID}>`) | ✅ Approve on round 3's amendment appeals | "
+               "Image render notices — ")
+    assert line.startswith(opening), line
+    label, grouped = line.removeprefix(opening).split(":\n", 1)
+    assert grouped.splitlines()[:2] == [
+        "  Font substituted",
+        f"    • `driver_name_1` — {SESSION_NOTICE}",
+    ], line
+    assert f"  **{label}** ([see them in the log](https://discord.test/{n}))" in told, told
+    assert told.count(SESSION_NOTICE) == 1, told
 
 
 # ---------------------------------------------------------------------------

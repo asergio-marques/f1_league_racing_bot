@@ -48,6 +48,7 @@ from tests.support.change_queue import (
     run_queue,
     seed_server,
 )
+from tests.support.drawn_notices import GROUPED_NOTICE, told_section
 from tests.support.undecorate import undecorate
 
 #: Where the bot's database is built: the running test's own `tmp_path`, set by `_home`.
@@ -248,9 +249,9 @@ async def test_render_notices_are_shown_in_the_reply_and_not_repeated_in_the_clo
     tmp_path, case,
 ):
     """A calendar synced, drawn with a notice. The reply lists the notice under "Image notices",
-    labelled as the log line names the picture, with a link to the log channel's message holding
-    it (Constitution XIV.4; image spec, Calendar); a log channel that refuses the line costs the
-    link alone. Where the render also finds a fault it cannot draw past (the template has no
+    grouped as the drawing handed it back and never bulleted again, labelled as the log line names
+    the picture, with a link to the log channel's message holding it (Constitution XIV.4; image
+    spec, Calendar); a log channel that refuses the line costs the link alone. Where the render also finds a fault it cannot draw past (the template has no
     rows), nothing is posted and the reply says so with the problem, then lists the notice all the
     same, linked, for the log holds it. The command's line in the log channel, its success or its
     refusal, does not repeat the notice, the calendar's posting job reporting it there once, among
@@ -261,22 +262,16 @@ async def test_render_notices_are_shown_in_the_reply_and_not_repeated_in_the_clo
     interaction = _interaction()
     problem = "the template has no rows" if case == "rejected" else None
 
-    await _sync(
-        cog, interaction, posting=_posting(problem=problem, notices=["round 12 did not fit"])
-    )
+    await _sync(cog, interaction, posting=_posting(problem=problem, notices=GROUPED_NOTICE))
 
     replied = _replied(interaction)
-    assert "⚠️ **Image notices**" in replied
-    assert "  • round 12 did not fit" in replied
+    assert replied.count("•") == 1, replied
     if case == "refuses":
-        assert "  **calendar — Season 7 Pro**\n" in replied
+        assert told_section("calendar — Season 7 Pro", None) in replied
         assert "see them in the log" not in replied
         return
     held = next(n for n, line in enumerate(_logged(cog), 1) if "round 12 did not fit" in line)
-    assert (
-        f"  **calendar — Season 7 Pro** ([see them in the log](https://discord.test/{held}))\n"
-        "  • round 12 did not fit"
-    ) in replied
+    assert told_section("calendar — Season 7 Pro", f"https://discord.test/{held}") in replied
     logged = _logged(cog)[-1]
     assert "round 12 did not fit" not in logged
     if case == "rejected":

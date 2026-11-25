@@ -26,7 +26,9 @@ class LineupDrawingStub:
     drawn and the next refused.
     `wanted_asked` counts the times it was asked whether the league draws its lineup; `drawn`
     names each division drawn as the lineup of record, by id, in order, and `drawn_for_command`
-    each drawn as a command's output; `discarded` holds each path handed back to release."""
+    each drawn as a command's output, `commanded` the member and the command each such drawing
+    was handed (`named`, `what`), to open the log entry holding its notices; `discarded` holds
+    each path handed back to release."""
 
     def __init__(self, *, wanted: bool = True, picture: Path | None = None,
                  problem: str | None = None, notices: tuple[str, ...] = (),
@@ -44,6 +46,7 @@ class LineupDrawingStub:
         self.wanted_asked = 0
         self.drawn: list[int] = []
         self.drawn_for_command: list[int] = []
+        self.commanded: list[tuple[str | None, str | None]] = []
         self.discarded: list[Path | None] = []
 
     def _answer(self, division_id: int) -> Any:
@@ -71,8 +74,11 @@ class LineupDrawingStub:
         self.drawn.append(int(division_id))
         return self._answer(division_id)
 
-    async def draw_lineup_for_command(self, guild: Any, division_id: int) -> Any:
+    async def draw_lineup_for_command(
+        self, guild: Any, division_id: int, *, named: str | None = None, what: str | None = None,
+    ) -> Any:
         self.drawn_for_command.append(int(division_id))
+        self.commanded.append((named, what))
         return self._answer(division_id)
 
     def discard_picture(self, path: Path | None) -> None:

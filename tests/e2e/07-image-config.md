@@ -36,8 +36,9 @@ from, and a reply that says `Searched:` names an absolute path under it.
 [`01-full-season.md` Part G, "Previews"](01-full-season.md) gives: a header
 `**Preview — <title>** for `<division>`, round <R> — season 1` (no round for the calendar and the
 lineup), a `✅ <label>` line per picture, and, where the render fell back on anything, a
-`⚠️ **Notices** — the render survived these:` section, the same block being written to
-`#bot-log` headed `Image render notices — <title> — <division>, round <R>:`. A step below says
+`⚠️ **Image notices**` section, each picture under its name with a link, the same block being
+written to `#bot-log`, in one message opening with you and the preview's command and, for each
+picture, a block headed `Image render notices — <label> — <division>, round <R>:`. A step below says
 what the **picture** shows and quotes the reply only where it differs from that shape. A preview
 changes nothing and writes no log line of its own.
 
@@ -554,12 +555,12 @@ otherwise:
     <Label>: <value>
   ```
 
-**A notice of a fallback** in a preview sits under `  [ASSET_FALLBACK_USED] ×<n>`, the image
-type being the template's key (`lineup_template`, `calendar_template`, …). A notice met once
+**A notice of a fallback** in a preview sits under `  Artwork not supplied by the league ×<n>`; no
+line names the template by its key (`lineup_template`, `calendar_template`, …). A notice met once
 names its field, one met several times is counted. For a class the league supplies:
-``• <image type>[ / `<field id>`] — no `<class>` image is supplied for “<datum>”; the directory's fallback was drawn instead.[ (×<n>)]``
+``• [`<field id>` — ]no `<class>` image is supplied for “<datum>”; the directory's fallback was drawn instead.[ (×<n>)]``
 and, for one of the bot's own files (a marker, a weather icon, a tyre, `mystery`, `other`):
-``• <image type>[ / `<field id>`] — the configured `<class>` directory has no image for “<datum>”; the bot's own `<name>.svg` was drawn instead.[ (×<n>)]``
+``• [`<field id>` — ]the configured `<class>` directory has no image for “<datum>”; the bot's own `<name>.svg` was drawn instead.[ (×<n>)]``
 A step below quotes only the detail, the part after the `—`. A missing division logo draws
 nothing and raises no notice.
 
@@ -576,7 +577,7 @@ nothing and raises no notice.
     ``no `team` image is supplied for “<shorthand>”`` for each of `BRV`, `CHL`, `DLT`, `ECH`, `FOX`,
     `GLF`, `HTL`, `IND`, `JLT`, `KLO` and the reserve team, and **none** for `ALP`. Each is met
     once, so names its field, for example
-    ``• lineup_template / `team_2_image` — no `team` image is supplied for “BRV”; the directory's fallback was drawn instead.``
+    ``• `team_2_image` — no `team` image is supplied for “BRV”; the directory's fallback was drawn instead.``
 
 30. **A fallback of the league's own.** Make one by hand, in the shell of step 7:
 

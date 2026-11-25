@@ -766,7 +766,7 @@ sessions `Sprint Qualifying`, `Sprint Race`, `Feature Qualifying` and `Feature R
 
     **Expect:**
     - **Ack:** `Approving round 1's reports (Division 1)`
-    - **Then:** `✅ Round 1's reports are approved (Division 1): 1 penalty applied. Its appeals review is posted below.`
+    - **Then:** `✅ Round 1's reports are approved (Division 1): 1 penalty applied. Its appeals review is posted below.` Then, where a picture drew with notices, a blank line and the `⚠️ **Image notices**` section, as in `00-base.md` step 37.
     - **Posts**, in this order:
       - submission channel: `🎨 Updating results and standings — one moment.`, deleted once the
         posts below are up;
@@ -813,7 +813,7 @@ sessions `Sprint Qualifying`, `Sprint Race`, `Feature Qualifying` and `Feature R
 
     **Expect:**
     - **Ack:** `Approving round 1's appeals (Division 1)`
-    - **Then:** `✅ Round 1's appeals are approved (Division 1): no corrections were staged. The round is final.`
+    - **Then:** `✅ Round 1's appeals are approved (Division 1): no corrections were staged. The round is final.` Then, where a picture drew with notices, a blank line and the `⚠️ **Image notices**` section, as in `00-base.md` step 37.
     - **Posts**, in this order:
       - submission channel: `🎨 Updating results and standings — one moment.`, deleted once the
         posts are up;
@@ -1134,7 +1134,7 @@ Stefan Sommer for `CHL`, as their placements in step 39 want, both without a poi
 
     **Expect:**
     - **Ack:** `Approving round 1's reports (Division 2)`
-    - **Then:** `✅ Round 1's reports are approved (Division 2): 4 penalties applied. Its appeals review is posted below.`
+    - **Then:** `✅ Round 1's reports are approved (Division 2): 4 penalties applied. Its appeals review is posted below.` Then, where a picture drew with notices, a blank line and the `⚠️ **Image notices**` section, as in `00-base.md` step 37.
     - **Posts:** as step 30 for Division 2:
       - `#d2-results`: both pictures again, `Post-Race Penalty Results`. Qualifying: Lucas Lambert
         disqualified and last, the classified drivers re-sorted by their laps, so Aaron Abbott
@@ -1161,7 +1161,7 @@ Stefan Sommer for `CHL`, as their placements in step 39 want, both without a poi
 50. **Do:** press **No Changes / Confirm** on the appeals review.
 
     **Expect:** as step 31 for Division 2:
-    `✅ Round 1's appeals are approved (Division 2): no corrections were staged. The round is final.`;
+    `✅ Round 1's appeals are approved (Division 2): no corrections were staged. The round is final.`, then, where a picture drew with notices, a blank line and the `⚠️ **Image notices**` section;
     `Final Results` in `#d2-results` and `#d2-standings`, `Bravo Motorsport` still last on 0; the
     submission channel deleted; the `APPEALS_REVIEW_APPROVED | Success` line with
     `round: 1 (Division 2)`.
@@ -1535,7 +1535,7 @@ two drivers). The sprint sessions and the feature sessions take the same two pas
 
     **Expect:**
     - **Ack:** `Approving round 2's reports (Division 1)`
-    - **Then:** `✅ Round 2's reports are approved (Division 1): 1 penalty applied and 1 pardon granted. Its appeals review is posted below.`
+    - **Then:** `✅ Round 2's reports are approved (Division 1): 1 penalty applied and 1 pardon granted. Its appeals review is posted below.` Then, where a picture drew with notices, a blank line and the `⚠️ **Image notices**` section, as in `00-base.md` step 37.
     - **Posts:**
       - `#d1-results`: the four pictures again, `Post-Race Penalty Results`. In the Sprint Race,
         Bruno Bianchi drops from fifth to sixth (`+16.000` against Samuel Shaw's `+14.250`);
@@ -1585,7 +1585,7 @@ two drivers). The sprint sessions and the feature sessions take the same two pas
 
     **Expect:**
     - **Ack:** `Approving round 2's appeals (Division 1)`
-    - **Then:** `✅ Round 2's appeals are approved (Division 1): 1 correction applied. The round is final.`
+    - **Then:** `✅ Round 2's appeals are approved (Division 1): 1 correction applied. The round is final.` Then, where a picture drew with notices, a blank line and the `⚠️ **Image notices**` section, as in `00-base.md` step 37.
     - **Posts:**
       - `#d1-results`: the four pictures again, `Final Results`: Bruno Bianchi back to fifth in the
         Sprint Race;
@@ -1891,7 +1891,7 @@ same two pastes.
 
     **Expect:**
     - **Ack:** `Approving round 2's reports (Division 2)`
-    - **Then:** `✅ Round 2's reports are approved (Division 2): 2 pardons granted. Its appeals review is posted below.`
+    - **Then:** `✅ Round 2's reports are approved (Division 2): 2 pardons granted. Its appeals review is posted below.` Then, where a picture drew with notices, a blank line and the `⚠️ **Image notices**` section, as in `00-base.md` step 37.
     - **Posts:** the four results and the standings again, `Post-Race Penalty Results`, unchanged;
       nothing in `#d2-verdicts`; the attendance sheet after Round 2 in `#d2-attendance`: Kai Kimura
       3 (5, less the 2 his pardon waives), every other row on 0, Marco Moretti's absence pardoned;
@@ -1901,7 +1901,7 @@ same two pastes.
 
 96. **Do:** press **No Changes / Confirm** on the appeals review.
 
-    **Expect:** as step 31, for round 2 of Division 2: `✅ Round 2's appeals are approved (Division 2): no corrections were staged. The round is final.`;
+    **Expect:** as step 31, for round 2 of Division 2: `✅ Round 2's appeals are approved (Division 2): no corrections were staged. The round is final.`, then, where a picture drew with notices, a blank line and the `⚠️ **Image notices**` section;
     the four results and the standings as `Final Results`; the channel deleted.
 
 ### Division 2's clean-ups
@@ -2103,7 +2103,7 @@ the round's reports are approved. Both reserves decline, so none is placed.
 
      **Expect:**
      - **Ack:** `Approving round 3's reports (Division 1)`
-     - **Then:** `✅ Round 3's reports are approved (Division 1): nothing was staged. Its appeals review is posted below.`
+     - **Then:** `✅ Round 3's reports are approved (Division 1): nothing was staged. Its appeals review is posted below.` Then, where a picture drew with notices, a blank line and the `⚠️ **Image notices**` section, as in `00-base.md` step 37.
      - **Posts**, in this order:
        - `#d1-results` and `#d1-standings`: the results and standings again, `Post-Race Penalty
          Results`, unchanged;
@@ -2128,7 +2128,7 @@ the round's reports are approved. Both reserves decline, so none is placed.
 
 109. **Do:** press **No Changes / Confirm** on the appeals review.
 
-     **Expect:** as step 31, for round 3 of Division 1: `✅ Round 3's appeals are approved (Division 1): no corrections were staged. The round is final.`;
+     **Expect:** as step 31, for round 3 of Division 1: `✅ Round 3's appeals are approved (Division 1): no corrections were staged. The round is final.`, then, where a picture drew with notices, a blank line and the `⚠️ **Image notices**` section;
      `Final Results`; the channel deleted. Division 1 is done: no sanction is judged at the appeals.
 
 ### The thresholds switched, and a recalculation
@@ -2186,6 +2186,8 @@ the auto-sack. The two thresholds cannot both be active, so the auto-reserve goe
        ✅ Attendance of **Division 1** recalculated from round 1 on.
        No sanction was owed.
        ```
+       followed, where the sheet drew with notices, by a blank line and a `⚠️ **Image notices**`
+       section naming it with a *see them in the log* link and its notices beneath.
      - **Posts** (`#d1-attendance`): the attendance sheet posted again, the previous one deleted,
        its totals as step 108 left them, its plate now `SACKED AT 6`, Pim Prasert (7) drawing the
        limit-reached mark.
@@ -2432,7 +2434,7 @@ season ends.
 
      **Expect:**
      - **Ack:** `Approving round 3's reports (Division 2)`
-     - **Then:** `✅ Round 3's reports are approved (Division 2): nothing was staged. Its appeals review is posted below.`
+     - **Then:** `✅ Round 3's reports are approved (Division 2): nothing was staged. Its appeals review is posted below.` Then, where a picture drew with notices, a blank line and the `⚠️ **Image notices**` section, as in `00-base.md` step 37.
      - **Posts**, in this order:
        - `#d2-results` and `#d2-standings`: `Post-Race Penalty Results`, unchanged;
        - `#d2-attendance`: the attendance sheet after Round 3: Kai Kimura 8, every other row on 0;
@@ -2456,7 +2458,7 @@ season ends.
 
 130. **Do:** press **No Changes / Confirm** on the appeals review.
 
-     **Expect:** as step 31, for round 3 of Division 2: `✅ Round 3's appeals are approved (Division 2): no corrections were staged. The round is final.`;
+     **Expect:** as step 31, for round 3 of Division 2: `✅ Round 3's appeals are approved (Division 2): no corrections were staged. The round is final.`, then, where a picture drew with notices, a blank line and the `⚠️ **Image notices**` section;
      `Final Results`; the channel deleted. With this, every round of both divisions is final, and
      the season moves on to its **Pending completion** stage of itself: nothing posts and nothing is
      logged for it (no placement was pending to turn down).
@@ -2650,7 +2652,7 @@ paste of step 136 ready before step 135.
 
      **Expect:**
      - **Ack:** `Approving the appeals of round 1's amendment (Division 1)`
-     - **Then:** `✅ Amendment applied, and the division's channels rebuilt in round order.`
+     - **Then:** `✅ Amendment applied, and the division's channels rebuilt in round order.` Then, where a picture drew with notices, a blank line and the `⚠️ **Image notices**` section, as in `00-base.md` step 37.
      - **Posts**, in this order:
        - amendment channel: `🎨 Rebuilding the division's results, standings and verdicts — one moment.`,
          deleted once the rebuild is up;
@@ -2707,31 +2709,33 @@ the markers, weather icons and tyres. That is no fault, and nothing posts as tex
 picture **reports** what it fell back on, as image notices:
 
 - **A timed posting** (a forecast, a check-in call, a results table, a standings picture, an
-  attendance sheet, a verdict, a banner, a final classification) writes its notices to `#bot-log`,
-  in one of two forms. A posting that names the change it ran for writes one line of its job
-  (`drawn_notices_line`):
+  attendance sheet, a verdict, a banner, a final classification) writes its notices to `#bot-log`
+  as one line of its job, opening as every line of the log does with whoever caused it (`the bot`
+  where nobody did) and the change it ran for, in one message for the whole job:
   ```
-  <you or System> | <the change> | Image render notices — <what was drawn>:
-    • <notice>
+  <you or the bot> | <the change> | Image render notices — <what was drawn>:
+    Artwork not supplied by the league ×<n: how many>
+      • no `flag` image is supplied for “<a nationality>”; the directory's fallback was drawn instead. (×<n>)
+      • no `team` image is supplied for “<a team>”; the directory's fallback was drawn instead. (×<n>)
   ```
-  and the others a block of their own (`format_notices`):
-  ```
-  Image render notices — <subject: what was drawn, as the table below names it>:
-    [ASSET_FALLBACK_USED] ×<n: how many>
-      • <image type> — no `flag` image is supplied for “<a nationality>”; the directory's fallback was drawn instead. (×<n>)
-      • <image type> — no `team` image is supplied for “<a team>”; the directory's fallback was drawn instead. (×<n>)
-  ```
-  A notice met once names its field (`• <image type> / `<field id>` — …`); one met many times is
-  counted (`(×<n>)`). A closed-set class drawn from the bot's own file reads instead
+  Each kind of notice is headed in plain words and never by a code, and no line names a template
+  by its key: `Font substituted`, `Text set smaller`, `Artwork not supplied by the league`,
+  `Packaged artwork stretched`, `Field left empty`, `Crop point off the canvas` and `Tier colours
+  not applied`. A notice met once names its field (``• `<field id>` — …``) and the heading carries
+  no count; one met many times is counted (`(×<n>)`), and a heading over several carries their total
+  (`×<n>`). A closed-set class drawn from the bot's own file sits under the same
+  `Artwork not supplied by the league` heading and reads instead
   ``the configured `<class>` directory has no image for “<datum>”; the bot's own `<slug>.svg` was drawn instead.``
   A division logo's fallback is blank by design and raises no notice.
-  > UNVERIFIED: which postings take which form, each `<datum>` as drawn, and any notice of
-  > another kind (`FONT_SUBSTITUTED`, `FIELD_REDUCED`), which depends on the host's fonts. Record
-  > what appears.
-- **A command that draws** (a review, the approval) ends its reply with `⚠️ **Image notices**`,
-  as `00-base.md` steps 35 and 37 say.
-- **A preview** ends its reply with `⚠️ **Notices** — the render survived these:` and a link to
-  the same block in `#bot-log`.
+  > UNVERIFIED: which postings carry which change in the line's opening, each `<datum>` as drawn,
+  > and any notice of another kind (`Font substituted`, `Text set smaller`), which depends on the
+  > host's fonts. Record what appears.
+- **A command that draws** (a review, the approval, the completion, a results approval or
+  amendment, a results sync, an attendance sync) ends its reply with `⚠️ **Image notices**`, each
+  picture under its name with a *see them in the log* link and its notices beneath, as
+  `00-base.md` steps 35 and 37 say.
+- **A preview** ends its reply with the same `⚠️ **Image notices**` section, each picture under its
+  name and a link to the same block in `#bot-log`.
 
 No picture should post as text in this spec. A line in `#bot-log` beginning `⚠️` that names a
 picture which was not drawn (for example `⚠️ Weather image — …`) is a failure: report it.
@@ -2769,20 +2773,25 @@ there is one. Its reply, in every step below:
 ✅ <label of the next picture>
 …
 
-⚠️ **Notices** — the render survived these: ([see them in the log](<link to the #bot-log message>))
-  [ASSET_FALLBACK_USED] ×<n>
-    • <image type> — <detail> (×<n>)
+⚠️ **Image notices**
+  **<label> — <division>, round <R>** ([see them in the log](<link to the #bot-log message>))
+  Artwork not supplied by the league ×<n>
+    • <detail> (×<n>)
 ```
 
 with `, round <R>` left out for the calendar and the lineup. No line saying the season's
 placements are yet to be confirmed, none saying the division has no seated driver, none about
 drivers recording no nationality, and no `⚠️ **Asset directories**` section. A `❌ <label>: …`
-line in place of a `✅` is a failure. Its **Log**, where it has notices:
+line in place of a `✅` is a failure. Its **Log**, where it has notices, is one message opening with you and the
+preview's command, named by its name alone (``<you> | `/images test <kind>` |``), then a block for
+each picture that has notices, each headed by the picture's label:
 
 ```
-Image render notices — <title> — <division>, round <R>:
-  [ASSET_FALLBACK_USED] ×<n>
-    • <image type> — <detail> (×<n>)
+<you> | `/images test <kind>` | Image render notices — <label> — <division>, round <R>:
+  Artwork not supplied by the league ×<n>
+    • <detail> (×<n>)
+Image render notices — <label of the next picture> — <division>, round <R>:
+  …
 ```
 
 140. **Do:** `/images test calendar division:Division 2`
@@ -2803,14 +2812,17 @@ Image render notices — <title> — <division>, round <R>:
      **Expect:** title `Results`, four pictures, in this order: `✅ Results — Sprint Qualifying`,
      `✅ Results — Sprint Race`, `✅ Results — Feature Qualifying`, `✅ Results — Feature Race`. Each
      draws Division 2's own drivers by name, reserves left out, in an invented finishing order.
-     **Log:** headed `Image render notices — Results — Division 2, round 2:`.
+     **Log:** one block per picture, headed `Image render notices — Results — Sprint Qualifying —
+     Division 2, round 2:`, then the same for `Sprint Race`, `Feature Qualifying` and `Feature Race`.
 
 143. **Do:** `/images test standings division:Division 2 round:2`
 
      **Expect:** title `Standings`, two pictures, `✅ Standings — drivers` and
      `✅ Standings — constructors`, each with the season's three rounds as a grid and an invented
      classification up to round 2. The constructors list all eleven racing teams, `Bravo
-     Motorsport` among them. **Log:** headed `Image render notices — Standings — Division 2, round 2:`.
+     Motorsport` among them. **Log:** one block per picture, headed
+     `Image render notices — Standings — drivers — Division 2, round 2:` and
+     `Image render notices — Standings — constructors — Division 2, round 2:`.
 
 144. **Do:** `/images test attendance division:Division 2 round:2`
 
@@ -2830,7 +2842,8 @@ Image render notices — <title> — <division>, round <R>:
      `✅ Verdict 1 — 5 seconds added`, `✅ Verdict 2 — 10 seconds added`,
      `✅ Verdict 3 — 3 seconds removed`, `✅ Verdict 4 — Disqualified`,
      `✅ Verdict 5 — No further action`, each for the same driver of the division.
-     **Log:** headed `Image render notices — Verdict — Division 2, round 2:`.
+     **Log:** one block per picture, headed `Image render notices — Verdict 1 — 5 seconds added —
+     Division 2, round 2:` and so on for verdicts 2 to 5.
      > UNVERIFIED: which driver is drawn (`context.drivers[0]`, in the order the preview reads the
      > division's seats).
 
@@ -2904,9 +2917,11 @@ backup is gone.
 
      **Expect:**
      - **Ack:** `Completing season 1`
-     - **Then:** `✅ Season marked as complete.`, with nothing beneath it: the lines that may follow
-       name only a job a league admin discarded, or a real driver with no signup channel left, and
-       this season has neither.
+     - **Then:** `✅ Season marked as complete.`, followed by a `⚠️ **Image notices**` section where a
+       final classification or a final attendance sheet drew with notices (each picture named as
+       the log's block names it, a *see them in the log* link, its notices beneath), and by nothing
+       else: the other lines that may follow name only a job a league admin discarded, or a real
+       driver with no signup channel left, and this season has neither.
      - **Posts**, one division at a time, Division 1 then Division 2:
        - `#d1-standings`, `#d2-standings`: the **final classification**, two pictures, drivers then
          constructors, each posted with no message text, the occasion `Final Classification` drawn
@@ -2924,7 +2939,7 @@ backup is gone.
        > UNVERIFIED: what the final pictures hold beside the classification (the rounds' grid, the
        > reserves). Look at each as a PNG and record it.
      - **Roles:** none taken back: roles are taken back from real drivers only.
-     - **Log:** any notice blocks, headed
+     - **Log:** any notice blocks, each opening ``<you> | `/season complete` |`` and headed
        `Image render notices — Season 1 Division 1 — Final Classification — drivers standings:`,
        `… — constructors standings:` and
        `Image render notices — Season 1 Division 1 — attendance, Final Classification:`, and the

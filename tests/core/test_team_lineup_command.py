@@ -34,6 +34,7 @@ import discord
 import pytest
 
 from leaguebot.core.cogs.team_cog import TeamCog
+from tests.support.drawn_notices import told_section
 from tests.support.lineup_drawing import LineupDrawingStub
 from tests.support.undecorate import undecorate
 
@@ -370,6 +371,8 @@ async def test_a_drawn_lineup_is_sent_as_files(tmp_path, public):
 #: What the drawing noted of Division 1's lineup, and the link to the log channel's message it
 #: reported the notice in.
 _NOTICE = "a fallback flag stood in for Zara's"
+#: That notice as the drawing hands it back: its kind's heading, then the notice naming its field.
+_GROUPED = ("  Artwork not supplied by the league", f"    • `driver_flag_1` — {_NOTICE}")
 _NOTICES_LINK = "https://discord.test/4242/7"
 
 
@@ -392,11 +395,12 @@ async def test_a_drawn_lineup_s_notices_are_told_to_the_manager_alone_with_a_lin
     tmp_path, asked,
 ):
     """The league draws its lineup, and Division 1's lineup is drawn with a notice, a fallback
-    flag standing in for Zara's, which the drawing reported to the log channel. Asked for
+    flag standing in for Zara's, which the drawing reported to the log channel and hands back
+    grouped under its kind's heading, naming its field. Asked for
     privately or publicly, the manager is sent the picture as asked, and the picture's post
     carries neither the notice nor a link; the manager is also sent, seen by them alone whatever
-    `public` says, one follow-up listing the notice under "Image notices", labelled as the log line
-    names the picture (`lineup — Division 1`) and linked to the log channel's message holding it
+    `public` says, one follow-up listing the notice, grouped as it came, under "Image notices",
+    labelled as the log line names the picture (`lineup — Division 1`) and linked to the log channel's message holding it
     (image spec, Lineup; Constitution XIV.4: no notice in a channel the drivers read). Where
     Division 2 is then refused (the template is missing a field), no picture is sent, and the
     manager is told the refusal and, seen by them alone, the notice already logged, linked. Asked
@@ -411,7 +415,7 @@ async def test_a_drawn_lineup_s_notices_are_told_to_the_manager_alone_with_a_lin
     png = tmp_path / "lineup.png"
     png.write_bytes(b"\x89PNG\r\n\x1a\n")
     linked = asked != "unlinked"
-    division_1 = {"picture": png, "notices": (_NOTICE,)}
+    division_1 = {"picture": png, "notices": _GROUPED}
     if linked:
         division_1["log_link"] = _NOTICES_LINK
     divisions = [_division(11, "Division 1", 1)]
@@ -428,11 +432,7 @@ async def test_a_drawn_lineup_s_notices_are_told_to_the_manager_alone_with_a_lin
 
     await _lineup(cog, interaction, public="public" in asked)
 
-    label = (
-        f"  **lineup — Division 1** ([see them in the log]({_NOTICES_LINK}))\n"
-        if linked else "  **lineup — Division 1**\n"
-    )
-    section = f"⚠️ **Image notices**\n{label}  • {_NOTICE}"
+    section = told_section("lineup — Division 1", _NOTICES_LINK if linked else None, _GROUPED)
     calls = interaction.followup.send.await_args_list
 
     def _content(call) -> str:
@@ -472,7 +472,8 @@ async def test_a_drawn_lineup_s_notices_are_told_to_the_manager_alone_with_a_lin
 @pytest.mark.parametrize("refused", [False, True], ids=["both_drawn", "division_2_refused"])
 async def test_a_notices_section_over_the_message_limit_is_sent_in_parts(tmp_path, refused):
     """The league draws its lineup across two divisions, and each division's lineup is drawn with
-    twelve long notices (a fallback flag standing in for a driver's own), each division's reported
+    twelve long notices (a fallback flag standing in for a driver's own), grouped under their
+    kind's heading as the drawing hands them back, each division's reported
     to the log channel in a message of its own, so that the notices section runs past the 2,000
     characters one Discord message holds. Asked for publicly, with both divisions drawn or with
     Division 2 then refused (the template is missing a field), the command does not fail: every
@@ -481,11 +482,11 @@ async def test_a_notices_section_over_the_message_limit_is_sent_in_parts(tmp_pat
     png = tmp_path / "lineup.png"
     png.write_bytes(b"\x89PNG\r\n\x1a\n")
     notices = {
-        division: tuple(
-            f"Division {division} notice {n}: a fallback flag stood in for the driver's own, "
-            f"since the league's flag artwork names no country of that code"
+        division: ("  Artwork not supplied by the league ×12", *(
+            f"    • `driver_flag_{n}` — Division {division} notice {n}: a fallback flag stood in "
+            f"for the driver's own, since the league's flag artwork names no country of that code"
             for n in range(1, 13)
-        )
+        ))
         for division in (1, 2)
     }
     links = {division: f"https://discord.test/4242/{division}" for division in (1, 2)}
@@ -518,11 +519,30 @@ async def test_a_notices_section_over_the_message_limit_is_sent_in_parts(tmp_pat
     assert all(call.kwargs["ephemeral"] is True for call in parts), calls
     for division in (1, 2):
         assert f"([see them in the log]({links[division]}))" in told
-        for notice in notices[division]:
-            assert f"  • {notice}" in told
+        for notice in notices[division][1:]:
+            assert notice in told
     assert [str(call.args[0]) for call in calls if str(call.args[0]) == refusal] == (
         [refusal] if refused else []
     )
+
+
+async def test_the_drawing_is_handed_the_member_and_the_command(tmp_path):
+    """The league draws its lineup, and Manager (member 77) runs `/team lineup` for Division 1.
+    The drawing is handed, with the division, the member named as the log channel names them
+    ("Manager (<@77>)") and the command (`/team lineup`), so that the log entry holding the
+    picture's notices opens with both, as every other entry does (owner decision 2026-11-24;
+    Constitution V)."""
+    png = tmp_path / "lineup.png"
+    png.write_bytes(b"\x89PNG\r\n\x1a\n")
+    drawing = LineupDrawingStub(picture=png)
+    cog = _make_cog(teams=[_team("Alpha", 1, [(1, None, None)])], drawing=drawing)
+    interaction = _interaction()
+    interaction.command = SimpleNamespace(qualified_name="team lineup")
+
+    await _lineup(cog, interaction)
+
+    assert drawing.drawn_for_command == [11]
+    assert drawing.commanded == [("Manager (<@77>)", "`/team lineup`")]
 
 
 async def test_a_drawing_that_fails_fails_the_command(tmp_path):

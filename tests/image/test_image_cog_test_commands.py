@@ -653,6 +653,7 @@ class TestTheNoticeBlock:
 
     async def _run(self, cog, notices):
         interaction = _Interaction()
+        interaction.command = SimpleNamespace(qualified_name="images test standings")
         await cog._send_preview(
             interaction,
             title="Standings",
@@ -671,9 +672,10 @@ class TestTheNoticeBlock:
         assert "http://discord/x/1" in reply
 
     async def test_the_notices_are_logged_as_well_as_shown(self, cog):
-        """`/images test standings` for Division 1 draws with one flag falling back. The notice
-        is logged once, in a block whose heading names what was drawn: the standings, of
-        Division 1."""
+        """Tester (member 1) runs `/images test standings` for Division 1, which draws with one
+        flag falling back. The notice is logged once, in an entry that opens with the member and
+        the command, as every other entry does, then a block whose heading names what was
+        drawn: the standings, of Division 1 (owner decision 2026-11-24; Constitution V)."""
         cog.bot = self._bot()
 
         await self._run(cog, [self._notice("a flag fell back", "row_1_flag")])
@@ -681,15 +683,20 @@ class TestTheNoticeBlock:
         assert len(cog.bot.posted) == 1
         assert "a flag fell back" in cog.bot.posted[0]
         heading = cog.bot.posted[0].splitlines()[0]
+        assert heading.startswith(
+            "Tester (<@1>) | `/images test standings` | Image render notices — "
+        ), heading
         assert "Standings" in heading and "Division 1" in heading, heading
 
     async def test_a_log_failure_costs_the_link_and_nothing_else(self, cog):
-        """A log-channel problem must never cost the preview, which is what was asked for."""
+        """A log-channel problem must never cost the preview, which is what was asked for: the
+        reply still lists the notice under "Image notices", the heading every other reply
+        uses, with no link."""
         cog.bot = self._bot(fail=True)
 
         reply = await self._run(cog, [self._notice("a flag fell back", "row_1_flag")])
 
-        assert "Notices" in reply
+        assert "⚠️ **Image notices**" in reply
         assert "a flag fell back" in reply
         assert "http" not in reply
 
@@ -737,12 +744,61 @@ class TestTheNoticeBlock:
         assert all(sent.get("ephemeral") is True for sent in interaction.followup.kwargs)
         assert len(interaction.followup.files) == 1
 
+    async def test_each_picture_s_notices_are_listed_beneath_its_own_label(self, cog):
+        """Tester runs `/images test standings` for Division 1, which draws two pictures: the
+        drivers' standings with a flag falling back, and the teams' standings with a font
+        substituted. The log channel holds one entry, opening with the member and the command,
+        in which each picture's notice sits in a block of its own, headed by that picture and
+        Division 1. The reply lists, under one "Image notices" heading, each picture under the
+        name its block gives it, linked to that entry, with its own notice beneath it and not the
+        other's (image spec, Errors and the rejection of input: the message names what was
+        being drawn)."""
+        cog.bot = self._bot()
+        interaction = _Interaction()
+        interaction.command = SimpleNamespace(qualified_name="images test standings")
+        drawn = {
+            "Drivers' standings": self._notice("a flag fell back", "row_1_flag"),
+            "Teams' standings": self._notice(
+                "Formula1 Display was unavailable", "row_1_team", kind="FONT_SUBSTITUTED"
+            ),
+        }
+
+        await cog._send_preview(
+            interaction,
+            title="Standings",
+            context=_context(),
+            outcomes=[
+                (label, "standings_drivers_template", _outcome(notices=[notice]))
+                for label, notice in drawn.items()
+            ],
+        )
+
+        [entry] = cog.bot.posted
+        assert entry.startswith("Tester (<@1>) | `/images test standings` | "), entry
+        reply = interaction.followup.messages[0]
+        assert reply.count("⚠️ **Image notices**") == 1, reply
+        listed = reply[reply.index("⚠️ **Image notices**"):]
+        for label, notice in drawn.items():
+            other = next(each for each in drawn.values() if each is not notice)
+            before = entry[:entry.index(notice.detail)]
+            block = before[before.rindex("Image render notices — "):]
+            subject = block.removeprefix("Image render notices — ").split(":\n", 1)[0]
+            assert label in subject and "Division 1" in subject, entry
+            own = entry.split(f"Image render notices — {subject}:\n", 1)[1]
+            assert other.detail not in own.split("Image render notices — ", 1)[0], entry
+            shown = f"  **{subject}** ([see them in the log](http://discord/x/1))"
+            assert shown in listed, listed
+            beneath = listed.split(shown, 1)[1].split("  **", 1)[0]
+            assert notice.detail in beneath and other.detail not in beneath, listed
+
     async def test_a_clean_render_says_nothing_about_notices(self, cog):
+        """A preview drawn with no notice says nothing of notices, under either heading, and
+        logs nothing."""
         cog.bot = self._bot()
 
         reply = await self._run(cog, [])
 
-        assert "Notices" not in reply
+        assert "notices" not in reply.lower()
         assert cog.bot.posted == []
 
 

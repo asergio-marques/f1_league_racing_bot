@@ -894,6 +894,8 @@ async def test_a_sync_s_sanction_card_whose_picture_fails_is_posted_as_text_and_
 
 #: The detail of the one render notice the sanction card's picture below is drawn with.
 CARD_NOTICE = "no `flag` image for “Racer”"
+#: The detail of the one render notice the division's attendance sheet below is drawn with.
+SHEET_NOTICE = "no `team_badge` image for “Alpha”"
 
 
 async def test_a_refused_sanction_card_s_picture_notice_reaches_the_log_once_when_it_is_retried(
@@ -902,12 +904,22 @@ async def test_a_refused_sanction_card_s_picture_notice_reaches_the_log_once_whe
     """Round 1 is final; its driver, a member of the server known as "Racer" (Discord user
     5101), is owed an auto-reserve, and the verdict graphic is on. The card's picture is drawn
     with one notice, a flag falling back, and the verdicts channel refuses every post carrying a
-    picture. Manager 77 runs `/attendance sync` from round 1 and the queue is run: it stops at the
-    card. A Retry posts the card in words: the queue runs to the end, the card names the driver,
-    and the log channel carries the notice once, in a block whose heading names Division 1 and
-    round 1, never lost with the refused try."""
-    from leaguebot.image.models.image_module import RenderNotice
+    picture. The image module is on with the attendance graphic switched on, and the division's
+    attendance sheet is drawn with a notice of its own, a team badge falling back. Manager 77
+    runs `/attendance sync` from round 1 and the queue is run: it stops at the card. A Retry
+    posts the card in words: the queue runs to the end, the card names the driver, and the log
+    channel carries each notice once, never lost with the refused try, each in a message opening
+    with Manager 77 and the command, the card's heading naming Division 1 and round 1. The sync's
+    reply lists the sanction applied, then ends in one "Image notices" section listing both the
+    card and the sheet, each with a link to the log message holding its notice and its notice
+    beneath, once (issue #635; image spec, Errors and the rejection of input, #550; owner
+    decision 2026-11-24, amendment)."""
+    from leaguebot.image.models.image_module import RenderNotice, RenderOutcome
     from leaguebot.image.services.aspects import image_verdict_post
+    from leaguebot.image.services.aspects.image_attendance_post import (
+        ATTENDANCE_ASPECT,
+        ATTENDANCE_TEMPLATE_KEY,
+    )
     from leaguebot.image.services.aspects.image_verdict_post import VerdictRender
 
     png = tmp_path / "card.png"
@@ -921,6 +933,24 @@ async def test_a_refused_sanction_card_s_picture_notice_reaches_the_log_once_whe
 
     monkeypatch.setattr(image_verdict_post, "render_verdict", _render)
     league = await _league(tmp_path, autosack=None, autoreserve=3)
+    answer_switch(league.bot.module_service, "images", True)
+    league.bot.image_config_service.get_toggles = AsyncMock(
+        return_value={ATTENDANCE_ASPECT: True}
+    )
+    league.bot.image_validity_service.template_reports = AsyncMock(
+        return_value={ATTENDANCE_TEMPLATE_KEY: MagicMock(valid=True)}
+    )
+    sheet = tmp_path / "sheet.png"
+
+    async def _draw(image_type: str, *_args: Any, **_kwargs: Any) -> Any:
+        sheet.write_bytes(b"\x89PNG")
+        notices = [RenderNotice(
+            image_type=ATTENDANCE_TEMPLATE_KEY, notice_kind="ASSET_FALLBACK_USED",
+            detail=SHEET_NOTICE, field_id="team_badge",
+        )] if image_type == ATTENDANCE_TEMPLATE_KEY else []
+        return RenderOutcome(png_paths=[sheet], notices=notices)
+
+    league.bot.image_render_service.render = AsyncMock(side_effect=_draw)
     await _a_member_owed_an_autoreserve(league)
     verdicts = league.channels[VERDICTS_CHANNEL]
     post = verdicts.send.side_effect
@@ -932,7 +962,7 @@ async def test_a_refused_sanction_card_s_picture_notice_reaches_the_log_once_whe
 
     verdicts.send.side_effect = _refuse_a_picture
 
-    await _sync(league)
+    interaction = await _sync(league)
     await run_queue(league.bot)
     assert await stopped_job(league.db_path) is not None
     await retry_job(league.bot)
@@ -944,3 +974,17 @@ async def test_a_refused_sanction_card_s_picture_notice_reaches_the_log_once_whe
     [block] = [line for line in league.log_lines() if CARD_NOTICE in line]
     heading = block.splitlines()[0]
     assert "Division 1" in heading and "round 1" in heading.lower(), block
+    told = updated_reply(interaction)
+    assert told.count("⚠️ **Image notices**") == 1, told
+    section = told.index("⚠️ **Image notices**")
+    assert -1 < told.find("Sanctions applied:") < section, told
+    for notice in (CARD_NOTICE, SHEET_NOTICE):
+        assert log.count(notice) == 1, log
+        [n] = [i for i, line in enumerate(league.log_lines(), start=1) if notice in line]
+        named, what, drawn_as = league.log_lines()[n - 1].splitlines()[0].split(" | ", 2)
+        assert "<@77>" in named and "/attendance sync" in what, named + what
+        assert drawn_as.startswith("Image render notices — "), drawn_as
+        label = drawn_as.removeprefix("Image render notices — ").removesuffix(":")
+        listed = f"  **{label}** ([see them in the log](https://discord.test/{n}))"
+        assert section < told.find(listed), told
+        assert told.count(notice) == 1, told

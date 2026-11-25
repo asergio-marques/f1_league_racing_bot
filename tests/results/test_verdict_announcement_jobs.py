@@ -53,12 +53,14 @@ from tests.support.review_league import (
     LEWIS,
     LEWIS_PROFILE,
     MAX,
+    MAX_PROFILE,
     NOW,
     PROMPT,
     ROUND_ID,
     SUBMISSION_CHANNEL,
     VERDICTS_CHANNEL,
     ReviewLeague,
+    candidate,
     channel,
     one,
     penalty,
@@ -66,6 +68,7 @@ from tests.support.review_league import (
     stopped_at,
     verdict_headings,
 )
+from tests.support.settings_league import unruled
 from tests.support.switches import answer_switch
 
 APPEALS_PROMPT = 8902
@@ -1046,6 +1049,49 @@ async def test_a_verdict_picture_s_render_fault_is_named_by_its_own_picture(
 #: The detail of the one render notice the drawing below comes back with.
 NOTICE_DETAIL = "no `flag` image for “Lewis”"
 
+#: The job that posts each verdict picture.
+_POSTED_BY = {"verdicts": "announce_verdict", "verdict_banner": "announce_heading"}
+
+#: What a verdict picture's notice block opens with: Alex, then the button he pressed.
+_NOTICE_OPENING = (
+    "Admin (`<@4242>`) | ✅ Approve on round 3's penalty review | Image render notices — "
+)
+
+async def _notice_is_framed_and_kept(
+    league: ReviewLeague, aspect: str, interaction: Any
+) -> None:
+    """The log channel carries the one notice once, in a line opening with Alex and the button he
+    pressed, then "Image render notices — <picture>:" naming Pro and round 3, and beneath it the
+    notice under "Artwork not supplied by the league", naming its field `flag`, with no kind code
+    and no template name; the job that posted the *aspect* picture keeps the picture's name and
+    its grouped notices on its result; and Alex's reply, on *interaction*, ends in one "Image
+    notices" section listing the picture under that name, linked to the log channel's message
+    holding it, with its grouped notice beneath, told once."""
+    from tests.support.change_queue import step_rows
+    from tests.support.drawn_notices import told_section
+
+    log = league.log()
+    assert log.count(NOTICE_DETAIL) == 1, log
+    [(held, block)] = [(n, message) for n, message in enumerate(league.bot.log_channel.sent, 1)
+                       if NOTICE_DETAIL in message]
+    assert block.startswith(_NOTICE_OPENING), block
+    heading, *grouped = unruled(block).splitlines()
+    assert "Pro" in heading and "round 3" in heading.lower(), block
+    assert grouped == [
+        "  Artwork not supplied by the league", f"    • `flag` — {NOTICE_DETAIL}",
+    ], block
+    assert "ASSET_FALLBACK_USED" not in block and "_template" not in block, block
+    from leaguebot.framework.models.change import RESULT_DRAWN, RESULT_NOTICES, RESULT_PICTURES
+    [kept] = [row["result"] for row in await step_rows(league.db_path)
+              if row["name"] == _POSTED_BY[aspect]]
+    label = heading.removeprefix(_NOTICE_OPENING).removesuffix(":")
+    assert kept[RESULT_PICTURES] == [{RESULT_DRAWN: label, RESULT_NOTICES: grouped}], kept
+    told = updated_reply(interaction)
+    assert told.count("⚠️ **Image notices**") == 1, told
+    listed = told_section(label, f"https://discord.test/{held}", tuple(grouped))
+    assert listed.split("\n", 1)[1] in told, told
+    assert told.count(NOTICE_DETAIL) == 1, told
+
 
 @pytest.mark.parametrize(
     ("aspect", "template", "name"), _FAULTED_PICTURES,
@@ -1058,8 +1104,11 @@ async def test_a_verdict_picture_s_render_notices_reach_the_log_once_naming_the_
     valid. Alex approves a five-second penalty for Lewis in round 3 of Pro, and the image
     module's render of that picture is drawn with one notice, a flag falling back. The verdict is
     announced naming Lewis and the queue runs to the end; the log channel carries the notice
-    once, in a block whose heading names Pro and round 3, and no block without a heading carries
-    it a second time."""
+    once, in a line opening with Alex and the button he pressed, then a heading naming Pro and
+    round 3, and beneath it the notice grouped under its kind in plain words, naming its field;
+    the job that posted the picture keeps its name and grouped notices, and Alex's reply ends in
+    one "Image notices" section listing the picture under that name, linked to the log message,
+    its notice told once (issue #635; Constitution V)."""
     from leaguebot.image.models.image_module import RenderNotice, RenderOutcome
 
     league = await review_league(tmp_path)
@@ -1076,16 +1125,12 @@ async def test_a_verdict_picture_s_render_notices_reach_the_log_once_naming_the_
             field_id="flag",
         )],
     ))
-    await _approve_reports(league, [penalty(LEWIS)])
+    interaction = await _approve_reports(league, [penalty(LEWIS)])
     await run_queue(league.bot)
 
     assert await stopped_at(league) is None
     assert any(f"<@{LEWIS}>" in verdict for verdict in _verdicts(league))
-    log = league.log()
-    assert log.count(NOTICE_DETAIL) == 1, log
-    [block] = [message for message in league.bot.log_channel.sent if NOTICE_DETAIL in message]
-    heading = block.splitlines()[0]
-    assert "Pro" in heading and "round 3" in heading.lower(), block
+    await _notice_is_framed_and_kept(league, aspect, interaction)
 
 
 @pytest.mark.parametrize(
@@ -1099,8 +1144,12 @@ async def test_a_refused_verdict_picture_s_notice_reaches_the_log_once_when_it_i
     and the verdicts channel refuses every post carrying a picture. Alex approves a five-second
     penalty for Lewis in round 3 of Pro; the picture is drawn with one notice, a flag falling back,
     and Discord refuses its post, stopping the queue. A Retry posts it in words: the queue runs to
-    the end, Lewis's verdict is announced, and the log channel carries the notice once, in a block
-    whose heading names Pro and round 3, never lost with the refused try."""
+    the end, Lewis's verdict is announced, and the log channel carries the notice once, in a line
+    opening with Alex and the button he pressed, then a heading naming Pro and round 3, and the
+    notice grouped beneath; the job keeps the picture's name and grouped notices across the stop,
+    never lost with the refused try, and Alex's reply, after the Retry, lists the picture under
+    "Image notices" with its log link and its notice told once (issue #635; image spec, Errors and
+    the rejection of input, #550)."""
     from leaguebot.image.models.image_module import RenderNotice, RenderOutcome
 
     league = await review_league(tmp_path)
@@ -1122,7 +1171,7 @@ async def test_a_refused_verdict_picture_s_notice_reaches_the_log_once_when_it_i
     league.channel(VERDICTS_CHANNEL).fail_when = (
         lambda _content, kwargs: kwargs.get("file") is not None
     )
-    await _approve_reports(league, [penalty(LEWIS)])
+    interaction = await _approve_reports(league, [penalty(LEWIS)])
     await run_queue(league.bot)
 
     assert await stopped_at(league) is not None
@@ -1130,11 +1179,7 @@ async def test_a_refused_verdict_picture_s_notice_reaches_the_log_once_when_it_i
 
     assert await stopped_at(league) is None
     assert any(f"<@{LEWIS}>" in verdict for verdict in _verdicts(league))
-    log = league.log()
-    assert log.count(NOTICE_DETAIL) == 1, log
-    [block] = [message for message in league.bot.log_channel.sent if NOTICE_DETAIL in message]
-    heading = block.splitlines()[0]
-    assert "Pro" in heading and "round 3" in heading.lower(), block
+    await _notice_is_framed_and_kept(league, aspect, interaction)
 
 
 async def test_a_verdict_picture_that_could_not_be_drawn_keeps_its_fault_line_when_its_text_post_is_refused(
@@ -1171,3 +1216,165 @@ async def test_a_verdict_picture_that_could_not_be_drawn_keeps_its_fault_line_wh
     lines = [line for line in log.splitlines() if RENDER_FAULT in line]
     assert len(lines) == 1, log
     assert lines[0].startswith("⚠️ Verdicts image — "), lines[0]
+
+
+#: The notice the review's attendance sheet and its refreshed lineup are each drawn with, grouped
+#: as the drawing hands it back: its kind in plain words, then the notice naming its field.
+_GROUPED_NOTICE = (
+    "  Artwork not supplied by the league", f"    • `flag` — {NOTICE_DETAIL}",
+)
+
+#: Pro's sheet after round 3, as the sheet's notice block names it.
+_SHEET_DRAWN = "Season 1 Pro — attendance after round 3"
+
+
+def _held(league: ReviewLeague) -> tuple[int, str]:
+    """The one log channel message carrying the notice, and its place among those sent, which
+    the reply's link names."""
+    [(held, message)] = [(n, message) for n, message in enumerate(league.bot.log_channel.sent, 1)
+                         if NOTICE_DETAIL in message]
+    return held, message
+
+
+def _told_once(interaction: Any, label: str, held: int) -> None:
+    """Alex's reply ends in one "Image notices" section listing the picture *label* linked to the
+    log message *held*, its grouped notice beneath, told once."""
+    from tests.support.drawn_notices import told_section
+
+    told = updated_reply(interaction)
+    assert told.count("⚠️ **Image notices**") == 1, told
+    listed = told_section(label, f"https://discord.test/{held}", _GROUPED_NOTICE)
+    assert listed.split("\n", 1)[1] in told, told
+    assert told.count(NOTICE_DETAIL) == 1, told
+
+
+@pytest.mark.parametrize("refused", [False, True], ids=["posted", "refused_then_retried"])
+async def test_a_review_s_attendance_sheet_drawn_with_notices_is_framed_kept_and_listed_in_the_reply(
+    tmp_path, refused,
+):
+    """Attendance is on, and Max is owed an autoreserve. Alex approves round 3's reports with a
+    five-second penalty for Lewis, so the sanction applies and Pro's attendance sheet is posted
+    twice by the review's own sheet jobs: plain before the sanction, and after it drawn with one
+    notice, a flag falling back, which attendance's posting hands back marked as the drawing marks
+    it: "Image render notices — Season 1 Pro — attendance after round 3:" over the notice grouped
+    under its kind. Run twice: posted on the first try; and refused by Discord on the first try
+    (Missing Access), the stop keeping the notice, then posted as text by a Retry. Either way the
+    queue runs to the end, and the log channel carries the notice once, in one message opening
+    with Alex and the button he pressed, then the heading and the grouped notice beneath, never a
+    bare block; the sheet job after the sanction keeps the sheet's name and its grouped notice on
+    its result and no raw fault list, the one before it no pictures; and Alex's reply ends in one
+    "Image notices" section listing the sheet under that name, linked to that log message, its
+    notice told once (issue #635; owner decision 2026-11-25)."""
+    from leaguebot.framework.models.change import (
+        RESULT_DRAWN,
+        RESULT_NOTICES,
+        RESULT_PICTURES,
+        NoticeBlock,
+        StepFailedOnDiscord,
+    )
+    from leaguebot.framework.utils.log_lines import notices_block
+    from tests.support.change_queue import step_rows
+
+    league = await review_league(tmp_path, attendance=True)
+    league.attendance.candidates = [candidate(MAX_PROFILE, MAX)]
+    block = NoticeBlock(notices_block(_SHEET_DRAWN, _GROUPED_NOTICE))
+    posted = {"new": 9001, "channel_id": 4242, "takes_slot": False, "faults": []}
+
+    async def _post_sheet(_round_id: int, _division_id: int, *, sanctioned: Any, as_text: bool,
+                          earlier_lines: tuple[str, ...] = ()) -> dict[str, Any]:
+        # The sheet before the sanctions is posted plain; the one after them is drawn.
+        if not sanctioned:
+            return posted
+        if refused and not as_text:
+            raise StepFailedOnDiscord(
+                "the attendance sheet could not be posted: 403 Forbidden: Missing Access"
+            ).carrying((block,))
+        return posted if refused else {**posted, "faults": [block]}
+
+    league.attendance.post_sheet = _post_sheet
+    interaction = await _approve_reports(league, [penalty(LEWIS)])
+    await run_queue(league.bot)
+    if refused:
+        assert await stopped_at(league) == "attendance_sheet"
+        await retry_job(league.bot)
+
+    assert await stopped_at(league) is None
+    held, message = _held(league)
+    assert message.count(NOTICE_DETAIL) == 1, league.log()
+    assert unruled(message) == _NOTICE_OPENING + "\n".join(
+        [f"{_SHEET_DRAWN}:", *_GROUPED_NOTICE]
+    ), message
+    before, kept = [row["result"] for row in await step_rows(league.db_path)
+                    if row["name"] == "attendance_sheet"]
+    assert RESULT_PICTURES not in before, before
+    assert kept[RESULT_PICTURES] == [
+        {RESULT_DRAWN: _SHEET_DRAWN, RESULT_NOTICES: list(_GROUPED_NOTICE)},
+    ], kept
+    assert "faults" not in kept, kept
+    _told_once(interaction, _SHEET_DRAWN, held)
+
+
+@pytest.mark.parametrize("refused", [False, True], ids=["posted", "refused_then_retried"])
+async def test_a_review_s_refreshed_lineup_drawn_with_notices_keeps_them_across_a_retry_and_links_them(
+    tmp_path, refused,
+):
+    """Attendance is on, and Max is owed an autoreserve. Alex approves round 3's reports with a
+    five-second penalty for Lewis, so the sanction applies and the review's refresh-lineup job
+    posts Pro's lineup afresh. The lineup is drawn with one notice, a flag falling back. Run
+    twice: posted as a picture on the first try; and on the first try Discord refusing the
+    picture and then the text (Missing Access), stopping the queue, and a Retry posting the
+    lineup as text, which draws no picture. Either way the queue runs to the end; the log
+    channel carries the notice once, in one message opening with Alex and the button he pressed,
+    then "Image render notices — lineup — Pro:" and the grouped notice beneath; the job keeps the
+    lineup's notice, the refused try's included; and Alex's reply ends in one "Image notices"
+    section listing "lineup — Pro" linked to that log message, its notice told once (issue #635;
+    owner decision 2026-11-25)."""
+    from leaguebot.core.services.drivers.lineup_posting import LINEUP_DRAWN_ATTRIBUTE
+    from leaguebot.framework.models.change import (
+        RESULT_DRAWN,
+        RESULT_NOTICES,
+        StepFailedOnDiscord,
+    )
+    from tests.support.change_queue import step_rows
+
+    league = await review_league(tmp_path, attendance=True)
+    league.attendance.candidates = [candidate(MAX_PROFILE, MAX)]
+    asked: list[bool] = []
+
+    async def _refresh(division_id: int, *, as_text: bool = False) -> dict[str, Any]:
+        asked.append(as_text)
+        if refused and not as_text:
+            stop = StepFailedOnDiscord(
+                "the lineup could not be posted: 403 Forbidden: Missing Access"
+            )
+            setattr(stop, LINEUP_DRAWN_ATTRIBUTE, {
+                "division_name": "Pro", "notices": list(_GROUPED_NOTICE),
+                "problem": "Discord refused the picture (403 Forbidden: Missing Access)",
+                "refused": True, "fault_source": "league",
+            })
+            raise stop
+        return {
+            "new": 9101, "old": None, "old_channel_id": None, "channel_id": 4343,
+            "division_name": "Pro", "form": "text" if as_text else "image", "problem": None,
+            RESULT_NOTICES: [] if as_text else list(_GROUPED_NOTICE),
+            RESULT_DRAWN: "lineup — Pro", "refused": False, "fault_source": "league",
+        }
+
+    league.attendance.refresh_lineup = _refresh
+    interaction = await _approve_reports(league, [penalty(LEWIS)])
+    await run_queue(league.bot)
+    if refused:
+        assert await stopped_at(league) == "refresh_lineup"
+        await retry_job(league.bot)
+
+    assert await stopped_at(league) is None
+    assert asked == ([False, True] if refused else [False])
+    held, message = _held(league)
+    assert message.count(NOTICE_DETAIL) == 1, league.log()
+    assert unruled(message) == _NOTICE_OPENING + "\n".join(
+        ["lineup — Pro:", *_GROUPED_NOTICE]
+    ), message
+    [kept] = [row["result"] for row in await step_rows(league.db_path)
+              if row["name"] == "refresh_lineup"]
+    assert kept[RESULT_NOTICES] == list(_GROUPED_NOTICE), kept
+    _told_once(interaction, "lineup — Pro", held)

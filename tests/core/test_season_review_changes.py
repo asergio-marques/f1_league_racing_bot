@@ -898,10 +898,11 @@ async def test_a_review_s_lineup_and_calendar_notices_reach_the_log_once_in_its_
         posting, monkeypatch, tmp_path, outcome):
     """The real change types are registered, as the builder registers them, and the drawing the
     bot carries draws Alex's review's two pictures of Pro as PNGs: Pro's calendar of season 1 with
-    one notice (round 12 not fitting) and Pro's lineup with another (Zara's flag falling back).
-    Once the queue runs, both pictures are posted and the queue does not stop; the log channel
-    holds each notice once, in a line naming what was drawn (the calendar or the lineup, and
-    Pro), which the job that drew and posted it carries among its own lines (Constitution XIV.4;
+    one notice (round 12 not fitting) and Pro's lineup with two (Zara's flag and portrait falling
+    back), each grouped by kind as the drawing hands them back. Once the queue runs, both pictures
+    are posted and the queue does not stop; the log channel holds each picture's notices once, in
+    a line opening with Alex and `/season placements-review` and naming what was drawn (the calendar or the lineup, and Pro) and carrying them grouped as
+    they came, never bulleted again, which the job that drew and posted it carries among its own lines (Constitution XIV.4;
     the owner's decision on #288: code inside a job never calls `post_log`).
 
     Where the post is refused, review channel 700 refuses the first picture and every message
@@ -914,14 +915,17 @@ async def test_a_review_s_lineup_and_calendar_notices_reach_the_log_once_in_its_
     not stop. Its notice is still held once, naming the lineup and Pro, beside the job's "Picture
     not drawn" line for the lineup, never lost with the picture.
 
-    In every case Alex's reply ends in one "Image notices" section listing each picture's notice
-    under the picture's name, "Pro calendar" and "Pro lineup", linked to the log channel's message
+    In every case Alex's reply ends in one "Image notices" section listing each picture's grouped
+    notices under the picture's name, "Pro calendar" and "Pro lineup", linked to the log channel's message
     holding it (Constitution XIV.4; image spec, render notices). Where both pictures were posted,
     the reply opens "✅ Review posted." and the section follows; where the lineup was not drawn,
     the fault block comes first and the section after it."""
     from leaguebot.core.services.modules.image_drawing import LineupPicture
     from tests.support.calendar_drawing import CalendarDrawingStub, draw_calendars_with
     from tests.support.change_queue import queued_log_lines
+    from tests.support.drawn_notices import (
+        GROUPED_NOTICE, NOTICE, ZARA_FALLBACKS, logged_block, told_section,
+    )
 
     drawn = {}
     for kind in ("calendar", "lineup"):
@@ -929,13 +933,14 @@ async def test_a_review_s_lineup_and_calendar_notices_reach_the_log_once_in_its_
         folder.mkdir()
         drawn[kind] = folder / f"{kind}.png"
         drawn[kind].write_bytes(b"\x89PNG\r\n\x1a\n")
-    calendar_notice, lineup_notice = "round 12 did not fit", "a fallback flag stood in for Zara's"
+    calendar_notice, lineup_notice = NOTICE, "a fallback flag stood in for Zara's"
+    grouped = {"Pro calendar": GROUPED_NOTICE, "Pro lineup": ZARA_FALLBACKS}
     draw_calendars_with(posting.bot, monkeypatch,
-                        CalendarDrawingStub(picture=drawn["calendar"], notices=(calendar_notice,)))
+                        CalendarDrawingStub(picture=drawn["calendar"], notices=GROUPED_NOTICE))
     refused, not_drawn = outcome == "refused-then-retried", outcome == "lineup-not-drawn"
-    lineup = (LineupPicture(path=None, problem="the template has no rows", notices=(lineup_notice,))
+    lineup = (LineupPicture(path=None, problem="the template has no rows", notices=ZARA_FALLBACKS)
               if not_drawn else
-              LineupPicture(path=drawn["lineup"], problem=None, notices=(lineup_notice,)))
+              LineupPicture(path=drawn["lineup"], problem=None, notices=ZARA_FALLBACKS))
     monkeypatch.setattr(posting.bot.image_drawing, "draw_review_lineup",
                         AsyncMock(return_value=lineup))
     posting.bot.season_service.get_division = AsyncMock(
@@ -974,10 +979,12 @@ async def test_a_review_s_lineup_and_calendar_notices_reach_the_log_once_in_its_
     if not refused:
         assert len([m for m in _posts(posting.channel) if m.picture]) == (1 if not_drawn else 2)
     logged = [*posting.bot.log_channel.sent, *await queued_log_lines(posting.db_path)]
-    for notice, kind in ((calendar_notice, "calendar"), (lineup_notice, "lineup")):
+    for notice, name in ((calendar_notice, "Pro calendar"), (lineup_notice, "Pro lineup")):
         named = [line for line in logged if notice in line]
         assert len(named) == 1, logged
-        assert kind in named[0].lower() and "Pro" in named[0], named[0]
+        opening = named[0].split(" | Image render notices", 1)[0].replace("`", "")
+        assert opening.startswith(f"Alex (<@{REVIEWER}>) | {PLACEMENTS}"), named[0]
+        assert f"| {logged_block(name, grouped[name])}" in named[0], named[0]
     if not_drawn:
         not_drawn_lines = [line for line in logged if "Picture not drawn" in line]
         assert len(not_drawn_lines) == 1, logged
@@ -987,15 +994,61 @@ async def test_a_review_s_lineup_and_calendar_notices_reach_the_log_once_in_its_
     assert told.count("⚠️ **Image notices**") == 1, told
     for notice, name in ((calendar_notice, "Pro calendar"), (lineup_notice, "Pro lineup")):
         [held] = [n for n, line in enumerate(posting.bot.log_channel.sent, 1) if notice in line]
-        assert (
-            f"  **{name}** ([see them in the log](https://discord.test/{held}))\n"
-            f"  • {notice}"
-        ) in told, told
+        section = told_section(name, f"https://discord.test/{held}", grouped[name])
+        assert section.removeprefix("⚠️ **Image notices**\n") in told, told
     if not_drawn:
         assert told.index("⛔ **A graphic could not be drawn for this review.**") < told.index(
             "\n\n⚠️ **Image notices**\n"), told
     else:
         assert "✅ Review posted.\n\n⚠️ **Image notices**\n" in told, told
+
+
+async def test_a_review_picture_s_repeated_notice_is_counted_once_in_the_log_and_the_reply(
+        posting, monkeypatch, tmp_path):
+    """The real change types are registered, as the builder registers them, and the bot carries
+    the image module's drawing as the builder attaches it. Alex's review asks for Pro's lineup
+    alone, and the image module draws it as a PNG with twenty-five identical font substitutions,
+    one for each name drawn. Once the queue runs, the log channel holds one line naming Pro's
+    lineup in which the twenty-five are one notice, counted (×25) and naming the font, under the
+    heading "Font substituted"; and Alex's reply lists them under "Pro lineup" the same way, once,
+    never twenty-five times (Constitution XIV.4, "How they are reported"; issue #635)."""
+    from leaguebot.image.models.image_module import RenderNotice
+    from leaguebot.image.services.render.image_drawing import ImageDrawing
+    from tests.support.change_queue import queued_log_lines
+
+    folder = tmp_path / "f1bot_render_lineup"
+    folder.mkdir()
+    png = folder / "lineup.png"
+    png.write_bytes(b"\x89PNG\r\n\x1a\n")
+    font = [
+        RenderNotice(image_type="lineup_template", notice_kind="FONT_SUBSTITUTED",
+                     detail="Formula1 Display was unavailable, so a substitute was drawn",
+                     field_id=f"team_{n}_driver_name")
+        for n in range(25)
+    ]
+    monkeypatch.setattr(ImageDrawing, "_render_lineup", AsyncMock(return_value=(
+        {}, SimpleNamespace(problem=None, png_paths=[png], notices=font))))
+    monkeypatch.setattr(ImageDrawing, "lineup_wanted", AsyncMock(return_value=True))
+    _with_image_s_drawing(posting.bot)
+    attach_queue(posting.bot, posting.db_path, now=posting.clock)
+    interaction = member_interaction(posting.bot, user=_alex())
+    interaction.channel_id = REVIEW_CHANNEL
+    await posting.bot.change_queue.ask(
+        POST, {**_payload(), "pictures": [PICTURES[1]], "question": None},
+        interaction=interaction, what="posting the placements review",
+    )
+
+    await run_queue(posting.bot)
+
+    assert await stopped_job(posting.db_path) is None
+    logged = [*posting.bot.log_channel.sent, *await queued_log_lines(posting.db_path)]
+    [line] = [each for each in logged if "Formula1 Display" in each]
+    assert "| Image render notices — Pro lineup:\n" in line, line
+    assert line.count("Formula1 Display") == 1 and "(×25)" in line, line
+    assert "Font substituted" in line and "lineup_template" not in line, line
+    told = updated_reply(interaction)
+    assert told.count("Formula1 Display") == 1 and "(×25)" in told, told
+    assert "  **Pro lineup** ([see them in the log](" in told, told
 
 
 async def test_a_drawn_picture_s_render_directory_is_gone_once_its_job_completes(
@@ -1126,7 +1179,6 @@ async def test_a_review_whose_take_down_is_in_hand_is_not_asked_again_at_a_secon
 
 #: The area of the season the tests change, as the review's evidence names it.
 PRO_ROUNDS = "Division Pro's rounds"
-
 
 
 def _approve_view(env: Any, monkeypatch: Any) -> tuple[Any, Any]:

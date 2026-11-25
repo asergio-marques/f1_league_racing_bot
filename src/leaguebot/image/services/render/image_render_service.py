@@ -24,8 +24,13 @@ from pathlib import Path
 
 from dataclasses import dataclass, field as dataclass_field
 
+from leaguebot.framework.models.change import NoticeBlock
 from leaguebot.framework.utils.interaction_errors import describe_fault
-from leaguebot.image.models.image_constants import NOTICE_TIER_COLOURS_NOT_APPLIED
+from leaguebot.framework.utils.log_lines import notices_block
+from leaguebot.image.models.image_constants import (
+    KIND_WORDS,
+    NOTICE_TIER_COLOURS_NOT_APPLIED,
+)
 from leaguebot.image.models.image_module import (
     PROBLEM_CONVERTER_ABSENT,
     PROBLEM_DRAWING_FAULT,
@@ -598,7 +603,7 @@ def grouped_notice_lines(notices: list[RenderNotice]) -> list[str]:
     their own, and still be grouped identically. The notices themselves are untouched: this is
     presentation, and only presentation.
     """
-    by_kind: dict[str, dict[tuple[str, str], list[str]]] = {}
+    by_kind: dict[str, dict[str, list[str]]] = {}
     order: list[str] = []
     for notice in notices:
         kind = notice.notice_kind
@@ -609,22 +614,23 @@ def grouped_notice_lines(notices: list[RenderNotice]) -> list[str]:
         # twenty otherwise identical marker notices, so keying on it would defeat the
         # grouping entirely. The ids are kept aside rather than discarded — a notice that
         # stands alone still names its field, which is what XIV.4 requires of it.
-        key = (notice.image_type, notice.detail)
-        by_kind[kind].setdefault(key, []).append(notice.field_id or "")
+        by_kind[kind].setdefault(notice.detail, []).append(notice.field_id or "")
 
     lines: list[str] = []
     for kind in order:
         culprits = by_kind[kind]
         total = sum(len(ids) for ids in culprits.values())
-        lines.append(f"  [{kind}] ×{total}" if total > 1 else f"  [{kind}]")
-        for (image_type, detail), field_ids in culprits.items():
+        words = KIND_WORDS.get(kind, kind)
+        lines.append(f"  {words} ×{total}" if total > 1 else f"  {words}")
+        for detail, field_ids in culprits.items():
             # One occurrence names where it happened; many name how many times, because
-            # a list of twenty ids is not something a manager reads or acts on.
+            # a list of twenty ids is not something a manager reads or acts on. The
+            # template's own key is named by neither: a league never reads it.
             if len(field_ids) == 1:
-                where = f" / `{field_ids[0]}`" if field_ids[0] else ""
-                lines.append(f"    • {image_type}{where} — {detail}")
+                where = f"`{field_ids[0]}` — " if field_ids[0] else ""
+                lines.append(f"    • {where}{detail}")
             else:
-                lines.append(f"    • {image_type} — {detail} (×{len(field_ids)})")
+                lines.append(f"    • {detail} (×{len(field_ids)})")
     return lines
 
 
@@ -941,8 +947,9 @@ class ImageRenderService:
         return RenderOutcome(png_paths=[png], notices=notices)
 
     @staticmethod
-    def format_notices(notices: list[RenderNotice], *, subject: str | None = None) -> str:
-        """The notice block, shared by the log channel and a command's own reply.
+    def format_notices(notices: list[RenderNotice], *, subject: str | None = None) -> NoticeBlock:
+        """The notice block, shared by the log channel and a command's own reply, marked as one
+        (`NoticeBlock`) for the job that drew the picture to open with the member and the change.
 
         Grouped by kind, and identical culprits counted rather than repeated — see
         :func:`grouped_notice_lines`.
@@ -952,10 +959,7 @@ class ImageRenderService:
         which is not the same thing as naming the championship or the session a reader is
         looking for in a log of many.
         """
-        heading = "Image render notices:"
-        if subject:
-            heading = f"Image render notices — {subject}:"
-        return "\n".join([heading, *grouped_notice_lines(notices)])
+        return NoticeBlock(notices_block(subject, grouped_notice_lines(notices)))
 
     # ── Posting: the commanded / uncommanded split (Constitution XIV.7) ────
 

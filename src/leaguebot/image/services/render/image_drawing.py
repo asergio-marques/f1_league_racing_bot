@@ -52,6 +52,7 @@ from leaguebot.core.services.modules.image_drawing import (
 from leaguebot.framework.services.switches.module_service import ModuleService, SwitchNotSignedUp
 from leaguebot.framework.utils.hooks import AwaitedHook
 from leaguebot.framework.utils.interaction_errors import describe_fault
+from leaguebot.framework.utils.log_lines import drawn_notices_line
 from leaguebot.framework.utils.paths import resolve_within_project_root
 from leaguebot.image.models.image_catalogues import (
     catalogue_for,
@@ -96,6 +97,7 @@ from leaguebot.image.services.aspects.image_lineup_post import LINEUP_TEMPLATE_K
 from leaguebot.image.services.render.image_render_service import (
     ImageRenderService,
     discard_render,
+    grouped_notice_lines,
     resolve_configured_directories,
     spec_builder_with_faults,
 )
@@ -1062,7 +1064,7 @@ class ImageDrawing:
         )
 
         problem = outcome.problem.detail if outcome.problem is not None else None
-        notices = tuple(each.detail for each in outcome.notices)
+        notices = tuple(grouped_notice_lines(outcome.notices))
         path = outcome.png_paths[0] if outcome.png_paths else None
         return CalendarPicture(
             path=path, problem=problem, notices=notices, fault_source=_source_of(outcome)
@@ -1153,34 +1155,39 @@ class ImageDrawing:
         _division, outcome = await self._render_lineup(guild, division_id)
 
         problem = outcome.problem.detail if outcome.problem is not None else None
-        notices = tuple(each.detail for each in outcome.notices)
+        notices = tuple(grouped_notice_lines(outcome.notices))
         path = outcome.png_paths[0] if outcome.png_paths else None
         return LineupPicture(
             path=path, problem=problem, notices=notices, fault_source=_source_of(outcome)
         )
 
-    async def draw_lineup_for_command(self, guild: Any, division_id: int) -> LineupPicture:
+    async def draw_lineup_for_command(
+        self, guild: Any, division_id: int, *, named: str, what: str,
+    ) -> LineupPicture:
         """Draw *division_id*'s lineup in *guild*, as a command's output: the problem, where
         one is met, names the lineup and the field at fault before the detail, and an internal
         fault, which no league can act on, is never detailed (`Problem.message`).
 
         The command runs in no job, so its notices are reported to the log channel in one
-        message before this returns, naming the lineup and the division, as well as handed
-        back for its own output, with the link to that message (`LineupPicture.log_link`), or
-        None where no message was posted. (`post_log` contains its own failures.)"""
+        message before this returns, opening with *named*, the member who ran the command, and
+        *what*, the command, as every job line does, then naming the lineup and the division,
+        as well as handed back for its own output, with the link to that message
+        (`LineupPicture.log_link`), or None where no message was posted. (`post_log` contains
+        its own failures.)"""
         division, outcome = await self._render_lineup(guild, division_id, raise_faults=True)
 
         log_link: str | None = None
         if outcome.notices:
             logged = await self._post_log(
-                ImageRenderService.format_notices(
-                    outcome.notices, subject=f"lineup — {division.name}"
+                drawn_notices_line(
+                    named, what, f"lineup — {division.name}",
+                    grouped_notice_lines(outcome.notices),
                 )
             )
             jump_url = getattr(logged, "jump_url", None)
             log_link = jump_url if isinstance(jump_url, str) and jump_url else None
         problem = outcome.problem.message("the lineup") if outcome.problem is not None else None
-        notices = tuple(each.detail for each in outcome.notices)
+        notices = tuple(grouped_notice_lines(outcome.notices))
         path = outcome.png_paths[0] if outcome.png_paths else None
         return LineupPicture(
             path=path, problem=problem, notices=notices, log_link=log_link,
@@ -1204,7 +1211,7 @@ class ImageDrawing:
             include_uncommitted=include_uncommitted, obtain_missing_portraits=True,
             raise_faults=True,
         )
-        notices = tuple(each.detail for each in outcome.notices)
+        notices = tuple(grouped_notice_lines(outcome.notices))
         if outcome.problem is not None:
             return LineupPicture(
                 path=None, problem=f"❌ {outcome.problem.message('the lineup')}", notices=notices,

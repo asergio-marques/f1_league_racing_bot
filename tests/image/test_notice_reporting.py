@@ -54,27 +54,66 @@ def test_identical_culprits_are_counted_rather_than_repeated():
 
 def test_a_lone_notice_still_names_its_field():
     """XIV.4: a notice that stands alone says where it happened. Grouping must not cost
-    that — it is only the twenty-way repetition that has nothing to say."""
+    that — it is only the twenty-way repetition that has nothing to say. It names the field
+    and not the template's internal key, which a league never reads."""
     lines = grouped_notice_lines(
         [_notice(detail="no flag for `portugal`", field_id="row_1_flag")]
     )
 
-    assert any("row_1_flag" in line for line in lines)
+    assert any("`row_1_flag`" in line for line in lines)
     assert any("portugal" in line for line in lines)
+    assert not any("standings_drivers" in line for line in lines), lines
 
 
 def test_different_kinds_get_their_own_heading():
+    """Each kind is headed in plain words, never by its code."""
     notices = [
         _notice(kind="ASSET_FALLBACK_USED", detail="a flag fell back"),
         _notice(kind="FONT_SUBSTITUTED", detail="Formula1 was unavailable"),
     ]
 
     lines = grouped_notice_lines(notices)
-    headings = [line for line in lines if line.strip().startswith("[")]
+    headings = [line.strip() for line in lines if not line.strip().startswith("•")]
 
-    assert len(headings) == 2
-    assert any("ASSET_FALLBACK_USED" in h for h in headings)
-    assert any("FONT_SUBSTITUTED" in h for h in headings)
+    assert len(headings) == 2, lines
+    assert any(h.startswith("Artwork not supplied by the league") for h in headings)
+    assert any(h.startswith("Font substituted") for h in headings)
+    assert not any("ASSET_FALLBACK_USED" in line or "FONT_SUBSTITUTED" in line for line in lines)
+    assert not any("[" in h for h in headings)
+
+
+#: Every notice kind and the words its heading reads (owner, 2026-11-24). A true fallback and the
+#: bot's own artwork share one neutral heading; each notice's own sentence says which.
+KIND_HEADINGS = [
+    ("FONT_SUBSTITUTED", "Font substituted"),
+    ("FIELD_REDUCED", "Text set smaller"),
+    ("ASSET_FALLBACK_USED", "Artwork not supplied by the league"),
+    ("PACKAGED_ASSET_OFF_SHAPE", "Packaged artwork stretched"),
+    ("OPTIONAL_FIELD_EMPTIED", "Field left empty"),
+    ("CROP_POINT_OFF_CANVAS", "Crop point off the canvas"),
+    ("TIER_COLOURS_NOT_APPLIED", "Tier colours not applied"),
+]
+
+
+def test_every_notice_kind_has_a_heading_case():
+    """A kind added without words of its own would be headed by nothing a league reads."""
+    from leaguebot.image.models import image_constants
+
+    kinds = {
+        value for name, value in vars(image_constants).items() if name.startswith("NOTICE_")
+    }
+    assert kinds == {kind for kind, _ in KIND_HEADINGS}
+
+
+@pytest.mark.parametrize(
+    ("kind", "words"),
+    KIND_HEADINGS,
+)
+def test_each_kind_is_headed_in_plain_words(kind, words):
+    lines = grouped_notice_lines([_notice(kind=kind, detail="something", field_id="f")])
+
+    assert lines[0].strip().startswith(words), lines
+    assert not any(kind in line for line in lines), lines
 
 
 def test_one_kind_with_two_distinct_culprits_keeps_both():
@@ -125,6 +164,11 @@ def test_the_block_stands_without_a_subject():
 # ── Reporting to the log ──────────────────────────────────────────────────
 
 
+#: The member and the command a preview's log entry opens with.
+NAMED = "Tester (<@1>)"
+WHAT = "`/images test standings`"
+
+
 def _bot():
     bot = MagicMock()
     bot.output_router.post_log = AsyncMock(return_value=MagicMock(jump_url="http://j/1"))
@@ -139,7 +183,9 @@ async def test_twenty_notices_post_one_message_not_twenty():
         for i in range(20)
     ]
 
-    await _log_notices(bot.output_router.post_log, notices)
+    await _log_notices(
+        bot.output_router.post_log, [("Standings", notices)], named=NAMED, what=WHAT
+    )
 
     assert bot.output_router.post_log.await_count == 1
 
@@ -148,7 +194,9 @@ async def test_twenty_notices_post_one_message_not_twenty():
 async def test_the_posted_message_is_returned_so_a_caller_can_link_to_it():
     bot = _bot()
 
-    message = await _log_notices(bot.output_router.post_log, [_notice()])
+    message = await _log_notices(
+        bot.output_router.post_log, [("Standings", [_notice()])], named=NAMED, what=WHAT
+    )
 
     assert message.jump_url == "http://j/1"
 
@@ -157,7 +205,9 @@ async def test_the_posted_message_is_returned_so_a_caller_can_link_to_it():
 async def test_nothing_is_posted_and_none_returned_for_no_notices():
     bot = _bot()
 
-    assert await _log_notices(bot.output_router.post_log, []) is None
+    assert await _log_notices(
+        bot.output_router.post_log, [("Standings", [])], named=NAMED, what=WHAT
+    ) is None
     bot.output_router.post_log.assert_not_awaited()
 
 
@@ -181,3 +231,16 @@ def test_the_standings_path_posts_one_grouped_message():
 
     assert len(lines) == 1
     assert lines[0].startswith("Image render notices — drivers standings — Season 3:")
+
+
+def test_the_standings_notice_block_is_marked_for_the_job_to_frame():
+    """The job that drew the picture opens its notice block with the member and the change it
+    ran for; the drawing marks the block so the job can tell it from a fault line."""
+    from leaguebot.framework.models.change import NoticeBlock
+    from leaguebot.image.services.aspects.image_standings_post import lines_of
+
+    decision = MagicMock(notices=[_notice()], problem=None)
+
+    (line,) = lines_of("drivers standings — Season 3", decision)
+
+    assert isinstance(line, NoticeBlock)

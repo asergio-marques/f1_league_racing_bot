@@ -2532,6 +2532,8 @@ async def test_a_clean_render_posts_the_image(
 
 
 def test_notice_formatting_names_field_and_kind():
+    """The notice block names the kind in plain words and the field, never the kind's code nor the
+    template's internal name, which a league never reads."""
     from leaguebot.image.models.image_module import RenderNotice
 
     text = ImageRenderService.format_notices(
@@ -2544,9 +2546,11 @@ def test_notice_formatting_names_field_and_kind():
             )
         ]
     )
-    assert "ASSET_FALLBACK_USED" in text
-    assert "row_1_flag" in text
+    assert "Artwork not supplied by the league" in text
+    assert "ASSET_FALLBACK_USED" not in text
+    assert "`row_1_flag`" in text
     assert "portugal" in text
+    assert "calendar_template" not in text
 
 
 # ══════════════════════════════════════════════════════════════════════════

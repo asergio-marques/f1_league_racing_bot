@@ -126,8 +126,10 @@ class CalendarPicture:
     """What drawing one division's calendar produced.
 
     *path* is the drawn PNG's path, or None where it could not be drawn. *problem* is the image
-    module's words for why, with no final stop, or None where it drew. *notices* are the
-    drawing's own words for what it survived. `draw_calendar` writes nothing to the log channel: a
+    module's words for why, with no final stop, or None where it drew. *notices* are what it
+    survived, as the image module words them for a league: grouped by kind under plain-words
+    headings, repeats counted, a lone notice naming its field, each line already indented beneath
+    the block's heading. `draw_calendar` writes nothing to the log channel: a
     calendar is drawn inside a job, which records them among its own lines, once, and a command's
     own output is the caller's to decide. *fault_source* says where the fault in *problem* lies,
     for the line or reply that says what puts it right (`picture_remedy`): the league's where
@@ -145,8 +147,10 @@ class LineupPicture:
     """What drawing one division's lineup produced.
 
     *path* is the drawn PNG's path, or None where it could not be drawn. *problem* is the image
-    module's words for why, with no final stop, or None where it drew. *notices* are the
-    drawing's own words for what it survived. `draw_lineup` and `draw_review_lineup` write nothing
+    module's words for why, with no final stop, or None where it drew. *notices* are what it
+    survived, as the image module words them for a league: grouped by kind under plain-words
+    headings, repeats counted, a lone notice naming its field, each line already indented beneath
+    the block's heading. `draw_lineup` and `draw_review_lineup` write nothing
     to the log channel: the lineup of record and a review's are drawn inside a job, which records
     them among its own lines, once. `draw_lineup_for_command` runs in no job and reports them
     itself, handing back *log_link*, the link to the log message holding them, or None where it
@@ -258,13 +262,17 @@ class ImageDrawing(Protocol):
         render, comes back as the problem, and the picture says where its fault lies. Whatever is
         raised is a fault in the bot."""
 
-    async def draw_lineup_for_command(self, guild: Any, division_id: int) -> LineupPicture:
+    async def draw_lineup_for_command(
+        self, guild: Any, division_id: int, *, named: str, what: str,
+    ) -> LineupPicture:
         """Draw *division_id*'s lineup in *guild*, as a command's own output rather than the
-        lineup of record: not written to the lineup of record. Hands back the picture
-        drawn, or the problem naming why it could not be — worded for the command's own
-        refusal rather than the text fallback's — and the notices it survived, which it has reported
-        to the log channel in one message, the command running in no job, with the link to that
-        message where one was posted. A refusal, even one met before the render, comes back as
+        lineup of record: not written to the lineup of record. *named* is the member who ran the
+        command, named as the log channel names them, and *what* the command, as a job line names
+        it. Hands back the picture drawn, or the problem naming why it could not be — worded for
+        the command's own refusal rather than the text fallback's — and the notices it survived,
+        grouped by kind as the log shows them, which it has reported to the log channel in one
+        message opening with *named* and *what*, the command running in no job, with the link to
+        that message where one was posted. A refusal, even one met before the render, comes back as
         the problem, and the picture says where its fault lies. Whatever is raised, a fault in the
         bot while drawing or in reading the division itself (the database cannot be opened), is
         let out, for the command's own failure path to report, rather than turned into refusal

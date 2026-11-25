@@ -761,6 +761,54 @@ async def test_the_admin_is_told_at_once_and_the_reply_is_updated_when_every_rou
     assert updated_reply(press) == SUCCESS
 
 
+#: The words of the one render notice each republished results picture is drawn with.
+SESSION_NOTICE = "Font7 was unavailable, so a substitute was drawn"
+
+
+async def test_the_approval_s_reply_names_each_picture_drawn_with_notices(tmp_path):
+    """Images on and the results picture's template sound: the league admin presses ✅ Approve
+    on `/results amend review`, and every round of every division is posted again, each session's
+    results picture drawn as a PNG with one font substituted. Each picture's notice reaches the
+    log channel once, in a block opening with the admin and the command ("| `/results
+    amend review` |"), then "Image render notices — <picture>:" and the notice grouped beneath "Font
+    substituted", naming its field. The reply says the amendment is approved and ends in one
+    "Image notices" section listing every picture under the name its log line gives it, linked to
+    the log channel's message holding it, each picture's notice beneath it once (assumed call
+    standing at Gate 1, 2026-11-24; image spec, Errors and the rejection of input, #550; issue
+    #635)."""
+    from leaguebot.image.models.image_module import RenderNotice
+    from tests.results.test_rounds_sync_change import _results_drawn
+
+    league = await points_league(tmp_path)
+    league.images_on = True
+    stack, render = _results_drawn(league, tmp_path)
+    render.return_value.notices = [RenderNotice(
+        image_type="results_race_template", notice_kind="FONT_SUBSTITUTED",
+        field_id="driver_name_1", detail=SESSION_NOTICE,
+    )]
+    with stack:
+        press = await press_approve(league)
+        await run_queue(league.bot)
+
+    held = [(n, line) for n, line in enumerate(league.bot.log_channel.sent, 1)
+            if SESSION_NOTICE in line]
+    assert held, league.bot.log_channel.sent
+    told = updated_reply(press)
+    assert told.startswith(SUCCESS), told
+    assert told.count("⚠️ **Image notices**") == 1, told
+    opening = f"Admin (`<@{ADMIN_ID}>`) | `/results amend review` | Image render notices — "
+    for n, line in held:
+        assert line.startswith(opening), line
+        assert line.count(SESSION_NOTICE) == 1, line
+        label, grouped = line.removeprefix(opening).split(":\n", 1)
+        assert grouped.splitlines()[:2] == [
+            "  Font substituted",
+            f"    • `driver_name_1` — {SESSION_NOTICE}",
+        ], line
+        assert f"  **{label}** ([see them in the log](https://discord.test/{n}))" in told, told
+    assert told.count(SESSION_NOTICE) == len(held), told
+
+
 async def test_each_post_and_each_deletion_is_a_job_of_its_own(tmp_path):
     """The names are looked up a division at a time, then the save; then each results table,
     each standings and each deletion of an old message is a job of its own, Pro's before Am's,

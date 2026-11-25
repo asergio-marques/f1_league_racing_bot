@@ -62,6 +62,7 @@ from tests.support.change_queue import (
 from tests.support.channel_uses import sign_up_channel_uses_read
 from tests.support.mentions import NOBODY, USERS_ONLY, notified
 from tests.support.season_league import set_module_flag
+from tests.support.settings_league import unruled
 from tests.support.undecorate import undecorate
 from tests.support.switches import answer_switch
 
@@ -2181,9 +2182,14 @@ async def test_a_picture_whose_upload_is_cut_off_is_posted_as_text_in_the_same_t
 NOTICE_DETAIL = "no `flag` image for “Lewis”"
 
 
+#: The job that posts each picture.
+_POSTED_BY = {"results": "post_session_results", "standings": "post_standings"}
+
+
 @pytest.mark.parametrize(("picture", "refused"), [
     ("results", False),
     ("standings", False),
+    pytest.param("results", True, id="results-refused-then-retried"),
     pytest.param("standings", True, id="standings-refused-then-retried"),
 ])
 async def test_a_drawn_picture_s_render_notices_reach_the_log_once_naming_the_round(
@@ -2191,15 +2197,21 @@ async def test_a_drawn_picture_s_render_notices_reach_the_log_once_naming_the_ro
 ):
     """Round 3's results and standings in Pro are posted again with the *picture* picture drawn,
     its render coming back with one notice, a flag falling back. The picture is posted and the
-    queue runs to the end; the log channel carries the notice once, in a block whose heading
-    names Pro and round 3, and no block without a heading carries it a second time.
+    queue runs to the end; the log channel carries the notice once, in a line that opens with the
+    member and the change ("Admin (`<@4242>`) | the test's republication |"), then "Image render
+    notices — <picture>:" naming Pro and round 3, and beneath it the notice under "Artwork not
+    supplied by the league", naming its field `flag`, with no kind code and no template name. The
+    job that posted the picture keeps the picture's name and its grouped notices on its result,
+    for the change's reply to list.
 
-    Where *refused*, the standings channel refuses every send on the first try, the picture and
-    then its text, so the queue stops at the standings' post; the channel is let accept and a
-    Retry posts the standings as text. The notice is still carried once, never lost with the
-    refused try."""
+    Where *refused*, the picture's channel refuses every send on the first try, the picture and
+    then its text, so the queue stops at that post; the channel is let accept and a Retry posts
+    the table as text. The notice is still carried once, and still kept on the job's result,
+    never lost with the refused try (issue #635; Constitution V; image spec, Errors and the
+    rejection of input, #550)."""
     league = await _built_league(tmp_path)
     target = RESULTS_CHANNEL if picture == "results" else STANDINGS_CHANNEL
+    job_name = _POSTED_BY[picture]
     channel = league.channel(target)
     if refused:
         channel.send_fails = http_error(text=REFUSAL)
@@ -2208,18 +2220,32 @@ async def test_a_drawn_picture_s_render_notices_reach_the_log_once_naming_the_ro
         await run_queue(league.bot)
         if refused:
             job = await stopped_job(league.db_path)
-            assert job is not None and job["name"] == "post_standings", job
+            assert job is not None and job["name"] == job_name, job
             channel.send_fails = None
             await retry_job(league.bot)
 
     assert await stopped_job(league.db_path) is None
-    assert any(kwargs.get("file") is not None
-               for _args, kwargs in league.channel(target).send.call_args_list)
+    if not refused:
+        assert any(kwargs.get("file") is not None
+                   for _args, kwargs in league.channel(target).send.call_args_list)
     log = "\n".join(league.bot.log_channel.sent)
     assert log.count(NOTICE_DETAIL) == 1, log
     [block] = [message for message in league.bot.log_channel.sent if NOTICE_DETAIL in message]
-    heading = block.splitlines()[0]
+    opening = "Admin (`<@4242>`) | the test's republication | Image render notices — "
+    assert block.startswith(opening), block
+    heading, *grouped = unruled(block).splitlines()
     assert "Pro" in heading and "round 3" in heading.lower(), block
+    assert grouped == [
+        "  Artwork not supplied by the league", f"    • `flag` — {NOTICE_DETAIL}",
+    ], block
+    assert "ASSET_FALLBACK_USED" not in block and "_template" not in block, block
+    from leaguebot.framework.models.change import RESULT_DRAWN, RESULT_NOTICES, RESULT_PICTURES
+    [kept] = [row["result"] for row in await step_rows(league.db_path)
+              if row["name"] == job_name]
+    assert kept[RESULT_PICTURES] == [{
+        RESULT_DRAWN: heading.removeprefix(opening).removesuffix(":"),
+        RESULT_NOTICES: grouped,
+    }], kept
 
 
 @pytest.mark.parametrize(("draw", "job_name", "target"), [

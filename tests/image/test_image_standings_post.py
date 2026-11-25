@@ -339,9 +339,11 @@ async def test_a_fault_is_reported_to_the_log_channel_naming_the_championship():
 
 
 async def test_notices_are_reported_alongside_a_graphic_that_did_draw(tmp_path):
-    """The drivers' picture draws with a render notice: it keeps its picture, and the notice
-    comes back as one line naming the round and the championship, nothing posted to the log
-    channel by the drawing."""
+    """The drivers' picture draws with a render notice, a flag falling back: it keeps its
+    picture, and the notice comes back as one block naming the round and the championship,
+    marked for the job to open with the member and the change, the notice headed "Artwork not
+    supplied by the league" and no kind code; nothing is posted to the log channel by the
+    drawing (issue #635)."""
     from leaguebot.image.models.image_module import RenderNotice
 
     png = tmp_path / "s.png"
@@ -360,6 +362,11 @@ async def test_notices_are_reported_alongside_a_graphic_that_did_draw(tmp_path):
     assert len(drawn.lines) == 1
     assert "a flag fell back" in drawn.lines[0]
     assert "Main round 5 — drivers standings" in drawn.lines[0]
+    assert "  Artwork not supplied by the league" in drawn.lines[0].splitlines()
+    assert "ASSET_FALLBACK_USED" not in drawn.lines[0]
+    from leaguebot.framework.models.change import NoticeBlock
+
+    assert isinstance(drawn.lines[0], NoticeBlock)
     post_log.assert_not_awaited()
 
 

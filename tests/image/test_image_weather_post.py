@@ -371,7 +371,9 @@ def _attach_bot(*, notices=(), problem=None, draws=True):
 async def test_a_substituted_asset_still_draws_and_reports_its_notice(monkeypatch, tmp_path):
     """FR-059 — the picture is handed back, and the substitution with it, as a line for the log
     channel naming what it pertains to: Division 1's round 4, phase 2, as a league reads the
-    round, never by its season (#287, B8)."""
+    round, never by its season (#287, B8). The line is one block marked for the job to open with
+    the member and the change, the notice grouped beneath "Artwork not supplied by the league"
+    and naming its field, with no kind code and no template name (issue #635)."""
     png = tmp_path / "w.png"
     png.write_bytes(b"x")
     from leaguebot.image.models.image_module import RenderNotice
@@ -390,6 +392,15 @@ async def test_a_substituted_asset_still_draws_and_reports_its_notice(monkeypatc
     # The round as a league reads it, and the phase — so a manager can find what it pertains to.
     assert "Image render notices — round 4 in **Division 1**, phase 2:" in said, said
     assert "season" not in said, said
+    [block] = [line for line in lines if "fallback used" in line]
+    assert block.splitlines() == [
+        "Image render notices — round 4 in **Division 1**, phase 2:",
+        "  Artwork not supplied by the league",
+        "    • `weather_icon` — fallback used",
+    ], block
+    from leaguebot.framework.models.change import NoticeBlock
+
+    assert isinstance(block, NoticeBlock), type(block)
 
 
 async def test_attach_forecast_hands_render_for_posting_no_bot(monkeypatch, tmp_path):

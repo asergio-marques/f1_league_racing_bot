@@ -32,6 +32,7 @@ from leaguebot.image.models.image_constants import (
     NOTICE_OPTIONAL_FIELD_EMPTIED,
     NOTICE_PACKAGED_ASSET_OFF_SHAPE,
     PACKAGED_ASSET_ASPECTS,
+    TEMPLATE_LABELS,
     fallback_names_for,
     is_closed_set_datum,
 )
@@ -204,6 +205,21 @@ def _packaged_directory(asset_class: str) -> Path | None:
     return directory if directory.is_dir() else None
 
 
+def _template_words(image_type: str) -> str:
+    """The template as a league reads it, "the calendar template": a notice's lines never carry
+    the template's internal key, so its own words say which template to put right. A label of
+    two parts is turned about as a league says it, "the race results template" and "the drivers'
+    standings template", not "the results — race template"."""
+    label = TEMPLATE_LABELS.get(image_type)
+    if label is None:
+        return "the template"
+    group, dash, part = label.lower().partition(" — ")
+    if not dash:
+        return f"the {group} template"
+    possessive = "'" if group == "standings" else ""
+    return f"the {part}{possessive} {group} template"
+
+
 def _mandatory_ids(spec: FillSpec) -> frozenset[str]:
     """This image type's mandatory field ids, read **before** anything is removed.
 
@@ -299,7 +315,8 @@ def fill(spec: FillSpec) -> FillResult:
                             field_id=spec.crop,
                             detail=(
                                 f"the last declared member's crop point sits at y={crop_y:g} "
-                                f"but the template declares a height of {declared_height:g}. "
+                                f"but {_template_words(spec.image_type)} declares a height of "
+                                f"{declared_height:g}. "
                                 f"A full-size division is drawn to the crop point, not to "
                                 f"the canvas."
                             ),
@@ -363,8 +380,9 @@ def fill(spec: FillSpec) -> FillResult:
                             field_id=spec.crop_x,
                             detail=(
                                 f"the last declared round's horizontal crop point sits at "
-                                f"x={crop_x:g} but the template declares a width of "
-                                f"{declared_width:g}. A season as long as the template "
+                                f"x={crop_x:g} but {_template_words(spec.image_type)} "
+                                f"declares a width of {declared_width:g}. A season as long as "
+                                f"the template "
                                 f"draws is cut to the crop point, not to the canvas."
                             ),
                         )

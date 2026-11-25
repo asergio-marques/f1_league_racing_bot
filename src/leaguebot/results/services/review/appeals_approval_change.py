@@ -320,7 +320,7 @@ def appeals_approval_change(
             f"({result.get('division_name', '?')}): {what}. The round is final."
         )
         left = [*review_posting.not_done(ctx), *review_verdicts.not_done(ctx)]
-        return "\n".join([reply, *left])
+        return review_posting.with_drawn_notices(ctx, "\n".join([reply, *left]))
 
     steps: dict[str, Step] = {
         **posting_steps(drawing, driver_names_read),

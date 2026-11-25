@@ -136,6 +136,22 @@ def test_final_crop_point_off_the_canvas_raises_a_notice_and_still_cuts():
     assert not result.unresolved, "a misplaced crop point must not be fatal"
 
 
+def test_the_crop_notice_names_the_template_in_words():
+    """With the template's key gone from the notice lines, the crop notice's own words say which
+    template to put right."""
+    from leaguebot.image.services.render.image_render_service import grouped_notice_lines
+
+    _, result = _filled(TEMPLATE_ROUNDS, final_crop=ROUND_HEIGHT * TEMPLATE_ROUNDS - 40)
+    text = "\n".join(
+        grouped_notice_lines(
+            [n for n in result.notices if n.notice_kind == "CROP_POINT_OFF_CANVAS"]
+        )
+    )
+
+    assert "the calendar template" in text.lower(), text
+    assert "calendar_template" not in text, text
+
+
 def test_a_short_division_never_raises_the_crop_notice():
     """Cropping above the canvas is the whole point when a division is smaller."""
     _, result = _filled(2)

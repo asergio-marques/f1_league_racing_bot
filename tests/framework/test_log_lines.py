@@ -290,3 +290,63 @@ def test_reply_reasons(reply, reasons):
     from leaguebot.framework.utils.log_lines import reply_reasons
 
     assert reply_reasons(reply) == reasons
+
+
+# ── A picture's render notices (#635) ─────────────────────────────────────
+
+#: A picture's notices as image hands them back: grouped by kind, repeats counted, already
+#: indented beneath the block's heading.
+GROUPED = (
+    "  Font substituted ×25",
+    "    • Formula1 Display was unavailable, so a substitute was drawn (×25)",
+    "  Artwork not supplied by the league",
+    "    • `team_badge_1` — the directory's fallback was drawn for “Williams”",
+)
+
+
+def test_a_job_s_notice_line_opens_with_member_and_change_and_carries_the_grouped_body():
+    from leaguebot.framework.utils.log_lines import drawn_notices_line
+
+    line = drawn_notices_line("Alex (<@4242>)", "Season approval", "lineup — Pro", GROUPED)
+
+    assert line == "\n".join(
+        ["Alex (<@4242>) | Season approval | Image render notices — lineup — Pro:", *GROUPED]
+    )
+
+
+def test_a_job_frames_its_notice_blocks_with_member_and_change_and_leaves_its_other_lines():
+    """A module job's lines mix the drawing's notice block with fault lines and lines kept from an
+    earlier try, already framed. Only the block the drawing marked gains the opening."""
+    from leaguebot.framework.models.change import NoticeBlock
+    from leaguebot.framework.utils.log_lines import job_notice_lines
+
+    block = "\n".join(["Image render notices — drivers standings — Pro:", *GROUPED])
+    kept = "Alex (<@4242>) | Results approval | Image render notices — race — Pro:\n  …"
+    fault = "⚠️ Standings image — the template could not be read"
+
+    lines = job_notice_lines(
+        "Alex (<@4242>)", "Results approval", [fault, NoticeBlock(block), kept]
+    )
+
+    assert list(lines) == [
+        fault,
+        f"Alex (<@4242>) | Results approval | {block}",
+        kept,
+    ]
+
+
+def test_a_reply_s_image_notices_list_each_picture_s_grouped_notices_beneath_its_label():
+    from leaguebot.framework.models.change import DrawnNotices
+    from leaguebot.framework.utils.log_lines import drawn_notices_section
+
+    section = drawn_notices_section(
+        [DrawnNotices(label="lineup — Pro", notices=GROUPED, link="https://log/1")]
+    ).splitlines()
+
+    assert section[0] == "⚠️ **Image notices**"
+    assert section[1] == "  **lineup — Pro** ([see them in the log](https://log/1))"
+    body = section[2:]
+    assert len(body) == len(GROUPED)
+    for shown, grouped in zip(body, GROUPED):
+        assert shown.endswith(grouped) and len(shown) > len(grouped), (shown, grouped)
+    assert sum(line.count("•") for line in body) == 2, body

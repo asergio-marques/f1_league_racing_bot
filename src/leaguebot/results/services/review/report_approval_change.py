@@ -362,7 +362,7 @@ def report_approval_change(
         )
         reply += " Its appeals review is posted below."
         left = [*review_posting.not_done(ctx), *review_verdicts.not_done(ctx)]
-        return "\n".join([reply, *left])
+        return review_posting.with_drawn_notices(ctx, "\n".join([reply, *left]))
 
     steps: dict[str, Step] = {
         **posting_steps(drawing, driver_names_read),

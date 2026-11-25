@@ -511,10 +511,12 @@ def amendment_stage_changes(
             return "Nothing was changed. Press Approve again on the amendment's appeals stage."
         left = _left(ctx)
         if left:
-            return "\n".join(
+            text = "\n".join(
                 ["⚠️ The amendment is applied, but some of it could not be posted:", *left]
             )
-        return "✅ Amendment applied, and the division's channels rebuilt in round order."
+        else:
+            text = "✅ Amendment applied, and the division's channels rebuilt in round order."
+        return review_posting.with_drawn_notices(ctx, text)
 
     # ── The rebuild's own jobs ────────────────────────────────────────────
 

@@ -41,7 +41,8 @@ from leaguebot.framework.models.change import (
     StepFailedOnDiscord,
     StepKind,
     StepResult,
-    drawn_lines_kept,
+    drawn_kept,
+    drawn_part,
 )
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
 from leaguebot.core.models.fault_source import source_of
@@ -55,6 +56,7 @@ from leaguebot.core.services.seasons.season_service import (
     round_by_id,
 )
 from leaguebot.framework.utils.hooks import AwaitedHook
+from leaguebot.framework.utils.log_lines import framed_picture_lines
 
 if TYPE_CHECKING:
     import aiosqlite
@@ -119,7 +121,12 @@ def _raise_keeping_refused_pictures(
     """Raise what a job raises where the *subject*'s post failed: *failure*, but where a picture
     was refused or would not draw and the text that went out in its place failed too, a stop
     carrying that picture's line beside the lines it already kept, for the try that posts the
-    text to hand back once."""
+    text to hand back once.
+
+    A stop of the posting carries the earlier tries' lines first and then those of this try,
+    still marked as the drawing handed them back (`NoticeBlock`, which only a save to the
+    database loses). They are framed here, with the member and the change, before the stop that
+    keeps them is raised, with each picture's label and notices and the line holding them."""
     from leaguebot.results.services.publishing.results_post_service import (
         PICTURE_FAULTS_ATTRIBUTE,
     )
@@ -127,15 +134,17 @@ def _raise_keeping_refused_pictures(
     cause: BaseException | None = failure
     while cause is not None and not getattr(cause, PICTURE_FAULTS_ATTRIBUTE, None):
         cause = cause.__cause__
-    if cause is None:
-        raise failure
-    faults: dict[str, str] = getattr(cause, PICTURE_FAULTS_ATTRIBUTE)
+    faults: dict[str, str] = getattr(cause, PICTURE_FAULTS_ATTRIBUTE) if cause is not None else {}
     refused = tuple(
         _refused_picture_line(ctx, name, fault, subject=subject) for name, fault in faults.items()
     )
     if isinstance(failure, StepFailedOnDiscord):
-        raise failure.carrying(drawn_lines_kept(failure.result) + refused)
-    if isinstance(failure, discord.HTTPException):
+        earlier = drawn_kept(ctx.kept)
+        new = drawn_kept(failure.result).lines[len(earlier.lines):]
+        raise framed_picture_lines(
+            ctx.named, ctx.what, new, kept=ctx.kept, label=subject
+        ).plus(*refused).carried_by(failure)
+    if isinstance(failure, discord.HTTPException) and refused:
         raise StepFailedOnDiscord(f"the {subject} were refused").carrying(refused) from failure
     raise failure
 
@@ -165,7 +174,6 @@ async def remove_earlier_try(guild, kept: dict[str, Any] | None) -> dict[str, An
     keeps the copies removed. The earlier try's picture lines stay in it, as a stop's result
     replaces what the job kept and a failure that is not Discord's carries none of its own.
     """
-    from leaguebot.framework.models.change import DRAWN_LINES, StepFailedOnDiscord, drawn_lines_kept
     from leaguebot.results.services.publishing.results_post_service import remove_part_posted_messages
 
     earlier = [int(each) for each in (kept or {}).get("new") or []]
@@ -178,12 +186,11 @@ async def remove_earlier_try(guild, kept: dict[str, Any] | None) -> dict[str, An
         if left:
             # The earlier try's picture lines go on the stop, as a stop's result replaces what
             # the job kept: the retry that does remove the tables must still hand them back.
-            raise StepFailedOnDiscord(
+            raise drawn_kept(kept).carried_by(StepFailedOnDiscord(
                 f"{len(left)} message(s) of the earlier try could not be removed",
                 result={"new": left, "channel_id": posted_in},
-            ).carrying(drawn_lines_kept(kept)) from (failures[0] if failures else None)
-    lines = drawn_lines_kept(kept)
-    return {"new": [], "channel_id": posted_in, **({DRAWN_LINES: list(lines)} if lines else {})}
+            )) from (failures[0] if failures else None)
+    return {"new": [], "channel_id": posted_in, **drawn_part(kept)}
 
 
 @asynccontextmanager
@@ -584,12 +591,23 @@ def opening_steps(
             )
         except (StepFailedOnDiscord, discord.HTTPException) as failure:
             _raise_keeping_refused_pictures(ctx, failure, subject="opening standings")
-        return StepResult(result=posted_result(
-            division_id, ClassificationOccasion.SEASON_OPENING, tables,
-            channel_id,
-        ), lines=drawn_lines_kept(ctx.kept) + _with_host_remedy(
-            (line for table in tables for line in table.lines), subject="opening standings"
-        ) + _refused_picture_lines(ctx, tables, subject="opening standings"))
+        drawn = framed_picture_lines(
+            ctx.named, ctx.what,
+            _with_host_remedy(
+                (line for table in tables for line in table.lines), subject="opening standings"
+            ),
+            kept=ctx.kept, label="opening standings",
+        )
+        return StepResult(
+            result={
+                **posted_result(
+                    division_id, ClassificationOccasion.SEASON_OPENING, tables, channel_id
+                ),
+                **drawn.result(),
+            },
+            lines=drawn.lines + _refused_picture_lines(ctx, tables, subject="opening standings"),
+            linked=drawn.linked,
+        )
 
     async def still_due(_ctx: StepContext) -> bool:
         return await modules.is_enabled(SWITCH_KEY)
@@ -646,12 +664,23 @@ def final_steps(
             )
         except (StepFailedOnDiscord, discord.HTTPException) as failure:
             _raise_keeping_refused_pictures(ctx, failure, subject="final classification")
-        return StepResult(result=posted_result(
-            division_id, ClassificationOccasion.SEASON_FINAL, tables,
-            channel_id,
-        ), lines=drawn_lines_kept(ctx.kept) + _with_host_remedy(
-            (line for table in tables for line in table.lines), subject="final classification"
-        ) + _refused_picture_lines(ctx, tables, subject="final classification"))
+        drawn = framed_picture_lines(
+            ctx.named, ctx.what,
+            _with_host_remedy(
+                (line for table in tables for line in table.lines), subject="final classification"
+            ),
+            kept=ctx.kept, label="final classification",
+        )
+        return StepResult(
+            result={
+                **posted_result(
+                    division_id, ClassificationOccasion.SEASON_FINAL, tables, channel_id
+                ),
+                **drawn.result(),
+            },
+            lines=drawn.lines + _refused_picture_lines(ctx, tables, subject="final classification"),
+            linked=drawn.linked,
+        )
 
     async def still_due(_ctx: StepContext) -> bool:
         return await modules.is_enabled(SWITCH_KEY)

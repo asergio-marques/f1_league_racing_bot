@@ -438,7 +438,7 @@ async def test_notices_are_reported_when_a_graphic_does_post(tmp_path):
 
     # The notices come back as a line of the job that posts, once, naming the session.
     [reported] = posted.lines
-    assert "Season 3 Main round 5 — Race" in reported and "OPTIONAL_FIELD_EMPTIED" in reported
+    assert "Season 3 Main round 5 — Race" in reported and "Field left empty" in reported
 
 
 # ── The lifecycle: result_status reaches the drawing (T028) ───────────────

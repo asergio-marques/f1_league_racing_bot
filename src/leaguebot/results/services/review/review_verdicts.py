@@ -75,6 +75,7 @@ from typing import TYPE_CHECKING, Any
 import discord
 
 from leaguebot.framework.utils.hooks import AwaitedHook
+from leaguebot.framework.utils.log_lines import PictureLines, framed_picture_lines
 from leaguebot.framework.db.database import get_connection
 from leaguebot.framework.models.change import (
     GuildUnavailable,
@@ -83,7 +84,6 @@ from leaguebot.framework.models.change import (
     StepKind,
     StepResult,
     drawn_kept,
-    drawn_lines_kept,
 )
 from leaguebot.core.services.drivers import lineup_posting
 from leaguebot.framework.services.posting import standing_posts
@@ -609,11 +609,13 @@ async def _announce_heading(ctx: StepContext, drawing: ImageDrawing) -> StepResu
     # The picture is drawn on the first try alone, a retry heading the batch in words (Constitution
     # XIV, rule 8); what it said is kept with every stop that follows, so that the try which posts
     # hands it back with its own.
-    drawn = drawn_lines_kept(ctx.kept)
+    drawn = framed_picture_lines(ctx.named, ctx.what, (), kept=ctx.kept, label="verdict banner")
     attachment = None
     if ctx.tries == 0:
-        attachment, drawn = await drawing.draw_banner(heading)
-        drawn = vas.banner_lines(drawn)
+        attachment, banner = await drawing.draw_banner(heading)
+        drawn = framed_picture_lines(
+            ctx.named, ctx.what, vas.banner_lines(banner), kept=ctx.kept, label="verdict banner"
+        )
     try:
         if attachment is None:
             text: str | None = verdict_banner_drawing.heading_text(heading)
@@ -623,12 +625,15 @@ async def _announce_heading(ctx: StepContext, drawing: ImageDrawing) -> StepResu
         try:
             message = await send_notice(channel, text, mentions=_NO_MENTIONS, **parts)
         except discord.HTTPException as refused:
-            raise StepFailedOnDiscord(
+            raise drawn.carried_by(StepFailedOnDiscord(
                 f"the heading over the verdicts could not be posted: {refused}"
-            ).carrying(drawn) from refused
+            )) from refused
     finally:
         drawing.discard_attachment(attachment)
-    return StepResult(result={"message_id": message.id, "channel_id": channel.id}, lines=drawn)
+    return StepResult(
+        result={"message_id": message.id, "channel_id": channel.id, **drawn.result()},
+        lines=drawn.lines, linked=drawn.linked,
+    )
 
 
 async def _describe_verdict(ctx: StepContext) -> str:
@@ -640,15 +645,22 @@ async def _describe_verdict(ctx: StepContext) -> str:
     return f"announcing the {kind} verdict for <@{payload['record']['driver_user_id']}>{where}"
 
 
-def _carrying_verdict_lines(
-    ctx: StepContext, stop: StepFailedOnDiscord, earlier: tuple[str, ...]
-) -> StepFailedOnDiscord:
+def _verdict_lines(ctx: StepContext, fallback: Any) -> PictureLines:
+    """What a verdict or sanction job writes: the lines its earlier tries kept, then what its
+    picture said as *fallback* words it for the job's own member and change (`None` where there is
+    nothing to say), the notice block framed with them."""
+    return framed_picture_lines(
+        ctx.named, ctx.what, () if fallback is None else fallback(ctx.named, ctx.what),
+        kept=ctx.kept, label="verdict",
+    )
+
+
+def _carrying_verdict_lines(ctx: StepContext, stop: StepFailedOnDiscord) -> StepFailedOnDiscord:
     """*stop*, a refused verdict or sanction card, with what its picture said kept on it beside
-    *earlier*, the lines of the tries before: a picture is drawn on the first try alone, so what it
-    said, and why it went out as text where it was not drawn, must go with the stop for the try
-    that posts to hand back, never lost with a post Discord refused."""
-    fallback = getattr(stop, vas.FALLBACK_ATTRIBUTE, None)
-    return stop.carrying(earlier + (() if fallback is None else fallback(ctx.named, ctx.what)))
+    the lines of the tries before: a picture is drawn on the first try alone, so what it said, and
+    why it went out as text where it was not drawn, must go with the stop for the try that posts
+    to hand back, never lost with a post Discord refused."""
+    return _verdict_lines(ctx, getattr(stop, vas.FALLBACK_ATTRIBUTE, None)).carried_by(stop)
 
 
 async def _announce_verdict(
@@ -659,7 +671,6 @@ async def _announce_verdict(
     channel, _context = await _channel_of(ctx, round_id)
     # What the picture said when it was drawn, on the first try, is kept with every stop that
     # follows, so that the try which posts hands it back with its own.
-    drawn = drawn_lines_kept(ctx.kept)
     try:
         await _take_down_kept(channel, ctx)
         announced = await vas.announce_verdict(
@@ -667,11 +678,14 @@ async def _announce_verdict(
             payload["record"], drawing=drawing, as_text=ctx.tries > 0,
         )
     except StepFailedOnDiscord as stop:
-        raise _carrying_verdict_lines(ctx, stop, drawn) from stop.__cause__
-    lines = drawn + (() if announced.fallback is None else announced.fallback(ctx.named, ctx.what))
+        raise _carrying_verdict_lines(ctx, stop) from stop.__cause__
+    drawn = _verdict_lines(ctx, announced.fallback)
     return StepResult(
-        result={"message_id": announced.message_id, "channel_id": announced.channel_id},
-        lines=lines,
+        result={
+            "message_id": announced.message_id, "channel_id": announced.channel_id,
+            **drawn.result(),
+        },
+        lines=drawn.lines, linked=drawn.linked,
     )
 
 
@@ -716,24 +730,28 @@ async def _attendance_sheet(ctx: StepContext, hook: AttendanceAfterReview) -> St
         # Only a driver whose sanction applied is marked: one discarded or dropped is not.
         sanctioned &= {int(candidate["driver_profile_id"]) for candidate in _applied(ctx)}
     # What the sheet's picture said when it was drawn, on the first try, is kept with every stop
-    # that follows, so that the try which posts hands it back with its own.
-    earlier = drawn_lines_kept(ctx.kept)
+    # that follows, so that the try which posts hands it back with its own: each notice block is
+    # opened with the member and the change here, before the stop keeps it (`framed_picture_lines`).
     try:
         await standing_posts.remove_kept(ctx.bot, ctx.kept)
     except StepFailedOnDiscord as stop:
-        raise stop.carrying(earlier) from stop.__cause__
+        raise _sheet_pictures(ctx).carried_by(stop) from stop.__cause__
     try:
         result = await hook.post_sheet(
             int(payload["round_id"]), int(payload["division_id"]),
-            sanctioned=sanctioned, as_text=ctx.tries > 0, earlier_lines=earlier,
+            sanctioned=sanctioned, as_text=ctx.tries > 0,
         )
     except Exception as error:
+        if isinstance(error, StepFailedOnDiscord):
+            error = _sheet_pictures(ctx, drawn_kept(error.result).lines).carried_by(error)
         raise await _failed(hook, int(payload["division_id"]), int(payload["round_id"]), error)
     # A sheet drawn without part of its graphic hands back each fault as a line of its job, for
     # the log channel, as the sheets attendance posts itself do.
-    lines = tuple(str(fault) for fault in (result or {}).get("faults", ()))
-    if not result or result.get("new") is None:
-        return StepResult(result=result or {}, lines=lines)
+    result = result or {}
+    drawn = _sheet_pictures(ctx, tuple(result.get("faults") or ()))
+    posted = {**{key: value for key, value in result.items() if key != "faults"}, **drawn.result()}
+    if result.get("new") is None:
+        return StepResult(result=posted, lines=drawn.lines, linked=drawn.linked)
     old = result.get("old")
     then = (
         _deletes(
@@ -743,7 +761,13 @@ async def _attendance_sheet(ctx: StepContext, hook: AttendanceAfterReview) -> St
         if result.get("takes_slot") and old is not None and int(old) != int(result["new"])
         else ()
     )
-    return StepResult(result=result, then=then, lines=lines)
+    return StepResult(result=posted, then=then, lines=drawn.lines, linked=drawn.linked)
+
+
+def _sheet_pictures(ctx: StepContext, lines: tuple[str, ...] = ()) -> PictureLines:
+    """The lines an attendance sheet job hands back: those an earlier try kept on its stop, then
+    *lines*, the sheet's own, each picture's notices opened with the member and the change."""
+    return framed_picture_lines(ctx.named, ctx.what, lines, kept=ctx.kept, label="attendance sheet")
 
 
 async def _division_name(db_path: str, division_id: int) -> str:
@@ -978,15 +1002,15 @@ async def _describe_announce(ctx: StepContext) -> str:
 async def _announce_sanction(ctx: StepContext, hook: AttendanceAfterReview) -> StepResult:
     payload = ctx.step_payload
     # Headed by the approved round's banner, not the round the thresholds were read at.
-    drawn = drawn_lines_kept(ctx.kept)
     try:
         fallback = await hook.announce_sanction(
             int(payload.get("heading_round_id", payload["round_id"])), int(payload["division_id"]),
             payload["candidate"], as_text=ctx.tries > 0,
         )
     except StepFailedOnDiscord as stop:
-        raise _carrying_verdict_lines(ctx, stop, drawn) from stop.__cause__
-    return StepResult(lines=drawn + (() if fallback is None else fallback(ctx.named, ctx.what)))
+        raise _carrying_verdict_lines(ctx, stop) from stop.__cause__
+    drawn = _verdict_lines(ctx, fallback)
+    return StepResult(result=drawn.result(), lines=drawn.lines, linked=drawn.linked)
 
 
 async def _describe_lineup(ctx: StepContext) -> str:
@@ -1001,7 +1025,6 @@ async def _refresh_lineup(ctx: StepContext, hook: AttendanceAfterReview) -> Step
     review's own `delete_message` for the old one (`review_posting.not_done` names a discard).
     """
     kept = drawn_kept(ctx.kept)
-    earlier = kept.lines
     try:
         await standing_posts.remove_kept(ctx.bot, ctx.kept)
         result = await hook.refresh_lineup(
@@ -1010,7 +1033,7 @@ async def _refresh_lineup(ctx: StepContext, hook: AttendanceAfterReview) -> Step
     except StepFailedOnDiscord as stop:
         raise lineup_posting.carry_lineup_lines(ctx, stop, kept) from stop.__cause__
     if not result or result.get("new") is None:
-        return StepResult(result=result or {}, lines=earlier)
+        return StepResult(result=result or {}, lines=kept.lines)
     old = result.get("old")
     then = (
         _deletes(
@@ -1019,10 +1042,7 @@ async def _refresh_lineup(ctx: StepContext, hook: AttendanceAfterReview) -> Step
         )
         if old is not None and int(old) != int(result["new"]) else ()
     )
-    return StepResult(
-        result=result, lines=earlier + lineup_posting.fallen_back_to_text_line(ctx, result),
-        then=then,
-    )
+    return lineup_posting.lineup_step_result(ctx, kept, result, then=then)
 
 
 __all__ = [

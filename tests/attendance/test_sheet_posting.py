@@ -43,6 +43,7 @@ from tests.support.season_league import (
     round_id,
     run_attendance_channel_command,
 )
+from tests.support.settings_league import unruled
 from tests.support.undecorate import undecorate
 from tests.support.switches import answer_switch
 
@@ -435,13 +436,57 @@ async def test_a_sheet_s_render_fault_is_named_as_the_attendance_sheet_image(
 #: The detail of the one render notice the sheet's render below comes back with.
 SHEET_NOTICE = "no `flag` image for “Lewis”"
 
+async def _sheet_notice_is_framed_and_kept(league: Any, interaction: Any) -> None:
+    """The log channel carries the sheet's one notice once, in a line opening with Alex and the
+    command he ran, then "Image render notices — <sheet>:" naming Pro and round 1, and beneath it
+    the notice under "Artwork not supplied by the league", naming its field `flag`, with no kind
+    code and no template name; the sheet's job keeps the sheet's name and its grouped notices on
+    its result, and the sync's reply to Alex's *interaction*, as last edited, which a stop's edit
+    went before, says the attendance was recalculated and ends in one "Image notices" section listing the sheet under that name, linked to the log
+    channel's message holding it, and the notice beneath, once."""
+    log = await _said(league)
+    assert log.count(SHEET_NOTICE) == 1, log
+    [block] = [message for message in league.bot.log_channel.sent if SHEET_NOTICE in message]
+    heading, *grouped = unruled(block).splitlines()
+    assert heading.count(" | ") >= 2, block
+    named, what, drawn = heading.split(" | ", 2)
+    assert "<@4242>" in named and "/attendance sync" in what, block
+    assert drawn.startswith("Image render notices — "), block
+    assert "Pro" in drawn and "round 1" in drawn.lower(), block
+    assert grouped == [
+        "  Artwork not supplied by the league", f"    • `flag` — {SHEET_NOTICE}",
+    ], block
+    assert "ASSET_FALLBACK_USED" not in block and "_template" not in block, block
+    from leaguebot.attendance.services.sheet.sheet_posting import POST_SHEET
+    from leaguebot.framework.models.change import RESULT_DRAWN, RESULT_NOTICES, RESULT_PICTURES
+
+    [kept] = [row["result"] for row in await step_rows(league.db_path)
+              if row["name"] == POST_SHEET]
+    assert kept[RESULT_PICTURES] == [{
+        RESULT_DRAWN: drawn.removeprefix("Image render notices — ").removesuffix(":"),
+        RESULT_NOTICES: grouped,
+    }], kept
+    last = interaction.edit_original_response.await_args
+    told = last.kwargs.get("content") or (last.args[0] if last.args else "")
+    assert told.startswith("✅ Attendance of **Pro** recalculated from round 1 on."), told
+    assert told.count("⚠️ **Image notices**") == 1, told
+    assert "\n\n⚠️ **Image notices**\n" in told, told
+    n = league.bot.log_channel.sent.index(block) + 1
+    label = drawn.removeprefix("Image render notices — ").removesuffix(":")
+    assert f"  **{label}** ([see them in the log](https://discord.test/{n}))" in told, told
+    assert told.count(SHEET_NOTICE) == 1, told
+
 
 async def test_a_sheet_s_render_notices_reach_the_log_once_naming_the_round(tmp_path):
     """The image module is on with the attendance graphic switched on and its template valid,
     and the image module's render of Pro's sheet is drawn with one notice, a flag falling back.
     Alex runs `/attendance sync` for Pro from round 1: the sheet posts once, as a picture, and the
-    queue runs to the end; the log channel carries the notice once, in a block whose heading
-    names season 3, Pro and round 1, and no block without a heading carries it a second time."""
+    queue runs to the end; the log channel carries the notice once, in a line opening with Alex
+    and the command, then a heading naming season 3, Pro and round 1, and the notice grouped
+    beneath under its kind in plain words, naming its field; the sheet's job keeps the sheet's
+    name and grouped notices, and the sync's reply ends in one "Image notices" section listing the
+    sheet with a link to that log message, and the notice beneath (issue #635; Constitution V;
+    owner decision 2026-11-24)."""
     from leaguebot.image.models.image_module import RenderNotice, RenderOutcome
     from leaguebot.image.services.aspects.image_attendance_post import (
         ATTENDANCE_ASPECT,
@@ -464,17 +509,15 @@ async def test_a_sheet_s_render_notices_reach_the_log_once_naming_the_round(tmp_
         )],
     ))
 
-    await _sync_pro(league)
+    interaction = await _sync_pro(league)
     await run_queue(league.bot)
 
     assert await stopped_job(league.db_path) is None
     assert _sends(league) == 1
     assert league.channel(SHEET).files[-1] is not None
-    log = await _said(league)
-    assert log.count(SHEET_NOTICE) == 1, log
+    await _sheet_notice_is_framed_and_kept(league, interaction)
     [block] = [message for message in league.bot.log_channel.sent if SHEET_NOTICE in message]
-    heading = block.splitlines()[0]
-    assert "Season 3 Pro — attendance after round 1" in heading, block
+    assert "Season 3 Pro — attendance after round 1" in block.splitlines()[0], block
 
 
 async def test_a_refused_sheet_s_render_notices_reach_the_log_once_when_it_is_retried(tmp_path):
@@ -482,8 +525,12 @@ async def test_a_refused_sheet_s_render_notices_reach_the_log_once_when_it_is_re
     and the image module's render of Pro's sheet is drawn with one notice, a flag falling back.
     Pro's attendance channel refuses every send. Alex runs `/attendance sync` for Pro from round 1
     and the queue stops at the sheet; the channel is let accept and a Retry posts the sheet as
-    text. The queue runs to the end, and the log channel carries the notice once, in a block whose
-    heading names Pro and round 1, never lost with the refused try."""
+    text. The queue runs to the end, and the log channel carries the notice once, in a line opening
+    with Alex and the command, then a heading naming Pro and round 1, and the notice grouped
+    beneath; the sheet's job keeps the sheet's name and grouped notices across the stop, never
+    lost with the refused try, and the sync's reply lists the sheet under "Image notices" with a
+    link to that log message and the notice beneath, once (issue #635; image spec, Errors and the
+    rejection of input, #550; owner decision 2026-11-24)."""
     from leaguebot.image.models.image_module import RenderNotice, RenderOutcome
     from leaguebot.image.services.aspects.image_attendance_post import (
         ATTENDANCE_ASPECT,
@@ -510,7 +557,7 @@ async def test_a_refused_sheet_s_render_notices_reach_the_log_once_when_it_is_re
     league.channel(SHEET).send_fails = http_error(discord.Forbidden, status=403,
                                                   text="Missing Access")
 
-    await _sync_pro(league)
+    interaction = await _sync_pro(league)
     await run_queue(league.bot)
     assert await stopped_job(league.db_path) is not None
     league.channel(SHEET).send_fails = None
@@ -518,11 +565,105 @@ async def test_a_refused_sheet_s_render_notices_reach_the_log_once_when_it_is_re
 
     assert await stopped_job(league.db_path) is None
     assert league.channel(SHEET).files[-1] is None
+    await _sheet_notice_is_framed_and_kept(league, interaction)
+
+
+#: What each season sheet's job lines name the change by: the approval's button, or the
+#: completion; and the job that posts the sheet.
+_SEASON_SHEETS = {
+    "opening": ("the ✅ Approve button of `/season placements-review`", "opening_sheet"),
+    "final": ("`/season complete`", "final_sheet"),
+}
+
+
+@pytest.mark.parametrize("occasion", [
+    "opening",
+    "final",
+])
+async def test_a_season_sheet_s_notices_open_with_member_and_change_and_are_kept_across_a_stop(
+    tmp_path, monkeypatch, occasion,
+):
+    """Images and attendance on, the attendance graphic asked for, and every sheet drawn as a PNG
+    with one font substituted, a font of its own. Season 3 is approved (each division's opening
+    sheet) or completed (each division's final sheet), and Pro's attendance channel refuses the
+    first send: the queue stops at Pro's sheet. The channel is let accept and a Retry posts Pro's
+    sheet as text, and Am's sheet is drawn and posted. Each sheet's notice reaches the log channel
+    once, in a line opening with the member and the change ("| the ✅ Approve button of `/season
+    placements-review` |" or "| `/season complete` |"), then "Image render notices — <sheet>:", and
+    beneath it the notice grouped under "Font substituted", naming its field. Each division's job
+    keeps its sheet's name and its grouped notices on its result, Pro's across the stop, for the
+    approval's or the completion's reply to list (issue #635; Constitution V; image spec, Errors
+    and the rejection of input, #550)."""
+    from leaguebot.image.models.image_module import RenderNotice
+    from leaguebot.image.services.aspects import image_attendance_post
+    from leaguebot.image.services.aspects.image_attendance_post import SheetRender
+    from tests.support.season_league import (
+        complete_season,
+        pending_completion_league,
+        press_approve,
+        season_league,
+    )
+
+    asked, job = _SEASON_SHEETS[occasion]
+    if occasion == "opening":
+        league = await season_league(
+            tmp_path, monkeypatch=monkeypatch, attendance=True, images=True,
+        )
+    else:
+        league = await pending_completion_league(tmp_path, attendance=True, images=True)
+    monkeypatch.setattr(league.bot.image_drawing, "attendance_wanted",
+                        AsyncMock(return_value=True))
+    fonts: list[str] = []
+
+    async def _sheet(*_args: Any, **_kwargs: Any) -> Any:
+        fonts.append(f"Font{len(fonts) + 1}")
+        png = tmp_path / f"sheet_{len(fonts)}.png"
+        png.write_bytes(b"\x89PNG\r\n\x1a\n")
+        return SheetRender(png=png, notices=[RenderNotice(
+            image_type="attendance_sheet", notice_kind="FONT_SUBSTITUTED",
+            field_id="driver_name_1",
+            detail=f"{fonts[-1]} was unavailable, so a substitute was drawn",
+        )])
+
+    monkeypatch.setattr(image_attendance_post, "render_sheet", _sheet)
+    pro_sheet = league.channel(DIVISIONS[PRO][3].attendance)
+    pro_sheet.send_fails = http_error(status=500, text="Internal Server Error")
+    if occasion == "opening":
+        await press_approve(league)
+    else:
+        await complete_season(league)
+
+    await run_queue(league.bot)
+    assert await stopped_job(league.db_path) is not None
+    pro_sheet.send_fails = None
+    await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert len(fonts) == 2, fonts
     log = await _said(league)
-    assert log.count(SHEET_NOTICE) == 1, log
-    [block] = [message for message in league.bot.log_channel.sent if SHEET_NOTICE in message]
-    heading = block.splitlines()[0]
-    assert "Pro" in heading and "round 1" in heading.lower(), block
+    told = []
+    for font in fonts:
+        assert log.count(font + " ") == 1, log
+        [message] = [line for line in league.bot.log_channel.sent if font + " " in line]
+        heading, *grouped = unruled(message).splitlines()
+        assert heading.count(" | ") >= 2, message
+        named, what, drawn = heading.split(" | ", 2)
+        assert "<@77>" in named and what == asked, message
+        label = drawn.removeprefix("Image render notices — ").removesuffix(":")
+        assert drawn == f"Image render notices — {label}:", message
+        assert grouped == [
+            "  Font substituted",
+            f"    • `driver_name_1` — {font} was unavailable, so a substitute was drawn",
+        ], message
+        told.append((label, grouped))
+    from leaguebot.framework.models.change import RESULT_DRAWN, RESULT_NOTICES, RESULT_PICTURES
+
+    kept = [row["result"] for row in await step_rows(league.db_path) if row["name"] == job]
+    assert len(kept) == 2, kept
+    pictures = [each for result in kept for each in result[RESULT_PICTURES]]
+    assert sorted(pictures, key=str) == sorted(
+        ({RESULT_DRAWN: label, RESULT_NOTICES: grouped} for label, grouped in told), key=str,
+    ), pictures
 
 
 async def test_a_sheet_whose_images_switch_nobody_signed_up_for_stops_its_job(tmp_path):

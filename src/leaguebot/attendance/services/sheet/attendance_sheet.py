@@ -64,7 +64,6 @@ async def post_attendance_sheet(
     as_text: bool = False,
     drawing: ImageDrawing | None = None,
     driver_names_read: AwaitedHook | None = None,
-    earlier_lines: tuple[str, ...] = (),
 ) -> PostedSheet | None:
     """Post a new sheet to the division's attendance channel, which replaces the prior one.
 
@@ -85,10 +84,10 @@ async def post_attendance_sheet(
 
     *drawing* is the image module's, which the graphic is asked of; none draws no picture, as
     *as_text* does. What it hands back, the render's notices and the fault of a picture that was
-    due and not drawn, are lines of the sheet's job, kept with *faults* in `PostedSheet.faults`;
-    *earlier_lines* are those a try before this one kept on its stop (`drawn_lines_kept`), for the
-    try that posts to hand back. A post Discord refuses raises with them kept (`carrying`), so
-    that a picture drawn once is not lost with it.
+    due and not drawn, are lines of the sheet's job, kept with *faults* in `PostedSheet.faults`.
+    A post Discord refuses raises with them kept (`carrying`), so that a picture drawn once is not
+    lost with it. The lines a try before this one kept are the job's to add
+    (`sheet_posting`'s `framed_picture_lines`), not this function's.
 
     Pass ``sanctioned_profile_ids`` to annotate those drivers with "(reached point limit)"
     on this posting.
@@ -275,7 +274,6 @@ async def post_attendance_sheet(
         raise StepFailedOnDiscord(
             f"the attendance sheet could not be posted: {exc}"
         ).carrying((
-            *earlier_lines,
             *await _fault_lines(db_path, division_id, round_id, occasion, faults),
             *drawn_lines,
         )) from exc
@@ -293,7 +291,6 @@ async def post_attendance_sheet(
         takes_slot=occasion.takes_the_live_slot,
         previous_channel=int(prior_channel_id) if prior_channel_id else None,
         faults=(
-            *earlier_lines,
             *await _fault_lines(db_path, division_id, round_id, occasion, faults),
             *drawn_lines,
         ),
@@ -382,8 +379,10 @@ def sheet_result(posted: PostedSheet | None) -> dict[str, Any]:
 
 
 def sheet_lines(result: Mapping[str, Any]) -> tuple[str, ...]:
-    """The lines a sheet job writes with its result: the faults the graphic fell back from."""
-    return tuple(str(line) for line in result.get("faults") or ())
+    """The lines a sheet job writes with its result: the faults the graphic fell back from, each
+    as it was handed back, so that a notice block stays marked (`NoticeBlock`) for the job to open
+    with the member and the change."""
+    return tuple(result.get("faults") or ())
 
 
 async def record_sheet_on(db: aiosqlite.Connection, division_id: int, posted: Mapping[str, Any]) -> None:

@@ -61,6 +61,7 @@ from leaguebot.attendance.services.check_in.check_in_changes import (
 )
 from leaguebot.attendance.services.check_in.check_in_clean_up import earlier_messages, forget_vanished_call
 from leaguebot.framework.db.database import get_connection
+from leaguebot.framework.utils.log_lines import framed_picture_lines
 from leaguebot.framework.models.change import (
     ChangeOrigin,
     PlannedStep,
@@ -68,7 +69,6 @@ from leaguebot.framework.models.change import (
     StepKind,
     StepResult,
     Verdict,
-    drawn_lines_kept,
 )
 from leaguebot.core.models.round import ROUND_CANCELLABLE, RoundFormat
 from leaguebot.framework.services.posting import standing_posts
@@ -284,11 +284,13 @@ def check_in_steps(
         # What the call's picture said when it was drawn, on the first try, is kept with every
         # stop that follows, so that the try which posts hands it back, never lost with a refused
         # post.
-        picture_lines = drawn_lines_kept(ctx.kept)
+        picture_lines = framed_picture_lines(
+            ctx.named, ctx.what, (), kept=ctx.kept, label="check-in call"
+        )
         try:
             await standing_posts.remove_kept(ctx.bot, ctx.kept)
         except StepFailedOnDiscord as stop:
-            raise stop.carrying(picture_lines) from stop.__cause__
+            raise picture_lines.carried_by(stop) from stop.__cause__
         round_id = int(ctx.payload["round_id"])
         async with get_connection(ctx.db_path) as db:
             row = await call_row(db, round_id)
@@ -332,13 +334,13 @@ def check_in_steps(
                 left = rsvp_service.left_for_the_queue(
                     earlier is not None, answers_kept, vanished, timed_out=timed_out
                 )
-            return StepFailedOnDiscord(
+            return picture_lines.carried_by(StepFailedOnDiscord(
                 reason,
                 result={"earlier_left": earlier is not None and not vanished,
                         "vanished": vanished},
                 notice=left if said is None else f"{left}; Discord said: {said}",
                 record=forget,
-            ).carrying(picture_lines)
+            ))
 
         config = await service.get_division_config(division_id)
         if config is None or not config.rsvp_channel_id:
@@ -388,10 +390,14 @@ def check_in_steps(
             season = (
                 f"Season {row['season_number']} " if row["season_number"] is not None else ""
             )
-            picture_lines = tuple(
-                f"{season}**{division}** — check-in call of round {row['round_number']}: {fault}"
-                for fault in faults
-            ) + drawn_lines
+            picture_lines = framed_picture_lines(
+                ctx.named, ctx.what,
+                tuple(
+                    f"{season}**{division}** — check-in call of round {row['round_number']}: "
+                    f"{fault}" for fault in faults
+                ) + drawn_lines,
+                kept=ctx.kept, label="check-in call",
+            )
         try:
             parts: dict[str, Any] = {"embed": embed, "view": view_of(round_id)}
             if attachment is not None:
@@ -434,7 +440,7 @@ def check_in_steps(
                 })
                 for message_id, channel_id in earlier_messages(coming_down)
             )
-        lines: tuple[str, ...] = picture_lines
+        lines: tuple[str, ...] = picture_lines.lines
         if ctx.actor_id is not None and ctx.kind == CHECK_IN_CALL:
             # Only the call's own change was asked by the command: an amendment that borrows this
             # step to repost the call has its own line, and nobody ran /attendance post-check-in.
@@ -457,9 +463,11 @@ def check_in_steps(
                 "new": [posted_id], "channel_id": channel.id,
                 "round_id": round_id, "division_id": division_id, "driver_ids": driver_ids,
                 "replacing": earlier is not None or amending,
+                **picture_lines.result(),
             },
             then=then,
             lines=lines,
+            linked=picture_lines.linked,
         )
 
     async def record_call(db: aiosqlite.Connection, ctx: StepContext, result: StepResult) -> None:

@@ -17,6 +17,10 @@ from tests.support.lineup_drawing import LineupDrawingStub
 
 GUILD = object()
 
+#: The member who ran `/team lineup` and the command, handed on to each division's drawing so
+#: that the log entry holding a picture's notices opens with both.
+COMMANDED = {"named": "Alex (<@4242>)", "what": "`/team lineup`"}
+
 
 def _divisions(*ids: int) -> list:
     return [SimpleNamespace(id=div_id, name=f"Division {div_id}") for div_id in ids]
@@ -36,7 +40,7 @@ async def test_a_league_that_does_not_draw_its_lineup_draws_nothing():
     write the lineup as text."""
     drawing = LineupDrawingStub(wanted=False)
 
-    async with lineups_for_command(drawing, GUILD, _divisions(1, 2)) as lineups:
+    async with lineups_for_command(drawing, GUILD, _divisions(1, 2), **COMMANDED) as lineups:
         assert lineups == CommandLineups(drawn=False)
 
     assert drawing.drawn_for_command == []
@@ -45,16 +49,18 @@ async def test_a_league_that_does_not_draw_its_lineup_draws_nothing():
 
 async def test_every_division_is_drawn_in_order_and_released_once_done(tmp_path):
     """Three divisions, all drawn: each is drawn as the command's output, never as the lineup of
-    record, its picture handed back in the order of the divisions; the pictures are released only
-    once the block is left, so the command can send them first."""
+    record, and handed the member who ran the command and the command; its picture is handed back
+    in the order of the divisions; the pictures are released only once the block is left, so the
+    command can send them first."""
     pictures = _pictures(tmp_path, 1, 2, 3)
     drawing = LineupDrawingStub(by_division={i: {"picture": p} for i, p in pictures.items()})
 
-    async with lineups_for_command(drawing, GUILD, _divisions(1, 2, 3)) as lineups:
+    async with lineups_for_command(drawing, GUILD, _divisions(1, 2, 3), **COMMANDED) as lineups:
         assert lineups == CommandLineups(drawn=True, paths=tuple(pictures.values()))
         assert drawing.discarded == []
 
     assert drawing.drawn_for_command == [1, 2, 3]
+    assert drawing.commanded == [("Alex (<@4242>)", "`/team lineup`")] * 3
     assert drawing.drawn == []
     assert drawing.discarded == list(pictures.values())
 
@@ -70,7 +76,7 @@ async def test_a_division_that_cannot_be_drawn_refuses_and_releases_what_was_dra
         3: {"picture": pictures[3]},
     })
 
-    async with lineups_for_command(drawing, GUILD, _divisions(1, 2, 3)) as lineups:
+    async with lineups_for_command(drawing, GUILD, _divisions(1, 2, 3), **COMMANDED) as lineups:
         assert lineups.refused == "Division 2"
         assert lineups.problem == "the template is at fault"
 
@@ -89,7 +95,7 @@ async def test_a_fault_drawing_a_later_division_is_let_out_and_releases_what_was
     })
 
     with pytest.raises(RuntimeError, match="database is locked"):
-        async with lineups_for_command(drawing, GUILD, _divisions(1, 2)):
+        async with lineups_for_command(drawing, GUILD, _divisions(1, 2), **COMMANDED):
             pytest.fail("the block ran although a division could not be drawn")
 
     assert drawing.drawn_for_command == [1, 2]
@@ -103,7 +109,7 @@ async def test_a_fault_sending_the_pictures_still_releases_them(tmp_path):
     drawing = LineupDrawingStub(by_division={i: {"picture": p} for i, p in pictures.items()})
 
     with pytest.raises(RuntimeError, match="Discord refused"):
-        async with lineups_for_command(drawing, GUILD, _divisions(1, 2)):
+        async with lineups_for_command(drawing, GUILD, _divisions(1, 2), **COMMANDED):
             raise RuntimeError("Discord refused the files")
 
     assert drawing.discarded == list(pictures.values())

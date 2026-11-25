@@ -743,7 +743,7 @@ announcement, and a reserve may still race for any team.
 
     **Expect:**
     - **Ack:** `Approving round 1's reports (Division 1)`
-    - **Then:** `✅ Round 1's reports are approved (Division 1): nothing was staged. Its appeals review is posted below.`
+    - **Then:** `✅ Round 1's reports are approved (Division 1): nothing was staged. Its appeals review is posted below.` Then, where a picture drew with notices, a blank line and the `⚠️ **Image notices**` section, as in `00-base.md` step 37.
     - **Posts:** the results and standings again, `Post-Race Penalty Results`, the totals of step
       51 unchanged; nothing in `#d1-verdicts`; the attendance sheet after Round 1 in
       `#d1-attendance`, which this spec does not check (nobody answered the call); and the
@@ -755,7 +755,7 @@ announcement, and a reserve may still race for any team.
 
     **Expect:**
     - **Ack:** `Approving round 1's appeals (Division 1)`
-    - **Then:** `✅ Round 1's appeals are approved (Division 1): no corrections were staged. The round is final.`
+    - **Then:** `✅ Round 1's appeals are approved (Division 1): no corrections were staged. The round is final.` Then, where a picture drew with notices, a blank line and the `⚠️ **Image notices**` section, as in `00-base.md` step 37.
     - **Posts:** the two results pictures and the standings again, `Final Results`, the totals of
       step 51; the channel `#s1-division-1-r1-results` deleted.
     - **Log:** `<you> | APPEALS_REVIEW_APPROVED | Success` with `round: 1 (Division 1)` and
@@ -1018,7 +1018,7 @@ Keller 43, Liam Lavoie 3) and Delta Racing from 32 to **34** (Hiro Hayashi 32, G
 
     **Expect:**
     - **Ack:** `Approving season 1's points amendment`
-    - **Then:** `✅ Amendment approved. All standings recomputed and reposted.`
+    - **Then:** `✅ Amendment approved. All standings recomputed and reposted.` Then, where a picture drew with notices, a blank line and the `⚠️ **Image notices**` section, as in `00-base.md` step 37.
     - **Posts**, each new message posted before the one it replaces is deleted:
       - `#d1-results`: the two pictures of round 1 again, `**Season 1 Division 1 Round 1 — Qualifying**`
         and `… — Race**`, `Final Results`, the old pair deleted. The qualifying gives Hiro
@@ -1125,7 +1125,9 @@ division counts as having something to post once any round of it holds results, 
 
     **Expect:**
     - **Ack:** `Syncing the results of every round of **Division 1**`
-    - **Then:** `✅ Results for all rounds in **Division 1** synced to the results channel.`
+    - **Then:** `✅ Results for all rounds in **Division 1** synced to the results channel.`,
+      followed, where a table drew with notices, by a blank line and a `⚠️ **Image notices**`
+      section naming each picture, a *see them in the log* link and its notices beneath.
     - **Posts** (`#d1-results`): the two pictures of round 1 again, `Final Results`, as step 74
       left them, and the pair before them deleted. Nothing in `#d1-standings`: the standings are
       the other sync's.

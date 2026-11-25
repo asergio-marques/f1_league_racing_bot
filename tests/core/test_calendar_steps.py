@@ -23,6 +23,7 @@ import discord
 import pytest
 
 from tests.support.calendar_drawing import CalendarDrawingStub, draw_calendars_with
+from tests.support.drawn_notices import GROUPED_NOTICE, NOTICE, logged_block, told_section
 from tests.support.change_queue import (
     MANAGER_ROLE_ID,
     change_rows,
@@ -501,20 +502,12 @@ async def test_a_calendar_whose_drawing_fails_says_what_puts_it_right_by_where_t
         assert sum(each.startswith(line) for each in logged) == 1, logged
 
 
-#: What the drawing of Pro's calendar notes in the tests below, which it draws as a picture.
-NOTICE = "round 12 did not fit"
-
-
 def _notices_told(league: Any) -> str:
-    """The "Image notices" section a reply ends in for Pro's calendar drawn with `NOTICE`: Pro's
-    calendar labelled as its log line names it, linked to the log channel's one message holding
-    the notice, then the notice."""
+    """The "Image notices" section a reply ends in for Pro's calendar drawn with `NOTICE`, grouped
+    as the drawing hands it back: Pro's calendar labelled as its log line names it, linked to the
+    log channel's one message holding the notice, then the grouped notice."""
     [held] = [n for n, line in enumerate(league.bot.log_channel.sent, 1) if NOTICE in line]
-    return (
-        "\n\n⚠️ **Image notices**\n"
-        f"  **calendar — Season 3 Pro** ([see them in the log](https://discord.test/{held}))\n"
-        f"  • {NOTICE}"
-    )
+    return "\n\n" + told_section("calendar — Season 3 Pro", f"https://discord.test/{held}")
 
 
 async def _cancel_division(league: Any) -> Any:
@@ -522,21 +515,22 @@ async def _cancel_division(league: Any) -> Any:
     return await cancel_division(league, "Pro")
 
 
-@pytest.mark.parametrize("cancel", [
-    pytest.param(_cancel, id="/round cancel"),
-    pytest.param(_cancel_division, id="/division cancel"),
-    pytest.param(cancel_season, id="/season cancel"),
+@pytest.mark.parametrize(("cancel", "change"), [
+    pytest.param(_cancel, "`/round cancel`", id="/round cancel"),
+    pytest.param(_cancel_division, "`/division cancel`", id="/division cancel"),
+    pytest.param(cancel_season, "`/season cancel`", id="/season cancel"),
 ])
 async def test_a_drawn_calendar_s_notices_reach_the_log_once_in_its_posting_job(
-    tmp_path, monkeypatch, cancel,
+    tmp_path, monkeypatch, cancel, change,
 ):
     """Season 3 being raced with the images module on; the drawing the builder handed the calendar
     job draws Pro's calendar as a PNG with one notice, round 12 not fitting. Pro's round 3, Pro, or
     season 3 is cancelled, and Pro's calendar is posted again as a picture. The queue does not
-    stop; the log channel holds the notice once, in one line naming the calendar, season 3 and
-    Pro, which the posting job carries among its own lines (Constitution XIV.4; the owner's
+    stop; the log channel holds the notice once, in one line opening with the admin and the
+    command, naming the calendar, season 3 and Pro and carrying the notice grouped as the drawing
+    handed it back, never bulleted again, which the posting job carries among its own lines (Constitution XIV.4; the owner's
     decision on #288: code inside a job never calls `post_log`). The admin's reply ends in one
-    "Image notices" section listing the notice under `calendar — Season 3 Pro`, linked to that
+    "Image notices" section listing the grouped notice under `calendar — Season 3 Pro`, linked to that
     message (image spec, Calendar)."""
     from tests.support.change_queue import queued_log_lines
 
@@ -544,7 +538,7 @@ async def test_a_drawn_calendar_s_notices_reach_the_log_once_in_its_posting_job(
     png = tmp_path / "calendar.png"
     png.write_bytes(b"\x89PNG\r\n\x1a\n")
     draw_calendars_with(league.bot, monkeypatch,
-                        CalendarDrawingStub(picture=png, notices=(NOTICE,)))
+                        CalendarDrawingStub(picture=png, notices=GROUPED_NOTICE))
     interaction = await cancel(league)
     assert not league.errors, league.errors
 
@@ -554,7 +548,8 @@ async def test_a_drawn_calendar_s_notices_reach_the_log_once_in_its_posting_job(
     logged = [*league.bot.log_channel.sent, *await queued_log_lines(league.db_path)]
     named = [line for line in logged if NOTICE in line]
     assert len(named) == 1, logged
-    assert "| Image render notices — calendar — Season 3 Pro:\n" in named[0], named[0]
+    assert named[0].startswith(f"Admin (`<@{ADMIN_ID}>`) | {change} |"), named[0]
+    assert f"| {logged_block('calendar — Season 3 Pro')}" in named[0], named[0]
     told = reply(interaction)
     assert told.count("⚠️ **Image notices**") == 1, told
     assert _notices_told(league) in told, told
@@ -568,7 +563,8 @@ async def test_a_refused_calendar_s_notices_reach_the_log_once_when_it_is_retrie
     cancelled, and Pro's calendar channel refuses every send, the picture and then the text, so
     the queue stops at the calendar's posting job. The channel is let accept, and a Retry posts the
     calendar: the queue runs to the end, and the log channel holds the notice once, in one line
-    naming the calendar, season 3 and Pro, never lost with the refused try. The admin's reply,
+    naming the calendar, season 3 and Pro and carrying the notice grouped as the drawing handed it
+    back, never lost with the refused try. The admin's reply,
     after the Retry, still lists the notice under `calendar — Season 3 Pro`, linked to that
     message (image spec, Calendar)."""
     from tests.support.change_queue import queued_log_lines
@@ -577,7 +573,7 @@ async def test_a_refused_calendar_s_notices_reach_the_log_once_when_it_is_retrie
     png = tmp_path / "calendar.png"
     png.write_bytes(b"\x89PNG\r\n\x1a\n")
     draw_calendars_with(league.bot, monkeypatch,
-                        CalendarDrawingStub(picture=png, notices=(NOTICE,)))
+                        CalendarDrawingStub(picture=png, notices=GROUPED_NOTICE))
     channel = league.channel(PRO_CALENDAR)
     channel.fail_when = lambda _content, _kwargs: True
     interaction = await _cancel(league)
@@ -591,7 +587,7 @@ async def test_a_refused_calendar_s_notices_reach_the_log_once_when_it_is_retrie
     logged = [*league.bot.log_channel.sent, *await queued_log_lines(league.db_path)]
     named = [line for line in logged if NOTICE in line]
     assert len(named) == 1, logged
-    assert "| Image render notices — calendar — Season 3 Pro:\n" in named[0], named[0]
+    assert f"| {logged_block('calendar — Season 3 Pro')}" in named[0], named[0]
     told = reply(interaction)
     assert told.count("⚠️ **Image notices**") == 1, told
     assert _notices_told(league) in told, told
