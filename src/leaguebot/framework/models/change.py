@@ -154,8 +154,10 @@ RESULT_PICTURES = "pictures"
 class NoticeBlock(str):
     """A picture's render notices as one block of lines ("Image render notices — <picture>:" and
     the grouped notices beneath), marked as such, so that the job which drew the picture can tell
-    it from the fault lines among its own (`job_notice_lines`) and open it with the member and the
-    change it ran for. A plain `str` in every other respect, it reads, joins and compares as one.
+    it from the other lines among its own, join its blocks in one line and list its pictures
+    (`framed_picture_lines`, `notice_pictures`). Every line of the job is opened with the member
+    and the change it ran for, block or not (`job_notice_lines`), so the mark is not needed for
+    that. A plain `str` in every other respect, it reads, joins and compares as one.
     The mark does not survive being saved in a step's result: a job frames its blocks before it
     keeps them (`StepFailedOnDiscord.carrying`)."""
 

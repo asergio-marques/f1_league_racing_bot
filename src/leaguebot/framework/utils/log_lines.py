@@ -349,14 +349,21 @@ def drawn_notices_line(named: str, what: str, drawn: str, body: Iterable[str]) -
 
 
 def job_notice_lines(named: str, what: str, lines: Iterable[str]) -> tuple[str, ...]:
-    """A job's *lines* with each notice block the drawing marked (`NoticeBlock`) opened with *named*
-    and *what*, the member and the change the job ran for, as every line of the log opens; every
-    other line (a fault's, one kept from an earlier try and already framed) is left as it is. The
-    framed block is a plain string, so framing it again changes nothing. The change is named as
-    the job names it, a command with its code marks ("`/season complete`")."""
-    return tuple(
-        f"{named} | {what} | {line}" if isinstance(line, NoticeBlock) else line for line in lines
-    )
+    """A job's *lines*, each opened once with *named* and *what*, the member and the change the job
+    ran for, as every line of the log opens (the core specification's "The record of what
+    changed"): a notice block the drawing marked (`NoticeBlock`), a line saying why a picture was
+    not drawn, every line the job hands back. A line already starting with exactly that opening
+    (the verdict's fallback line, opened where it is formed) is left as it is, so opening a job's
+    lines twice changes nothing. The change is named as the job names it, a command with its code
+    marks ("`/season complete`").
+
+    Two designs were rejected. Marking each line at its origin, as `NoticeBlock` marks a block,
+    loses the mark wherever a line is rebuilt, and the framework may not import the modules whose
+    drawings form the lines. Opening every line unconditionally under a rule that no caller passes
+    a line already opened is a contract nothing enforces, and breaking it writes the opening twice.
+    Comparing each line's start with the exact opening needs neither."""
+    opening = f"{named} | {what} | "
+    return tuple(line if line.startswith(opening) else opening + line for line in lines)
 
 
 _NOTICES_HEADING = "Image render notices"
@@ -418,9 +425,9 @@ def framed_picture_lines(
     label: str,
 ) -> PictureLines:
     """What a job that drew pictures writes: the lines an earlier try of it *kept* on its stop, then
-    *lines*, those of this try, with each notice block the drawing marked (`NoticeBlock`) opened
-    with *named* and *what* (`job_notice_lines`) and every one joined in a single line, so that
-    all the job's notices reach the log in one message, which the reply links to once. A picture
+    *lines*, those of this try, each opened once with *named* and *what* (`job_notice_lines`), and
+    the notice blocks the drawing marked (`NoticeBlock`) joined in a single line, so that all the
+    job's notices reach the log in one message, which the reply links to once. A picture
     drawn on an earlier try keeps its own pictures and link; *label* names a block that names no
     picture. Frame the blocks here, before `StepFailedOnDiscord.carrying` keeps them, because the
     mark is lost with the saved result."""

@@ -314,25 +314,27 @@ def test_a_job_s_notice_line_opens_with_member_and_change_and_carries_the_groupe
     )
 
 
-def test_a_job_frames_its_notice_blocks_with_member_and_change_and_leaves_its_other_lines():
-    """A module job's lines mix the drawing's notice block with fault lines and lines kept from an
-    earlier try, already framed. Only the block the drawing marked gains the opening."""
+def test_a_job_opens_each_line_of_its_own_once_with_member_and_change():
+    """A module job's lines mix the drawing's notice block with fault lines and a line already
+    opened (the verdict's fallback line). Every line gains the opening of member and change, the
+    one already opened keeps it once, and opening the result again changes nothing."""
     from leaguebot.framework.models.change import NoticeBlock
     from leaguebot.framework.utils.log_lines import job_notice_lines
 
     block = "\n".join(["Image render notices — drivers standings — Pro:", *GROUPED])
-    kept = "Alex (<@4242>) | Results approval | Image render notices — race — Pro:\n  …"
+    opened = "Alex (<@4242>) | Results approval | ⚠️ Verdict image — posted as text"
     fault = "⚠️ Standings image — the template could not be read"
 
     lines = job_notice_lines(
-        "Alex (<@4242>)", "Results approval", [fault, NoticeBlock(block), kept]
+        "Alex (<@4242>)", "Results approval", [fault, NoticeBlock(block), opened]
     )
 
     assert list(lines) == [
-        fault,
+        f"Alex (<@4242>) | Results approval | {fault}",
         f"Alex (<@4242>) | Results approval | {block}",
-        kept,
+        opened,
     ]
+    assert job_notice_lines("Alex (<@4242>)", "Results approval", lines) == lines
 
 
 def test_a_reply_s_image_notices_list_each_picture_s_grouped_notices_beneath_its_label():
