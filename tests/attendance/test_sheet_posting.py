@@ -572,11 +572,16 @@ async def test_a_refused_sheet_s_render_notices_reach_the_log_once_when_it_is_re
 #: completion; and the job that posts the sheet.
 _SEASON_SHEETS = {
     "opening": ("the ✅ Approve button of `/season placements-review`", "opening_sheet"),
-    "final": ("/season complete", "final_sheet"),
+    "final": ("`/season complete`", "final_sheet"),
 }
 
 
-@pytest.mark.parametrize("occasion", ["opening", "final"])
+@pytest.mark.parametrize("occasion", [
+    "opening",
+    pytest.param("final", marks=pytest.mark.xfail(
+        strict=True, reason="#635: the notice line names the command bare, without its code marks",
+    )),
+])
 async def test_a_season_sheet_s_notices_open_with_member_and_change_and_are_kept_across_a_stop(
     tmp_path, monkeypatch, occasion,
 ):
@@ -586,7 +591,7 @@ async def test_a_season_sheet_s_notices_open_with_member_and_change_and_are_kept
     first send: the queue stops at Pro's sheet. The channel is let accept and a Retry posts Pro's
     sheet as text, and Am's sheet is drawn and posted. Each sheet's notice reaches the log channel
     once, in a line opening with the member and the change ("| the ✅ Approve button of `/season
-    placements-review` |" or "| /season complete |"), then "Image render notices — <sheet>:", and
+    placements-review` |" or "| `/season complete` |"), then "Image render notices — <sheet>:", and
     beneath it the notice grouped under "Font substituted", naming its field. Each division's job
     keeps its sheet's name and its grouped notices on its result, Pro's across the stop, for the
     approval's or the completion's reply to list (issue #635; Constitution V; image spec, Errors

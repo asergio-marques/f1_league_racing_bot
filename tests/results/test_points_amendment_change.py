@@ -765,12 +765,15 @@ async def test_the_admin_is_told_at_once_and_the_reply_is_updated_when_every_rou
 SESSION_NOTICE = "Font7 was unavailable, so a substitute was drawn"
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#635: the notice line names the command bare, without its code marks",
+)
 async def test_the_approval_s_reply_names_each_picture_drawn_with_notices(tmp_path):
     """Images on and the results picture's template sound: the league admin presses ✅ Approve
     on `/results amend review`, and every round of every division is posted again, each session's
     results picture drawn as a PNG with one font substituted. Each picture's notice reaches the
-    log channel once, in a block opening with the admin and the command ("| /results amend
-    review |"), then "Image render notices — <picture>:" and the notice grouped beneath "Font
+    log channel once, in a block opening with the admin and the command ("| `/results
+    amend review` |"), then "Image render notices — <picture>:" and the notice grouped beneath "Font
     substituted", naming its field. The reply says the amendment is approved and ends in one
     "Image notices" section listing every picture under the name its log line gives it, linked to
     the log channel's message holding it, each picture's notice beneath it once (assumed call
@@ -796,7 +799,7 @@ async def test_the_approval_s_reply_names_each_picture_drawn_with_notices(tmp_pa
     told = updated_reply(press)
     assert told.startswith(SUCCESS), told
     assert told.count("⚠️ **Image notices**") == 1, told
-    opening = f"Admin (`<@{ADMIN_ID}>`) | /results amend review | Image render notices — "
+    opening = f"Admin (`<@{ADMIN_ID}>`) | `/results amend review` | Image render notices — "
     for n, line in held:
         assert line.startswith(opening), line
         assert line.count(SESSION_NOTICE) == 1, line

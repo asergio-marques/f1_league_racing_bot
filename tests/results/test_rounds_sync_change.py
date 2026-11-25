@@ -290,6 +290,9 @@ SESSION_NOTICE = "Font7 was unavailable, so a substitute was drawn"
     pytest.param(False, id="first try"),
     pytest.param(True, id="retried as text"),
 ])
+@pytest.mark.xfail(
+    strict=True, reason="#635: the notice line names the command bare, without its code marks",
+)
 async def test_a_rounds_sync_s_reply_names_the_session_picture_drawn_with_notices(
     tmp_path, refused,
 ):
@@ -298,7 +301,7 @@ async def test_a_rounds_sync_s_reply_names_the_session_picture_drawn_with_notice
     posts at the first try, or (*refused*) Discord refuses every post, the queue stops at the
     session's table, and once Discord takes posts again Retry posts the table as text. The
     notice reaches the log channel once, in a block opening with the member and the command
-    ("| /results rounds sync |"), then "Image render notices — <picture>:" and the notice grouped
+    ("| `/results rounds sync` |"), then "Image render notices — <picture>:" and the notice grouped
     beneath "Font substituted", naming its field. The reply says the results synced and ends in
     one "Image notices" section listing the picture under the name its log line gives it, linked
     to the log channel's message holding it, and the notice beneath, once (owner decision
@@ -331,7 +334,7 @@ async def test_a_rounds_sync_s_reply_names_the_session_picture_drawn_with_notice
             if SESSION_NOTICE in line]
     assert len(held) == 1, league.bot.log_channel.sent
     n, line = held[0]
-    opening = "Admin (`<@4242>`) | /results rounds sync | Image render notices — "
+    opening = "Admin (`<@4242>`) | `/results rounds sync` | Image render notices — "
     assert line.startswith(opening), line
     label, grouped = line.removeprefix(opening).split(":\n", 1)
     assert grouped.splitlines()[:2] == [

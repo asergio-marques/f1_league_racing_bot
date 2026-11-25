@@ -690,12 +690,21 @@ async def test_a_classification_drawn_without_inkscape_says_the_host_must_instal
 #: What each occasion's job lines name the change by: the approval's button, or the completion.
 _ASKED_BY = {
     ClassificationOccasion.SEASON_OPENING: "the ✅ Approve button of `/season placements-review`",
-    ClassificationOccasion.SEASON_FINAL: "/season complete",
+    ClassificationOccasion.SEASON_FINAL: "`/season complete`",
 }
 
 
+#: `_OCCASIONS`, the final classification's case marked: its notice line names the command bare.
+_NOTICE_OCCASIONS = [
+    _OCCASIONS[0],
+    pytest.param(*_OCCASIONS[1].values, id="final", marks=pytest.mark.xfail(
+        strict=True, reason="#635: the notice line names the command bare, without its code marks",
+    )),
+]
+
+
 @pytest.mark.parametrize("refused", [False, True], ids=["posted", "refused_then_retried"])
-@pytest.mark.parametrize("occasion, job, word", _OCCASIONS)
+@pytest.mark.parametrize("occasion, job, word", _NOTICE_OCCASIONS)
 async def test_a_classification_s_notices_open_with_member_and_change_and_are_kept_for_the_reply(
     tmp_path, monkeypatch, occasion, job, word, refused,  # noqa: ARG001 — word is the other tests'
 ):
@@ -704,7 +713,7 @@ async def test_a_classification_s_notices_open_with_member_and_change_and_are_ke
     picture of Pro and Am draws as a PNG with one font substituted, a font of its own. Each
     division's job writes one log line holding both its pictures' notices: each picture's block
     opens with the member and the change ("| the ✅ Approve button of `/season placements-review`
-    |" or "| /season complete |"), then "Image render notices — <picture>:" naming the division and the championship, and
+    |" or "| `/season complete` |"), then "Image render notices — <picture>:" naming the division and the championship, and
     beneath it the notice grouped under "Font substituted", naming its field, every font once.
     The job keeps each picture's name and its grouped notices on its result, for the change's
     reply to list. Run twice: posted on the first try; and with Discord taking Pro's drivers'
