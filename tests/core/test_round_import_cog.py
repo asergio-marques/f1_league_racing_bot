@@ -222,7 +222,6 @@ async def test_the_xml_modal_applies_a_sound_payload(tmp_path):
 # ── The rejection names every fault ───────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason="#633: an import rejection still lists 25 faults, then …and N more")
 def test_a_long_list_of_faults_is_named_in_full():
     """A calendar wrong in one systematic way: sixty rounds, every track unknown. The rejection
     counts sixty problems and names all sixty lines, with no "…and N more" line."""
@@ -236,7 +235,6 @@ def test_a_long_list_of_faults_is_named_in_full():
     assert "more." not in rendered
 
 
-@pytest.mark.xfail(strict=True, reason="#633: an import rejection is still cut to one message of 25 faults")
 async def test_a_rejection_too_long_for_one_message_arrives_in_parts(tmp_path):
     """Season #1 in Placements, Pro holding no round. Admin pastes sixty lines into
     `/round add-bulk`'s form for Pro, each reading only `x`, which is no round at all. The

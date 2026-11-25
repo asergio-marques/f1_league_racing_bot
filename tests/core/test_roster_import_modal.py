@@ -118,7 +118,6 @@ def test_a_refusal_says_nothing_was_added():
     assert "No drivers were added" in text
 
 
-@pytest.mark.xfail(strict=True, reason="#633: a roster or sign-up refusal still lists fifteen faults, then …and N more")
 @pytest.mark.parametrize("refusal", ["roster", "sign-up"])
 def test_a_systematically_wrong_file_names_every_fault(refusal):
     """A pasted roster (`/test-mode roster add-bulk`) or sign-up list
