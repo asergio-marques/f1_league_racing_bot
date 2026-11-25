@@ -10,6 +10,14 @@ NOTICE = "round 12 did not fit"
 #: That notice as the drawing hands it back: its kind's heading, then the notice naming its field.
 GROUPED_NOTICE = ("  Text set smaller", f"    • `round_12_track` — {NOTICE}")
 
+#: Two notices of one kind, Zara's flag and her portrait each falling back, as the drawing hands
+#: them back: the kind's heading counting them, then each naming its field.
+ZARA_FALLBACKS = (
+    "  Artwork not supplied by the league ×2",
+    "    • `driver_flag_1` — a fallback flag stood in for Zara's",
+    "    • `driver_portrait_1` — a fallback portrait stood in for Zara's",
+)
+
 
 def logged_block(drawn: str, notices: tuple[str, ...] = GROUPED_NOTICE) -> str:
     """The notice block a job's log line ends in for the picture *drawn* ("calendar — Season 3
