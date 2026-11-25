@@ -112,7 +112,8 @@ session is in.
      `bot.prerestore.db` and `scheduler.prerestore.db` beside them.
 
 4. **Restart the bot.** From a terminal, stop it and run `python -m leaguebot` again; under a
-   service, restart the service (`systemctl restart <unit>`).
+   service, restart the service (`systemctl restart <unit>`). Then **reload Discord** (Ctrl+R on desktop): the restart swaps `/driver` and `/signup` to suit the
+   restored state, and a client loaded before it may still offer the other forms.
 
    **Expect:**
    - **Host log:** `Started on a restored database.`, before `Logged in as <bot user> (id=<bot id>)`.
@@ -2930,8 +2931,6 @@ backup is gone.
 
        🔄 Reload Discord (Ctrl+R on desktop) before using the `/driver` and `/signup` commands, which have just changed. Reloading clears every reply only you can see, this one included.
        ```
-       Reload Discord once you have read it. No later step of this spec uses either command, but the
-       next spec's first does.
      - **Posts**, one division at a time, Division 1 then Division 2:
        - `#d1-standings`, `#d2-standings`: the **final classification**, two pictures, drivers then
          constructors, each posted with no message text, the occasion `Final Classification` drawn

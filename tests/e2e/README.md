@@ -53,6 +53,8 @@ base is not. Run `00-base.md` again before any spec after it.
 2. **Restart the bot.** A restore is only staged; the bot swaps the files in as it starts, so
    nothing changes until the restart. From a terminal, stop it and run it again; under a service,
    restart the service (`systemctl restart <unit>`). The host's log says `Started on a restored database.`
+   **Reload Discord** (Ctrl+R on desktop) once the bot is back: the restart swaps `/driver` and
+   `/signup` to suit the restored state, and a client loaded before it may still offer the other forms.
 3. Carry on with the spec's first step.
 
 **A spec that ends the season deletes the backup.** Completing a test season switches test mode

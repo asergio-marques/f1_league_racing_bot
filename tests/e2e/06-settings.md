@@ -135,7 +135,8 @@ them.
      ```
 
 5. **Restart the bot.** From a terminal, stop it and run `python -m leaguebot` again; under a
-   service, restart the service (`systemctl restart <unit>`).
+   service, restart the service (`systemctl restart <unit>`). Then **reload Discord** (Ctrl+R on desktop): the restart swaps `/driver` and `/signup` to suit the
+   restored state, and a client loaded before it may still offer the other forms.
 
    **Expect:**
    - **Host log:** `Started on a restored database.`, before `Logged in as <bot user> (id=<bot id>)`.
@@ -1299,7 +1300,7 @@ the base had it, the hub apart: no command unsets it. Restoring the base takes t
 and the cancellation back out of the database, so the next spec starts where `00-base.md` left off.
 
 101. **Do:** steps 2 to 5 again: `/test-mode backup status`, `/test-mode backup restore`, press
-     **♻️ Restore**, and restart the bot.
+     **♻️ Restore**, restart the bot and reload Discord.
 
      **Expect:** as steps 2 to 5. The status still reads `Readable: yes` and locked: the
      cancellation of step 73 kept the backup. `bot.prerestore.db` and `scheduler.prerestore.db` now

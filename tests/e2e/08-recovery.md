@@ -95,7 +95,8 @@ online in the member list earlier, while the catch-up is still running.
      restore: staged; the bot must be restarted to come back on it
    ```
 
-3. **Restart the bot.**
+3. **Restart the bot**, then **reload Discord** (Ctrl+R on desktop): the restart swaps `/driver` and
+   `/signup` to suit the restored state, and a client loaded before it may still offer the other forms.
 
    **Expect:**
    - **Host log:** `Started on a restored database.`, then the usual three lines.
@@ -730,7 +731,7 @@ sets up Season #2 to configuration, as `02-roster-changes.md` does. It restores 
 that the cancellation reads as that spec gives it.
 
 40. **Do:** steps 1 to 3 again: `/test-mode backup status`, `/test-mode backup restore` and
-    **♻️ Restore**, and restart the bot.
+    **♻️ Restore**, restart the bot and reload Discord.
 
     **Expect:** as steps 1 to 3. `bot.prerestore.db` and `scheduler.prerestore.db` now hold the
     season as Part G left it.
@@ -837,7 +838,7 @@ itself a restart: the staged files are swapped in as the bot starts, before the 
 catch-up runs on the base, which has nothing to catch up.
 
 47. **Do:** steps 1 to 3 again: `/test-mode backup status`, `/test-mode backup restore` and
-    **♻️ Restore**, and restart the bot.
+    **♻️ Restore**, restart the bot and reload Discord.
 
     **Expect:** as steps 1 to 3: still `Readable: yes` and locked, the cancellation of step 41
     having kept the backup; `Started on a restored database.` in the host log; and nothing in

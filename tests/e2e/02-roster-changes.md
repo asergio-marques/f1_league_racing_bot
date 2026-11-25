@@ -133,7 +133,8 @@ server: delete it by hand at the end if you wish.
      ```
 
 4. **Restart the bot.** From a terminal, stop it and run `python -m leaguebot` again; under a
-   service, restart the service (`systemctl restart <unit>`).
+   service, restart the service (`systemctl restart <unit>`). Then **reload Discord** (Ctrl+R on desktop): the restart swaps `/driver` and `/signup` to suit the
+   restored state, and a client loaded before it may still offer the other forms.
 
    **Expect:**
    - **Host log:** `Started on a restored database.`, before `Logged in as <bot user> (id=<bot id>)`.
@@ -1293,7 +1294,7 @@ Season #2 is left in placements, test mode on. Putting the base back is what let
 start where `00-base.md` left off.
 
 90. **Do:** steps 1 to 4 again: `/test-mode backup status`, `/test-mode backup restore`, press
-    **♻️ Restore**, and restart the bot.
+    **♻️ Restore**, restart the bot and reload Discord.
 
     **Expect:** as steps 1 to 4. `bot.prerestore.db` and `scheduler.prerestore.db` now hold
     Season #2 as this part found it, should it be wanted.

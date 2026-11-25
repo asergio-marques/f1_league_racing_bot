@@ -82,7 +82,7 @@ no `sqlite3`; they are marked **Host check (optional)**.
 ## Part A — Restoring the base
 
 1. **Do:** steps 1 to 4 of `02-roster-changes.md`: `/test-mode backup status`,
-   `/test-mode backup restore`, press **♻️ Restore** within two minutes, and restart the bot.
+   `/test-mode backup restore`, press **♻️ Restore** within two minutes, restart the bot and reload Discord.
 
    **Expect:** as `02-roster-changes.md` steps 1 to 4. The host's log says
    `Started on a restored database.`, before `Logged in as <bot user> (id=<bot id>)`, and

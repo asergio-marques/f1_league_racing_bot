@@ -121,7 +121,8 @@ channel, so nothing is posted for it.
      ```
 
 4. **Restart the bot.** From a terminal, stop it and run `python -m leaguebot` again; under a
-   service, restart the service (`systemctl restart <unit>`).
+   service, restart the service (`systemctl restart <unit>`). Then **reload Discord** (Ctrl+R on desktop): the restart swaps `/driver` and `/signup` to suit the
+   restored state, and a client loaded before it may still offer the other forms.
 
    **Expect:**
    - **Host log:** `Started on a restored database.`, before `Logged in as <bot user> (id=<bot id>)`.
@@ -990,7 +991,7 @@ while a season is in configuration. A Season #2 is set up for that alone, as
       ```
 
 72. **Do:** steps 1 to 4 again: `/test-mode backup status`, `/test-mode backup restore`, press
-    **♻️ Restore**, and restart the bot.
+    **♻️ Restore**, restart the bot and reload Discord.
 
     **Expect:** as steps 1 to 4: the backup taken at `00-base.md` step 38, readable and locked,
     survived the cancellation. `bot.prerestore.db` and `scheduler.prerestore.db` now hold the
