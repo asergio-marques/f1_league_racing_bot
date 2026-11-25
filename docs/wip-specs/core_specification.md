@@ -510,14 +510,15 @@ it only to place it; the rules governing it belong to its own specification.
 
 #### Amending a round's moment
 - A round's moment may be amended to any moment still to come, subject to the rules above.
-- A round shall not be moved to a moment that has already passed, and this shall hold whatever the modules enabled. A round's result submission is armed against its own moment and is the round's one passage from awaiting its moment to awaiting its results; armed in the past it would be opened late, at once, and not at the round's moment. Moving a round *forward* is untouched and remains the remedy for a circuit or a format that must be corrected late.
+- A round shall not be moved to a moment that has already passed, and this shall hold whatever the modules enabled. A round's result submission is armed against its own moment and is the round's one passage from awaiting its moment to awaiting its results; armed in the past it would be opened late, at once, and not at the round's moment. Moving a round *forward*, far enough that its check-in is not refused (below), is untouched and remains the remedy for a circuit or a format that must be corrected late.
 - The amendment shall be refused where the check-in deadline computed from the round's new moment has already passed. A check-in that would open and close in the same instant asks a question nobody can answer, and the round would be recorded afterwards as perfect attendance for the whole division.
+- A move shall be refused too where the round's check-in call would already be due under the new moment and its last notice's moment has passed or its last notice has been posted, as the attendance specification's "Changes to a round" sets out; a circuit or a format corrected without moving the round is not refused for it. Decided 2026-11-24 (#606).
 - Where the check-in deadline computed from the round's new moment has passed, nothing shall be posted afresh and no answer may be changed: the check-in is settled and the reserves are distributed against it.
 
 #### Amending a round's track or format
 - A round's track shall not be amended while a forecast drawn for it still stands, and its format shall not be amended while a forecast drawn for its sessions still stands.
 - Neither shall be amended once the round's moment has passed.
-- Where the round's moment is amended in the same change, both rules shall read the new moment and the forecasts as they will stand once it is amended. Moving a round is therefore the league's remedy for a circuit or a format that must be corrected late.
+- Where the round's moment is amended in the same change, both rules shall read the new moment and the forecasts as they will stand once it is amended. Moving a round far enough out is therefore the league's remedy for a circuit or a format that must be corrected late.
 - A mystery round names no circuit, so its track shall not be amended unless its format is amended in the same change.
 
 ### Announcing a cancellation

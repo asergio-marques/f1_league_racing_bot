@@ -322,16 +322,48 @@ async def test_the_summary_does_not_claim_to_withdraw_a_forecast_that_stands(tmp
     )
 
 
-async def test_the_check_in_warnings_follow_the_forecasts_line(tmp_path):
+async def _called(path: str, *, notified: bool = False) -> None:
+    """Round 1's check-in call posted (message 7001), its last notice too (7002) where
+    *notified*."""
+    async with get_connection(path) as db:
+        await db.execute(
+            "INSERT INTO rsvp_embed_messages (round_id, division_id, message_id, channel_id, "
+            "posted_at, last_notice_msg_id) VALUES (1, 1, '7001', '77', ?, ?)",
+            (datetime.now(timezone.utc).isoformat(), "7002" if notified else None),
+        )
+        await db.commit()
+
+
+@pytest.mark.parametrize("called, warning", [
+    pytest.param(
+        False,
+        "\u26a0\ufe0f The check-in call for that moment is already due, so it will be posted at "
+        "once.",
+        id="no-call-posted",
+    ),
+    pytest.param(
+        True,
+        "\u26a0\ufe0f The check-in call for that moment is already due, so the call already "
+        "posted will be posted again at once, carrying what changed and keeping every answer "
+        "given to it.",
+        id="a-call-standing",
+    ),
+])
+async def test_the_check_in_warnings_follow_the_forecasts_line(tmp_path, called, warning):
     """The queue's clock reads 4 March 2031, 05:06 UTC. Round 1 of Div A races in three hours,
     its Phase 1 and Phase 2 forecasts drawn, with weather on, attendance on (check-in call 5 days
     before, last notice 24 hours, deadline 2 hours) and the forecast horizons at their defaults
-    (5 days, 2 days, 2 hours). A manager moves it to three days out. The confirmation names the
-    moment, then the drawn phase the move withdraws and redraws (Phase 2, Phase 1's horizon being
-    behind the clock and Phase 3 never drawn), then the check-in warning that the call is
-    already due: the forecasts' line first and the check-in's after."""
+    (5 days, 2 days, 2 hours). Either no check-in call has gone out for it, or one has and its
+    last notice has not. A manager moves it to three days out, its call's moment passed and its
+    last notice's still ahead. The confirmation names the moment, then the drawn phase the move
+    withdraws and redraws (Phase 2, Phase 1's horizon being behind the clock and Phase 3 never
+    drawn), then the check-in warning saying what will happen: the call posted at once where none
+    stands, or posted again keeping every answer where one does. The forecasts' line comes first
+    and the check-in's after."""
     now = datetime(2031, 3, 4, 5, 6, tzinfo=timezone.utc)
     path = await _db(tmp_path, scheduled_at=now + timedelta(hours=3), phase1_done=1, phase2_done=1)
+    if called:
+        await _called(path)
     interaction = _interaction()
 
     await _amend(await _cog(path, weather=True, now=now), interaction,
@@ -341,8 +373,7 @@ async def test_the_check_in_warnings_follow_the_forecasts_line(tmp_path):
         "**Amend Round 1** in division **Div A**:\n"
         "  \u2022 `scheduled_at` \u2192 `2031-03-07 05:06:00`\n"
         "\n\u26a0\ufe0f This will withdraw and redraw Phase 2 for this round.\n"
-        "\u26a0\ufe0f The check-in call for that moment is already due, so no fresh call will go "
-        "out \u2014 the one already posted stands."
+        + warning
     )
     assert _offered_a_confirmation(interaction)
 
@@ -443,6 +474,25 @@ async def test_a_window_passing_while_the_confirmation_stands_refuses_it(tmp_pat
     await _view(cog, [("track_name", NEW_TRACK)]).confirm.callback(interaction)
 
     assert "can no longer be amended" in _reply(interaction)
+    assert await _amendments(path) == []
+
+
+async def test_a_last_notice_posted_while_the_confirmation_stands_refuses_the_move(tmp_path):
+    """Round 1 of Div A races in twenty hours, attendance on (call 5 days, last notice 24 hours,
+    deadline 2 hours), its check-in call posted. A manager is offered a move to two days out,
+    its call's moment passed and its last notice's ahead; before Confirm is pressed the round's
+    last notice is posted. Confirm refuses, naming the last notice already posted, and nothing is
+    asked of the queue."""
+    now = datetime.now(timezone.utc)
+    path = await _db(tmp_path, scheduled_at=now + timedelta(hours=20))
+    await _called(path, notified=True)
+    cog = await _cog(path)
+    interaction = _interaction()
+
+    await _view(cog, [("scheduled_at", now + timedelta(days=2))]).confirm.callback(interaction)
+
+    assert "can no longer be amended" in _reply(interaction)
+    assert "last notice for this round has already been posted" in _reply(interaction)
     assert await _amendments(path) == []
 
 
@@ -569,6 +619,11 @@ ROUND_AMEND_REFUSALS = [
                  "first forecast for this round has already been posted",
                  id="the-first-forecast-stands"),
     pytest.param("moment held", {}, "already holds round 2", id="the-moment-is-held"),
+    pytest.param("last notice passed", {},
+                 "last notice for that moment has already passed", id="the-last-notice-passed"),
+    pytest.param("last notice posted", {},
+                 "last notice for this round has already been posted",
+                 id="the-last-notice-is-posted"),
     pytest.param("confirm by another", {}, "Not your action", id="confirm-not-your-action"),
     pytest.param("confirm round gone", {}, "no longer exists", id="confirm-round-gone"),
     pytest.param("confirm window passed", {}, "can no longer be amended",
@@ -585,11 +640,21 @@ async def test_every_round_amend_refusal_reaches_the_log_channel(tmp_path, case,
     soon = case == "confirm window passed"
     # Three days out, inside its first forecast's horizon, with that forecast posted.
     forecast = case == "first forecast posted"
+    # The last notice posted: the round twenty hours out, its call and last notice out.
+    notified = case == "last notice posted"
     when = datetime.now(timezone.utc) + (
         timedelta(hours=-1) if started else timedelta(hours=1) if soon
-        else timedelta(days=3) if forecast else timedelta(days=30)
+        else timedelta(days=3) if forecast else timedelta(hours=20) if notified
+        else timedelta(days=30)
     )
     path = await _db(tmp_path, scheduled_at=when, phase1_done=int(forecast))
+    if notified:
+        # Moved to two days out: its call's moment passed, its last notice's still ahead.
+        await _called(path, notified=True)
+        kwargs = {"scheduled_at": _as_typed(datetime.now(timezone.utc) + timedelta(days=2))}
+    if case == "last notice passed":
+        # Moved to three hours out: its last notice's moment passed, its deadline's ahead.
+        kwargs = {"scheduled_at": _as_typed(datetime.now(timezone.utc) + timedelta(hours=3))}
     if case == "moment held":
         # Round 2 of the division, not run, a day after round 1: the moment round 1 is asked to.
         held = (when + timedelta(days=1)).replace(microsecond=0)

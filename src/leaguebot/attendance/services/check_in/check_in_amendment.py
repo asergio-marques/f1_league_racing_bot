@@ -4,8 +4,8 @@ An amendment moves a round and so what its check-in owes, and attendance takes p
 these of core's events, subscribed in wiring:
 
 - `amendment_judged` is attendance's part of the judgement (`check_in_amendment_rules`): the
-  deadline refusal and the check-in's two warnings, and whether the check-in is reopened, kept for
-  the save;
+  deadline refusal, the refusals of a move past the last notice or after it is posted, the
+  warning of a call due, and whether the check-in is reopened, kept for the save;
 - `round_amended_on` reopens the round's check-in in the amendment's save where the amendment
   reopened it, handing back whether a call stood when the save was made and whether the check-in
   was reopened, kept with the save for the arming to read;
@@ -103,14 +103,23 @@ log = logging.getLogger(__name__)
 
 
 def part_judged(
-    attendance: AttendanceWindows | None, *, moment: datetime, now: datetime
+    attendance: AttendanceWindows | None,
+    *,
+    moment: datetime,
+    now: datetime,
+    called: bool,
+    notified: bool,
+    moved: bool,
 ) -> AmendmentPart:
     """Attendance's part of judging an amendment that leaves a round at *moment*, at *now*, by the
-    lead times *attendance* (none where the module is off): the check-in's deadline refusal, its
-    two warnings, and whether the check-in is reopened, which it keeps for the save
-    (`round_amended_on`), with the lead times themselves, as ``attendance_windows``, for the jobs
-    that follow (`windows_kept`). Pure."""
-    part = judge_check_in(moment=moment, now=now, windows=attendance).part
+    lead times *attendance* (none where the module is off), the round's call standing as *called*,
+    its last notice posted as *notified* and the round moved as *moved*: the check-in's refusals
+    and its warning of a call due (`judge_check_in`), and whether the check-in is reopened, which
+    it keeps for the save (`round_amended_on`), with the lead times themselves, as
+    ``attendance_windows``, for the jobs that follow (`windows_kept`). Pure."""
+    part = judge_check_in(
+        moment=moment, now=now, windows=attendance, called=called, notified=notified, moved=moved
+    ).part
     if attendance is None:
         return part
     return dataclasses.replace(
@@ -125,16 +134,29 @@ async def amendment_judged(
     *,
     moment: datetime,
     now: datetime,
+    db_path: str | None = None,
     windows: AttendanceWindows | None = None,
     **_context: Any,
 ) -> AmendmentPart:
     """Attendance's part of judging an amendment of *rnd* that leaves it at *moment*, at *now*, by
-    the lead times the league has, which core hands it none of: in a save they are read on *db*,
-    the connection of the save that judges it again, and asked outside one they are *windows*,
-    which `wiring` reads through the module's own reader (none where the module is off)
-    (`part_judged`). Subscribed to core's `amendment_judged`."""
+    the lead times the league has, which core hands it none of, and by what has been posted of the
+    round's check-in. In a save the lead times and what is posted are read on *db*, the connection
+    of the save that judges it again. Asked outside one, what is posted is read on a connection
+    opened on *db_path*, and the lead times are *windows*, which `wiring` reads through the
+    module's own reader (none where the module is off). The amendment moves the round where
+    *moment* is not the round's own (`part_judged`). Subscribed to core's `amendment_judged`."""
+    if db is None:
+        if db_path is None:
+            raise ValueError("no connection, or no database path, to judge on")
+        async with get_connection(db_path) as own:
+            called, notified = await check_in_posted_on(own, rnd.id)
+        attendance = windows
+    else:
+        called, notified = await check_in_posted_on(db, rnd.id)
+        attendance = await windows_if_on(db)
     return part_judged(
-        windows if db is None else await windows_if_on(db), moment=moment, now=now
+        attendance, moment=moment, now=now, called=called, notified=notified,
+        moved=moment != rnd.scheduled_at,
     )
 
 
@@ -154,6 +176,16 @@ async def round_amended_on(
     if reopened:
         await rsvp_service.reopen_check_in_on(db, round_id)
     return {"called": called, "reopened": reopened}
+
+
+async def check_in_posted_on(db: aiosqlite.Connection, round_id: int) -> tuple[bool, bool]:
+    """Whether the round's check-in call stands and whether its last notice has been posted, read
+    on *db*, in that order: a round with no call has no last notice either."""
+    cursor = await db.execute(
+        "SELECT last_notice_msg_id FROM rsvp_embed_messages WHERE round_id = ?", (round_id,)
+    )
+    row = await cursor.fetchone()
+    return (row is not None, row is not None and row["last_notice_msg_id"] is not None)
 
 
 def _call_fell_due(

@@ -20,18 +20,26 @@ def judged(
     attendance: Any = None,
     weather: Any = None,
     drawn: Mapping[int, bool] | None = None,
+    called: bool = False,
+    notified: bool = False,
 ) -> Any:
     """*changes* to *rnd* judged at *now*, with attendance's check-in judged at the lead times
-    *attendance* (none where the module is off) and weather's forecasts at the horizons *weather*
-    (none where it is off), the phases *drawn* as weather records them; the `AmendmentVerdict`."""
+    *attendance* (none where the module is off), whether its call is *called* and its last notice
+    *notified*, and whether *changes* moves the round; weather's forecasts at the horizons
+    *weather* (none where it is off), the phases *drawn* as weather records them; the
+    `AmendmentVerdict`."""
     from leaguebot.attendance.services.check_in.check_in_amendment_rules import judge_check_in
     from leaguebot.core.services.rounds.amendment_rules_service import judge_amendment
     from leaguebot.weather.services.forecast_amendment import judge_forecasts
 
     moment = changes.get("scheduled_at", rnd.scheduled_at).astimezone(timezone.utc)
     now = now.astimezone(timezone.utc)
+    moved = moment != rnd.scheduled_at.astimezone(timezone.utc)
     parts = (
-        judge_check_in(moment=moment, now=now, windows=attendance).part,
+        judge_check_in(
+            moment=moment, now=now, windows=attendance, called=called, notified=notified,
+            moved=moved,
+        ).part,
         judge_forecasts(changes, moment=moment, now=now, windows=weather, drawn=drawn or {}).part,
     )
     return judge_amendment(rnd, changes, now=now, parts=parts)

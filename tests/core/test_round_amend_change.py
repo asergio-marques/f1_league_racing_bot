@@ -252,6 +252,24 @@ async def _stopped_at(league: Any) -> str | None:
     return job["name"] if job else None
 
 
+async def _no_last_notice(league: Any) -> None:
+    """The league runs no check-in last notice (0 hours). Round 3's last notice is recorded as
+    posted, which refuses a move putting its call's moment in the past (#606); with no last notice
+    only the call and the deadline are judged, so such a move is offered as before."""
+    await league.write("UPDATE attendance_config SET rsvp_last_notice_hours = 0")
+
+
+async def _last_notice_unposted(league: Any) -> str:
+    """Round 3's last notice not yet posted, its call standing; gives the message it was."""
+    [row] = await league.rows(
+        "SELECT last_notice_msg_id FROM rsvp_embed_messages WHERE round_id = ?", R3
+    )
+    await league.write(
+        "UPDATE rsvp_embed_messages SET last_notice_msg_id = NULL WHERE round_id = ?", R3
+    )
+    return str(row["last_notice_msg_id"])
+
+
 async def _amended(league: Any, number: int = 3, **fields: str) -> Any:
     """Run `/round amend` for Pro's round *number* and press its Confirm; gives the press."""
     press = await amend_round(league, "Pro", number, **fields)
@@ -631,6 +649,7 @@ async def test_a_discarded_check_in_call_take_down_is_named_and_the_call_is_stil
     goes on, the call is posted again beside the message left standing, and the reply names 7002
     to remove by hand."""
     league = await ongoing_league(tmp_path, attendance=True)
+    await _no_last_notice(league)
     league.undeletable.add(CALL_MESSAGES[1])
     press = await _amended(league, scheduled_at=_at(league, days=3))
     await run_queue(league.bot)
@@ -655,17 +674,19 @@ async def test_a_discarded_check_in_call_take_down_is_named_and_the_call_is_stil
     "results entered",
     "the round cancelled",
     "round 4 takes the moment",
+    pytest.param("the last notice is posted"),
 ])
 async def test_an_amendment_judged_again_when_it_runs_is_refused_in_today_s_words(
     tmp_path, meanwhile,
 ):
     """Attendance on; the queue is stopped at Am's round 3 cancellation. Pro's round 3 is moved
-    to two hours and ten minutes out and confirmed, and waits; Am's round 4 is cancelled behind
-    it. While they wait, the check-in deadline (two hours before the round) passes eleven minutes
-    on, while the reply can still be updated, or round 3's results are entered, or it is
-    cancelled, or Pro's round 4 is moved to the moment asked. Once the queue goes on, the
-    amendment is refused in today's Confirm words, nothing of it written and nothing unarmed, and
-    Am's round 4 is cancelled."""
+    to two hours and ten minutes out, the league running no last notice, and confirmed, and
+    waits; Am's round 4 is cancelled behind it. While they wait, the check-in deadline (two hours
+    before the round) passes eleven minutes on, while the reply can still be updated, or round
+    3's results are entered, or it is cancelled, or Pro's round 4 is moved to the moment asked.
+    Or, its 24-hour last notice not yet posted, it is moved to two days out, and its last notice
+    is posted while it waits (#606). Once the queue goes on, the amendment is refused in today's
+    Confirm words, nothing of it written and nothing unarmed, and Am's round 4 is cancelled."""
     reasons = {
         "the check-in deadline passes": (
             "The check-in deadline for that moment has already passed, so the round would have "
@@ -676,16 +697,31 @@ async def test_an_amendment_judged_again_when_it_runs_is_refused_in_today_s_word
             "have reports and appeals to lodge against them."
         ),
         "the round cancelled": "This round has been cancelled and can no longer be amended.",
+        "the last notice is posted": (
+            "The check-in last notice for this round has already been posted, so its check-in "
+            "cannot be run again this close to the race. Move it far enough out that its "
+            "check-in call is still to come."
+        ),
     }
     league = await ongoing_league(tmp_path, attendance=True)
+    if meanwhile == "the last notice is posted":
+        notice = await _last_notice_unposted(league)
+        delta = dict(days=2)
+    else:
+        await _no_last_notice(league)
+        delta = dict(hours=2, minutes=10)
     await _stopped_blocker(league)
     before = await _moment(league)
-    asked = _when(league, hours=2, minutes=10)
+    asked = _when(league, **delta)
     reasons["round 4 takes the moment"] = _held(4, asked)
-    press = await _amended(league, scheduled_at=_at(league, hours=2, minutes=10))
+    press = await _amended(league, scheduled_at=_at(league, **delta))
     behind = await cancel_round(league, "Am", 4)
     assert not league.errors, league.errors
-    if meanwhile == "the check-in deadline passes":
+    if meanwhile == "the last notice is posted":
+        await league.write(
+            "UPDATE rsvp_embed_messages SET last_notice_msg_id = ? WHERE round_id = ?", notice, R3
+        )
+    elif meanwhile == "the check-in deadline passes":
         league.clock.advance(minutes=11)
     elif meanwhile == "results entered":
         await _set_status(league, "AWAITING_REPORT_VERDICTS")
@@ -748,6 +784,7 @@ async def test_a_judgement_that_stopped_and_is_retried_after_the_window_passed_i
     today's Confirm words, nothing of the amendment written, one refusal line, the round armed
     again as it stood, and Am's round 4 is cancelled."""
     league = await ongoing_league(tmp_path, attendance=True)
+    await _no_last_notice(league)
     await league.write("UPDATE attendance_config SET rsvp_deadline_hours = 1 WHERE id = 1")
     before = await _moment(league)
     await _amended(league, scheduled_at=_at(league, hours=2))
@@ -798,6 +835,7 @@ async def test_an_amendment_stopped_after_its_judgement_and_retried_once_the_dea
     today's Confirm words, nothing of the amendment written, one refusal line, the round armed
     again as it stood, and Am's round 4 is cancelled."""
     league = await ongoing_league(tmp_path, attendance=True)
+    await _no_last_notice(league)
     before = await _moment(league)
     press = await _amended(league, scheduled_at=_at(league, hours=2, minutes=10))
     if stopped == "apply":
@@ -932,6 +970,7 @@ async def test_the_jobs_run_in_today_s_order(tmp_path, phases, reposts, weather,
     deletion runs whatever weather's state)."""
     league = await ongoing_league(tmp_path, weather=weather, attendance=attendance,
                                   horizons=HORIZONS)
+    await _no_last_notice(league)
     await league.write("UPDATE rounds SET track_name = 'Silverstone Circuit' WHERE id = ?", R3)
     await posted_forecast(league, R3, 2, 8002)
     await _amended(league, scheduled_at=_at(league, days=3))
@@ -1158,6 +1197,7 @@ async def test_a_discarded_call_repost_names_the_command_that_posts_it(tmp_path,
     down and posted again. The repost fails on a fault of the bot's own and a league admin
     discards it: the reply names the call and the command that posts it."""
     league = await ongoing_league(tmp_path, attendance=True)
+    await _no_last_notice(league)
     reposts.refuse_sends(RuntimeError("embed could not be built"))
     press = await _amended(league, scheduled_at=_at(league, days=3))
     await run_queue(league.bot)
@@ -1392,6 +1432,7 @@ async def test_a_call_that_fell_due_while_the_amendment_stood_stopped_is_posted_
     fault is mended and Retry is pressed: the old call comes down and the call is posted again,
     so that one stands."""
     league = await ongoing_league(tmp_path, attendance=True)
+    await _no_last_notice(league)
     await _amended(league, scheduled_at=_at(league, days=5, hours=1))
     if stopped == "apply":
         with _renumbering_fails():
@@ -1489,6 +1530,7 @@ async def test_a_check_in_deadline_that_passed_while_the_save_stood_stopped_is_r
     and one notice of the placements posted in Pro's check-in channel and recorded — and no
     call is posted."""
     league = await ongoing_league(tmp_path, attendance=True)
+    await _no_last_notice(league)
     await _deadline_not_yet_run(league)
     before = await _place_and_discard_past_the_deadline(league)
 
@@ -1541,6 +1583,7 @@ async def test_an_amendment_s_late_reserve_placement_cannot_be_discarded(tmp_pat
     there and nothing is announced. Once the fault is lifted, a Retry places them, takes the
     call's buttons off and posts one notice of the placements, recorded."""
     league = await ongoing_league(tmp_path, attendance=True)
+    await _no_last_notice(league)
     await _deadline_not_yet_run(league)
     await refuse_the_job(league.db_path, "season.round.amend", "distribute", True)
     await _place_and_discard_past_the_deadline(league)
@@ -1572,6 +1615,7 @@ async def test_an_amendment_s_deadline_whose_announcement_is_refused_stops_the_q
     not posted, so the queue stops with nothing recorded, rather than the refusal being logged
     on the host alone."""
     league = await ongoing_league(tmp_path, attendance=True)
+    await _no_last_notice(league)
     await _deadline_not_yet_run(league)
     reposts.refuse_sends(http_error(discord.Forbidden, status=403, text="Missing Permissions"))
 
@@ -1586,6 +1630,7 @@ async def test_an_amendment_s_deadline_whose_lock_is_refused_stops_the_queue(tmp
     Discord refusing the edit that takes the call's buttons off (7001): the queue stops there,
     nothing yet announced."""
     league = await ongoing_league(tmp_path, attendance=True)
+    await _no_last_notice(league)
     await _deadline_not_yet_run(league)
     league.channel(PRO_CH.checkin).messages[CALL_MESSAGES[0]].edit = AsyncMock(
         side_effect=http_error(discord.Forbidden, status=403, text="Missing Permissions"))
@@ -1653,6 +1698,7 @@ async def test_a_module_s_job_of_the_amendment_is_named_as_today_when_it_stops_t
                                  "the day after it passed while the save stood stopped")
         league = await ongoing_league(tmp_path, weather=forecasts, attendance=True,
                                       **({"horizons": HORIZONS} if forecasts else {}))
+        await _no_last_notice(league)
     await refuse_the_job(league.db_path, "season.round.amend", job, True)
     if scenario == "phase 1's forecast superseded at once":
         await run_queue(league.bot)
@@ -1700,6 +1746,7 @@ async def test_an_amendment_s_clean_up_whose_delete_is_refused_stops_the_queue(t
     delete the last notice (7002): the queue stops there, the notice still standing and the
     round's check-in not marked over, rather than the refusal being logged on the host alone."""
     league = await ongoing_league(tmp_path, attendance=True)
+    await _no_last_notice(league)
     await _place_r3(league, minutes=30)
     league.undeletable.add(CALL_MESSAGES[1])
     await _amended(league, scheduled_at=_at(league, days=1))
@@ -1723,6 +1770,7 @@ async def test_an_amendment_s_discarded_clean_up_delete_is_named_by_its_link(tmp
     discards that too: the reply, still within Discord's fourteen minutes, names the last notice
     by its link, for the admin to open and delete by hand, not by a bare message id."""
     league = await ongoing_league(tmp_path, attendance=True)
+    await _no_last_notice(league)
     await _place_r3(league, hours=-23, minutes=-55)
     league.undeletable.add(CALL_MESSAGES[1])
     press = await _amended(league, scheduled_at=_at(league, days=1))
@@ -1750,6 +1798,7 @@ async def test_the_clean_ups_that_fell_due_while_the_save_stood_stopped_are_run_
     league admin discards it. The round stands at its old moment: its Phase 3 forecast is deleted
     and its check-in taken down, as a restart takes them down."""
     league = await ongoing_league(tmp_path, weather=True, attendance=True, horizons=HORIZONS)
+    await _no_last_notice(league)
     await _place_r3(league, minutes=30)
     await posted_forecast(league, R3, 3, 8003)
     before = await _moment(league)
@@ -1946,6 +1995,7 @@ async def test_a_call_whose_deadline_passed_while_its_take_down_stood_stopped_is
     down and is not posted again, the log channel says so in the words a restart uses, and the
     round's check-in is marked closed."""
     league = await ongoing_league(tmp_path, attendance=True)
+    await _no_last_notice(league)
     await _amended(league, scheduled_at=_at(league, hours=3))
     league.undeletable.add(CALL_MESSAGES[1])
     await run_queue(league.bot)
@@ -2006,6 +2056,7 @@ async def test_a_call_posted_late_at_a_restart_before_the_amendment_posts_it_is_
     from leaguebot.attendance.wiring import start_up_steps
 
     league = await ongoing_league(tmp_path, attendance=True)
+    await _no_last_notice(league)
     if path == "first post":
         await _call_to_post_at_once(league)
     else:
@@ -2068,6 +2119,7 @@ async def test_a_phase_whose_race_passed_while_a_job_before_it_stood_stopped_is_
     fault is mended and Retry is pressed: each phase is judged again as its job runs, and no
     forecast is drawn for a round already raced."""
     league = await ongoing_league(tmp_path, weather=True, attendance=True, horizons=HORIZONS)
+    await _no_last_notice(league)
     league.undeletable.add(CALL_MESSAGES[1])
     await _amended(league, scheduled_at=_at(league, days=1))
     await run_queue(league.bot)
@@ -2101,6 +2153,7 @@ async def test_a_call_given_up_whose_save_fails_stops_the_queue_and_is_given_up_
     stops the queue at the call's job, the log channel not yet told. Once the fault is mended and
     Retry pressed, the call is given up, and the log channel told once."""
     league = await ongoing_league(tmp_path, attendance=True)
+    await _no_last_notice(league)
     await _amended(league, scheduled_at=_at(league, hours=3))
     league.undeletable.add(CALL_MESSAGES[1])
     await run_queue(league.bot)
@@ -2134,6 +2187,7 @@ async def test_a_call_given_up_after_its_take_down_clears_the_round_s_answers_an
     once, holds true: no attendance rows stand for the round, and it counts nothing against
     anyone (owner, 2026-10-09: "Clear the answers, keep the line true")."""
     league = await ongoing_league(tmp_path, attendance=True)
+    await _no_last_notice(league)
     await _amended(league, scheduled_at=_at(league, hours=3))
     league.undeletable.add(CALL_MESSAGES[1])
     await run_queue(league.bot)
@@ -2301,6 +2355,7 @@ async def test_a_check_in_deadline_whose_reserves_were_distributed_is_not_run_ag
     it. The deadline has been run: it is not run again — the call is not edited and nothing is
     posted in Pro's check-in channel — and no call is posted."""
     league = await ongoing_league(tmp_path, attendance=True)
+    await _no_last_notice(league)
     await _passed_while_the_save_stood_stopped(league, minutes=10)
 
     assert "run_deadline" not in [job["name"] for job in await _jobs(league)]
@@ -2353,6 +2408,7 @@ async def test_a_check_in_taken_down_after_its_round_is_not_given_up_once_a_take
     discards the take-down: the check-in is over, so the call is neither posted nor given up, no
     line says it was not posted, and the answers stand."""
     league = await ongoing_league(tmp_path, attendance=True)
+    await _no_last_notice(league)
     league.undeletable.add(CALL_MESSAGES[1])
     await _amended(league, scheduled_at=_at(league, hours=3))
     await run_queue(league.bot)
@@ -2385,6 +2441,7 @@ async def test_a_call_posted_again_after_its_take_down_that_fails_says_its_answe
     The answers are kept. A league admin discards the job: the reply names the check-in call and
     `/attendance post-check-in`."""
     league = await ongoing_league(tmp_path, attendance=True)
+    await _no_last_notice(league)
     _real_call(league, monkeypatch)
     press = await _amended(league, scheduled_at=_at(league, days=3))
     await _run_through(league, "take_down_call")
@@ -2424,6 +2481,7 @@ async def test_a_call_not_given_up_because_results_came_in_is_recorded_as_left(
     whose results are in, and the job records that it left the call as it was, not that it gave
     it up. The host's log names the give-up, not the start-up recovery, as what did nothing."""
     league = await ongoing_league(tmp_path, attendance=True)
+    await _no_last_notice(league)
     await _amended(league, scheduled_at=_at(league, hours=3))
     league.undeletable.add(CALL_MESSAGES[1])
     await run_queue(league.bot)
@@ -2453,6 +2511,7 @@ async def test_a_call_posted_again_whose_send_times_out_stops_the_queue_saying_i
     decision 3; 2026-10-11, "Notice says what's left"). Once the send goes through, Retry posts
     the call, once, and the amendment finishes."""
     league = await ongoing_league(tmp_path, attendance=True)
+    await _no_last_notice(league)
     _real_call(league, monkeypatch)
     await _amended(league, scheduled_at=_at(league, days=3))
     await _run_through(league, "take_down_call")
@@ -2485,6 +2544,7 @@ async def test_a_call_whose_send_times_out_stops_the_queue_saying_it_will_be_pos
     the bot posts it again on its next try, and any second copy is to be deleted by hand (owner,
     2026-10-11: "Notice says what's left")."""
     league = await ongoing_league(tmp_path, attendance=True)
+    await _no_last_notice(league)
     _real_call(league, monkeypatch)
     await _amended(league, scheduled_at=_at(league, days=3))
     await _run_through(league, "take_down_call")
@@ -2561,6 +2621,7 @@ async def test_a_discarded_call_post_says_what_is_left(tmp_path, monkeypatch, le
     is recorded as having vanished, the stop notice says none can be seen, and the reply never
     says it was kept (owner, 2026-10-09: "Make it"; 2026-10-11: "Notice says what's left")."""
     league = await ongoing_league(tmp_path, attendance=True)
+    await _no_last_notice(league)
     _real_call(league, monkeypatch)
     if left == "earlier call kept":
         league.undeletable.add(CALL_MESSAGES[0])
@@ -2621,6 +2682,7 @@ async def test_a_call_whose_check_in_channel_is_unset_stops_the_queue_naming_the
     channel; nothing is skipped quietly. Once the channel is set again, Retry posts the call and
     the amendment finishes."""
     league = await ongoing_league(tmp_path, attendance=True)
+    await _no_last_notice(league)
     _real_call(league, monkeypatch)
     await _amended(league, scheduled_at=_at(league, days=3))
     await _run_through(league, "take_down_call")
@@ -2776,6 +2838,7 @@ async def test_an_amendment_s_call_saves_its_record_in_the_job(tmp_path, monkeyp
     the attendance service's writers on a handed connection each write once, on the same save
     (slice 6's A21, deferred until now)."""
     league = await ongoing_league(tmp_path, attendance=True)
+    await _no_last_notice(league)
     _real_call(league, monkeypatch)
     attendance = league.bot.attendance_service
     writers = {}
@@ -2815,6 +2878,7 @@ async def test_an_amendment_s_call_posted_again_writes_no_post_check_in_line(tmp
     the amendment, and no line saying the amending manager ran `/attendance post-check-in`, a
     command nobody ran (core spec, the record of what changed)."""
     league = await ongoing_league(tmp_path, attendance=True)
+    await _no_last_notice(league)
     await _amended(league, scheduled_at=_at(league, days=3))
 
     await run_queue(league.bot)

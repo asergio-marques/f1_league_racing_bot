@@ -305,6 +305,20 @@ ways out, then the amendments: two go through, and one is refused for the moment
       ```
     - **Log:** ``⛔ `/round amend` of round 1 in Division 1 refused for <you> — The check-in deadline for that moment has already passed, so the round would have no check-in at all. Move it further out, or shorten the deadline.``
 
+    **Then do**, past the last notice but before the deadline. The last notice goes out 24 hours
+    before the race, so a race three hours from now would have had it already:
+    `/round amend division_name:Division 1 round_number:1 scheduled_at:<now + 3 hours, in UTC, as YYYY-MM-DDTHH:MM:00>`
+
+    **Expect:**
+    - **Reply:**
+      ```
+      ⛔ **Round 1** in **Division 1** cannot be amended:
+      • The check-in last notice for that moment has already passed, so drivers would have no time left to answer the check-in. Move it further out, or shorten the last notice.
+
+      **Nothing has been changed.**
+      ```
+    - **Log:** ``⛔ `/round amend` of round 1 in Division 1 refused for <you> — The check-in last notice for that moment has already passed, so drivers would have no time left to answer the check-in. Move it further out, or shorten the last notice.``
+
 21. **A mystery round given a track alone.** **Do:** `/round amend division_name:Division 1 round_number:3 track:14`
 
     **Expect:**
@@ -333,23 +347,20 @@ ways out, then the amendments: two go through, and one is refused for the moment
 
 ### A warning, and the two ways out of the confirmation
 
-23. **A moment past the call but before the deadline.** The call goes out five days before the
-    race and the deadline is two hours before it, so a race three hours from now has its call
-    already due. **Do:**
-    `/round amend division_name:Division 1 round_number:1 scheduled_at:<now + 3 hours, in UTC, as YYYY-MM-DDTHH:MM:00>`
+23. **A moment past the call but before the last notice.** The call goes out five days before
+    the race and the last notice 24 hours before it, so a race two days from now has its call
+    already due and its last notice still to come. **Do:**
+    `/round amend division_name:Division 1 round_number:1 scheduled_at:<now + 2 days, in UTC, as YYYY-MM-DDTHH:MM:00>`
 
     **Expect:**
     - **Reply**, with **✅ Confirm** and **❌ Cancel**:
       ```
       **Amend Round 1** in division **Division 1**:
         • `scheduled_at` → `<the moment given, as YYYY-MM-DD HH:MM:SS>`
-      ⚠️ The check-in call for that moment is already due, so no fresh call will go out — the one already posted stands.
+      ⚠️ The check-in call for that moment is already due, so it will be posted at once.
       ```
-      No call has been posted for this round, so the warning's last clause is wrong, and so is
-      its first: confirmed, the amendment would post the call at once
-      (`check_in_amendment.amendment_posts`, `_call_fell_due`), and draw Phases 1 and 2 at once
-      too. Believed a bot defect in the warning (`check_in_amendment_rules.judge_check_in`):
-      record it.
+      No call has been posted for this round, so confirmed, the amendment would post one at
+      once (`check_in_amendment.amendment_posts`, `_call_fell_due`).
     - **Log:** nothing yet.
 
 24. **Do:** press **❌ Cancel**.
