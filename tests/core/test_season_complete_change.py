@@ -1331,6 +1331,79 @@ async def test_a_retried_final_classification_is_posted_as_text(tmp_path):
     assert await _status(league) == "COMPLETED"
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#635: the final classification and final sheet jobs keep nothing of their notices "
+           "for the completion's reply, which lists no Image notices",
+)
+async def test_the_completion_s_reply_names_the_final_standings_and_sheets_drawn_with_notices(
+    tmp_path, monkeypatch,
+):
+    """Season 3 completed by Admin with images, results and attendance on, the standings and
+    attendance graphics switched on and their templates sound. Each final standings picture (the
+    drivers' and the teams' championships of Pro and of Am) and each final attendance sheet
+    (Pro's and Am's) draws as a PNG with one font substituted, a font of its own. In the log
+    channel, every picture's notice is held once, in a block that opens with the member and the
+    change ("| /season complete |") and then "Image render notices — <picture>:". The reply says
+    the season is marked as complete and ends in one "Image notices" section listing every one
+    of the six pictures under the name its log line gives it, each linked to the log channel's
+    message holding it, and its notice beneath, once (owner decision 2026-11-24; image spec,
+    Errors and the rejection of input; issue #635)."""
+    from types import SimpleNamespace
+
+    from leaguebot.image.models.image_module import RenderNotice
+    from leaguebot.image.services.aspects import image_attendance_post, image_standings_post
+    from leaguebot.image.services.aspects.image_attendance_post import SheetRender
+
+    league = await pending_completion_league(tmp_path, attendance=True, images=True)
+    league.bot.image_config_service.is_aspect_enabled = AsyncMock(return_value=True)
+    standings_pictures_are_due(monkeypatch)
+    monkeypatch.setattr(league.bot.image_drawing, "attendance_wanted",
+                        AsyncMock(return_value=True))
+    fonts: list[str] = []
+
+    def _drawn(stem: str) -> tuple[Any, RenderNotice]:
+        fonts.append(f"Font{len(fonts) + 1}")
+        png = tmp_path / f"{stem}_{len(fonts)}.png"
+        png.write_bytes(b"\x89PNG\r\n\x1a\n")
+        return png, RenderNotice(
+            image_type=stem, notice_kind="FONT_SUBSTITUTED", field_id="driver_name_1",
+            detail=f"{fonts[-1]} was unavailable, so a substitute was drawn",
+        )
+
+    async def _standings(*_args: Any, **_kwargs: Any) -> Any:
+        png, notice = _drawn("standings_drivers")
+        return SimpleNamespace(notices=[notice], problem=None, posts_image=True, png_paths=[png])
+
+    async def _sheet(*_args: Any, **_kwargs: Any) -> Any:
+        png, notice = _drawn("attendance_sheet")
+        return SheetRender(png=png, notices=[notice])
+
+    monkeypatch.setattr(image_standings_post, "render_png", _standings)
+    monkeypatch.setattr(image_attendance_post, "render_sheet", _sheet)
+    interaction = await complete_season(league)
+
+    await run_queue(league.bot)
+
+    assert await _stopped_at(league) is None
+    assert await _status(league) == "COMPLETED"
+    assert len(fonts) == 6, fonts
+    told = reply(interaction)
+    assert COMPLETED in told, told
+    assert told.count("⚠️ **Image notices**") == 1, told
+    assert "\n\n⚠️ **Image notices**\n" in told, told
+    opening = "| /season complete | Image render notices — "
+    for font in fonts:
+        held = [(n, line) for n, line in enumerate(league.bot.log_channel.sent, 1)
+                if font + " " in line]
+        assert len(held) == 1, (font, league.bot.log_channel.sent)
+        n, line = held[0]
+        block = line[line.rindex(opening, 0, line.index(font + " ")):]
+        label = block.removeprefix(opening).split(":\n", 1)[0]
+        assert f"  **{label}** ([see them in the log](https://discord.test/{n}))" in told, told
+        assert told.count(font + " ") == 1, told
+
+
 async def test_the_final_classification_is_posted_while_the_season_is_still_active(tmp_path):
     league = await pending_completion_league(tmp_path)
     seen: list[str] = []
