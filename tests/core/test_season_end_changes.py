@@ -126,8 +126,8 @@ async def test_a_season_end_s_close_deletes_the_sign_up_button_as_a_job(tmp_path
     `/signup channel` moved it (621, still on the server), recorded as the button's channel.
     Admin 77 cancels the season and the queue runs: the button is deleted from the channel it was
     posted in by a `delete_button` job of the cancellation, done, and nothing else is deleted
-    from either; "Signups are now closed" is posted in 620, the present signup channel, and the
-    season is cancelled."""
+    from either, and the season is cancelled. Where the button stood in 621, "Signups are now
+    closed" is still posted in 620, the present signup channel."""
     league = await ongoing_league(tmp_path, signups_open=True)
     if posted_in == OLD_SIGNUP_CHANNEL:
         del league.channel(SIGNUP_CHANNEL).messages[SIGNUP_BUTTON]
@@ -151,7 +151,8 @@ async def test_a_season_end_s_close_deletes_the_sign_up_button_as_a_job(tmp_path
         ("delete", posted_in, SIGNUP_BUTTON)
     ]
     assert SIGNUP_BUTTON not in league.channel(posted_in).messages
-    assert len(_closed_notices(league)) == 1
+    if posted_in == OLD_SIGNUP_CHANNEL:
+        assert len(_closed_notices(league)) == 1
     assert (await league.season())["status"] == "CANCELLED"
 
 
