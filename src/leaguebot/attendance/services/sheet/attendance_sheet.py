@@ -82,6 +82,8 @@ async def post_attendance_sheet(
     raises too, its message naming `/attendance channel attendance`, so the queue stops there and
     does not complete having posted nothing; a cancelled round posts nothing and raises nothing.
     *as_text* leaves the graphic out, which is how a job retries (Constitution XIV rule 8).
+    A fault of the name read (`read_driver_names`) is not caught here: it propagates and stops the
+    job for Retry, on the text-only path too, since the text sheet is ordered by the same names.
 
     *drawing* is the image module's, which the graphic is asked of; none draws no picture, as
     *as_text* does. What it hands back, the render's notices and the fault of a picture that was
