@@ -677,14 +677,14 @@ def submission_all_cancelled_change(
                 "channel_id": int(channel), "message_id": int(message_id), "what": what,
                 "kind": "standing",
             })
-            for what, posts in (
+            for what, pairs in (
                 ("standings post", standings_posts),
                 ("results table", [
                     (standing_posts.posted_in(recorded, results_channel), message_id)
                     for recorded, message_id in payload.get("old_tables") or []
                 ]),
             )
-            for channel, message_id in posts
+            for channel, message_id in pairs
             if channel
         )
         reposts = (
