@@ -308,18 +308,25 @@ async def test_a_superseded_forecast_whose_deletion_was_discarded_is_caught_up_w
 
 
 @pytest.mark.parametrize(
-    "phases, named",
-    [((3,), "the Phase 3 forecast"), ((2,), "the Phase 2 forecast"),
-     ((1, 2), "the Phase 1 and 2 forecasts")],
-    ids=["phase-3-posted", "phase-3-never-posted", "phases-1-and-2-standing"],
+    "phases, round_format, named",
+    [
+        pytest.param((3,), "NORMAL", "the Phase 3 forecast", id="phase-3-posted"),
+        pytest.param((2,), "NORMAL", "the Phase 2 forecast", id="phase-3-never-posted"),
+        pytest.param((1, 2), "NORMAL", "the Phase 1 and 2 forecasts",
+                     id="phases-1-and-2-standing"),
+        pytest.param((0,), "MYSTERY", "the mystery round notice", id="mystery-round-notice",
+                     marks=pytest.mark.xfail(strict=True, reason="#595: the catch-up does not "
+                                             "yet delete a mystery round's notice, nor name it")),
+    ],
 )
 async def test_the_catch_up_s_log_line_names_the_forecast_it_deletes(
-    tmp_path, caplog, phases, named
+    tmp_path, caplog, phases, round_format, named
 ):
     """The host's log line for a forecast clean-up the catch-up asks names the forecast still
-    standing, "deleting the Phase 2 forecast of round_id=21", never a phase that is not, and
-    begins with the name of weather's recovery that writes it."""
-    db_path = await _make_db(tmp_path, phases=phases)
+    standing, "deleting the Phase 2 forecast of round_id=21", never a phase that is not, and a
+    mystery round's notice as "the mystery round notice", never as a phase; it begins with the
+    name of weather's recovery that writes it."""
+    db_path = await _make_db(tmp_path, phases=phases, round_format=round_format)
 
     with caplog.at_level("INFO", logger="leaguebot"):
         await _recover(_bot(db_path))
