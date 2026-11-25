@@ -526,7 +526,6 @@ async def _sign_up_button_kept(db_path) -> tuple[int, int]:
         return tuple(await cursor.fetchone())
 
 
-@pytest.mark.xfail(strict=True, reason="#645: the Sign Up button's channel is not recorded")
 async def test_a_signup_channel_replaced_while_signups_are_open_carries_the_sign_up_button(
     tmp_path,
 ):
