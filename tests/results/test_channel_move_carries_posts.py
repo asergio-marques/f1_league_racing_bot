@@ -19,6 +19,7 @@ season reaches pending completion ahead of is dropped, the log channel saying wh
 """
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import discord
@@ -621,3 +622,95 @@ async def test_a_second_move_before_the_first_carry_runs_carries_from_where_the_
     assert league.channel(RESULTS_CHANNEL).messages == {}
     assert any("| Success" in line and f"{RESULTS_CHANNEL}" in line and f"{MOVED_AGAIN}" in line
                for line in lines), lines
+
+
+async def test_a_replaced_channel_that_has_gone_still_carries_from_where_the_posts_stand(tmp_path):
+    """Round 3's table stands in 700 and the league's lane is stopped at a job of another change.
+    Admin moves Pro's results channel from 700 to 703: the setting saves 703 and its carry waits
+    behind the stop. Channel 703 is then deleted from the server, and Admin sets the results
+    channel to 706, which stands: the setting saves 706 as the repair of a lost channel, its reply
+    says the tables already up are being moved, and it asks a carry from 700, where the table
+    still stands, to 706 (owner decision 2026-11-25: replacing a deleted channel carries nothing
+    only where the deleted channel held the posts). Once the stop is retried and the queue moves,
+    the first carry is dropped, its line in the log channel saying the results channel has
+    changed (now 706); the second carries the table to 706 and deletes 8800 from 700, which ends
+    empty, and the session records the new message."""
+    league = await _league(tmp_path)
+    holder = await block_queue(league)
+    league.channels[MOVED_AGAIN] = channel(MOVED_AGAIN, league.events)
+    league.channels[MOVED_AGAIN].guild = league.guild
+    await _move(league, "results")
+    await run_queue(league.bot)
+    del league.channels[NEW_RESULTS]
+    interaction = await _move(league, "results", to=MOVED_AGAIN)
+    await run_queue(league.bot)
+
+    updated = f"✅ Results channel for **Pro** updated to <#{MOVED_AGAIN}>."
+    reply = last_said(interaction)
+    assert reply.startswith(updated) and "moved" in reply.removeprefix(updated), reply
+    assert await _held(league, "results") == MOVED_AGAIN
+    asked = [(json.loads(row["payload"])["old_channel_id"],
+              json.loads(row["payload"])["new_channel_id"]) for row in await _carries(league)]
+    assert asked == [(RESULTS_CHANNEL, NEW_RESULTS), (RESULTS_CHANNEL, MOVED_AGAIN)], asked
+    since = len(league.bot.log_channel.sent)
+
+    holder["fail"] = False
+    await retry_job(league.bot)
+
+    assert [row["state"] for row in await _carries(league)] == ["DROPPED", "DONE"]
+    lines = _lines(league, since)
+    assert any("changed" in line.lower() and f"<#{MOVED_AGAIN}>" in line for line in lines), (
+        lines)
+    [new] = league.sent_to(MOVED_AGAIN)
+    assert await _results_id(league, ROUND_ID) == new
+    assert league.channel(RESULTS_CHANNEL).messages == {}
+
+
+@pytest.mark.parametrize("which", sorted(MOVES))
+async def test_a_channel_moved_away_and_back_before_the_carry_runs_asks_no_carry(
+    tmp_path, which,
+):
+    """Round 3's table stands in 700 (8800) and its standings in 701 (8801), and the league's lane
+    is stopped at a job of another change. Admin moves Pro's results channel from 700 to 703 (or
+    its standings channel from 701 to 704): the setting saves it and its carry waits behind the
+    stop. Admin then sets it back to 700 (or 701). The second setting saves it with its usual
+    reply and says nothing of moving anything, and no second carry is asked. Once the stop is
+    retried and the queue moves, the first carry is dropped, its line in the log channel saying
+    the channel has changed and not that the posts stay anywhere; nothing is posted or deleted
+    in either channel, and the round still records 8800 (or 8801)."""
+    from leaguebot.results.services.publishing.results_post_service import (
+        get_standings_message_id,
+    )
+
+    league = await _league(tmp_path)
+    holder = await block_queue(league)
+    old, new, _column = MOVES[which]
+    await _move(league, which)
+    await run_queue(league.bot)
+    interaction = await _move(league, which, to=old)
+    await run_queue(league.bot)
+
+    assert last_said(interaction) == (
+        f"✅ {which.capitalize()} channel for **Pro** updated to <#{old}>."
+    )
+    assert await _held(league, which) == old
+    assert len(await _carries(league)) == 1
+    since = len(league.bot.log_channel.sent)
+
+    holder["fail"] = False
+    await retry_job(league.bot)
+
+    assert [row["state"] for row in await _carries(league)] == ["DROPPED"]
+    lines = _lines(league, since)
+    dropped = [line for line in lines if "changed" in line.lower() and f"<#{old}>" in line]
+    assert dropped, lines
+    assert not [line for line in dropped if "stay in" in line.lower()], dropped
+    assert league.sent_to(old) == [] and league.sent_to(new) == []
+    assert league.deleted_in(old) == []
+    if which == "results":
+        assert OLD_RESULTS in league.channel(old).messages
+        assert await _results_id(league, ROUND_ID) == OLD_RESULTS
+    else:
+        assert OLD_STANDINGS in league.channel(old).messages
+        assert await get_standings_message_id(league.db_path, DIVISION_ID, ROUND_ID) == (
+            OLD_STANDINGS)
