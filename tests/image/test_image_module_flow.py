@@ -1320,7 +1320,6 @@ def _race_template(background_markup: str) -> bytes:
     ).encode()
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_BY_CLASS)
 async def test_contrast_is_measured_against_the_declared_background(
     module_service, config_service, template_dir, monkeypatch
 ):
@@ -1339,7 +1338,6 @@ async def test_contrast_is_measured_against_the_declared_background(
     assert reading.ratio == pytest.approx(21.0, abs=0.01)
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_BY_CLASS)
 async def test_contrast_reads_the_stylesheet_not_just_the_attribute(
     module_service, config_service, template_dir, monkeypatch
 ):
@@ -1377,7 +1375,6 @@ async def test_contrast_unmeasurable_when_template_is_invalid(
     assert "invalid" in reading.problem.lower()
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_BY_CLASS)
 async def test_contrast_unmeasurable_when_background_element_is_absent(
     module_service, config_service, template_dir, monkeypatch
 ):
@@ -1404,7 +1401,6 @@ async def test_contrast_unmeasurable_when_background_element_is_absent(
     assert reports["results_race_template"].valid
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_BY_CLASS)
 async def test_contrast_unmeasurable_when_fill_is_a_gradient(
     module_service, config_service, template_dir, monkeypatch
 ):
@@ -1423,7 +1419,6 @@ async def test_contrast_unmeasurable_when_fill_is_a_gradient(
     assert "`fastest-lap-background`" in reading.problem
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_BY_CLASS)
 async def test_contrast_unmeasurable_when_the_background_has_no_fill(
     module_service, config_service, template_dir, monkeypatch
 ):
@@ -1451,7 +1446,6 @@ async def test_contrast_unmeasurable_when_the_background_has_no_fill(
     assert "`fastest-lap-background`" in reading.problem
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_BY_CLASS)
 async def test_contrast_unmeasurable_where_one_marked_background_cannot_be_read(
     module_service, config_service, template_dir, monkeypatch
 ):
@@ -1554,7 +1548,6 @@ async def _per_tier(config_service, template_dir, monkeypatch, markup: bytes, pa
         await saves.set_tier_colours(config_service, division, colours)
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_BY_CLASS)
 async def test_fastest_lap_colour_warns_on_the_tier_hardest_to_read(
     tmp_path, template_dir, monkeypatch
 ):
@@ -1593,7 +1586,6 @@ async def test_fastest_lap_colour_warns_on_the_tier_hardest_to_read(
     assert "Division 1" not in reply
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_BY_CLASS)
 async def test_contrast_with_per_tier_colours_is_the_lowest_tier(
     db_path, module_service, config_service, template_dir, monkeypatch
 ):
@@ -1615,7 +1607,6 @@ async def test_contrast_with_per_tier_colours_is_the_lowest_tier(
     assert reading.divisions == ("Division 2",)
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_BY_CLASS)
 async def test_contrast_with_per_tier_colours_off_ignores_stored_palettes(
     db_path, module_service, config_service, template_dir, monkeypatch
 ):
@@ -1638,7 +1629,6 @@ async def test_contrast_with_per_tier_colours_off_ignores_stored_palettes(
     assert reading.divisions == ()
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_BY_CLASS)
 async def test_each_tier_is_measured_on_its_own_copy_of_the_template(
     db_path, module_service, config_service, template_dir, monkeypatch
 ):
@@ -1664,7 +1654,6 @@ async def test_each_tier_is_measured_on_its_own_copy_of_the_template(
     assert reading.ratio == pytest.approx(1.662, abs=0.001)
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_BY_CLASS)
 async def test_contrast_reads_a_slot_declared_on_the_plates_group(
     db_path, module_service, config_service, template_dir, monkeypatch
 ):
@@ -1690,7 +1679,6 @@ async def test_contrast_reads_a_slot_declared_on_the_plates_group(
     assert reading.every_division is False
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_BY_CLASS)
 async def test_contrast_reads_the_tiers_colour_whichever_order_the_plates_classes_are_written(
     db_path, module_service, config_service, template_dir, monkeypatch
 ):
@@ -1720,7 +1708,6 @@ async def test_contrast_reads_the_tiers_colour_whichever_order_the_plates_classe
     assert reading.divisions == ("Division 1",)
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_BY_CLASS)
 async def test_the_contrast_check_paints_each_tier_through_the_render_path(
     db_path, module_service, config_service, template_dir, monkeypatch
 ):
@@ -1803,7 +1790,6 @@ async def test_no_season_under_way_measures_as_authored_and_says_so(
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_BY_CLASS)
 async def test_per_tier_colours_off_say_nothing_of_a_season(
     db_path, module_service, config_service, template_dir, monkeypatch
 ):
@@ -1953,7 +1939,6 @@ def test_unmeasured_tiers_with_different_reasons_share_one_line():
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_BY_CLASS)
 async def test_every_tier_unmeasurable_is_reported_once(
     db_path, module_service, config_service, template_dir, monkeypatch
 ):

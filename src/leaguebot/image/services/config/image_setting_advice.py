@@ -1,8 +1,9 @@
 """What the image settings say beside a value once it is saved (#439, slice 7).
 
 The advice a setting adds to its reply: which outputs a switched-on aspect would not produce,
-what the fastest-lap colour reads against the plate, which colour slots no template marks, what
-a directory resolves to, which colours a per-tier switch-on still wants. None of it writes, and
+what the fastest-lap colour reads against the background behind it, which colour slots no
+template marks, what a directory resolves to, which colours a per-tier switch-on still wants.
+None of it writes, and
 none of it is needed for the setting to stand: a setting is saved first and advised after, so a
 fault here cannot undo it. It lives apart from the cog so the settings
 (`image/services/config/image_settings.py`) can form it, a service importing no cog.
@@ -55,14 +56,17 @@ class FastestLapContrast:
     Either `ratio` and `background` are set, or `problem` says why nothing could be
     measured: an unmeasurable contrast is reported as such, never guessed (FR-027).
 
+    `background` is the colour the lowest figure was measured against: a template marks every
+    shape behind the fastest-lap cells, and the lowest contrast across them is the one reported.
+
     `divisions` names every tier the figure belongs to, in tier order — more than one
     where tiers tie at the figure shown (decided 2026-09-24, #165). It is empty where the
-    plate was measured as the template was authored, which is what per-tier colours being
+    background was measured as the template was authored, which is what per-tier colours being
     off means. `every_division` says every division ties, which is said rather than listed.
     `background` is None where tied tiers reach the same figure on different colours.
-    `unmeasured` holds each (division, reason) whose plate had no colour to measure, the
+    `unmeasured` holds each (division, reason) whose background had no colour to measure, the
     figure being the lowest of the rest. `no_season` says per-tier colours were on and
-    there was no division to measure in, so the authored plate stood in for every tier.
+    there was no division to measure in, so the authored background stood in for every tier.
     All three decided 2026-09-24 (#165).
     """
 
@@ -83,46 +87,69 @@ def _listed(names: tuple[str, ...]) -> str:
     return f"{', '.join(bold[:-1])} and {bold[-1]}"
 
 
-def _no_plate_problem() -> str:
-    from leaguebot.image.models.image_constants import FASTEST_LAP_BACKGROUND_ID
+def _no_background_problem() -> str:
+    from leaguebot.image.models.image_constants import FASTEST_LAP_BACKGROUND_CLASS
 
     return (
-        f"the race results template declares no `{FASTEST_LAP_BACKGROUND_ID}` "
-        f"element to measure against."
+        f"the race results template marks no shape with the class "
+        f"`{FASTEST_LAP_BACKGROUND_CLASS}` to measure against."
     )
 
 
-def _plate_fill(root) -> tuple[str | None, str | None]:
-    """(background, problem): the plain colour the fastest-lap plate is drawn in, or why not.
+def _background_fills(root) -> tuple[tuple[str, ...], str | None]:
+    """(backgrounds, problem): the plain colours the fastest-lap backgrounds are drawn in, or why not.
 
-    The plate is located by a single documented ``@id`` in the race results template
-    (FR-026a), and its fill read through `computed_style`, so a colour set by a stylesheet
-    rule, an inline style or a presentation attribute is read as the drawing would take it.
+    A background is every shape the race results template marks with the class
+    `fastest-lap-background` (`elements_with_class`), and each fill is read through
+    `computed_style`, so a colour set by a stylesheet rule, an inline style or a presentation
+    attribute is read as the drawing would take it. The colours come back distinct, in document
+    order. One marked shape whose fill cannot be read as a plain colour makes the whole reading
+    unmeasurable, the reason naming the class: a figure over the shapes that could be read would
+    pass a colour the league may not be able to read (FR-027).
     """
-    from leaguebot.image.models.image_constants import FASTEST_LAP_BACKGROUND_ID
+    from leaguebot.image.models.image_constants import FASTEST_LAP_BACKGROUND_CLASS
     from leaguebot.image.utils.colour import coerce_css_colour
-    from leaguebot.image.utils.svg_document import FieldIndex, computed_style, stylesheet
+    from leaguebot.image.utils.svg_document import (
+        computed_style,
+        elements_with_class,
+        stylesheet,
+    )
 
-    element = FieldIndex(root).resolve(FASTEST_LAP_BACKGROUND_ID)
-    if element is None:
-        return None, _no_plate_problem()
+    marked = elements_with_class(root, FASTEST_LAP_BACKGROUND_CLASS)
+    if not marked:
+        return (), _no_background_problem()
 
-    declared = computed_style(element, stylesheet(root)).get("fill")
-    if declared is None:
-        # Said in the league's words. Interpolating the raw value put Python's `None`
-        # in the reply. Not measured as black, which is what SVG draws: the bot reads
-        # only simple selectors, so a fill it cannot see may still be declared, and an
-        # unmeasurable contrast is reported rather than guessed (FR-027).
-        return None, (
-            f"the `{FASTEST_LAP_BACKGROUND_ID}` element has no fill the bot can read."
-        )
-    background = coerce_css_colour(declared)
-    if background is None:
-        return None, (
-            f"the `{FASTEST_LAP_BACKGROUND_ID}` element's fill (`{declared}`) is not "
-            f"a plain colour."
-        )
-    return background, None
+    rules = stylesheet(root)
+    backgrounds: list[str] = []
+    for element in marked:
+        declared = computed_style(element, rules).get("fill")
+        if declared is None:
+            # Said in the league's words. Interpolating the raw value put Python's `None`
+            # in the reply. Not measured as black, which is what SVG draws: the bot reads
+            # only simple selectors, so a fill it cannot see may still be declared, and an
+            # unmeasurable contrast is reported rather than guessed (FR-027).
+            return (), (
+                f"a shape marked `{FASTEST_LAP_BACKGROUND_CLASS}` has no fill the bot can read."
+            )
+        background = coerce_css_colour(declared)
+        if background is None:
+            return (), (
+                f"a shape marked `{FASTEST_LAP_BACKGROUND_CLASS}` has a fill (`{declared}`) "
+                f"that is not a plain colour."
+            )
+        if background not in backgrounds:
+            backgrounds.append(background)
+    return tuple(backgrounds), None
+
+
+def _lowest_against(colour: str, backgrounds: tuple[str, ...]) -> tuple[float, str]:
+    """The lowest contrast of *colour* against *backgrounds*, and the background that gave it."""
+    from leaguebot.image.utils.colour import contrast_ratio
+
+    return min(
+        ((contrast_ratio(colour, background), background) for background in backgrounds),
+        key=lambda pair: pair[0],
+    )
 
 
 def fastest_lap_contrast_lines(reading: FastestLapContrast) -> list[str]:
@@ -156,7 +183,7 @@ def fastest_lap_contrast_lines(reading: FastestLapContrast) -> list[str]:
             f"it is your league's to choose."
         )
     if reading.unmeasured:
-        # One line whatever the count. Every unmeasured tier falls back to the plate as
+        # One line whatever the count. Every unmeasured tier falls back to the background as
         # authored, so in practice they share a reason; grouping keeps it one clause each
         # where they somehow do not.
         by_reason: dict[str, list[str]] = {}
@@ -238,23 +265,23 @@ async def measure_fastest_lap_contrast(
     validity: "ImageValidityService",
     seasons: "SeasonService",
 ) -> FastestLapContrast:
-    """Measure *colour* against the plate each tier draws behind it, and keep the lowest.
+    """Measure *colour* against the background each tier draws behind it, and keep the lowest.
 
-    With per-tier colours off the plate is measured once, as the template was
+    With per-tier colours off the background is measured once, as the template was
     authored. With them on it is measured once per division of the season under way —
     the same divisions the colour shortfall is checked against — and the lowest figure
     is the one reported, with the division it belongs to (#165).
 
     **Each division is painted with the render's own palette, on a copy of its own.**
     `ImageRenderService.tier_palette` is what a division's graphic is drawn with, so
-    measuring with it is what makes the figure the colour the plate is drawn in; a
+    measuring with it is what makes the figure the colour the background is drawn in; a
     slot the tier has not set is left as authored there, and so here. The copy is
     because the palette is injected into the tree, and a second division painted over
     the first would be measured against whatever the first left behind.
     `test_the_contrast_check_paints_each_tier_through_the_render_path` pins it.
 
-    The plate's absence is an unmeasurable contrast, not a template validity failure:
-    Layer 1 cannot establish that the element exists (FR-026a).
+    A template marking no background is an unmeasurable contrast, not a template validity
+    failure: Layer 1 does not look for the class.
     """
     reports = await validity.template_reports()
     report = reports.get("results_race_template")
@@ -284,24 +311,24 @@ async def measure_fastest_lap_contrast(
     # (`load_svg`).
     palettes = {division: await render.tier_palette(division) for division in divisions}
     return await off_the_loop(
-        _measure_plate, report.resolved_path, colour, palettes, per_tier
+        _measure_background, report.resolved_path, colour, palettes, per_tier
     )
 
 
-def _measure_plate(
+def _measure_background(
     path: Path, colour: str, palettes: dict[str, dict[str, str]], per_tier: bool
 ) -> FastestLapContrast:
-    """The contrast of *colour* against the plate of the template at *path*, as drawn for each
+    """The contrast of *colour* against the backgrounds of the template at *path*, as drawn for each
     division in *palettes*, read in a worker thread: it parses the template and paints each
     tier's palette into a copy of it, and returns plain data alone.
 
     *per_tier* says the feature is on, which is what `no_season` reports where it measured no
     division. Each palette is the one `ImageRenderService.tier_palette` read, painted by the
-    render's own `apply_palette`.
+    render's own `apply_palette`. Against every marked background of a copy the lowest ratio
+    stands, with the colour that gave it.
     """
-    from leaguebot.image.models.image_constants import FASTEST_LAP_BACKGROUND_ID
-    from leaguebot.image.utils.colour import contrast_ratio
-    from leaguebot.image.utils.svg_document import FieldIndex, SvgError, load_svg
+    from leaguebot.image.models.image_constants import FASTEST_LAP_BACKGROUND_CLASS
+    from leaguebot.image.utils.svg_document import SvgError, elements_with_class, load_svg
     from leaguebot.image.utils.svg_palette import apply_palette
 
     try:
@@ -313,32 +340,30 @@ def _measure_plate(
 
     if not palettes:
         # Per-tier colours off, or on with no season under way — or one holding no
-        # division yet. Either way no tier's colours exist to draw in, so the plate
-        # as authored is the plate; with the feature on, the reply says so.
-        background, problem = _plate_fill(root)
-        if background is None:
+        # division yet. Either way no tier's colours exist to draw in, so the background
+        # as authored is the background; with the feature on, the reply says so.
+        backgrounds, problem = _background_fills(root)
+        if problem is not None:
             return FastestLapContrast(problem=problem)
-        return FastestLapContrast(
-            ratio=contrast_ratio(colour, background),
-            background=background,
-            no_season=per_tier,
-        )
+        ratio, background = _lowest_against(colour, backgrounds)
+        return FastestLapContrast(ratio=ratio, background=background, no_season=per_tier)
 
-    # A palette neither adds an element nor takes one away, so a plate missing from
-    # the template is missing for every tier and is said once.
-    if FieldIndex(root).resolve(FASTEST_LAP_BACKGROUND_ID) is None:
-        return FastestLapContrast(problem=_no_plate_problem())
+    # A palette neither adds an element nor takes one away, so a template marking no
+    # background marks none for any tier, and it is said once.
+    if not elements_with_class(root, FASTEST_LAP_BACKGROUND_CLASS):
+        return FastestLapContrast(problem=_no_background_problem())
 
     measured: list[tuple[float, str, str]] = []
     unmeasured: list[tuple[str, str]] = []
     for division, palette in palettes.items():
         tree = copy.deepcopy(root)
         apply_palette(tree, palette)
-        background, problem = _plate_fill(tree)
-        if background is None:
-            unmeasured.append((division, problem or ""))
+        backgrounds, problem = _background_fills(tree)
+        if problem is not None:
+            unmeasured.append((division, problem))
         else:
-            measured.append((contrast_ratio(colour, background), division, background))
+            ratio, background = _lowest_against(colour, backgrounds)
+            measured.append((ratio, division, background))
 
     if not measured:
         # No tier has a colour to measure, which is the unmeasurable contrast of old:
@@ -349,10 +374,10 @@ def _measure_plate(
     # shows alike are named alike. `measured` is in tier order, and so the names are.
     lowest = min(ratio for ratio, _division, _background in measured)
     tied = [entry for entry in measured if round(entry[0], 2) == round(lowest, 2)]
-    backgrounds = {background for _ratio, _division, background in tied}
+    shared = {background for _ratio, _division, background in tied}
     return FastestLapContrast(
         ratio=lowest,
-        background=backgrounds.pop() if len(backgrounds) == 1 else None,
+        background=shared.pop() if len(shared) == 1 else None,
         divisions=tuple(division for _ratio, division, _background in tied),
         every_division=len(palettes) > 1 and len(tied) == len(palettes),
         unmeasured=tuple(unmeasured),
