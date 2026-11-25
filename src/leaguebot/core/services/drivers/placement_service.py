@@ -525,32 +525,44 @@ class PlacementService:
         await self._capacity.guard_image_capacity(division_id, season_id, team_name, ahead)
         await self._guard_test_mode(driver_profile_id)
 
-    async def guard_assign_paste(self, season_id: int, lines: list[dict]) -> list[str]:
-        """Make `guard_assign`'s guards of a pasted list of placements, in order, writing nothing:
-        the faults of every line, each "Line N: " and then the words a single assignment refuses
-        in. Empty where the whole list may be placed.
+    async def guard_assign_paste_test_mode(self, lines: list[dict]) -> list[str]:
+        """Make `guard_assign`'s test-mode guard of every line of a pasted list of placements: the
+        lines that would seat a real driver in test mode, each "Line N: " and then the words a
+        single assignment refuses in. Asked before the lines are judged against the seats, as a
+        single assignment asks it before it judges, so that a refused line is named for this and
+        takes no seat from those after it.
 
-        A line is refused where it would seat a real driver in test mode, and, with the lines
-        placed before it in its division counted as seated (`SeatsAhead`), where it would outgrow
-        an image template. A refused line takes nothing from the count, so one fault does not
-        cascade onto the lines after it. The templates are read off the loop, so they are asked
-        once per division, of the last line of each kind (the last line, the last reserve and the
-        last race driver, each with every line before it ahead): the counts only grow down the
-        list, so where those pass every line does. Only where one is refused is each line asked in
-        turn, to name the lines past what a template draws.
-
-        Each line is a dict carrying ``line``, ``driver_profile_id`` (None where the member has no
-        profile), ``division_id`` and ``team_name``; the caller passes only lines already judged
-        sound by `judge_assign_paste_on`.
+        Each line is a dict carrying ``line`` and ``driver_profile_id`` (None where the member has
+        no profile).
         """
-        faults: dict[int, str] = {}
-        by_division: dict[int, list[dict]] = {}
+        faults: list[str] = []
         for line in lines:
             try:
                 await self._guard_test_mode(line["driver_profile_id"])
             except Refused as refusal:
-                faults[line["line"]] = f"Line {line['line']}: {refusal}"
-                continue
+                faults.append(f"Line {line['line']}: {refusal}")
+        return faults
+
+    async def guard_assign_paste(self, season_id: int, lines: list[dict]) -> list[str]:
+        """Make `guard_assign`'s capacity guards of a pasted list of placements, in order, writing
+        nothing: the faults of every line, each "Line N: " and then the words a single assignment
+        refuses in. Empty where the whole list may be placed.
+
+        A line is refused where, with the lines placed before it in its division counted as seated
+        (`SeatsAhead`), it would outgrow an image template. A refused line takes nothing from the
+        count, so one fault does not cascade onto the lines after it. The templates are read off
+        the loop, so they are asked once per division, of the last line of each kind (the last
+        line, the last reserve and the last race driver, each with every line before it ahead):
+        the counts only grow down the list, so where those pass every line does. Only where one
+        is refused is each line asked in turn, to name the lines past what a template draws.
+
+        Each line is a dict carrying ``line``, ``division_id`` and ``team_name``; the caller passes
+        only lines already judged sound by `guard_assign_paste_test_mode` and
+        `judge_assign_paste_on`.
+        """
+        faults: dict[int, str] = {}
+        by_division: dict[int, list[dict]] = {}
+        for line in lines:
             by_division.setdefault(line["division_id"], []).append(line)
         reserve: dict[tuple[int, str], bool] = {}
         async with get_connection(self._db_path) as db:

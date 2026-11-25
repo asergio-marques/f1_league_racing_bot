@@ -12,7 +12,9 @@ and one refused line refuses the paste, naming every refused line by its number
 (`format_placement_errors`). A line is judged against what the lines before it would take, which
 the database does not yet hold: `PlacementService.judge_assign_paste_on` keeps the running tally of
 seats and of divisions entered, and `guard_assign_paste` counts the drivers placed before a line
-into the templates' capacity. The whole paste is refused once, not line by line, where the season
+into the templates' capacity. A real driver in test mode is refused first
+(`guard_assign_paste_test_mode`), as a single placement refuses it, and takes no seat from the
+lines after it. The whole paste is refused once, not line by line, where the season
 is no longer in a stage drivers are placed in or a division has left it.
 
 **The check judges at the ask and again as the change starts**, in the league's log channel either
@@ -145,10 +147,16 @@ def driver_assign_bulk_change(
         ) or await division_refusal(ctx.db_path, season_id, divisions)
         if refused is not None:
             return refused
+        # Test mode first, as a single placement asks it, so that a real driver refused for it
+        # takes no seat from the lines after.
+        in_test_mode = await placement.guard_assign_paste_test_mode(payload["lines"])
+        barred = {_line_number(fault) for fault in in_test_mode}
+        asked = {**payload, "lines": [each for each in payload["lines"] if each["line"] not in barred]}
         async with get_connection(ctx.db_path) as db:
-            sound, faults, _signup_off = await _judged(db, placement, modules, payload)
+            sound, faults, _signup_off = await _judged(db, placement, modules, asked)
         faults = sorted(
-            [*faults, *await placement.guard_assign_paste(season_id, sound)], key=_line_number
+            [*in_test_mode, *faults, *await placement.guard_assign_paste(season_id, sound)],
+            key=_line_number,
         )
         if faults:
             return Verdict.refuse(format_placement_errors(faults))
