@@ -434,6 +434,9 @@ async def test_confirming_stages_the_restore_and_says_to_restart(live):
 
     assert bs.staged_path(live.db).is_file()
     assert "Restart the bot" in _reply(interaction)
+    assert "reload Discord (Ctrl+R on desktop) before using the `/driver` and `/signup` commands" in (
+        _reply(interaction)
+    )
 
 
 async def test_only_the_requester_may_confirm(live):
