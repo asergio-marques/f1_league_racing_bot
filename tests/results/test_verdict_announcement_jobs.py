@@ -939,7 +939,8 @@ async def test_a_verdict_whose_picture_fails_is_announced_as_text_and_says_why_i
     is cleared and the round is final, amending the round with `/results rounds amend` announces
     it again. Without Inkscape, the log channel keeps the render's words, and says the host must
     install it and that once it has and the round is final, amending the round announces it
-    again."""
+    again. The fault line, formed already opened with Alex and the button he pressed, opens with
+    them once, never twice."""
     from leaguebot.image.services.aspects import image_verdict_post
 
     raised = "the verdict picture's file could not be opened"
@@ -980,6 +981,9 @@ async def test_a_verdict_whose_picture_fails_is_announced_as_text_and_says_why_i
     faults = [line.lower() for line in league.bot.log_channel.sent
               if "Pro" in line and "round 3" in line.lower()]
     assert len(faults) == 1, league.bot.log_channel.sent
+    [opened] = [sent for sent in league.bot.log_channel.sent if "Verdict posted as text" in sent]
+    assert opened.startswith(f"{_JOB_OPENING}Verdict posted as text\n"), opened
+    assert opened.count(_JOB_OPENING) == 1, opened
     [line] = faults
     assert "verdict" in line and ("picture" in line or "image" in line), line
     assert "text" in line and "the bot hit an internal fault" in line, line
