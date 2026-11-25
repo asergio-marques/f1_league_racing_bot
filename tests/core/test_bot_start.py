@@ -214,6 +214,25 @@ async def test_the_sync_command_leaves_the_driver_the_flag_calls_for(tmp_path, t
     ]
 
 
+async def test_a_sync_discord_refuses_gets_the_warning_and_no_reload_notice(tmp_path):
+    """The owner sends `!sync` and Discord refuses the sync. The one reply is the warning that the
+    commands could not be synced, which does not tell the owner to reload Discord, nothing having
+    changed, and the failure is posted to the log channel."""
+    from tests.support.change_queue import http_error
+
+    bot, guild = await _ready_bot(tmp_path, test_mode=True)
+    bot.tree.sync = AsyncMock(side_effect=http_error())
+    ctx = MagicMock(guild=guild, send=AsyncMock())
+    ctx.message.delete = AsyncMock()
+
+    await bot.get_command("sync").callback(ctx)
+
+    [reply] = [each.args[0] for each in ctx.send.await_args_list]
+    assert reply.startswith("⚠️ The commands could not be synced")
+    assert RELOAD not in reply
+    bot.output_router.post_log.assert_awaited_once()
+
+
 @pytest.mark.parametrize(
     "test_mode",
     [
