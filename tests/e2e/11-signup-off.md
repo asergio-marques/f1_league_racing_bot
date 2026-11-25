@@ -85,8 +85,9 @@ shorthand, as in `00-base.md` step 32.
 7. **Do:** `/season config-review`
 
    **Expect:** as `00-base.md` step 21, except that:
-   - the first message reads `  Signup: ❌ Disabled` in place of `  Signup: ✅ Enabled`, the other
-     four modules `✅ Enabled`;
+   - the first message reads `  Signup: ❌ Disabled — fixed for the season once the configuration
+     is confirmed` in place of the `✅ Enabled` line, with no channel note, the other four modules
+     `✅ Enabled` with their usual notes;
    - no message carries the signup module's settings, and nothing reports the signup channel;
    - the question is the same, with its **✅ Confirm configuration** button.
    - **Log:** `<you> | /season config-review | Review posted`
@@ -246,8 +247,8 @@ shorthand, as in `00-base.md` step 32.
       `Charlie GP` block with Dirk Dekker; every other seat blank, and no reserve;
       > UNVERIFIED: how the lineup picture draws a division with no reserve driver. Settle it on
       > the run and correct the step.
-    - the report's `**Modules**` section lists Signup as `❌ Disabled`, with no settings message
-      for it;
+    - the report's `**Modules**` section lists Signup as `❌ Disabled — fixed for the season once the
+      configuration is confirmed`, with no settings message for it;
     - the question is the same, with its **✅ Approve** button.
     - **Log:** `<you> | /season placements-review | Review posted`
 
