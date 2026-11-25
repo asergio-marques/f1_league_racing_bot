@@ -21,7 +21,7 @@ from __future__ import annotations
 import dataclasses
 import sqlite3
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
@@ -32,6 +32,7 @@ from leaguebot.attendance.services.settings.penalty_recalculation import CHECK_C
 from leaguebot.framework.db.database import get_connection
 from tests.attendance.test_attendance_sync_change import (
     DIVISION_ID,
+    ATTENDANCE_CHANNEL,
     DRIVER_PROFILE,
     MANAGER_ID,
     OTHER_ATTENDANCE_CHANNEL,
@@ -55,6 +56,7 @@ from tests.support.change_queue import (
     member_interaction,
     register,
     restart_queue,
+    retry_job,
     run_queue,
     stopped_job,
     text_channel,
@@ -62,6 +64,7 @@ from tests.support.change_queue import (
 )
 from tests.support.settings_league import audit_rows, last_said
 from tests.support.settings_league import interaction as member_asks
+from tests.support.switches import answer_switch
 from tests.support.undecorate import undecorate
 
 #: The manager asking, as a log line names them, the mention wrapped so it notifies nobody.
@@ -274,6 +277,83 @@ async def test_each_division_recalculated_has_its_sheet_reposted_and_the_reply_n
     assert "no-show penalty: 2 point(s) (was 1 point(s))" in line
     assert "recalculated" in line
     assert "Division 1" in line and "Division 2" in line
+
+
+#: The detail of the one render notice the division's attendance sheet below is drawn with.
+SHEET_NOTICE = "no `team_badge` image for “Alpha”"
+
+
+@pytest.mark.parametrize("refused", [
+    pytest.param(False, id="first try"),
+    pytest.param(True, id="retried as text"),
+])
+async def test_a_penalty_change_s_reply_names_the_sheet_drawn_with_notices(tmp_path, refused):
+    """Division 1's round 1 is final, the driver accepted it and raced none, the no-show penalty
+    is 1, and the image module is on with the attendance graphic switched on. The division's
+    attendance sheet is drawn with one notice, a team badge falling back. Manager 77 runs
+    `/attendance config no-show-penalty 2` and the queue is run. Either the sheet posts at the
+    first try, or (*refused*) Discord refuses the picture, the queue stops at the sheet, and a
+    Retry posts it as text. The notice reaches the log channel once, in a block opening with the
+    manager and the command. The reply says the penalty was set and the season recalculated, and
+    ends in one "Image notices" section listing the sheet under the name its log line gives it,
+    linked to the log message holding it, and the notice beneath, once (image spec, Errors and
+    the rejection of input, #550; issue #671)."""
+    from leaguebot.image.models.image_module import RenderNotice, RenderOutcome
+    from leaguebot.image.services.aspects.image_attendance_post import (
+        ATTENDANCE_ASPECT,
+        ATTENDANCE_TEMPLATE_KEY,
+    )
+
+    league = await _league(tmp_path, no_show_penalty=1, autosack=None)
+    answer_switch(league.bot.module_service, "images", True)
+    league.bot.image_config_service.get_toggles = AsyncMock(
+        return_value={ATTENDANCE_ASPECT: True}
+    )
+    league.bot.image_validity_service.template_reports = AsyncMock(
+        return_value={ATTENDANCE_TEMPLATE_KEY: MagicMock(valid=True)}
+    )
+    sheet = tmp_path / "sheet.png"
+
+    async def _draw(image_type: str, *_args: Any, **_kwargs: Any) -> Any:
+        sheet.write_bytes(b"\x89PNG")
+        notices = [RenderNotice(
+            image_type=ATTENDANCE_TEMPLATE_KEY, notice_kind="ASSET_FALLBACK_USED",
+            detail=SHEET_NOTICE, field_id="team_badge",
+        )] if image_type == ATTENDANCE_TEMPLATE_KEY else []
+        return RenderOutcome(png_paths=[sheet], notices=notices)
+
+    league.bot.image_render_service.render = AsyncMock(side_effect=_draw)
+    channel = league.channels[ATTENDANCE_CHANNEL]
+    post = channel.send.side_effect
+    refusing = [refused]
+
+    async def _refuse_a_picture(content: str = "", **kwargs: Any) -> Any:
+        if refusing[0] and kwargs.get("file") is not None:
+            raise http_error(discord.Forbidden, status=403, text="Missing Access")
+        return await post(content, **kwargs)
+
+    channel.send.side_effect = _refuse_a_picture
+
+    asked = await _ask_penalty(league, "no-show-penalty", 2)
+    if refused:
+        assert await stopped_job(league.db_path) is not None
+        refusing[0] = False
+        await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    told = last_said(asked)
+    assert told.startswith("✅ No-show penalty set to **2** point(s)."), told
+    assert told.count("⚠️ **Image notices**") == 1, told
+    assert "\n\n⚠️ **Image notices**\n" in told, told
+    log = league.log_lines()
+    held = [(n, line) for n, line in enumerate(log, 1) if SHEET_NOTICE in line]
+    assert len(held) == 1, log
+    [(n, line)] = held
+    opening = f"{NAMED} | `/attendance config no-show-penalty` | Image render notices — "
+    assert line.startswith(opening), line
+    label = line.removeprefix(opening).split(":\n", 1)[0]
+    assert f"  **{label.replace('**', '')}** ([see them in the log](https://discord.test/{n}))" in told, told
+    assert told.count(SHEET_NOTICE) == 1, told
 
 
 async def _owed_a_sack_once_raised(tmp_path: Any) -> _League:

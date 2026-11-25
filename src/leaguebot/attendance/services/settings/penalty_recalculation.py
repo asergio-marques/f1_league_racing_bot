@@ -66,11 +66,13 @@ from leaguebot.framework.services.queue.change_types import (
     OutcomeContext,
     Step,
     StepContext,
+    drawn_notices_in,
 )
 from leaguebot.framework.services.queue.setting_change import SAVE
 from leaguebot.core.services.seasons import season_service
 from leaguebot.framework.utils.interaction_errors import failure_line
 from leaguebot.framework.utils.league_server import league_guild
+from leaguebot.framework.utils.log_lines import drawn_notices_section
 from leaguebot.results.services.round_amendment.amendment_writes import open_amendment_in_division
 
 if TYPE_CHECKING:
@@ -290,7 +292,7 @@ def penalty_change(
         if not saved.get("recalculated"):
             return reply
         names = ", ".join(f"**{name}**" for name in saved["recalculated"])
-        return "\n".join([
+        told = "\n".join([
             reply,
             f"Attendance was recalculated at the new value, as `/attendance sync` would, for "
             f"every approved round of {names}, and their sheets are posted again.",
@@ -298,6 +300,10 @@ def penalty_change(
             *saved["hints"],
             *sync.not_done_lines(ctx),
         ])
+        # The sheets, cards and lineups the recalculation drew with notices are listed beneath, as
+        # `/attendance sync` lists them.
+        section = drawn_notices_section(drawn_notices_in(ctx.steps))
+        return f"{told}\n\n{section}" if section else told
 
     steps = {
         **change.steps,
