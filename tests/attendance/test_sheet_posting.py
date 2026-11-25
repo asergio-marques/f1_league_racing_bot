@@ -436,20 +436,13 @@ async def test_a_sheet_s_render_fault_is_named_as_the_attendance_sheet_image(
 #: The detail of the one render notice the sheet's render below comes back with.
 SHEET_NOTICE = "no `flag` image for “Lewis”"
 
-#: Why the two tests below fail until #635 is built.
-NOT_YET_FRAMED = (
-    "#635: a sheet's notices reach the log as a bare block headed by the kind's code, the member "
-    "and the command unnamed, and its job keeps nothing of them for the reply"
-)
-
-
 async def _sheet_notice_is_framed_and_kept(league: Any, interaction: Any) -> None:
     """The log channel carries the sheet's one notice once, in a line opening with Alex and the
     command he ran, then "Image render notices — <sheet>:" naming Pro and round 1, and beneath it
     the notice under "Artwork not supplied by the league", naming its field `flag`, with no kind
     code and no template name; the sheet's job keeps the sheet's name and its grouped notices on
-    its result, and the sync's reply to Alex's *interaction* says the attendance was recalculated
-    and ends in one "Image notices" section listing the sheet under that name, linked to the log
+    its result, and the sync's reply to Alex's *interaction*, as last edited, which a stop's edit
+    went before, says the attendance was recalculated and ends in one "Image notices" section listing the sheet under that name, linked to the log
     channel's message holding it, and the notice beneath, once."""
     log = await _said(league)
     assert log.count(SHEET_NOTICE) == 1, log
@@ -473,7 +466,8 @@ async def _sheet_notice_is_framed_and_kept(league: Any, interaction: Any) -> Non
         RESULT_DRAWN: drawn.removeprefix("Image render notices — ").removesuffix(":"),
         RESULT_NOTICES: grouped,
     }], kept
-    told = updated_reply(interaction)
+    last = interaction.edit_original_response.await_args
+    told = last.kwargs.get("content") or (last.args[0] if last.args else "")
     assert told.startswith("✅ Attendance of **Pro** recalculated from round 1 on."), told
     assert told.count("⚠️ **Image notices**") == 1, told
     assert "\n\n⚠️ **Image notices**\n" in told, told
@@ -526,7 +520,6 @@ async def test_a_sheet_s_render_notices_reach_the_log_once_naming_the_round(tmp_
     assert "Season 3 Pro — attendance after round 1" in block.splitlines()[0], block
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_FRAMED)
 async def test_a_refused_sheet_s_render_notices_reach_the_log_once_when_it_is_retried(tmp_path):
     """The image module is on with the attendance graphic switched on and its template valid,
     and the image module's render of Pro's sheet is drawn with one notice, a flag falling back.
