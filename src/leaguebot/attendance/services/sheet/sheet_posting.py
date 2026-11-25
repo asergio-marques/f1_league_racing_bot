@@ -160,7 +160,6 @@ async def _opening_round(db_path: str, division_id: int):
 async def post_opening_sheet(
     bot: Any, guild: Any, db_path: str, division_id: int, *, as_text: bool = False,
     drawing: ImageDrawing | None = None, driver_names_read: AwaitedHook | None = None,
-    earlier_lines: tuple[str, ...] = (),
 ) -> dict[str, Any]:
     """Post one division's opening attendance sheet, raising where it cannot be posted, and
     give the job its result (`attendance_sheet.sheet_result`).
@@ -169,8 +168,8 @@ async def post_opening_sheet(
     its failure naming `/attendance channel attendance`, and so does one given a channel the
     guild no longer holds. The opening sheet takes the division's live slot, which the job saves
     with its mark (`attendance_sheet.record_sheet_on`) and replaces by a job of its own.
-    *as_text* leaves the graphic out, which is how a job retries; *drawing* and *earlier_lines*
-    are `attendance_sheet.post_attendance_sheet`'s.
+    *as_text* leaves the graphic out, which is how a job retries; *drawing* is
+    `attendance_sheet.post_attendance_sheet`'s.
     """
     opener = await _opening_round(db_path, division_id)
     if opener is None:
@@ -185,7 +184,6 @@ async def post_opening_sheet(
         as_text=as_text,
         drawing=drawing,
         driver_names_read=driver_names_read,
-        earlier_lines=earlier_lines,
     ))
 
 
@@ -258,7 +256,6 @@ def opening_steps(
 async def post_final_sheet(
     bot: Any, guild: Any, db_path: str, division_id: int, round_id: int, *, as_text: bool = False,
     drawing: ImageDrawing | None = None, driver_names_read: AwaitedHook | None = None,
-    earlier_lines: tuple[str, ...] = (),
 ) -> dict[str, Any]:
     """Post one division's final attendance sheet, drawn against *round_id*, raising where it
     cannot be posted, and give the job its result (`attendance_sheet.sheet_result`).
@@ -267,7 +264,7 @@ async def post_final_sheet(
     its failure naming `/attendance channel attendance`, and so does one given a channel the
     guild no longer holds. The final sheet stands beside the last round's and takes no live slot,
     so nothing is saved for it and nothing deleted. *as_text* leaves the graphic out, which is
-    how a job retries; *drawing* and *earlier_lines* are
+    how a job retries; *drawing* is
     `attendance_sheet.post_attendance_sheet`'s.
     """
     return attendance_sheet.sheet_result(await attendance_sheet.post_attendance_sheet(
@@ -280,7 +277,6 @@ async def post_final_sheet(
         as_text=as_text,
         drawing=drawing,
         driver_names_read=driver_names_read,
-        earlier_lines=earlier_lines,
     ))
 
 
