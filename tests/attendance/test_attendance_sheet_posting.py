@@ -492,6 +492,7 @@ async def test_the_sheet_lists_the_most_points_first_then_by_name(sheet_db, monk
     [
         pytest.param("AFTER_ROUND", False, id="two-fake-drivers-after-a-round"),
         pytest.param("SEASON_OPENING", False, id="two-fake-drivers-on-the-opening-sheet"),
+        pytest.param("SEASON_FINAL", False, id="two-fake-drivers-on-the-final-sheet"),
         pytest.param("AFTER_ROUND", True, id="a-driver-who-left-after-a-round"),
     ],
 )
@@ -504,8 +505,8 @@ async def test_a_driver_off_the_server_is_ordered_by_the_name_the_bot_holds(
     is a fake driver too, or a real driver who has left the server, named by their signup. The
     sheet lists Alpha before Zulu, by the name the bot holds for each (image spec, "The name of a
     person"), and not by account number, which sorts the other way (111 sorts before both 333 and
-    "Alpha"): on the opening sheet, within a team, and after a round, among drivers level on
-    points."""
+    "Alpha"): on the opening sheet, within a team, and after a round and on the final sheet,
+    among drivers level on points."""
     from types import SimpleNamespace
 
     from leaguebot.core.models.driver_names import SignupName, SignupNames
