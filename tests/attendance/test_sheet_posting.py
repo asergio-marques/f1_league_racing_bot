@@ -386,6 +386,10 @@ CONVERTER_ABSENT_REMEDY = (
 )
 
 
+#: How the sync's job lines open: Alex, as `_sync_pro` names him, and the command he ran.
+_SYNC_OPENING = "Alex (`<@4242>`) | `/attendance sync` | "
+
+
 @pytest.mark.parametrize("kind, detail", [
     ("TEMPLATE_INVALID", SHEET_RENDER_FAULT),
     pytest.param("CONVERTER_ABSENT", CONVERTER_ABSENT_WORDS),
@@ -427,11 +431,8 @@ async def test_a_sheet_s_render_fault_is_named_as_the_attendance_sheet_image(
     assert league.channel(SHEET).files[-1] is None
     log = await _said(league)
     [line] = [line for line in log.splitlines() if detail in line]
-    assert line.count(" | ") >= 2, line
-    named, what, said = line.split(" | ", 2)
-    assert "<@4242>" in named and "/attendance sync" in what, line
-    assert said.startswith(
-        "⚠️ Attendance sheet image — Season 3 Pro — attendance after round 1"
+    assert line.startswith(
+        f"{_SYNC_OPENING}⚠️ Attendance sheet image — Season 3 Pro — attendance after round 1"
     ), line
     assert "Results image" not in log, log
     if kind == "CONVERTER_ABSENT":
