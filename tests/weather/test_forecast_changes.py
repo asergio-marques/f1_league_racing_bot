@@ -45,6 +45,7 @@ from tests.support.season_league import (
     round_id,
     run_division_channel_command,
 )
+from tests.support.settings_league import unruled
 from tests.support.switches import answer_switch
 
 #: The kind of a forecast's change.
@@ -344,7 +345,17 @@ FORECAST_NOTICE = "no `weather_icon` image for “Heavy rain”"
 FORECAST_FAULT = "the template declares no `phase` field"
 
 
-@pytest.mark.parametrize("outcome", ["notice", "fault"])
+#: Why the forecast's notice case fails until #635 is built.
+NOT_YET_FRAMED = (
+    "#635: a forecast's notices reach the log as a bare block headed by the kind's code and "
+    "naming the template, the member and the change unnamed"
+)
+
+
+@pytest.mark.parametrize("outcome", [
+    pytest.param("notice", marks=pytest.mark.xfail(strict=True, reason=NOT_YET_FRAMED)),
+    "fault",
+])
 async def test_a_refused_forecast_s_picture_line_reaches_the_log_once_when_it_is_retried(
     tmp_path, outcome,
 ):
@@ -353,7 +364,10 @@ async def test_a_refused_forecast_s_picture_line_reaches_the_log_once_when_it_is
     refuses the forecast's post, and the queue stops at it; Discord then accepts, Retry is pressed
     and the forecast goes out as text. The notice, or the picture's "⚠️ Weather image" fault line,
     reaches the log channel once, as it does when the forecast posts at the first try: never lost
-    with the refused post, and never twice."""
+    with the refused post, and never twice. The notice's block opens with the bot and the change
+    ("drawing the Phase 1 forecast of round 3 in **Pro**"), then "Image render notices — round 3
+    in **Pro**, phase 1:", and the notice grouped beneath "Artwork not supplied by the league",
+    naming its field, with no kind code and no template name (issue #635; Constitution V)."""
     from leaguebot.image.models.image_module import Problem, RenderNotice, RenderOutcome
 
     league = await _league(tmp_path)
@@ -387,6 +401,15 @@ async def test_a_refused_forecast_s_picture_line_reaches_the_log_once_when_it_is
     if outcome == "fault":
         [line] = [line for line in said.splitlines() if FORECAST_FAULT in line]
         assert line.startswith("⚠️ Weather image — "), line
+    else:
+        [block] = [each for each in league.bot.log_channel.sent if FORECAST_NOTICE in each]
+        assert unruled(block).splitlines() == [
+            "the bot | drawing the Phase 1 forecast of round 3 in **Pro** | Image render "
+            "notices — round 3 in **Pro**, phase 1:",
+            "  Artwork not supplied by the league",
+            f"    • `weather_icon` — {FORECAST_NOTICE}",
+        ], block
+        assert "ASSET_FALLBACK_USED" not in block and "weather_p1_template" not in block, block
 
 
 @pytest.mark.parametrize("phase", [1, 2, 3])
