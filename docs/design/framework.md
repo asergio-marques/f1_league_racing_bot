@@ -348,8 +348,9 @@ attendance sheet keep that channel beside the id (`*_message_channel_id`), their
 back as `old_channel_id` and `replaced` plans the delete in `posted_in` of it. Weather's forecast
 (`forecast_messages.channel_id`), a review's sheet and lineup, a results table, a round's standings,
 a classification, the Sign Up button and the closed notice call `posted_in` themselves: results
-through `_deletes`, from `PostedTable.old_channel_id`, and signup straight into the payload of its
-delete. Where none was recorded the delete falls back to the present channel, and no constraint pairs an id with
+through `_deletes`, from `PostedTable.old_channel_id`, where a post is replaced, and from the
+recorded column where the switch-off, the purge or a resubmission takes one down; signup straight
+into the payload of its delete. Where none was recorded the delete falls back to the present channel, and no constraint pairs an id with
 its channel; `posted_in`'s docstring holds the reasons, and
 `test_replaced_plans_one_delete_of_the_old_message_in_the_channel_it_was_posted_in` pins the
 fallback.
