@@ -207,9 +207,17 @@ def _packaged_directory(asset_class: str) -> Path | None:
 
 def _template_words(image_type: str) -> str:
     """The template as a league reads it, "the calendar template": a notice's lines never carry
-    the template's internal key, so its own words say which template to put right."""
+    the template's internal key, so its own words say which template to put right. A label of
+    two parts is turned about as a league says it, "the race results template" and "the drivers'
+    standings template", not "the results — race template"."""
     label = TEMPLATE_LABELS.get(image_type)
-    return f"the {label.lower()} template" if label else "the template"
+    if label is None:
+        return "the template"
+    group, dash, part = label.lower().partition(" — ")
+    if not dash:
+        return f"the {group} template"
+    possessive = "'" if group == "standings" else ""
+    return f"the {part}{possessive} {group} template"
 
 
 def _mandatory_ids(spec: FillSpec) -> frozenset[str]:
