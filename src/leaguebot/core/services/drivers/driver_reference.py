@@ -27,9 +27,12 @@ from leaguebot.core.utils.input_validator import parse_user
 from leaguebot.framework.db.database import get_connection
 from leaguebot.framework.utils.hooks import AwaitedHook
 
+#: What is said of text naming no driver, naming what was typed.
+NO_DRIVER_FOUND = "No driver found for `{text}`."
+
 #: What a command refuses text naming no driver with, naming what was typed.
 NO_DRIVER = (
-    "⛔ No driver found for `{text}`. Give a mention or an ID of any account the driver has held."
+    f"⛔ {NO_DRIVER_FOUND} Give a mention or an ID of any account the driver has held."
 )
 
 #: The most choices Discord shows for one autocomplete.

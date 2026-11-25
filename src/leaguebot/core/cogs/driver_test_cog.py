@@ -6,7 +6,8 @@ member one (`driver_cog`): the same commands at the same tiers, each driver fiel
 taking a mention or an ID, with the server's drivers offered by name as it is typed. The text is
 resolved to a driver through any account they have held (`driver_reference`), and what the command
 then does is `driver_commands`', as for the member group, so a fake driver is acted on as a real
-one is.
+one is. `/driver assign-bulk` takes a mention a line in its pasted list, as the member group does,
+and finds each through `resolve_driver`.
 
 **Which group the server shows is the swap's** (`test_mode/driver_commands.py`): the member group is
 global and this one is put on the league's server only while test mode is on. So that the two never
@@ -24,6 +25,7 @@ from leaguebot.core.cogs import driver_commands
 from leaguebot.core.cogs.driver_commands import ResolvedDriver
 from leaguebot.core.services.drivers.driver_reference import (
     NO_DRIVER,
+    NO_DRIVER_FOUND,
     DriverReference,
     driver_choices,
     reference_name,
@@ -187,6 +189,38 @@ class DriverTestCog(commands.Cog):
         if driver is None:
             return
         await driver_commands.assign(self.bot, interaction, driver, division, team)
+
+    # ------------------------------------------------------------------
+    # /driver assign-bulk
+    # ------------------------------------------------------------------
+
+    async def _resolve_pasted(
+        self, interaction: discord.Interaction, account: int
+    ) -> ResolvedDriver | str:
+        """The driver a pasted mention names, found as a typed field is (`resolve_driver`), or the
+        words that say none was found. The paste takes mentions only, so the words do not invite an
+        ID."""
+        reference = await resolve_driver(self.bot.db_path, str(account))
+        if reference is None:
+            return NO_DRIVER_FOUND.format(text=account)
+        return ResolvedDriver(reference.discord_user_id, await self._name_of(interaction, reference))
+
+    @driver.command(
+        name="assign-bulk",
+        description="Assign many drivers to teams and divisions from a pasted list.",
+    )
+    @league_manager_only
+    async def assign_bulk(self, interaction: discord.Interaction) -> None:
+        """Open the form that takes the list, a driver a line (`driver_commands.assign_bulk`).
+
+        Not deferred: a form is the interaction's first response, which a deferral forbids; so
+        test mode is read before it opens, and a refusal is the interaction's first reply.
+        """
+        if not await self._test_mode_on(interaction):
+            return
+        await interaction.response.send_modal(
+            driver_commands.AssignBulkModal(self.bot, self._resolve_pasted)
+        )
 
     # ------------------------------------------------------------------
     # /driver unassign

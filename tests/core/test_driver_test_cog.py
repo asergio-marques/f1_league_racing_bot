@@ -21,9 +21,6 @@ GHOST = 9000000000000000001
 GHOST_PROFILE = 90
 TESTER = 104
 
-#: Why the tests of the test-mode `/driver assign-bulk` fail until #633 is built.
-NO_BULK = "#633: the test-mode /driver group has no assign-bulk"
-
 
 async def _league(tmp_path, *, test_mode: bool = True, ongoing: bool = False):
     """The league of the module docstring: Tester named, Ghost and Valtteri Unassigned."""
@@ -281,10 +278,7 @@ async def _assign_bulk_while_off(league):
     "name, give",
     [
         pytest.param("assign", _assign_while_off, id="assign"),
-        pytest.param(
-            "assign-bulk", _assign_bulk_while_off, id="assign-bulk",
-            marks=pytest.mark.xfail(strict=True, reason=NO_BULK),
-        ),
+        pytest.param("assign-bulk", _assign_bulk_while_off, id="assign-bulk"),
     ],
 )
 async def test_a_test_mode_command_given_while_test_mode_is_off_is_refused(tmp_path, name, give):
@@ -310,7 +304,6 @@ async def test_a_test_mode_command_given_while_test_mode_is_off_is_refused(tmp_p
     assert await change_rows(league.db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NO_BULK)
 async def test_fake_drivers_pasted_by_mention_are_placed(tmp_path):
     """Test mode is on and the season in Placements; McLaren in Am and Ferrari in Pro each have a
     third seat free. Admin runs the test-mode `/driver assign-bulk` and pastes two lines, each
@@ -353,7 +346,6 @@ async def test_fake_drivers_pasted_by_mention_are_placed(tmp_path):
     assert last_said(asked) == "✅ Assigned **2** driver(s)."
 
 
-@pytest.mark.xfail(strict=True, reason=NO_BULK)
 async def test_a_pasted_mention_naming_no_driver_is_refused_as_a_numbered_line(tmp_path):
     """Test mode is on and the season in Placements; McLaren in Am has a third seat free. Admin
     runs the test-mode `/driver assign-bulk` and pastes Ghost into McLaren in Am, then a mention
@@ -386,7 +378,6 @@ async def test_a_pasted_mention_naming_no_driver_is_refused_as_a_numbered_line(t
 
 
 
-@pytest.mark.xfail(strict=True, reason=NO_BULK)
 async def test_a_real_driver_pasted_beside_a_fake_one_is_refused(tmp_path):
     """Test mode is on and the season in Placements; McLaren in Am has a third seat free. Admin
     runs the test-mode `/driver assign-bulk` and pastes Ghost, a fake driver, into McLaren in Am,
@@ -530,7 +521,6 @@ async def test_both_groups_load_and_the_global_tree_carries_the_member_group(tmp
     assert bot.tree.get_command("driver") is member_cog.driver
 
 
-@pytest.mark.xfail(strict=True, reason=NO_BULK)
 async def test_both_driver_groups_carry_the_same_commands():
     """The member `/driver` group and the test-mode one, each made for one bot: they carry the
     same commands by name, `assign-bulk` among them, so that whichever group the server shows, a
