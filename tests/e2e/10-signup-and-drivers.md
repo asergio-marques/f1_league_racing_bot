@@ -817,9 +817,6 @@ Every answer in this part is given in `#wade-walsh-signup`, as you.
       that step records.
     - **Posts** (`#bot-commands`, public), in this order:
       - `🎨 Drawing the graphics for this review — one moment.`, deleted once the picture is up;
-      - `🏎️ **Lineup**` with a PNG: Division 2's lineup as it will stand, `Bravo Motorsport`
-        holding Wade Walsh and Yuri Yashin and `Charlie GP` Aaron Abbott and Zeno Zappa, each by
-        name;
       - the report, opening:
         ```
         **Placements Review (Season #1) — mid-season**
@@ -831,7 +828,11 @@ Every answer in this part is given in `#wade-walsh-signup`, as you.
         ```
         then Division 1's lineup as text, which no new driver touches: `📂 **Division 1** — lineup
         once confirmed`, then a line per team, `  **<shorthand>**: <@<ID>> (<driver>), <@<ID>> (<driver>)`,
-        e.g. `  **ALP**: <@9000000000000000001> (Adam Archer), <@9000000000000000002> (Bruno Bianchi)`;
+        e.g. `  **ALP**: <@9000000000000000001> (Adam Archer), <@9000000000000000002> (Bruno Bianchi)`,
+        then Division 2's heading alone, `📂 **Division 2** — lineup once confirmed`;
+      - directly under that heading, `🏎️ **Lineup**` with a PNG: Division 2's lineup as it will
+        stand, `Bravo Motorsport` holding Wade Walsh and Yuri Yashin and `Charlie GP` Aaron Abbott
+        and Zeno Zappa, each by name; the notice above is deleted once it is up;
       - last, the question, with a **✅ Confirm placements** button:
         ```
         📋 **Do you confirm these placements?**
