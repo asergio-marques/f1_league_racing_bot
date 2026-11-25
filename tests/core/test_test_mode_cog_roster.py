@@ -125,7 +125,7 @@ async def db_path(tmp_path):
         division_id = cursor.lastrowid
         cursor = await db.execute(
             "INSERT INTO team_instances (division_id, name, full_name, max_seats, is_reserve) "
-            "VALUES (?, 'Redline', 'Redline', 2, 0)",
+            "VALUES (?, 'RDL', 'Redline Racing', 2, 0)",
             (division_id,),
         )
         team_id = cursor.lastrowid
@@ -165,7 +165,7 @@ async def _add(cog, *, name="Mock Alpha"):
     return result
 
 
-async def _seat(cog, driver, *, team="Redline") -> None:
+async def _seat(cog, driver, *, team="RDL") -> None:
     """Seat *driver* in the first free seat of *team* in Division 1, committed, as `/driver
     assign` and the placements' commit leave a driver."""
     async with get_connection(cog.bot.db_path) as db:
@@ -574,15 +574,16 @@ class TestRosterListShowsIt:
         assert "—" in line
 
     async def test_a_seated_driver_shows_its_team_and_division(self, cog):
-        """Mock Alpha is seated at Redline in Division 1, as `/driver assign` and the placements'
-        commit leave a driver: its line shows Redline and Division 1, and its state Assigned."""
+        """Mock Alpha is seated at Redline Racing (shorthand RDL) in Division 1, as `/driver
+        assign` and the placements' commit leave a driver: its line shows the seat as `RDL =
+        Redline Racing (Division 1)`, so the shorthand a results paste takes can be copied from
+        it, and its state Assigned."""
         driver = await _add(cog, name="Mock Alpha")
         await _seat(cog, driver)
 
         line = _line_of(await self._list(cog), "Mock Alpha")
 
-        assert "Redline" in line
-        assert "Division 1" in line
+        assert "RDL = Redline Racing (Division 1)" in line
         assert "Assigned" in line
 
     async def test_a_division_named_lists_only_the_drivers_seated_in_it(self, cog):
