@@ -37,6 +37,7 @@ from tests.support.change_queue import (
     league_bot,
     league_queue,
     member_interaction,
+    retry_job,
     run_queue,
     seed_server,
     step_rows,
@@ -197,6 +198,18 @@ async def _jobs(league: _League) -> dict[str, dict[str, Any]]:
     return {job["name"]: job for job in await step_rows(league.db_path, change["id"])}
 
 
+async def _set_signup_channel(league: _League, channel_id: int) -> None:
+    """`/signup channel` sets the signup channel to *channel_id*, as the configuration records it."""
+    async with get_connection(league.db_path) as db:
+        await db.execute("UPDATE signup_module_config SET signup_channel_id = ?", (channel_id,))
+        await db.commit()
+
+
+def _sent_in(league: _League, channel_id: int) -> list[int]:
+    """The ids of the messages the bot posted in *channel_id*, in order."""
+    return [mid for kind, cid, mid in league.events if kind == "send" and cid == channel_id]
+
+
 def _refuse_posts(league: _League) -> None:
     league.signup.send_fails = http_error(discord.Forbidden, status=403,
                                           text="Missing Permissions")
@@ -221,14 +234,23 @@ async def test_signup_open_is_acknowledged_and_posts_the_information_with_its_bu
     assert await stopped_job(league.db_path) is None
 
 
-async def test_the_window_is_opened_in_the_record_of_the_post_that_shows_it(tmp_path):
-    """Manager 77 runs `/signup open`. Until the queue runs, signups stay closed and the season
-    waits. When it runs, the `post_info` job is done, and with it the window is recorded open,
-    the Sign Up button's message id kept with the channel it was posted in (620), the season
-    moved to SIGNUPS and the SIGNUP_OPEN audit row written naming him."""
+@pytest.mark.parametrize("asked_in", [
+    pytest.param(SIGNUP_CHANNEL, id="as asked"),
+    pytest.param(OLD_SIGNUP_CHANNEL, id="the signup channel moved after the ask"),
+])
+async def test_the_window_is_opened_in_the_record_of_the_post_that_shows_it(tmp_path, asked_in):
+    """Manager 77 runs `/signup open` while the signup channel is *asked_in*: 620, or 621 before
+    `/signup channel` moves it to 620 ahead of the queue running. Until the queue runs, signups
+    stay closed and the season waits. When it runs, the `post_info` job is done, the information
+    is posted in the signup channel as it stands then (620) and nothing in 621, and with it the
+    window is recorded open, the Sign Up button's message id kept with the channel it was posted
+    in (620), his reply naming 620, the season moved to SIGNUPS and the SIGNUP_OPEN audit row
+    written naming him."""
     league = await _league(tmp_path)
+    await _set_signup_channel(league, asked_in)
 
-    await _open(league)
+    interaction = await _open(league)
+    await _set_signup_channel(league, SIGNUP_CHANNEL)
 
     assert not (await league.config())["signups_open"]
     assert await league.stage() == "WAITING"
@@ -242,6 +264,8 @@ async def test_the_window_is_opened_in_the_record_of_the_post_that_shows_it(tmp_
     assert config["signups_open"]
     assert config["signup_button_message_id"] == posted.id
     assert config["signup_button_message_channel_id"] == SIGNUP_CHANNEL
+    assert _sent_in(league, OLD_SIGNUP_CHANNEL) == []
+    assert f"<#{SIGNUP_CHANNEL}>" in updated_reply(interaction)
     assert await league.stage() == "SIGNUPS"
     [audit] = await league.audits()
     assert str(audit["actor_id"]) == "77"
@@ -310,6 +334,34 @@ async def test_a_refused_information_post_stops_the_queue_with_signups_still_clo
     assert config["signup_button_message_id"] is None
     assert await league.stage() == "WAITING"
     assert await league.audits() == []
+
+
+async def test_a_stopped_information_post_retried_after_the_channel_is_set_posts_in_the_new_channel(
+    tmp_path,
+):
+    """The signup channel is 621, where Discord refuses every post. Manager 77 runs `/signup open`
+    and the queue stops at `post_info`. `/signup channel` sets the signup channel to 620 and a
+    league manager presses Retry: the information is posted in 620, the window recorded open with
+    the button kept against 620, and nothing is posted in 621."""
+    league = await _league(tmp_path)
+    await _set_signup_channel(league, OLD_SIGNUP_CHANNEL)
+    league.guild.get_channel(OLD_SIGNUP_CHANNEL).send_fails = http_error(
+        discord.Forbidden, status=403, text="Missing Permissions")
+    await _open(league)
+    await run_queue(league.bot)
+    job = await stopped_job(league.db_path)
+    assert job is not None and job["name"] == "post_info"
+
+    await _set_signup_channel(league, SIGNUP_CHANNEL)
+    await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    [posted] = league.posts()
+    config = await league.config()
+    assert config["signups_open"]
+    assert config["signup_button_message_id"] == posted.id
+    assert config["signup_button_message_channel_id"] == SIGNUP_CHANNEL
+    assert _sent_in(league, OLD_SIGNUP_CHANNEL) == []
 
 
 async def test_a_discarded_information_post_leaves_signups_closed(tmp_path):

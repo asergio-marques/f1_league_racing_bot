@@ -15,7 +15,10 @@ is posted. Its jobs are three:
   message stands, so that the channel always shows one or the other.
 
 The command reads the close time and the tracks it was given, which are its own input, and the
-signup channel and the notice standing in it, which the plan of the jobs reads from the payload.
+notice standing in the signup channel, which the plan of the jobs reads from the payload. The
+signup channel itself is read by `post_info` as it runs, never taken from the payload: a
+`/signup channel` run ahead of it on the queue, or run to repair a post Discord refused before
+a Retry, is where the information is posted, the window recorded and the reply points.
 
 `signup.close` closes it again, for `/signup close` (and its Confirm Close), the close timer and
 the restart past the close time. Its jobs, in order, are:
@@ -53,6 +56,7 @@ from leaguebot.framework.models.change import (
     AuditRecord,
     PlannedStep,
     StepKind,
+    StepFailedOnDiscord,
     StepResult,
     Verdict,
 )
@@ -171,8 +175,11 @@ def window_open_change(
 
     The payload is ``track_ids`` (the tracks chosen, ids as text), ``close_at`` (the normalised
     close time or None), and ``channel_id``, ``closed_message_id`` and ``closed_channel_id`` (the
-    signup channel, the "signups closed" notice and the channel that notice was posted in, each or
-    None; the notice is taken down from there, the signup channel since replaced or not).
+    signup channel when the change was asked, the "signups closed" notice and the channel that
+    notice was posted in, each or None; the notice is taken down from there, the signup channel
+    since replaced or not). ``channel_id`` only stands in for a notice that kept no channel and
+    names the channel in a reply whose post kept none: ``post_info`` posts in the signup channel
+    as it stands when the job runs.
     *arm_once* arms the close timer (`window_close.CLOSE_TIMER`) at the close time, and *queue* is
     the change queue the Sign Up button is handed.
     """
@@ -227,8 +234,7 @@ def window_open_change(
 
     def plan(payload: dict[str, Any]) -> tuple[PlannedStep, ...]:
         planned = [PlannedStep(POST_INFO, {
-            "channel_id": payload["channel_id"], "track_ids": list(payload["track_ids"]),
-            "close_at": payload["close_at"],
+            "track_ids": list(payload["track_ids"]), "close_at": payload["close_at"],
         })]
         if payload["close_at"]:
             planned.append(PlannedStep(ARM_CLOSE, {"close_at": payload["close_at"]}))
@@ -246,9 +252,13 @@ def window_open_change(
         payload = ctx.step_payload
         close_at = payload["close_at"]
         track_ids = [str(each) for each in payload["track_ids"]]
+        cfg = await signup.get_config()
+        if cfg is None or cfg.signup_channel_id is None:
+            raise StepFailedOnDiscord("the signup channel could not be found to post in")
+        channel_id = int(cfg.signup_channel_id)
         message_id = await post_information(
             ctx.bot, signup=signup, config=config, queue=queue(),
-            channel_id=int(payload["channel_id"]), track_ids=track_ids, close_at=close_at,
+            channel_id=channel_id, track_ids=track_ids, close_at=close_at,
         )
         audited: dict[str, Any] = {"track_ids": track_ids}
         if close_at:
@@ -259,15 +269,16 @@ def window_open_change(
         if close_at:
             line += f"\n  close_time: {close_at}"
         return StepResult(
-            result={"new": message_id, "channel_id": int(payload["channel_id"])}, lines=(line,),
+            result={"new": message_id, "channel_id": channel_id}, lines=(line,),
             audits=(AuditRecord("SIGNUP_OPEN", "", audited),),
         )
 
     async def record(db: aiosqlite.Connection, ctx: StepContext, result: StepResult) -> None:
         payload = ctx.step_payload
+        posted = result.result or {}
         await signup.set_window_open_on(
-            db, int((result.result or {})["new"]), [str(each) for each in payload["track_ids"]],
-            now=queue().now(), channel_id=int(payload["channel_id"]),
+            db, int(posted["new"]), [str(each) for each in payload["track_ids"]],
+            now=queue().now(), channel_id=int(posted["channel_id"]),
         )
         await advance_on_window_open_on(db)
         if payload["close_at"]:
@@ -304,7 +315,8 @@ def window_open_change(
                 "⚠️ Signups were not opened: the information message could not be posted and "
                 "was discarded. Run `/signup open` again."
             )
-        text = f"✅ Signups opened. Button posted in <#{ctx.payload['channel_id']}>."
+        posted_in = (views[POST_INFO].result or {}).get("channel_id", ctx.payload["channel_id"])
+        text = f"✅ Signups opened. Button posted in <#{posted_in}>."
         close_at = ctx.payload["close_at"]
         if close_at:
             moment = datetime.fromisoformat(close_at)
