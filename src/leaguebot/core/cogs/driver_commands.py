@@ -10,9 +10,19 @@ cog's, and the cogs differ in their fields, not in what they do.
 
 Every body is called with the interaction deferred, but `reassign`'s, which answers a refusal of the
 stage before it has read its parameters.
+
+**`/driver assign-bulk`** (#633) is the one command that is a form: `AssignBulkModal` takes one driver
+a line, `<@id>, division, team`, and `assign_bulk` places the list through one change. A group
+passes the form how to name a pasted mention (`Resolver`), the member group refusing one outside
+the server and swapping a past account for the current one, the test-mode group resolving it as it
+resolves text, so a fake driver can be pasted. The paste is refused in up to three passes, each
+naming every fault of its kind: a line that cannot be read, at the form; a driver, division or team
+that is not found, here; what the seats, the stage and the templates allow, by the change
+(`driver_assign_bulk_change`).
 """
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 import discord
@@ -30,9 +40,20 @@ from leaguebot.core.services.drivers.driver_changes import (
     NOT_PLACING_REFUSAL,
     NOT_UNASSIGNED_REFUSAL,
 )
+from leaguebot.core.services.drivers.driver_assign_bulk_change import (
+    ASSIGN_BULK_COMMAND,
+    ASSIGN_BULK_WHAT,
+    DRIVER_ASSIGN_BULK,
+)
 from leaguebot.core.services.seasons.season_service import SeasonImmutableError
+from leaguebot.core.utils.placement_paste import (
+    PastedPlacement,
+    format_placement_errors,
+    parse_placement_paste,
+)
 from leaguebot.framework.utils.interaction_errors import describe
 from leaguebot.framework.utils.league_bot import LeagueBot
+from leaguebot.framework.utils.league_server import LeagueModal
 from leaguebot.framework.utils.log_lines import refuse
 
 #: The stages `/driver assign` and `/driver unassign` are available in: while the season is built,
@@ -48,6 +69,11 @@ class ResolvedDriver:
 
     account: str
     name: str
+
+
+#: How a group names a pasted mention: the driver it acts on, or the words that say there is none,
+#: which the paste's refusal gives under the line's number.
+Resolver = Callable[[discord.Interaction, int], Awaitable["ResolvedDriver | str"]]
 
 
 async def reassign_stage_ok(bot: LeagueBot, interaction: discord.Interaction) -> bool:
@@ -177,6 +203,130 @@ async def assign(
             "team_full_name": reference.team["full_name"],
         },
         interaction=interaction, what=describe(interaction),
+    )
+
+
+class AssignBulkModal(LeagueModal, title="Assign drivers in bulk"):
+    """The pasted list of placements, a driver a line (`/driver assign-bulk`).
+
+    The paste is read here, and one that cannot be is refused naming every fault with nothing
+    asked of the queue; what it reads is placed by `assign_bulk`.
+    """
+
+    entries: discord.ui.TextInput = discord.ui.TextInput(
+        label="<@driver>, division, team — one per line",
+        style=discord.TextStyle.paragraph,
+        placeholder="<@123456789012345678>, Pro, McLaren\n<@234567890123456789>, Am, Williams",
+        required=True,
+        max_length=4000,
+    )
+
+    def __init__(self, bot: LeagueBot, resolve: Resolver) -> None:
+        super().__init__()
+        self._league_bot = bot
+        self._resolve = resolve
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        # The lines are resolved against the server and the database, which can outrun the three
+        # seconds an interaction may take to be answered.
+        await interaction.response.defer(ephemeral=True)
+        pasted, errors = parse_placement_paste(self.entries.value)
+        if errors:
+            await refuse(
+                interaction,
+                format_placement_errors(errors),
+                what=ASSIGN_BULK_WHAT,
+                reason="\n".join(errors),
+            )
+            return
+        await assign_bulk(self._league_bot, interaction, pasted, self._resolve)
+
+
+async def assign_bulk(
+    bot: LeagueBot,
+    interaction: discord.Interaction,
+    pasted: list[PastedPlacement],
+    resolve: Resolver,
+) -> None:
+    """Place the drivers of a pasted list, in its order, through one change.
+
+    The stage and an archived season refuse the whole paste, once. Otherwise every line's driver,
+    division and team is found, and every line that is not found is named at once; what is found is
+    asked of the queue, which judges the seats, the drivers' states and the templates
+    (`driver_assign_bulk_change`), and places all of the list or none.
+    """
+    season = await bot.season_service.get_setup_or_active_season()
+    if season is None or season.stage not in _PLACING_STAGES:
+        await refuse(
+            interaction,
+            NOT_PLACING_REFUSAL.format(command=ASSIGN_BULK_COMMAND),
+            what=ASSIGN_BULK_WHAT,
+        )
+        return
+    try:
+        await bot.season_service.assert_season_mutable(season)
+    except SeasonImmutableError:
+        await refuse(
+            interaction,
+            "❌ This season is archived (COMPLETED) and cannot be modified.",
+            what=ASSIGN_BULK_WHAT,
+        )
+        return
+
+    signup_on = await bot.module_service.is_enabled("signup")
+    divisions: dict[str, tuple[int, str] | None] = {}
+    lines: list[dict[str, object]] = []
+    faults: list[str] = []
+    for each in pasted:
+        found = await resolve(interaction, each.account)
+        if isinstance(found, str):
+            faults.append(f"Line {each.line}: {found}")
+            continue
+        if each.division not in divisions:
+            divisions[each.division] = await bot.placement_service.resolve_division(
+                season.id, each.division
+            )
+        resolved = divisions[each.division]
+        if resolved is None:
+            faults.append(
+                f"Line {each.line}: Division **{each.division}** not found in the active season."
+            )
+            continue
+        division_id, division_name = resolved
+        reference = await bot.team_service.resolve_division_team(division_id, each.team)
+        if reference.team is None:
+            faults.append(f"Line {each.line}: {reference.refusal}")
+            continue
+        profile = await bot.driver_service.get_profile(found.account)
+        if profile is None and signup_on:
+            faults.append(f"Line {each.line}: No driver profile found for **{found.name}**.")
+            continue
+        lines.append(
+            {
+                "line": each.line,
+                "driver_profile_id": None if profile is None else profile.id,
+                "discord_user_id": found.account,
+                "driver_name": found.name,
+                "division_id": division_id,
+                "division": division_name,
+                "team_name": reference.team["name"],
+                "team_full_name": reference.team["full_name"],
+            }
+        )
+    if faults:
+        await refuse(
+            interaction,
+            format_placement_errors(faults),
+            what=ASSIGN_BULK_WHAT,
+            reason="\n".join(faults),
+        )
+        return
+
+    # The placement is a change on the queue, which judges every line again as it starts.
+    await bot.change_queue.ask(
+        DRIVER_ASSIGN_BULK,
+        {"season_id": season.id, "lines": lines},
+        interaction=interaction, what=ASSIGN_BULK_WHAT,
     )
 
 

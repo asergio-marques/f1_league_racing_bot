@@ -23,9 +23,6 @@ import pytest
 from tests.core.test_driver_assign import _approve_placements, _fill_mclaren, _placing
 from tests.core.test_driver_move import _ADMIN
 
-#: Why every test here fails until #633 is built.
-NOT_BUILT = "#633: there is no /driver assign-bulk"
-
 _KIND = "core.driver_assign_bulk"
 #: Nico's current account, gone from the server, and a past account of his still in it.
 _NICO, _NICO_PAST = 109, 110
@@ -145,7 +142,6 @@ async def _assign_entries(league) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_clean_paste_seats_every_driver_in_one_save_in_list_order(tmp_path):
     """The season is in Placements. The league admin Admin (77) runs `/driver assign-bulk` and
     pastes three lines: Valtteri into McLaren in Am, Oscar (a member holding no profile, the signup
@@ -204,7 +200,6 @@ async def test_a_clean_paste_seats_every_driver_in_one_save_in_list_order(tmp_pa
     assert last_said(asked) == "✅ Assigned **3** driver(s)."
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_with_signup_off_a_member_with_no_profile_is_placed_and_given_one(tmp_path):
     """The season is in Placements and the signup module is off. Oscar, a member of the server
     holding no profile, is pasted twice: into Williams in Am and into Alpine in Pro. The queue runs
@@ -275,7 +270,6 @@ async def _as_built(_league):
     pass
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 @pytest.mark.parametrize(
     "arrange, second, reason",
     [
@@ -349,7 +343,6 @@ async def test_a_refused_line_places_nobody(tmp_path, arrange, second, reason):
     assert "refused" in line
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 @pytest.mark.parametrize(
     "paste, refused",
     [
@@ -388,7 +381,6 @@ async def test_every_refused_line_is_named_at_once(tmp_path, paste, refused):
 
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_paste_is_placed_while_placements_are_open_mid_season(tmp_path):
     """The season is Ongoing with placements open: Lewis's seat at Ferrari in Pro is confirmed,
     Max's beside him and Charles's at McLaren in Am are not. The league admin pastes Valtteri
@@ -438,7 +430,6 @@ async def _standings_room_for_one_more(league):
     league.bot.image_drawing.standings_capacity_problem = AsyncMock(side_effect=_problem)
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_paste_that_together_outgrows_a_graphic_is_refused(tmp_path):
     """The season is in Placements, and the driver standings template can draw one more race
     driver of Am and no more. The league admin pastes Valtteri into McLaren in Am and Oscar into
@@ -463,7 +454,6 @@ async def test_a_paste_that_together_outgrows_a_graphic_is_refused(tmp_path):
     assert await change_rows(league.db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_refusal_too_long_for_one_message_arrives_in_parts(tmp_path):
     """The season is in Placements. The league admin pastes eighty lines, each putting Oscar into
     a team Haas of Am, which does not exist: a paste the form's 4000-character box takes. Every
@@ -497,7 +487,6 @@ async def _archive(league):
     league.bot.season_service.assert_season_mutable = AsyncMock(side_effect=SeasonImmutableError())
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 @pytest.mark.parametrize(
     "arrange, words",
     [
@@ -528,7 +517,6 @@ async def test_a_refusal_of_the_whole_paste_is_said_once(tmp_path, arrange, word
     assert await change_rows(league.db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 @pytest.mark.parametrize(
     "meanwhile, words",
     [
@@ -568,7 +556,6 @@ async def test_a_paste_is_judged_again_as_it_starts(tmp_path, meanwhile, words):
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_fault_in_the_save_places_nobody(tmp_path):
     """The season is in Placements. The league admin pastes Valtteri into McLaren in Am and Oscar
     into Williams in Am, and as the queue runs it the database fails writing an audit entry.
@@ -604,7 +591,6 @@ async def test_a_fault_in_the_save_places_nobody(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_command_opens_the_form_without_deferring(tmp_path):
     """The league admin runs `/driver assign-bulk`. The form opens as the interaction's first
     response, which a deferral would forbid, so the command does not defer."""
@@ -617,7 +603,6 @@ async def test_the_command_opens_the_form_without_deferring(tmp_path):
     opened.response.defer.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_form_stays_within_discord_s_limits(tmp_path):
     """The form `/driver assign-bulk` opens: Discord refuses a form whose title or label runs past
     45 characters, or whose placeholder runs past 100, with an error rather than a message. Its
@@ -634,7 +619,6 @@ async def test_the_form_stays_within_discord_s_limits(tmp_path):
     assert box.max_length == 4000
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_submission_defers_before_it_replies(tmp_path):
     """The league admin submits a paste of Valtteri into McLaren in Am. The form's interaction is
     deferred before anything else is said to it, as the lines are resolved against the server
@@ -667,7 +651,6 @@ async def test_a_submission_defers_before_it_replies(tmp_path):
     asked.response.send_message.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_paste_that_cannot_be_read_is_refused_at_the_form(tmp_path):
     """The league admin pastes three lines: Valtteri with a division but no team, a bare Discord
     ID in place of a mention, and Oscar into Williams in Am. The form refuses the paste, naming

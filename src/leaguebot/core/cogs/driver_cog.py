@@ -178,6 +178,38 @@ class DriverCog(commands.Cog):
         await driver_commands.assign(self.bot, interaction, driver, division, team)
 
     # ------------------------------------------------------------------
+    # /driver assign-bulk
+    # ------------------------------------------------------------------
+
+    async def _resolve_pasted(
+        self, interaction: discord.Interaction, account: int
+    ) -> ResolvedDriver | str:
+        """The driver a pasted mention names, as a command acts on them, or the words that say
+        why not: the account's driver is found by the current account they use now, which
+        must be in the server, whichever account was pasted."""
+        current = await self.bot.driver_service.current_account(account)
+        member, fault = await self._member_of_current_account(
+            interaction.guild, account, current
+        )
+        if member is None:
+            return fault or NOT_A_MEMBER.format(account=account)
+        return ResolvedDriver(str(member.id), member.display_name)
+
+    @driver.command(
+        name="assign-bulk",
+        description="Assign many drivers to teams and divisions from a pasted list.",
+    )
+    @league_manager_only
+    async def assign_bulk(self, interaction: discord.Interaction) -> None:
+        """Open the form that takes the list, a driver a line (`driver_commands.assign_bulk`).
+
+        Not deferred: a form is the interaction's first response, which a deferral forbids.
+        """
+        await interaction.response.send_modal(
+            driver_commands.AssignBulkModal(self.bot, self._resolve_pasted)
+        )
+
+    # ------------------------------------------------------------------
     # /driver unassign
     # ------------------------------------------------------------------
 
