@@ -423,21 +423,48 @@ async def test_a_discarded_carried_table_ends_the_carry_incomplete(tmp_path):
     assert OLD_RESULTS in league.channel(RESULTS_CHANNEL).messages
 
 
+#: The channel Pro's results channel is set to again while its carry waits.
+MOVED_AGAIN = 706
+
+
+async def _results_switched_off(league: ReviewLeague) -> None:
+    """A league admin switches the Results & Standings module off."""
+    await _write(league, "UPDATE results_module_config SET module_enabled = 0 WHERE id = 1")
+    answer_switch(league.bot.module_service, "results", False)
+
+
+async def _moved_again(league: ReviewLeague) -> None:
+    """Pro's results channel is set again, to channel 706, which stands on the server."""
+    league.channels[MOVED_AGAIN] = channel(MOVED_AGAIN, league.events)
+    league.channels[MOVED_AGAIN].guild = league.guild
+    await _write(
+        league, "UPDATE division_results_config SET results_channel_id = ? WHERE division_id = ?",
+        MOVED_AGAIN, DIVISION_ID,
+    )
+
+
 @pytest.mark.xfail(strict=True, reason=NOT_DROPPED)
-async def test_a_carry_an_amendment_opens_ahead_of_is_dropped_with_its_line(tmp_path):
+@pytest.mark.parametrize("meanwhile,words", [
+    pytest.param(_amendment_opens, ("amend",), id="an amendment opens"),
+    pytest.param(_results_switched_off, ("off", "disabled", "not enabled"),
+                 id="results is switched off"),
+    pytest.param(_moved_again, ("changed", f"<#{MOVED_AGAIN}>"), id="the channel moves again"),
+])
+async def test_a_carry_no_longer_due_is_dropped_with_its_line(tmp_path, meanwhile, words):
     """The league's lane is stopped at a job of another change. Admin moves Pro's results channel
     from 700 to 703: the setting runs past the stop and saves 703, and its carry waits behind the
-    stop. Meanwhile an amendment of round 3 opens in channel 705. Once the stop is retried and
-    the queue moves, the carry is dropped as no longer due: nothing is posted to 703, the old
-    table 8800 still stands in 700, and a new line in the log channel says so, naming the
-    amendment."""
+    stop. Meanwhile an amendment of round 3 opens in channel 705; or a league admin switches the
+    Results & Standings module off; or Pro's results channel is set again, to 706. Once the stop is
+    retried and the queue moves, the carry is dropped as no longer due: nothing is posted to 703,
+    the old table 8800 still stands in 700, and a new line in the log channel says the posts stay
+    in <#700> and why: naming the amendment, the module switched off, or the channel changed."""
     league = await _league(tmp_path)
     holder = await block_queue(league)
     await _move(league, "results")
     await run_queue(league.bot)
     assert await _held(league, "results") == NEW_RESULTS
     assert await _carries(league)
-    await _amendment_opens(league)
+    await meanwhile(league)
     since = len(league.bot.log_channel.sent)
 
     holder["fail"] = False
@@ -447,7 +474,7 @@ async def test_a_carry_an_amendment_opens_ahead_of_is_dropped_with_its_line(tmp_
     assert league.sent_to(NEW_RESULTS) == []
     assert OLD_RESULTS in league.channel(RESULTS_CHANNEL).messages
     lines = _lines(league, since)
-    assert any("amend" in line.lower() and f"<#{RESULTS_CHANNEL}>" in line
+    assert any(f"<#{RESULTS_CHANNEL}>" in line and any(word in line.lower() for word in words)
                for line in lines), lines
 
 
