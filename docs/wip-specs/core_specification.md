@@ -175,6 +175,8 @@ it only to place it; the rules governing it belong to its own specification.
     - Nothing done while a module was disabled shall be recorded as that module's work, so that enabling the module later does not find its work already done.
 - Disabling a module shall stop that module's work and no other's. Scheduled work belonging to a module that remains enabled shall continue for every round still to come, and shall be cancelled only by its own module being disabled, by the round or season it belongs to ending, or by a pack or a factory reset. Where a module's specification states that another module depends upon it, disabling it shall disable the dependent module too, and that cascade shall be reported.
 - Which modules are enabled shall be displayed in the configuration review and the placements review.
+    - Each review shall also say, for each module, until when it may be switched on and until when off, in the same words in both reviews.
+    - The placements review run while the season is in Ongoing, placements confirms no module choice, and shall not list the modules.
 - Seasons, divisions, rounds, tracks, teams and drivers are foundational and shall not be disabled.
 - Stewarding, statistics and help are recorded as intended modules and are not built.
 
