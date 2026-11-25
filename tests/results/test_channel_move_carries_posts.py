@@ -253,7 +253,8 @@ async def test_a_standings_move_carries_each_round_s_standings_to_the_new_channe
     standings channel to 704, and the queue runs. The reply says the channel was updated and that
     the standings already up are being moved; round 3's standings go up in 704 before round 4's,
     each before its old message is deleted from 701, which ends empty, and the rounds record the
-    new messages. No results job runs, nothing is posted to 700, and the carry is done."""
+    new messages. No results job runs, nothing is posted to 700, the carry is done, and its line
+    is a Success naming both channels."""
     from leaguebot.results.services.publishing.results_post_service import (
         get_standings_message_id,
     )
@@ -284,6 +285,11 @@ async def test_a_standings_move_carries_each_round_s_standings_to_the_new_channe
     assert league.sent_to(RESULTS_CHANNEL) == []
     assert not [row for row in await step_rows(league.db_path)
                 if row["name"] == "post_session_results"]
+    lines = _lines(league)
+    carried = [line for line in lines
+               if "| Success" in line and "/results channel standings" not in line]
+    assert any(str(STANDINGS_CHANNEL) in line and str(NEW_STANDINGS) in line
+               for line in carried), lines
 
 
 @pytest.mark.xfail(strict=True, reason=NOT_REFUSED)
@@ -291,8 +297,11 @@ async def test_a_standings_move_carries_each_round_s_standings_to_the_new_channe
 async def test_a_move_while_an_amendment_is_open_is_refused(tmp_path, which):
     """An amendment of round 3 is open in channel 705. Admin moves Pro's results (or standings)
     channel away from 700 (or 701), which still stands, and the queue runs. The move is refused:
-    the reply names the amendment and its channel, the division keeps its old channel, no carry
-    is asked, and nothing is posted to the new channel."""
+    the reply names the amendment and its channel and says how it ends (approved, or undone once
+    its time has run out), the division keeps its old channel, no carry is asked, and
+    nothing is posted to the new channel."""
+    from leaguebot.results.services.round_amendment.amendment_writes import amendment_wait_text
+
     league = await _league(tmp_path)
     await _amendment_opens(league)
     old, new, _column = MOVES[which]
@@ -302,6 +311,7 @@ async def test_a_move_while_an_amendment_is_open_is_refused(tmp_path, which):
 
     reply = last_said(interaction)
     assert "amend" in reply.lower() and f"<#{AMEND_CHANNEL}>" in reply, reply
+    assert amendment_wait_text() in reply, reply
     assert await _held(league, which) == old
     assert await _carries(league) == []
     assert league.sent_to(new) == []
@@ -312,8 +322,9 @@ async def test_a_move_while_an_amendment_is_open_is_refused(tmp_path, which):
 async def test_a_move_while_the_season_is_pending_completion_is_refused(tmp_path, which):
     """Every division has finished and the season stands at Pending completion. Admin moves Pro's
     results (or standings) channel away from 700 (or 701), which still stands, and the queue runs.
-    The move is refused: the reply says the season is pending completion, the division keeps its
-    old channel, no carry is asked, and nothing is posted to the new channel."""
+    The move is refused: the reply says the season is pending completion and that the refusal
+    lifts once the season is completed, the division keeps its old channel, no carry is asked,
+    and nothing is posted to the new channel."""
     league = await _league(tmp_path)
     await _pending_completion(league)
     old, new, _column = MOVES[which]
@@ -323,6 +334,7 @@ async def test_a_move_while_the_season_is_pending_completion_is_refused(tmp_path
 
     reply = last_said(interaction)
     assert "pending completion" in reply.lower(), reply
+    assert "complete" in reply.lower().replace("pending completion", ""), reply
     assert await _held(league, which) == old
     assert await _carries(league) == []
     assert league.sent_to(new) == []
