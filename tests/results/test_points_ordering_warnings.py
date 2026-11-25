@@ -196,7 +196,11 @@ async def test_warnings_are_silent_on_a_table_running_down(db_path):
     ("first", "second", "expected"),
     [
         (10, 25, "position 1 (10 pts) < position 2 (25 pts)"),
-        (25, 25, "position 1 (25 pts) = position 2 (25 pts)"),
+        pytest.param(
+            25,
+            25,
+            "position 1 (25 pts) = position 2 (25 pts)",
+        ),
     ],
     ids=["rise", "tie"],
 )
@@ -367,7 +371,10 @@ async def test_a_bulk_paste_that_applies_nothing_is_not_warned_about(tmp_path):
     ("points", "comparison"),
     [
         (30, "position 1 (25 pts) < position 2 (30 pts)"),
-        (25, "position 1 (25 pts) = position 2 (25 pts)"),
+        pytest.param(
+            25,
+            "position 1 (25 pts) = position 2 (25 pts)",
+        ),
     ],
     ids=["rise", "tie"],
 )
