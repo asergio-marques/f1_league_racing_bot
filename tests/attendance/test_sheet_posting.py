@@ -479,7 +479,7 @@ async def _sheet_notice_is_framed_and_kept(league: Any, interaction: Any) -> Non
     assert "\n\n⚠️ **Image notices**\n" in told, told
     n = league.bot.log_channel.sent.index(block) + 1
     label = drawn.removeprefix("Image render notices — ").removesuffix(":")
-    assert f"  **{label}** ([see them in the log](https://discord.test/{n}))" in told, told
+    assert f"  **{label.replace('**', '')}** ([see them in the log](https://discord.test/{n}))" in told, told
     assert told.count(SHEET_NOTICE) == 1, told
 
 

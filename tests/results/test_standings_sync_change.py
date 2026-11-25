@@ -388,7 +388,7 @@ async def test_a_standings_sync_s_reply_names_the_standings_pictures_drawn_with_
     for n, line in held:
         for block in line.split(opening)[1:]:
             label = block.split(":\n", 1)[0]
-            assert f"  **{label}** ([see them in the log](https://discord.test/{n}))" in told, told
+            assert f"  **{label.replace('**', '')}** ([see them in the log](https://discord.test/{n}))" in told, told
             labelled += 1
     assert labelled == told.count("(["), told
     every = "\n".join(league.bot.log_channel.sent)

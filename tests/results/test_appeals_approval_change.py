@@ -344,7 +344,7 @@ async def test_the_approval_s_reply_names_the_session_picture_drawn_with_notices
         "  Font substituted",
         f"    • `driver_name_1` — {SESSION_NOTICE}",
     ], line
-    assert f"  **{label}** ([see them in the log](https://discord.test/{n}))" in told, told
+    assert f"  **{label.replace('**', '')}** ([see them in the log](https://discord.test/{n}))" in told, told
     assert told.count(SESSION_NOTICE) == 1, told
 
 
