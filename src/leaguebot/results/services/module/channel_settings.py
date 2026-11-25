@@ -91,7 +91,7 @@ def verdicts_division_not_found(name: str) -> str:
     return f'❌ Division "{name}" not found.'
 
 
-async def _held_channel(db_path: str, division_id: int, column: str) -> int | None:
+async def held_channel(db_path: str, division_id: int, column: str) -> int | None:
     """The channel the division's *column* holds now, or None where it holds none."""
     async with get_connection(db_path) as db:
         row = await (await db.execute(
@@ -166,7 +166,7 @@ def _channel_setting(
         if unusable is not None:
             return Verdict.refuse(unusable)
         if held_column is not None:
-            held = await _held_channel(ctx.db_path, division.id, held_column)
+            held = await held_channel(ctx.db_path, division.id, held_column)
             if held is not None and await _stands(ctx.bot, held, (await channel_needs(drawing))[key]):
                 amendment = await open_amendment_in_division(ctx.db_path, division.id)
                 if amendment is not None:
@@ -302,7 +302,7 @@ def results_channel_settings(
 
 
 __all__ = [
-    "NOT_ENABLED", "RESULTS_CHANNEL", "STANDINGS_CHANNEL", "VERDICTS_CHANNEL",
+    "held_channel", "NOT_ENABLED", "RESULTS_CHANNEL", "STANDINGS_CHANNEL", "VERDICTS_CHANNEL",
     "results_channel_settings", "typed_channel_audit", "verdicts_channel_audit",
     "verdicts_division_not_found",
 ]
