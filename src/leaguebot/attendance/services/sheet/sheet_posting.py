@@ -34,7 +34,7 @@ from leaguebot.framework.models.change import (
     StepFailedOnDiscord,
     StepKind,
     StepResult,
-    drawn_lines_kept,
+    drawn_kept,
 )
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
 from leaguebot.framework.services.queue.change_types import (
@@ -46,6 +46,7 @@ from leaguebot.framework.services.switches.module_service import ModuleService
 from leaguebot.core.services.seasons.season_lifecycle_service import require_guild
 from leaguebot.core.services.seasons.season_service import division_first_round
 from leaguebot.framework.utils.league_server import league_guild
+from leaguebot.framework.utils.log_lines import PictureLines, framed_picture_lines
 
 if TYPE_CHECKING:
     from leaguebot.image.services.render.image_drawing import ImageDrawing
@@ -67,6 +68,25 @@ def _sheet_replaced(result: dict[str, Any], division_name: str) -> tuple[Planned
     )
 
 
+def _sheet_pictures(ctx: StepContext, lines: tuple[str, ...] = ()) -> PictureLines:
+    """The lines a sheet job hands back: those an earlier try kept on its stop, then *lines*, the
+    sheet's own, with each picture's notices opened with the member and the change
+    (`framed_picture_lines`)."""
+    return framed_picture_lines(ctx.named, ctx.what, lines, kept=ctx.kept, label="attendance sheet")
+
+
+def _posted_result(posted: dict[str, Any], drawn: PictureLines) -> dict[str, Any]:
+    """A sheet job's result: the sheet posted (`attendance_sheet.sheet_result`), less the lines it
+    wrote, which the job hands back as its own, and with the pictures' notices for the reply."""
+    return {**{key: value for key, value in posted.items() if key != "faults"}, **drawn.result()}
+
+
+def _stop_keeping_pictures(ctx: StepContext, stop: StepFailedOnDiscord) -> StepFailedOnDiscord:
+    """*stop*, the posting's failure, keeping the lines an earlier try kept and this try's own,
+    each picture's notices framed with the member and the change, for the try that posts."""
+    return _sheet_pictures(ctx, drawn_kept(stop.result).lines).carried_by(stop)
+
+
 def sheet_step(
     modules: ModuleService, drawing: ImageDrawing, driver_names_read: AwaitedHook | None = None
 ) -> Step:
@@ -83,24 +103,30 @@ def sheet_step(
     """
 
     async def run(ctx: StepContext) -> StepResult:
-        earlier = drawn_lines_kept(ctx.kept)
         try:
             await standing_posts.remove_kept(ctx.bot, ctx.kept)
         except StepFailedOnDiscord as stop:
-            raise stop.carrying(earlier) from stop.__cause__
+            raise _sheet_pictures(ctx).carried_by(stop) from stop.__cause__
         guild = await league_guild(ctx.bot)
         if guild is None:
             raise GuildUnavailable("the league's server is not in the cache")
         payload = ctx.step_payload or ctx.payload
         sanctioned = {int(each) for each in payload.get("sanctioned") or []}
-        posted = await attendance_sheet.post_attendance_sheet(
-            ctx.bot, guild, ctx.db_path, int(payload["round_id"]), int(payload["division_id"]),
-            sanctioned_profile_ids=sanctioned or None, as_text=ctx.tries > 0,
-            drawing=drawing, driver_names_read=driver_names_read, earlier_lines=earlier,
-        )
+        try:
+            posted = await attendance_sheet.post_attendance_sheet(
+                ctx.bot, guild, ctx.db_path, int(payload["round_id"]),
+                int(payload["division_id"]), sanctioned_profile_ids=sanctioned or None,
+                as_text=ctx.tries > 0, drawing=drawing, driver_names_read=driver_names_read,
+            )
+        except StepFailedOnDiscord as stop:
+            raise _stop_keeping_pictures(ctx, stop) from stop.__cause__
         result = attendance_sheet.sheet_result(posted)
         then = _sheet_replaced(result, str(payload.get("division_name", "the division")))
-        return StepResult(result=result, then=then, lines=attendance_sheet.sheet_lines(result))
+        drawn = _sheet_pictures(ctx, attendance_sheet.sheet_lines(result))
+        return StepResult(
+            result=_posted_result(result, drawn), then=then, lines=drawn.lines,
+            linked=drawn.linked,
+        )
 
     async def record(db: aiosqlite.Connection, ctx: StepContext, result: StepResult) -> None:
         payload = ctx.step_payload or ctx.payload
@@ -185,19 +211,24 @@ def opening_steps(
     for the picture."""
 
     async def run(ctx: StepContext) -> StepResult:
-        earlier = drawn_lines_kept(ctx.kept)
         try:
             await standing_posts.remove_kept(ctx.bot, ctx.kept)
         except StepFailedOnDiscord as stop:
-            raise stop.carrying(earlier) from stop.__cause__
+            raise _sheet_pictures(ctx).carried_by(stop) from stop.__cause__
         guild = await require_guild(ctx.bot)
-        result = await post_opening_sheet(
-            ctx.bot, guild, ctx.db_path, int(ctx.step_payload["division_id"]),
-            as_text=ctx.tries > 0, drawing=drawing, driver_names_read=driver_names_read,
-            earlier_lines=earlier,
-        )
+        try:
+            result = await post_opening_sheet(
+                ctx.bot, guild, ctx.db_path, int(ctx.step_payload["division_id"]),
+                as_text=ctx.tries > 0, drawing=drawing, driver_names_read=driver_names_read,
+            )
+        except StepFailedOnDiscord as stop:
+            raise _stop_keeping_pictures(ctx, stop) from stop.__cause__
         then = _sheet_replaced(result, str(ctx.step_payload.get("division_name", "the division")))
-        return StepResult(result=result, then=then, lines=attendance_sheet.sheet_lines(result))
+        drawn = _sheet_pictures(ctx, attendance_sheet.sheet_lines(result))
+        return StepResult(
+            result=_posted_result(result, drawn), then=then, lines=drawn.lines,
+            linked=drawn.linked,
+        )
 
     async def record(db: aiosqlite.Connection, ctx: StepContext, result: StepResult) -> None:
         await attendance_sheet.record_sheet_on(db, int(ctx.step_payload["division_id"]),
@@ -276,17 +307,21 @@ def final_steps(
     looking the service up on the bot (architecture.md, "How modules and core fit together")."""
 
     async def run(ctx: StepContext) -> StepResult:
-        earlier = drawn_lines_kept(ctx.kept)
         guild = await require_guild(ctx.bot)
         each = ctx.step_payload
-        result = await post_final_sheet(
-            ctx.bot, guild, ctx.db_path, int(each["division_id"]), int(each["round_id"]),
-            as_text=ctx.tries > 0, drawing=drawing, driver_names_read=driver_names_read,
-            earlier_lines=earlier,
-        )
+        try:
+            result = await post_final_sheet(
+                ctx.bot, guild, ctx.db_path, int(each["division_id"]), int(each["round_id"]),
+                as_text=ctx.tries > 0, drawing=drawing, driver_names_read=driver_names_read,
+            )
+        except StepFailedOnDiscord as stop:
+            raise _stop_keeping_pictures(ctx, stop) from stop.__cause__
         # The final sheet stands beside the last round's: nothing is saved for it and nothing
         # deleted, so it plans no deletion and carries no record.
-        return StepResult(result=result, lines=attendance_sheet.sheet_lines(result))
+        drawn = _sheet_pictures(ctx, attendance_sheet.sheet_lines(result))
+        return StepResult(
+            result=_posted_result(result, drawn), lines=drawn.lines, linked=drawn.linked,
+        )
 
     async def still_due(_ctx: StepContext) -> bool:
         return await modules.is_enabled(SWITCH_KEY)

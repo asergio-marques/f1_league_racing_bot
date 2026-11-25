@@ -156,13 +156,6 @@ def _draw_with(league: SeasonLeague, tmp_path: Any, outcome: str) -> None:
     league.bot.image_render_service.render = AsyncMock(return_value=drawn)
 
 
-#: Why the check-in call's notice tests fail until #635 is built.
-NOT_YET_FRAMED = (
-    "#635: a check-in call's notices reach the log as a bare block headed by the kind's code, "
-    "the member and the change unnamed"
-)
-
-
 def _notice_is_framed(league: SeasonLeague) -> None:
     """The log channel carries the call's one notice once, in a block opening with the bot and
     the change it ran for ("posting the check-in call of round 4 in **Pro**"), then "Image render
@@ -181,7 +174,6 @@ def _notice_is_framed(league: SeasonLeague) -> None:
     assert "ASSET_FALLBACK_USED" not in block and "rsvp_template" not in block, block
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_FRAMED)
 async def test_a_check_in_call_s_render_notices_reach_the_log_once_naming_the_round(tmp_path):
     """Pro's round 4's check-in call is drawn, its flag falling back (one render notice), and
     the bot posts the call at its time. The call posts with its picture, and the log channel
@@ -232,7 +224,7 @@ async def test_a_check_in_call_s_render_fault_is_named_as_the_check_in_call_imag
 
 
 @pytest.mark.parametrize("outcome", [
-    pytest.param("notice", marks=pytest.mark.xfail(strict=True, reason=NOT_YET_FRAMED)),
+    "notice",
     "fault",
 ])
 async def test_a_refused_check_in_call_s_picture_line_reaches_the_log_once_when_it_is_retried(

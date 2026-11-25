@@ -585,11 +585,6 @@ _SEASON_SHEETS = {
 
 
 @pytest.mark.parametrize("occasion", ["opening", "final"])
-@pytest.mark.xfail(
-    strict=True,
-    reason="#635: a season sheet's notices reach the log as a bare block, the member and the "
-           "change unnamed, and its job keeps nothing of them for the reply, across a stop or not",
-)
 async def test_a_season_sheet_s_notices_open_with_member_and_change_and_are_kept_across_a_stop(
     tmp_path, monkeypatch, occasion,
 ):

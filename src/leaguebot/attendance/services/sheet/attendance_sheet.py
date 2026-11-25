@@ -382,8 +382,10 @@ def sheet_result(posted: PostedSheet | None) -> dict[str, Any]:
 
 
 def sheet_lines(result: Mapping[str, Any]) -> tuple[str, ...]:
-    """The lines a sheet job writes with its result: the faults the graphic fell back from."""
-    return tuple(str(line) for line in result.get("faults") or ())
+    """The lines a sheet job writes with its result: the faults the graphic fell back from, each
+    as it was handed back, so that a notice block stays marked (`NoticeBlock`) for the job to open
+    with the member and the change."""
+    return tuple(result.get("faults") or ())
 
 
 async def record_sheet_on(db: aiosqlite.Connection, division_id: int, posted: Mapping[str, Any]) -> None:
