@@ -71,7 +71,7 @@ Two different classes need not match each other, and flags and maps deliberately
 > **The bot does not compare one template against another.** Draw flags 3:2 on your calendar
 > and 2:1 on your standings and both are accepted, with your flags letterboxed on one of
 > them. So when you change a class's shape, change it in *every* template that draws it —
-> flags appear on fourteen of the fifteen, team badges on seven.
+> flags appear on fifteen of the sixteen, team badges on seven.
 
 > **The `markers` class is held to nothing at all.** One folder carries the square movement
 > arrows and the marks that stretch into a result cell, so no one shape covers it. An arrow
@@ -86,7 +86,7 @@ Two different classes need not match each other, and flags and maps deliberately
 
 **Shipped:**
 
-- the fifteen default templates in `defaults/templates/`, one per image type;
+- the sixteen default templates in `defaults/templates/`, one per image type;
 - one `fallback.svg` in each asset directory, except `markers/`, which ships two — see below.
   The tyre one is a special case worth knowing: since every compound now ships and a
   submission cannot record anything else, it stands for **no compound recorded** and nothing
@@ -204,7 +204,7 @@ what you supplied, or a placeholder.
 
 This class is not like the other seven, in three ways worth knowing before you use it.
 
-**Nothing draws it until you say so.** None of the fifteen templates the bot ships declares a
+**Nothing draws it until you say so.** None of the sixteen templates the bot ships declares a
 division logo, so the class does nothing at all on a stock installation. To use it, add an
 image node with the id `division_logo` to a template of your own, anywhere you like on the
 canvas, and the logo appears there. Leave it out of a template and that graphic simply carries
