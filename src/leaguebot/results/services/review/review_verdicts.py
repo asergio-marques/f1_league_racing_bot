@@ -75,6 +75,7 @@ from typing import TYPE_CHECKING, Any
 import discord
 
 from leaguebot.framework.utils.hooks import AwaitedHook
+from leaguebot.framework.utils.log_lines import PictureLines, framed_picture_lines
 from leaguebot.framework.db.database import get_connection
 from leaguebot.framework.models.change import (
     GuildUnavailable,
@@ -609,11 +610,13 @@ async def _announce_heading(ctx: StepContext, drawing: ImageDrawing) -> StepResu
     # The picture is drawn on the first try alone, a retry heading the batch in words (Constitution
     # XIV, rule 8); what it said is kept with every stop that follows, so that the try which posts
     # hands it back with its own.
-    drawn = drawn_lines_kept(ctx.kept)
+    drawn = framed_picture_lines(ctx.named, ctx.what, (), kept=ctx.kept, label="verdict banner")
     attachment = None
     if ctx.tries == 0:
-        attachment, drawn = await drawing.draw_banner(heading)
-        drawn = vas.banner_lines(drawn)
+        attachment, banner = await drawing.draw_banner(heading)
+        drawn = framed_picture_lines(
+            ctx.named, ctx.what, vas.banner_lines(banner), kept=ctx.kept, label="verdict banner"
+        )
     try:
         if attachment is None:
             text: str | None = verdict_banner_drawing.heading_text(heading)
@@ -623,12 +626,15 @@ async def _announce_heading(ctx: StepContext, drawing: ImageDrawing) -> StepResu
         try:
             message = await send_notice(channel, text, mentions=_NO_MENTIONS, **parts)
         except discord.HTTPException as refused:
-            raise StepFailedOnDiscord(
+            raise drawn.carried_by(StepFailedOnDiscord(
                 f"the heading over the verdicts could not be posted: {refused}"
-            ).carrying(drawn) from refused
+            )) from refused
     finally:
         drawing.discard_attachment(attachment)
-    return StepResult(result={"message_id": message.id, "channel_id": channel.id}, lines=drawn)
+    return StepResult(
+        result={"message_id": message.id, "channel_id": channel.id, **drawn.result()},
+        lines=drawn.lines, linked=drawn.linked,
+    )
 
 
 async def _describe_verdict(ctx: StepContext) -> str:
@@ -640,15 +646,22 @@ async def _describe_verdict(ctx: StepContext) -> str:
     return f"announcing the {kind} verdict for <@{payload['record']['driver_user_id']}>{where}"
 
 
-def _carrying_verdict_lines(
-    ctx: StepContext, stop: StepFailedOnDiscord, earlier: tuple[str, ...]
-) -> StepFailedOnDiscord:
+def _verdict_lines(ctx: StepContext, fallback: Any) -> PictureLines:
+    """What a verdict or sanction job writes: the lines its earlier tries kept, then what its
+    picture said as *fallback* words it for the job's own member and change (`None` where there is
+    nothing to say), the notice block framed with them."""
+    return framed_picture_lines(
+        ctx.named, ctx.what, () if fallback is None else fallback(ctx.named, ctx.what),
+        kept=ctx.kept, label="verdict",
+    )
+
+
+def _carrying_verdict_lines(ctx: StepContext, stop: StepFailedOnDiscord) -> StepFailedOnDiscord:
     """*stop*, a refused verdict or sanction card, with what its picture said kept on it beside
-    *earlier*, the lines of the tries before: a picture is drawn on the first try alone, so what it
-    said, and why it went out as text where it was not drawn, must go with the stop for the try
-    that posts to hand back, never lost with a post Discord refused."""
-    fallback = getattr(stop, vas.FALLBACK_ATTRIBUTE, None)
-    return stop.carrying(earlier + (() if fallback is None else fallback(ctx.named, ctx.what)))
+    the lines of the tries before: a picture is drawn on the first try alone, so what it said, and
+    why it went out as text where it was not drawn, must go with the stop for the try that posts
+    to hand back, never lost with a post Discord refused."""
+    return _verdict_lines(ctx, getattr(stop, vas.FALLBACK_ATTRIBUTE, None)).carried_by(stop)
 
 
 async def _announce_verdict(
@@ -659,7 +672,6 @@ async def _announce_verdict(
     channel, _context = await _channel_of(ctx, round_id)
     # What the picture said when it was drawn, on the first try, is kept with every stop that
     # follows, so that the try which posts hands it back with its own.
-    drawn = drawn_lines_kept(ctx.kept)
     try:
         await _take_down_kept(channel, ctx)
         announced = await vas.announce_verdict(
@@ -667,11 +679,14 @@ async def _announce_verdict(
             payload["record"], drawing=drawing, as_text=ctx.tries > 0,
         )
     except StepFailedOnDiscord as stop:
-        raise _carrying_verdict_lines(ctx, stop, drawn) from stop.__cause__
-    lines = drawn + (() if announced.fallback is None else announced.fallback(ctx.named, ctx.what))
+        raise _carrying_verdict_lines(ctx, stop) from stop.__cause__
+    drawn = _verdict_lines(ctx, announced.fallback)
     return StepResult(
-        result={"message_id": announced.message_id, "channel_id": announced.channel_id},
-        lines=lines,
+        result={
+            "message_id": announced.message_id, "channel_id": announced.channel_id,
+            **drawn.result(),
+        },
+        lines=drawn.lines, linked=drawn.linked,
     )
 
 
@@ -978,15 +993,15 @@ async def _describe_announce(ctx: StepContext) -> str:
 async def _announce_sanction(ctx: StepContext, hook: AttendanceAfterReview) -> StepResult:
     payload = ctx.step_payload
     # Headed by the approved round's banner, not the round the thresholds were read at.
-    drawn = drawn_lines_kept(ctx.kept)
     try:
         fallback = await hook.announce_sanction(
             int(payload.get("heading_round_id", payload["round_id"])), int(payload["division_id"]),
             payload["candidate"], as_text=ctx.tries > 0,
         )
     except StepFailedOnDiscord as stop:
-        raise _carrying_verdict_lines(ctx, stop, drawn) from stop.__cause__
-    return StepResult(lines=drawn + (() if fallback is None else fallback(ctx.named, ctx.what)))
+        raise _carrying_verdict_lines(ctx, stop) from stop.__cause__
+    drawn = _verdict_lines(ctx, fallback)
+    return StepResult(result=drawn.result(), lines=drawn.lines, linked=drawn.linked)
 
 
 async def _describe_lineup(ctx: StepContext) -> str:

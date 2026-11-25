@@ -156,7 +156,7 @@ async def _head(flow, channel):
 
     ctx = SimpleNamespace(
         step_payload={"round_id": 1, "round_number": 8}, db_path=":memory:",
-        bot=_Bot(channel), kept=None, tries=0,
+        bot=_Bot(channel), kept=None, tries=0, named="Admin (<@4242>)", what="the test's job",
     )
     with in_a_job():
         return await review_verdicts._announce_heading(ctx, flow["drawing"])

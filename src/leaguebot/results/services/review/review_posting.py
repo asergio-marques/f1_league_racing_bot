@@ -68,8 +68,8 @@ from leaguebot.framework.models.change import (
     StepFailedOnDiscord,
     StepKind,
     StepResult,
-    DRAWN_LINES,
-    drawn_lines_kept,
+    DRAWN_KEYS,
+    drawn_kept,
 )
 from leaguebot.core.models.round import RoundStatus
 from leaguebot.core.models.fault_source import FaultSource, source_of
@@ -84,6 +84,7 @@ from leaguebot.framework.services.posting.owned_channel_handler import delete_in
 from leaguebot.framework.services.posting import standing_posts
 from leaguebot.framework.services.posting.standing_post_handler import delete_standing
 from leaguebot.framework.utils.hooks import AwaitedHook
+from leaguebot.framework.utils.log_lines import framed_picture_lines
 from leaguebot.framework.utils.league_bot import LeagueBot
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.models.standings_snapshot import (
@@ -735,10 +736,10 @@ async def _remove_kept(guild: discord.Guild, kept: dict[str, Any] | None) -> Non
     if left:
         # The earlier try's picture lines go on the stop, as a stop's result replaces what the
         # job kept: the retry that does remove the text must still hand them back.
-        raise StepFailedOnDiscord(
+        raise drawn_kept(kept).carried_by(StepFailedOnDiscord(
             f"{len(left)} message(s) of the earlier try could not be removed",
             result={"new": left, "channel_id": int(channel_id)},
-        ).carrying(drawn_lines_kept(kept)) from (failures[0] if failures else None)
+        )) from (failures[0] if failures else None)
 
 
 def _stranded(error: Exception, channel_id: int) -> dict[str, Any] | None:
@@ -864,17 +865,19 @@ async def _post_session_results(
         )
     except Exception as error:
         kept = _stranded(error, channel_id)
-        picture_lines = drawn_lines_kept(ctx.kept) + _with_host_remedy(
-            tuple(getattr(error, DRAWN_LINES_ATTRIBUTE, ())), payload["remedy"]
-        ) + _refused_picture_line(ctx, error, rnd, payload, picture="results")
+        picture_lines = framed_picture_lines(
+            ctx.named, ctx.what,
+            _with_host_remedy(tuple(getattr(error, DRAWN_LINES_ATTRIBUTE, ())), payload["remedy"]),
+            kept=ctx.kept, label=payload["label"],
+        ).plus(*_refused_picture_line(ctx, error, rnd, payload, picture="results"))
         if kept is not None:
-            raise StepFailedOnDiscord(
+            raise picture_lines.carried_by(StepFailedOnDiscord(
                 "the results were posted in part and the rest was refused", result=kept
-            ).carrying(picture_lines) from error
-        if picture_lines and isinstance(error, discord.HTTPException):
-            raise StepFailedOnDiscord(
+            )) from error
+        if picture_lines.lines and isinstance(error, discord.HTTPException):
+            raise picture_lines.carried_by(StepFailedOnDiscord(
                 "the results were refused", result=None
-            ).carrying(picture_lines) from error
+            )) from error
         raise
     result = {
         "new": posted.new, "old": posted.old,
@@ -882,7 +885,11 @@ async def _post_session_results(
     }
     # What the picture said when it was drawn on an earlier try, kept on that try's stop, is handed
     # back with this one's.
-    lines = drawn_lines_kept(ctx.kept) + _with_host_remedy(posted.lines, payload["remedy"])
+    drawn = framed_picture_lines(
+        ctx.named, ctx.what, _with_host_remedy(posted.lines, payload["remedy"]),
+        kept=ctx.kept, label=payload["label"],
+    )
+    lines = drawn.lines
     if posted.fault is not None:
         lines += (picture_fallback_line(
             ctx.named, ctx.what, picture="results", division=rnd["division_name"],
@@ -893,7 +900,7 @@ async def _post_session_results(
             ),
         ),)
     return StepResult(
-        result=result, lines=lines,
+        result={**result, **drawn.result()}, lines=lines, linked=drawn.linked,
         then=_deletes(
             standing_posts.posted_in(posted.old_channel_id, channel_id), posted.old, what,
         ),
@@ -979,17 +986,19 @@ async def _post_standings(
         )
     except Exception as error:
         kept = _stranded(error, channel_id)
-        picture_lines = drawn_lines_kept(ctx.kept) + _with_host_remedy(
-            tuple(getattr(error, DRAWN_LINES_ATTRIBUTE, ())), payload["remedy"]
-        ) + _refused_picture_line(ctx, error, rnd, payload, picture="standings")
+        picture_lines = framed_picture_lines(
+            ctx.named, ctx.what,
+            _with_host_remedy(tuple(getattr(error, DRAWN_LINES_ATTRIBUTE, ())), payload["remedy"]),
+            kept=ctx.kept, label=payload["label"],
+        ).plus(*_refused_picture_line(ctx, error, rnd, payload, picture="standings"))
         if kept is not None:
-            raise StepFailedOnDiscord(
+            raise picture_lines.carried_by(StepFailedOnDiscord(
                 "the standings were posted in part and the rest was refused", result=kept
-            ).carrying(picture_lines) from error
-        if picture_lines and isinstance(error, discord.HTTPException):
-            raise StepFailedOnDiscord(
+            )) from error
+        if picture_lines.lines and isinstance(error, discord.HTTPException):
+            raise picture_lines.carried_by(StepFailedOnDiscord(
                 "the standings were refused", result=None
-            ).carrying(picture_lines) from error
+            )) from error
         raise
     what = f"round {rnd['round_number']}'s standings"
     then: list[PlannedStep] = []
@@ -1012,9 +1021,12 @@ async def _post_standings(
     fault = failed.fault if failed is not None else None
     # What the pictures said when they were drawn on an earlier try, kept on that try's stop, is
     # handed back with this one's.
-    lines = drawn_lines_kept(ctx.kept) + _with_host_remedy(
-        tuple(line for t in tables for line in t.lines), payload["remedy"]
+    drawn = framed_picture_lines(
+        ctx.named, ctx.what,
+        _with_host_remedy(tuple(line for t in tables for line in t.lines), payload["remedy"]),
+        kept=ctx.kept, label=payload["label"],
     )
+    lines = drawn.lines
     if fault is not None:
         lines += (picture_fallback_line(
             ctx.named, ctx.what, picture="standings", division=rnd["division_name"],
@@ -1025,13 +1037,15 @@ async def _post_standings(
                 source=FaultSource.LEAGUE if failed is None else failed.fault_source,
             ),
         ),)
-    return StepResult(result=result, lines=lines, then=tuple(then))
+    return StepResult(
+        result={**result, **drawn.result()}, lines=lines, linked=drawn.linked, then=tuple(then)
+    )
 
 
 def _left_posted(kept: dict[str, Any] | None) -> bool:
     """True where an earlier try left a table posted in part, which this try's text replaces
-    afresh: what it kept beside the lines of its picture (`drawn_lines_kept`) is not one."""
-    return any(key != DRAWN_LINES for key in kept or {})
+    afresh: what it kept beside what its pictures said (`DRAWN_KEYS`) is not one."""
+    return any(key not in DRAWN_KEYS for key in kept or {})
 
 
 async def _post_standings_afresh(

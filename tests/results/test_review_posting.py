@@ -2192,11 +2192,6 @@ _POSTED_BY = {"results": "post_session_results", "standings": "post_standings"}
     pytest.param("results", True, id="results-refused-then-retried"),
     pytest.param("standings", True, id="standings-refused-then-retried"),
 ])
-@pytest.mark.xfail(
-    strict=True,
-    reason="#635: a results job's notices reach the log as a bare block headed by the kind's code, "
-           "the member and the change unnamed, and the job keeps nothing of them for the reply",
-)
 async def test_a_drawn_picture_s_render_notices_reach_the_log_once_naming_the_round(
     tmp_path, picture, refused,
 ):

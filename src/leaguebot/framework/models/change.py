@@ -183,6 +183,9 @@ DRAWN_LINKED = "drawn_linked"
 #: several pictures a job drew, each under the label its log line names it by, in the form
 #: `RESULT_PICTURES` takes, so that a stop does not lose which picture a notice belongs to.
 DRAWN_PICTURES = "drawn_pictures"
+#: Every key a post job's stop keeps what its pictures said under, which a job reading its kept
+#: result for what else was left (a table posted in part) must not take for that.
+DRAWN_KEYS = (DRAWN_LINES, DRAWN_NOTICES, DRAWN_LINKED, DRAWN_PICTURES)
 
 
 @dataclass(frozen=True)
@@ -196,6 +199,19 @@ class DrawnKept:
     notices: tuple[str, ...] = ()
     linked: int | None = None
     pictures: tuple[DrawnNotices, ...] = ()
+
+    def carried_by(self, stop: "StepFailedOnDiscord") -> "StepFailedOnDiscord":
+        """*stop*, keeping all of this on the stop it saves, as the next stop of a job that has
+        kept it must (`StepFailedOnDiscord.carrying`)."""
+        return stop.carrying(
+            self.lines, notices=self.notices, pictures=self.pictures, linked=self.linked
+        )
+
+
+def drawn_part(kept: dict[str, Any] | None) -> dict[str, Any]:
+    """What of a job's *kept* result is what its pictures said (`DRAWN_KEYS`), for a result a job
+    builds in place of its stop's to hold it beside what else it keeps."""
+    return {key: value for key, value in (kept or {}).items() if key in DRAWN_KEYS}
 
 
 def drawn_kept(kept: dict[str, Any] | None) -> DrawnKept:

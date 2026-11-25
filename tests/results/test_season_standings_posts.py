@@ -694,11 +694,6 @@ _ASKED_BY = {
 
 
 @pytest.mark.parametrize("occasion, job, word", _OCCASIONS)
-@pytest.mark.xfail(
-    strict=True,
-    reason="#635: a classification's notices reach the log as a bare block, the member and the "
-           "change unnamed, and its job keeps nothing of them for the reply",
-)
 async def test_a_classification_s_notices_open_with_member_and_change_and_are_kept_for_the_reply(
     tmp_path, monkeypatch, occasion, job, word,  # noqa: ARG001 — word is the other tests'
 ):
