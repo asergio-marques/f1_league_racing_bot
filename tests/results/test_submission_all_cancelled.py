@@ -878,10 +878,7 @@ MOVED_STANDINGS_CHANNEL = 706
 
 @pytest.mark.parametrize("moved", [
     pytest.param(False, id="kept"),
-    pytest.param(True, id="moved", marks=pytest.mark.xfail(strict=True, reason=(
-        "#645: standings keep no channel they were posted in, so the withdrawn ones are looked "
-        "for in the present standings channel"
-    ))),
+    pytest.param(True, id="moved"),
 ])
 async def test_a_resubmission_entering_every_session_cancelled_withdraws_the_round_s_standings(
     tmp_path, monkeypatch, moved,
@@ -971,10 +968,6 @@ MOVED_RESULTS_CHANNEL = 703
 UNPLACED_TABLE = 8803
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "#645: a results table keeps no channel it was posted in, so one the resubmission does not "
-    "enter again is looked for in the present results channel"
-))
 async def test_a_table_the_resubmission_does_not_enter_again_comes_down_from_where_it_was_posted(
     tmp_path, monkeypatch,
 ):

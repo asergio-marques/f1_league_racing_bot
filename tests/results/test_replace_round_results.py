@@ -157,7 +157,6 @@ async def _flags(db_path: str) -> tuple[int, int, int]:
         return tuple(await cursor.fetchone())
 
 
-@pytest.mark.xfail(strict=True, reason="#645: a results table keeps no channel it was posted in")
 async def test_the_new_results_replace_the_old_in_one_go(tmp_path):
     """The round's Feature Race was posted as message 8800 and its Sprint Race as 8900, both in
     results channel 700. Its results are replaced by a resubmission's qualifying and race: both new
