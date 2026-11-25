@@ -479,10 +479,6 @@ async def test_the_sheet_lists_the_most_points_first_then_by_name(sheet_db, monk
     assert [entry.driver_name for entry in sheet.entries] == ["Mike", "Aaron", "Zoe"]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#641: drivers level on attendance points are still ordered by name alone",
-)
 @pytest.mark.parametrize("occasion_name", ["AFTER_ROUND", "SEASON_FINAL"])
 @pytest.mark.asyncio
 async def test_drivers_level_on_points_are_ordered_by_the_standings_final_tiebreak(

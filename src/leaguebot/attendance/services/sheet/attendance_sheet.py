@@ -214,26 +214,19 @@ async def post_attendance_sheet(
         division_id=division_id,
     )
 
-    # Sort: descending total_points_after, then alphabetical by the name the sheet draws.
-    def _sort_key(r):
-        key = int(r["discord_user_id"])
-        return after_round_order_key(r["total_points_after"], display_names.get(key, str(key)))
-
-    # Nobody has attended anything yet, so the points above separate nobody. The opening
-    # sheet is ordered as the opening standings grid is — team, then driver — so that a
-    # league's two opening sheets agree about the order of the same drivers.
-    def _opening_sort_key(r):
-        key = int(r["discord_user_id"])
-        return ((r["team_name"] or "").casefold(), display_names.get(key, str(key)).casefold())
-
-    sorted_drivers = sorted(
-        driver_rows,
-        key=(
-            _opening_sort_key
-            if occasion is ClassificationOccasion.SEASON_OPENING
-            else _sort_key
-        ),
-    )
+    # Descending total_points_after, then as the standings' final tiebreak orders drivers: by team,
+    # by the name the sheet draws, by identifier. Nobody has attended anything yet on the opening
+    # sheet, so the points separate nobody and it is ordered as the opening standings grid is,
+    # team then driver, and a league's two opening sheets agree about the order of the same drivers.
+    by_user = {int(r["discord_user_id"]): r for r in driver_rows}
+    sorted_drivers = [
+        by_user[key]
+        for key in after_round_order(
+            {key: r["total_points_after"] for key, r in by_user.items()},
+            {key: r["seat"] for key, r in by_user.items() if r["seat"] is not None},
+            display_names,
+        )
+    ]
 
     # The opening and final sheets say which they are; an ordinary one names no round here,
     # the sheet itself carrying that. The phrase heads the *textual* body either way — a bare
@@ -523,7 +516,6 @@ async def _opening_attendance_rows(db, division_id: int) -> list[dict]:
             "total_points_after": 0,
             "discord_user_id": identities[driver.profile_id][0],
             "test_display_name": identities[driver.profile_id][1],
-            "team_name": driver.team_name,
             "seat": (0, driver.team_name),
         }
         for driver in seated
