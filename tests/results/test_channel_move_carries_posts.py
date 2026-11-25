@@ -472,20 +472,25 @@ async def _moved_again(league: ReviewLeague) -> None:
     )
 
 
-@pytest.mark.parametrize("meanwhile,words", [
-    pytest.param(_amendment_opens, ("amend",), id="an amendment opens"),
-    pytest.param(_results_switched_off, ("off", "disabled", "not enabled"),
+@pytest.mark.parametrize("meanwhile,says,not_says", [
+    pytest.param(_amendment_opens, ("amend",), (), id="an amendment opens"),
+    pytest.param(_results_switched_off, ("switched off", "not carried"), ("stay in",),
                  id="results is switched off"),
-    pytest.param(_moved_again, ("changed", f"<#{MOVED_AGAIN}>"), id="the channel moves again"),
+    pytest.param(_moved_again, ("changed", f"<#{MOVED_AGAIN}>"), (),
+                 id="the channel moves again"),
 ])
-async def test_a_carry_no_longer_due_is_dropped_with_its_line(tmp_path, meanwhile, words):
+async def test_a_carry_no_longer_due_is_dropped_with_its_line(
+    tmp_path, meanwhile, says, not_says,
+):
     """The league's lane is stopped at a job of another change. Admin moves Pro's results channel
     from 700 to 703: the setting runs past the stop and saves 703, and its carry waits behind the
     stop. Meanwhile an amendment of round 3 opens in channel 705; or a league admin switches the
     Results & Standings module off; or Pro's results channel is set again, to 706. Once the stop is
     retried and the queue moves, the carry is dropped as no longer due: nothing is posted to 703,
-    the old table 8800 still stands in 700, and a new line in the log channel says the posts stay
-    in <#700> and why: naming the amendment, the module switched off, or the channel changed."""
+    the old table 8800 still stands in 700, and a new line in the log channel names <#700> and
+    why: the amendment, the channel changed, or the module switched off. Where results was
+    switched off, the line says nothing was carried and does not say the posts stay in <#700>,
+    the switch-off having taken them down."""
     league = await _league(tmp_path)
     holder = await block_queue(league)
     await _move(league, "results")
@@ -502,8 +507,11 @@ async def test_a_carry_no_longer_due_is_dropped_with_its_line(tmp_path, meanwhil
     assert league.sent_to(NEW_RESULTS) == []
     assert OLD_RESULTS in league.channel(RESULTS_CHANNEL).messages
     lines = _lines(league, since)
-    assert any(f"<#{RESULTS_CHANNEL}>" in line and any(word in line.lower() for word in words)
-               for line in lines), lines
+    dropped = [line for line in lines if f"<#{RESULTS_CHANNEL}>" in line
+               and all(word in line.lower() for word in says)]
+    assert dropped, lines
+    assert not [line for line in dropped if any(word in line.lower() for word in not_says)], (
+        dropped)
 
 
 async def test_a_carry_the_season_reaches_pending_completion_ahead_of_is_dropped_saying_why(
@@ -533,4 +541,5 @@ async def test_a_carry_the_season_reaches_pending_completion_ahead_of_is_dropped
     lines = _lines(league, since)
     assert any("pending completion" in line.lower() and f"<#{RESULTS_CHANNEL}>" in line
                for line in lines), lines
+
 
