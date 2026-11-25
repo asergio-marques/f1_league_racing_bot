@@ -75,7 +75,6 @@ MOVES = {
 }
 
 NOT_CARRIED = "#667: a move does not yet carry the posts already up to the new channel"
-NOT_REFUSED = "#667: a move away from a standing channel is not yet refused"
 NOT_DROPPED = "#667: no carry is yet asked, so none is dropped with its log line"
 
 
@@ -292,7 +291,6 @@ async def test_a_standings_move_carries_each_round_s_standings_to_the_new_channe
                for line in carried), lines
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_REFUSED)
 @pytest.mark.parametrize("which", sorted(MOVES))
 async def test_a_move_while_an_amendment_is_open_is_refused(tmp_path, which):
     """An amendment of round 3 is open in channel 705. Admin moves Pro's results (or standings)
@@ -317,7 +315,6 @@ async def test_a_move_while_an_amendment_is_open_is_refused(tmp_path, which):
     assert league.sent_to(new) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_REFUSED)
 @pytest.mark.parametrize("which", sorted(MOVES))
 async def test_a_move_while_the_season_is_pending_completion_is_refused(tmp_path, which):
     """Every division has finished and the season stands at Pending completion. Admin moves Pro's

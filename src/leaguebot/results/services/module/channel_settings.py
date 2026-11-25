@@ -16,6 +16,16 @@ permissions the setting's channel needs in (`division_channels.channel_needs`, w
 the builder is handed, judged by `unusable_refusal` against the league's server as it stands when
 the check runs). Verdicts keeps wordings of its own for the division not found and for its reply.
 
+**A channel that still stands is never moved away from while its posts could not be carried.** The
+results and the standings channel each refuse, last of the refusals above, a move away from a
+channel the bot finds on the server and can use while an amendment of one of the division's rounds
+is open (its corrections are not approved, and the posts to carry would publish them) or the season
+is pending completion (the sync commands are refused there). A first set, and the replacement of a
+channel that is gone or that the bot lacks a permission in, is a repair and is never refused: its old
+posts went with it or cannot be reached. The verdicts channel carries nothing and has no such
+refusal. A channel the bot cannot judge (no server to ask) is taken not to stand, as the check
+stands aside everywhere else.
+
 **The save writes the division's column and the audit entry with the division, together**, the
 audit entry stamped by the queue's clock (`division_channels` holds the upserts); the column it
 replaces is read in the save, never at the ask, so a change waiting behind another for the same
@@ -32,6 +42,10 @@ from collections.abc import Awaitable, Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
 from leaguebot.results.models.switch import SWITCH_KEY
+from leaguebot.core.models.channel_needs import Needs
+from leaguebot.core.models.season import SeasonStage
+from leaguebot.core.services.seasons.approval_checks import PresenceState, judged_presence
+from leaguebot.framework.db.database import get_connection
 from leaguebot.framework.models.change import AuditRecord, Verdict
 from leaguebot.framework.services.queue.change_types import CheckContext
 from leaguebot.core.services.settings.channel_registry_service import (
@@ -50,6 +64,11 @@ from leaguebot.results.services.module.division_channels import (
     set_division_standings_channel,
 )
 
+from leaguebot.results.services.round_amendment.amendment_writes import (
+    amendment_wait_text,
+    open_amendment_in_division,
+)
+
 if TYPE_CHECKING:
     import aiosqlite
 
@@ -57,6 +76,7 @@ if TYPE_CHECKING:
     from leaguebot.image.services.render.image_drawing import ImageDrawing
     from leaguebot.core.services.seasons.season_service import SeasonService
     from leaguebot.framework.utils.hooks import AwaitedHook
+    from leaguebot.framework.utils.league_bot import LeagueBot
 
 
 RESULTS_CHANNEL = "results.setting.results_channel"
@@ -71,10 +91,39 @@ def verdicts_division_not_found(name: str) -> str:
     return f'❌ Division "{name}" not found.'
 
 
+async def _held_channel(db_path: str, division_id: int, column: str) -> int | None:
+    """The channel the division's *column* holds now, or None where it holds none."""
+    async with get_connection(db_path) as db:
+        row = await (await db.execute(
+            f"SELECT {column} FROM division_results_config "  # noqa: S608 — a column of ours
+            "WHERE division_id = ?", (division_id,),
+        )).fetchone()
+    return None if row is None or row[0] is None else int(row[0])
+
+
+def _amended_refusal(key: str, name: str, held: int, amendment: dict[str, Any]) -> str:
+    """Why the *key* channel of *name* cannot be moved away from *held* while *amendment* is open."""
+    return (
+        f"⏸️ Round {amendment['round_number']} of **{name}** is being amended in "
+        f"<#{amendment['channel_id']}>, and its corrections are not approved yet, so the {key} "
+        f"channel cannot be moved away from <#{held}> until that ends — {amendment_wait_text()}. "
+        "Nothing was changed."
+    )
+
+
+def _pending_completion_refusal(key: str, name: str, held: int) -> str:
+    """Why the *key* channel of *name* cannot be moved away from *held* in Pending completion."""
+    return (
+        f"❌ The season is pending completion, so the {key} channel of **{name}** cannot be moved "
+        f"away from <#{held}> until the season is completed. Nothing was changed."
+    )
+
+
 def _channel_setting(
     *,
     kind: str,
     key: str,
+    held_column: str | None = None,
     write: Callable[["aiosqlite.Connection", int, int | None], Awaitable[int | None]],
     not_found: Callable[[str], str],
     audit: Callable[[int | None, int, int], AuditRecord],
@@ -85,7 +134,8 @@ def _channel_setting(
     drawing: "ImageDrawing | None",
 ) -> Setting:
     """The setting of the *key* channel (the channel registry's key and the word the command and
-    its replies use), *write* its column's upsert, *audit* the entry of the channel moving from
+    its replies use), *held_column* the column holding it where the setting moves posts that stand
+    in it (results, standings) and None where it carries none (verdicts), *write* its column's upsert, *audit* the entry of the channel moving from
     one to another in a division, *said* the reply's words for a verb, the division as typed, the
     channel's id and its name. *channel_uses_read* is core's hook that names the module holding a
     channel, and *drawing* the image module's, which says whether the channel's graphic could be a
@@ -115,6 +165,14 @@ def _channel_setting(
         )
         if unusable is not None:
             return Verdict.refuse(unusable)
+        if held_column is not None:
+            held = await _held_channel(ctx.db_path, division.id, held_column)
+            if held is not None and await _stands(ctx.bot, held, (await channel_needs(drawing))[key]):
+                amendment = await open_amendment_in_division(ctx.db_path, division.id)
+                if amendment is not None:
+                    return Verdict.refuse(_amended_refusal(key, division.name, held, amendment))
+                if season.stage == SeasonStage.PENDING_COMPLETION:
+                    return Verdict.refuse(_pending_completion_refusal(key, division.name, held))
         return Verdict.go()
 
     async def save(db: "aiosqlite.Connection", payload: dict[str, Any]) -> Saved:
@@ -159,6 +217,15 @@ def _channel_setting(
         writes=("division_results_config",),
         repairs_the_bot=True,
     )
+
+
+async def _stands(bot: "LeagueBot", channel_id: int, needs: Needs) -> bool:
+    """Whether *channel_id* is on the league's server and the bot can use it as *needs* asks, as
+    Discord proves it; False where there is no server to ask."""
+    guild = await league_guild(bot)
+    if guild is None:
+        return False
+    return (await judged_presence(guild, channel_id, needs)).state is PresenceState.PRESENT
 
 
 def typed_channel_audit(channel_type: str) -> Callable[[int | None, int | None, int], AuditRecord]:
@@ -211,14 +278,14 @@ def results_channel_settings(
     through *channel_uses_read*, and whether a graphic could be a picture through *drawing*."""
     return (
         _channel_setting(
-            kind=RESULTS_CHANNEL, key="results", said=_mentioned("Results"),
+            kind=RESULTS_CHANNEL, key="results", held_column="results_channel_id", said=_mentioned("Results"),
             write=set_division_results_channel, not_found=division_not_found,
             audit=typed_channel_audit("results"), modules=modules,
             seasons=seasons,
             channel_uses_read=channel_uses_read, drawing=drawing,
         ),
         _channel_setting(
-            kind=STANDINGS_CHANNEL, key="standings", said=_mentioned("Standings"),
+            kind=STANDINGS_CHANNEL, key="standings", held_column="standings_channel_id", said=_mentioned("Standings"),
             write=set_division_standings_channel, not_found=division_not_found,
             audit=typed_channel_audit("standings"), modules=modules,
             seasons=seasons,
