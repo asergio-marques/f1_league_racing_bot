@@ -625,10 +625,7 @@ async def _move_the_division_s_channels(db_path: str, division_id: int) -> None:
 
 @pytest.mark.parametrize("moved", [
     pytest.param(False, id="kept"),
-    pytest.param(True, id="moved", marks=pytest.mark.xfail(strict=True, reason=(
-        "#645: results tables, standings and classifications keep no channel they were posted "
-        "in, so the switch-off looks for them in the division's present channels"
-    ))),
+    pytest.param(True, id="moved"),
 ])
 async def test_every_message_is_taken_down_by_the_ids_saved_with_the_switch_off(tmp_path, moved):
     """The rows naming the messages are gone with the switch-off; the steps keep their ids. The
