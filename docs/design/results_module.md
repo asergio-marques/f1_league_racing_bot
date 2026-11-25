@@ -351,7 +351,7 @@ typed in a locked review channel is asked as `results.review.lock`, which is no 
 | `results.amend.stage_one` | the last amendment draft | `names`; **`record_stage_one`**: the round snapshotted, the classification rewritten, points and standings recomputed, nothing posted |
 | `results.amend.prompt` | stage one's save, and the report stage's `close` | a stage's prompt put up, on the amendment's lane |
 | `results.amend.close` | an amendment ending itself (a refused paste, stage one refused) | the channel deleted, on the amendment's lane |
-| `results.channel.carry` | the save of a results or standings channel moved away from one that still stands, through `ask_carry` | `note_old_channel`: the old channel, as `channel_settings._where_posts_stand` found it when the carry was asked, recorded on posts that name none; `plan_carry`: the sync's plan of the division's tables or standings, each post followed by the deletion of its old message; `close`. On the league lane, behind any stopped job as a sync is |
+| `results.channel.carry` | the save of a results or standings channel where the channel the posts stand in still stands, through `ask_carry` | `note_old_channel`: the old channel, as `channel_settings._where_posts_stand` found it when the carry was asked, recorded on posts that name none; `plan_carry`: the sync's plan of the division's tables or standings, each post followed by the deletion of its old message; `close`. On the league lane, behind any stopped job as a sync is |
 
 **A hook.** Core's changes call results' functions inside their own saves (below, "How modules and
 core fit together"): the deletes and the pack, the rounds called off and made final, the season's
@@ -362,13 +362,15 @@ are core's change's jobs, each defined by results.
 **The carry of a moved channel is a change of its own, never a step of the setting** (results
 specification, "Assigning channels to divisions"). The setting saves the channel and stays a plain
 setting that never stops the queue; its check carries the refusal, and `ask_carry`, an `After`
-step, asks `results.channel.carry` only where the save moved a channel that still stands and the
-sync's plan (`plan_division_posts`) has posts up. *Rejected:* carrying the posts as steps of the
+step, asks `results.channel.carry` only where the channel the posts stand in still stands (the
+channel replaced, or the old channel of a carry still waiting to fill it) and the sync's plan
+(`plan_division_posts`) has posts up. *Rejected:* carrying the posts as steps of the
 setting, which would let a refused post stop the lane at a setting and make a repair wait behind
 it. The carry takes the league lane and so waits behind a stopped job as a sync does.
 `ask_carry` takes the old channel from `_where_posts_stand`, which reads the queue for a carry of
 the division still waiting to move its posts into the channel being replaced, so that a second move
-asked before the first carry has run carries from where the posts stand, and a move back to that channel asks no carry, since the channel tested for standing is the one the posts stand in. **`note_old_channel` comes
+asked before the first carry has run carries from where the posts stand, and a move back to that
+channel asks no carry, the posts already standing in the channel set. **`note_old_channel` comes
 first** because the setting has already saved the new channel: a post that records no channel is
 taken to stand in the present one (see the posting's channel above), so without the note its old
 message would be deleted from the channel it was carried into. **The carry's check splits its
