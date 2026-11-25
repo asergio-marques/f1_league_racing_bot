@@ -590,8 +590,8 @@ hands back (`PostedTable.fault`, `SentVerdict`)
 
 **A picture's notices are the job's to frame and keep** (`framework.md`, "How a change is carried
 out"). The jobs that draw a table, the standings, a verdict or a banner frame and keep theirs, and
-the reply of an approval, an amendment or a `/results rounds sync` ends with the section that lists
-them (`review_posting.with_drawn_notices`).
+the reply of an approval, an amendment or a sync, `/results standings sync` among them, ends with
+the section that lists them (`review_posting.with_drawn_notices`).
 
 **Results' posts off the queue** are `architecture.md`'s exceptions alone ("Every post is made in a
 job"): its replies, the configuration picker's edit of the message pressed (`_ConfigSelectView`),

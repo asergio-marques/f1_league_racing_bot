@@ -338,17 +338,26 @@ def test_a_job_opens_each_line_of_its_own_once_with_member_and_change():
 
 
 def test_a_reply_s_image_notices_list_each_picture_s_grouped_notices_beneath_its_label():
+    """Each picture is listed under its label, bolded whole: a label that holds bold of its own
+    (the log line bolds the division in "check-in call of round 4 in Season 3 **Pro**") is
+    flattened first, never left with stray asterisks."""
     from leaguebot.framework.models.change import DrawnNotices
     from leaguebot.framework.utils.log_lines import drawn_notices_section
 
-    section = drawn_notices_section(
-        [DrawnNotices(label="lineup — Pro", notices=GROUPED, link="https://log/1")]
-    ).splitlines()
+    section = drawn_notices_section([
+        DrawnNotices(label="lineup — Pro", notices=GROUPED, link="https://log/1"),
+        DrawnNotices(label="check-in call of round 4 in Season 3 **Pro**", notices=GROUPED,
+                     link="https://log/2"),
+    ]).splitlines()
 
     assert section[0] == "⚠️ **Image notices**"
     assert section[1] == "  **lineup — Pro** ([see them in the log](https://log/1))"
-    body = section[2:]
-    assert len(body) == len(GROUPED)
-    for shown, grouped in zip(body, GROUPED):
+    width = len(GROUPED)
+    assert section[2 + width] == (
+        "  **check-in call of round 4 in Season 3 Pro** ([see them in the log](https://log/2))"
+    )
+    body = section[2:2 + width] + section[3 + width:]
+    assert len(body) == 2 * width
+    for shown, grouped in zip(body, GROUPED * 2):
         assert shown.endswith(grouped) and len(shown) > len(grouped), (shown, grouped)
-    assert sum(line.count("•") for line in body) == 2, body
+    assert sum(line.count("•") for line in body) == 4, body

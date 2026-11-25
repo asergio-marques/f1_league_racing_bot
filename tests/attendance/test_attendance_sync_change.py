@@ -985,6 +985,6 @@ async def test_a_refused_sanction_card_s_picture_notice_reaches_the_log_once_whe
         assert "<@77>" in named and "/attendance sync" in what, named + what
         assert drawn_as.startswith("Image render notices — "), drawn_as
         label = drawn_as.removeprefix("Image render notices — ").removesuffix(":")
-        listed = f"  **{label}** ([see them in the log](https://discord.test/{n}))"
+        listed = f"  **{label.replace('**', '')}** ([see them in the log](https://discord.test/{n}))"
         assert section < told.find(listed), told
         assert told.count(notice) == 1, told

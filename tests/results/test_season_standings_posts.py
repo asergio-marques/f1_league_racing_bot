@@ -815,8 +815,8 @@ async def test_a_classification_s_notices_open_with_member_and_change_and_are_ke
     told = _last_told(asked)
     assert told.count("⚠️ **Image notices**") == 1, told
     for label, n in linked.items():
-        assert told.count(f"**{label}**") == 1, told
-        assert f"  **{label}** ([see them in the log](https://discord.test/{n}))" in told, told
+        assert told.count(f"**{label.replace('**', '')}**") == 1, told
+        assert f"  **{label.replace('**', '')}** ([see them in the log](https://discord.test/{n}))" in told, told
     assert all(told.count(font + " ") == 1 for font in fonts), told
 
 

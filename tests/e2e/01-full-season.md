@@ -2734,7 +2734,8 @@ picture **reports** what it fell back on, as image notices:
   > and any notice of another kind (`Font substituted`, `Text set smaller`), which depends on the
   > host's fonts. Record what appears.
 - **A command that draws** (a review, the approval, the completion, a results approval or
-  amendment, a results sync, an attendance sync) ends its reply with `⚠️ **Image notices**`, each
+  amendment, a results sync, a standings sync, an attendance sync, `/attendance post-check-in`, a
+  mid-season attendance penalty change) ends its reply with `⚠️ **Image notices**`, each
   picture under its name with a *see them in the log* link and its notices beneath, as
   `00-base.md` steps 35 and 37 say.
 - **A preview** ends its reply with the same `⚠️ **Image notices**` section, each picture under its

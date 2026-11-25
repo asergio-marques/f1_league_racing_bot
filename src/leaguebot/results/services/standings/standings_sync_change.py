@@ -121,8 +121,12 @@ def standings_sync_change(
         name = ctx.payload["division_name"]
         left = not_synced(ctx)
         if left:
-            return "\n".join([f"⚠️ The standings of **{name}** were not all synced:", *left])
-        return f"✅ Standings for **{name}** synced to the standings channel."
+            return review_posting.with_drawn_notices(
+                ctx, "\n".join([f"⚠️ The standings of **{name}** were not all synced:", *left])
+            )
+        return review_posting.with_drawn_notices(
+            ctx, f"✅ Standings for **{name}** synced to the standings channel."
+        )
 
     steps: dict[str, Step] = {
         **review_posting.posting_steps(drawing, driver_names_read),

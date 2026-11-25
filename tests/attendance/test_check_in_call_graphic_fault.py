@@ -266,6 +266,54 @@ async def test_a_refused_check_in_call_s_picture_line_reaches_the_log_once_when_
         _notice_is_framed(league)
 
 
+@pytest.mark.parametrize("refused", [
+    pytest.param(False, id="first try"),
+    pytest.param(True, id="refused then retried"),
+])
+async def test_a_hand_posted_check_in_call_s_reply_names_its_picture_drawn_with_notices(
+    tmp_path, refused
+):
+    """Pro's round 4's check-in call is drawn with one render notice, and a manager posts it by
+    hand with `/attendance post-check-in`: either it posts at the first try, or (*refused*)
+    Discord refuses the post, the queue stops at the call, and once Discord takes posts again
+    Retry posts it as text. The notice reaches the log channel once, in a block opening with the
+    manager and the change. The reply says the call was posted and ends in one "Image notices"
+    section listing the picture under the name its log line gives it, bold inside the name
+    dropped, linked to the log channel's message holding it, and the notice beneath, once (image
+    spec, Errors and the rejection of input, #550; issue #671)."""
+    from tests.attendance.test_attendance_post_check_in import _outcome, _post_check_in
+
+    league = await _league(tmp_path)
+    _draw_with(league, tmp_path, "notice")
+    if refused:
+        league.channel(CHECK_IN).send_fails = http_error(status=500, text="Internal Server Error")
+
+    interaction = await _post_check_in(league)
+    await run_queue(league.bot)
+    if refused:
+        assert await stopped_job(league.db_path) is not None
+        league.channel(CHECK_IN).send_fails = None
+        await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    told = _outcome(interaction)
+    pro = DIVISIONS[PRO][0]
+    assert told.startswith(f"✅ Check-in call posted for round 4 of **{pro}**."), told
+    assert told.count("⚠️ **Image notices**") == 1, told
+    assert "\n\n⚠️ **Image notices**\n" in told, told
+    held = [(n, line) for n, line in enumerate(league.bot.log_channel.sent, 1)
+            if NOTICE_DETAIL in line]
+    assert len(held) == 1, league.bot.log_channel.sent
+    [(n, line)] = held
+    assert unruled(line).startswith(
+        f"Admin (`<@4242>`) | posting the check-in call of round 4 in **{pro}** | "
+        "Image render notices — "
+    ), line
+    assert (f"  **check-in call of round 4 in Season 3 {pro}** "
+            f"([see them in the log](https://discord.test/{n}))") in told, told
+    assert told.count(NOTICE_DETAIL) == 1, told
+
+
 async def test_a_check_in_call_whose_images_switch_nobody_signed_up_for_stops_its_job(tmp_path):
     """Pro's round 4's check-in call is due with image generation asked for, but the images
     module's switch reader was never signed up (`SwitchNotSignedUp`), a fault in the bot's own

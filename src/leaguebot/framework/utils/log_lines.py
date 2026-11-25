@@ -456,14 +456,16 @@ def log_link(url: str) -> str:
 def drawn_notices_section(groups: Iterable[DrawnNotices]) -> str:
     """The section a reply ends with for the pictures its work drew with render notices: the
     heading "⚠️ **Image notices**", then each picture under its label, with the `log_link` to the
-    log message holding them where there is one, and its grouped notices beneath. "" where *groups*
-    is empty, so a caller adds it and its separating blank line only when there is something to
-    say (Constitution XIV.4: a command's output carries the notices of what it drew)."""
+    log message holding them where there is one, and its grouped notices beneath. A picture's label
+    may carry bold of its own (the log line bolds the division's name in it); the section bolds the
+    whole label, and a bold inside one would end it early and leave stray asterisks, so the label
+    is flattened first and the log line is left as it was. "" where *groups* is empty, so a caller
+    adds it and its separating blank line only when there is something to say (Constitution XIV.4:
+    a command's output carries the notices of what it drew)."""
     lines: list[str] = []
     for group in groups:
-        lines.append(
-            f"  **{group.label}**" + (f" {log_link(group.link)}" if group.link else "")
-        )
+        label = group.label.replace("**", "")
+        lines.append(f"  **{label}**" + (f" {log_link(group.link)}" if group.link else ""))
         lines.extend(f"  {each}" for each in group.notices)
     return "\n".join(["⚠️ **Image notices**", *lines]) if lines else ""
 
