@@ -1044,15 +1044,21 @@ async def test_a_clean_up_deletes_whichever_phase_is_still_standing(tmp_path, st
     pytest.param((3,), "the Phase 3 forecast", id="phase 3 posted"),
     pytest.param((2,), "the Phase 2 forecast", id="phase 3 never posted"),
     pytest.param((1, 2), "the Phase 1 and 2 forecasts", id="phases 1 and 2 standing"),
+    pytest.param((0, 3), "the mystery round notice and the Phase 3 forecast",
+                 id="mystery notice and phase 3 standing",
+                 marks=pytest.mark.xfail(strict=True, reason="#595: the clean-up does not yet "
+                                         "delete a mystery round's notice, nor name it")),
 ])
 async def test_a_clean_up_is_named_by_the_phases_it_deletes(tmp_path, standing, named):
     """A day after round 3's race, Pro's clean-up is asked with Phase 3 standing, or Phase 2 alone
-    (Phase 3 never posted), or Phases 1 and 2. The change is named by the forecast it really
-    deletes, "deleting the Phase 2 forecast of round 3 in **Pro** a day after it", never by a
-    phase that is not standing."""
+    (Phase 3 never posted), or Phases 1 and 2, or Phase 3 beside the notice of the mystery round
+    it was until amended, whose deletion a league admin discarded. The change is named by what it
+    really deletes, "deleting the Phase 2 forecast of round 3 in **Pro** a day after it", the
+    notice as "the mystery round notice", never by a phase that is not standing."""
     league = await _league(tmp_path)
     for phase in standing:
         await posted_forecast(league, ROUND, phase, 9300 + phase)
+    await league.write("UPDATE rounds SET format = 'NORMAL' WHERE id = ?", ROUND)
 
     await _clean_up(league)
 
