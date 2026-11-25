@@ -328,46 +328,49 @@ async def test_a_move_while_the_season_is_pending_completion_is_refused(tmp_path
     assert league.sent_to(new) == []
 
 
-async def _first_set(league: ReviewLeague) -> None:
-    await _write(league, "UPDATE division_results_config SET results_channel_id = NULL")
+async def _first_set(league: ReviewLeague, which: str) -> None:
+    await _write(league, f"UPDATE division_results_config SET {MOVES[which][2]} = NULL")
 
 
-async def _deleted_while_amending(league: ReviewLeague) -> None:
-    del league.channels[RESULTS_CHANNEL]
+async def _deleted_while_amending(league: ReviewLeague, which: str) -> None:
+    del league.channels[MOVES[which][0]]
     await _amendment_opens(league)
 
 
-async def _deleted_while_pending_completion(league: ReviewLeague) -> None:
-    del league.channels[RESULTS_CHANNEL]
+async def _deleted_while_pending_completion(league: ReviewLeague, which: str) -> None:
+    del league.channels[MOVES[which][0]]
     await _pending_completion(league)
 
 
+@pytest.mark.parametrize("which", sorted(MOVES))
 @pytest.mark.parametrize("state,verb", [
     pytest.param(_first_set, "set", id="first set"),
     pytest.param(_deleted_while_amending, "updated", id="deleted, amendment open"),
     pytest.param(_deleted_while_pending_completion, "updated",
                  id="deleted, pending completion"),
 ])
-async def test_a_results_channel_with_none_standing_before_saves_and_asks_no_carry(
-    tmp_path, state, verb,
+async def test_a_channel_with_none_standing_before_saves_and_asks_no_carry(
+    tmp_path, state, verb, which,
 ):
-    """Pro has no results channel yet; or its results channel 700 has been deleted from the
-    server while an amendment of round 3 is open, or while the season is pending completion.
-    Admin sets Pro's results channel to 703, and the queue runs. The channel is saved, as a first
-    set or as the repair of a lost channel, the reply is the setting's usual one and nothing more,
-    no carry is asked, and nothing is posted to 703: there is nothing standing to carry."""
+    """Pro has no results (or standings) channel yet; or its results channel 700 (or standings
+    channel 701) has been deleted from the server while an amendment of round 3 is open, or while
+    the season is pending completion. Admin sets Pro's results channel to 703 (or standings
+    channel to 704), and the queue runs. The channel is saved, as a first set or as the repair of
+    a lost channel, the reply is the setting's usual one and nothing more, no carry is asked, and
+    nothing is posted to the new channel: there is nothing standing to carry."""
     league = await _league(tmp_path)
-    await state(league)
+    await state(league, which)
+    new = MOVES[which][1]
 
-    interaction = await _move(league, "results")
+    interaction = await _move(league, which)
     await run_queue(league.bot)
 
     assert last_said(interaction) == (
-        f"✅ Results channel for **Pro** {verb} to <#{NEW_RESULTS}>."
+        f"✅ {which.capitalize()} channel for **Pro** {verb} to <#{new}>."
     )
-    assert await _held(league, "results") == NEW_RESULTS
+    assert await _held(league, which) == new
     assert await _carries(league) == []
-    assert league.sent_to(NEW_RESULTS) == []
+    assert league.sent_to(new) == []
 
 
 def _refused_in_new_channel(league: ReviewLeague) -> None:
