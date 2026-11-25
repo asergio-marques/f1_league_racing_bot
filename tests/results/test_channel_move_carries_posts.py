@@ -543,3 +543,37 @@ async def test_a_carry_the_season_reaches_pending_completion_ahead_of_is_dropped
                for line in lines), lines
 
 
+
+@pytest.mark.parametrize("which,sync", [
+    ("results", "/results rounds sync"),
+    ("standings", "/results standings sync"),
+])
+async def test_a_fault_in_asking_the_carry_says_the_posts_were_not_moved(
+    tmp_path, monkeypatch, which, sync,
+):
+    """Round 3's table stands in 700 and its standings in 701, but reading which posts are up
+    fails as the setting goes to ask the carry. Admin moves Pro's results channel to 703 (or its
+    standings channel to 704), and the queue runs. The new channel stays saved and nothing stops
+    the queue; the reply says the channel was updated, that the tables (or standings) already up
+    were not moved, and names `/results rounds sync` (or `/results standings sync`) to move them;
+    no carry is asked, and nothing is posted to the new channel."""
+    from leaguebot.results.services.module import channel_settings
+
+    async def fails(*_args: Any, **_kwargs: Any) -> Any:
+        raise RuntimeError("the posts could not be read")
+
+    monkeypatch.setattr(channel_settings, "plan_division_posts", fails)
+    league = await _league(tmp_path)
+    new = MOVES[which][1]
+
+    interaction = await _move(league, which)
+    await run_queue(league.bot)
+
+    reply = last_said(interaction)
+    assert reply.startswith(_updated(which)), reply
+    assert "not moved" in reply and f"`{sync}`" in reply, reply
+    assert await _held(league, which) == new
+    assert await stopped_job(league.db_path) is None
+    assert await _carries(league) == []
+    assert league.sent_to(new) == []
+
