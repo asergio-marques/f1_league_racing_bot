@@ -12,10 +12,14 @@ is posted. Its jobs are three:
   refuses stops the queue with signups still closed, and a Discard leaves them closed.
 - `arm_close` arms the close timer, where a close time was given.
 - `delete_closed` takes down the "signups closed" notice the last close left, once the information
-  message stands, so that the channel always shows one or the other.
+  message stands, so that the channel always shows one or the other. The notice is the one held
+  when `post_info` ran, which that job returns: a `/signup channel` run in between (a repair after
+  a refused post) may have carried it to a new message and channel, and the one the command read
+  when it was asked is gone. The planned notice stands in only where `post_info` returned none.
 
 The command reads the close time and the tracks it was given, which are its own input, and the
-notice standing in the signup channel, which the plan of the jobs reads from the payload. The
+notice standing in the signup channel when it was asked, which the plan of the jobs reads from the
+payload. The
 signup channel itself is read by `post_info` as it runs, never taken from the payload: a
 `/signup channel` run ahead of it on the queue, or run to repair a post Discord refused before
 a Retry, is where the information is posted, the window recorded and the reply points.
@@ -177,7 +181,8 @@ def window_open_change(
     close time or None), and ``channel_id``, ``closed_message_id`` and ``closed_channel_id`` (the
     signup channel when the change was asked, the "signups closed" notice and the channel that
     notice was posted in, each or None; the notice is taken down from there, the signup channel
-    since replaced or not). ``channel_id`` only stands in for a notice that kept no channel and
+    since replaced or not, unless ``post_info`` finds another held as it runs, which it returns
+    as ``held`` and which is the one taken down). ``channel_id`` only stands in for a notice that kept no channel and
     names the channel in a reply whose post kept none: ``post_info`` posts in the signup channel
     as it stands when the job runs.
     *arm_once* arms the close timer (`window_close.CLOSE_TIMER`) at the close time, and *queue* is

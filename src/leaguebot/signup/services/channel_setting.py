@@ -40,6 +40,16 @@ permissions** (`POST_INFORMATION`, an `After` step planned by the save), posted 
 channel and kept as the window's button message, so drivers can sign up in the channel at once.
 It is no line's carrier: a fault in it leaves the channel saved and the reply says what was not
 posted.
+
+**Where signups are closed, the closed notice follows the permissions** (`CARRY_CLOSED`, then
+`DELETE_CARRIED_CLOSED`, both `After` steps planned by the save where a notice stands in another
+channel), so the signup channel always shows one notice or the other. The carry posts the notice in
+the new channel, with no mentions, and keeps it as the notice with its channel; the delete takes
+the old one down in a step of its own after it, through the standing-post handler, a message or a
+channel already gone counting as done (which is what a replacement for a deleted channel finds). A
+post Discord refuses leaves the old notice standing for the next opening to take down, and a
+delete it refuses is named in the reply with its link and recorded as a failure beside the log
+line. Neither stops the lane. Where no close posted a notice, nothing is posted.
 """
 
 from __future__ import annotations
