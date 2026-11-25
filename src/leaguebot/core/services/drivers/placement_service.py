@@ -24,7 +24,7 @@ from leaguebot.framework.models.refusal import Refused
 from leaguebot.framework.services.queue.audit_service import record_change_on
 from leaguebot.core.services.drivers.driver_service import write_transition
 from leaguebot.core.services.drivers.team_role_service import TeamRoleService
-from leaguebot.core.services.drivers.template_capacity_service import TemplateCapacityService
+from leaguebot.core.services.drivers.template_capacity_service import SeatsAhead, TemplateCapacityService
 
 
 @dataclass
@@ -490,7 +490,12 @@ class PlacementService:
     # ------------------------------------------------------------------
 
     async def guard_assign(
-        self, division_id: int, season_id: int, team_name: str, driver_profile_id: int | None
+        self,
+        division_id: int,
+        season_id: int,
+        team_name: str,
+        driver_profile_id: int | None,
+        ahead: SeatsAhead = SeatsAhead(),
     ) -> None:
         """Refuse an assignment that would outgrow a template or seat a real driver in test mode.
 
@@ -498,9 +503,10 @@ class PlacementService:
         (`TemplateCapacityService.guard_image_capacity`), then the server's test-mode flag (`_guard_test_mode`). Public
         so that the assignment's check, a job of its own, can ask them at the ask and again as the
         change starts, since they read templates off the loop and cannot run inside a save.
+        *ahead* is what a pasted list places before this driver, counted as seated.
         Raises Refused.
         """
-        await self._capacity.guard_image_capacity(division_id, season_id, team_name)
+        await self._capacity.guard_image_capacity(division_id, season_id, team_name, ahead)
         await self._guard_test_mode(driver_profile_id)
 
     async def judge_assign_on(

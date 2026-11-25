@@ -273,9 +273,6 @@ async def test_a_capacity_guard_s_own_read_fault_lets_the_placement_through(
 #: Drivers a pasted list places before driver 9999: one reserve and two race drivers.
 _PASTED_AHEAD = {"drivers": 3, "reserves": 1, "classified": 2}
 
-#: Why a placement does not yet count the drivers a pasted list places before it.
-_NOT_COUNTED_AHEAD = "#633: the capacity guards do not count the drivers a paste places first"
-
 
 @pytest.mark.parametrize(
     "team, ahead, asked",
@@ -309,7 +306,6 @@ _NOT_COUNTED_AHEAD = "#633: the capacity guards do not count the drivers a paste
                 ("declared_capacity_problem", 7),
             ],
             id="reserve_after_a_paste",
-            marks=pytest.mark.xfail(strict=True, reason=_NOT_COUNTED_AHEAD),
         ),
         pytest.param(
             ORDINARY,
@@ -320,7 +316,6 @@ _NOT_COUNTED_AHEAD = "#633: the capacity guards do not count the drivers a paste
                 ("declared_capacity_problem", 7),
             ],
             id="ordinary_after_a_paste",
-            marks=pytest.mark.xfail(strict=True, reason=_NOT_COUNTED_AHEAD),
         ),
     ],
 )

@@ -6,7 +6,8 @@ the driver standings' rows and whatever an image type declares in code. Each cou
 change would fill, reads that count from the database, and asks the image module's drawing, handed
 by the builder (`image_drawing.ImageDrawing`), whether it could draw that many. It holds no
 template, posts nothing, and is handed no bot: core reaches the image module through the drawing
-alone. A guard runs in a change's check and reads on a connection of its own.
+alone. A guard runs in a change's check and reads on a connection of its own. A pasted list is asked of
+each line with the drivers placed before it (`SeatsAhead`), counted as seated.
 
 **The guards' one catch.** Reading the seats and asking the drawing are one guard, not two
 (`_ask_drawing`). **The guards that run by caller:** the placement service asks
@@ -18,6 +19,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 
 import aiosqlite
 
@@ -35,6 +37,18 @@ _QUESTIONS: dict[str, Callable[[ImageDrawing, int], Awaitable[CapacityProblem | 
     "standings": lambda drawing, seated: drawing.standings_capacity_problem(seated),
     "declared": lambda drawing, seated: drawing.declared_capacity_problem(seated),
 }
+
+
+@dataclass(frozen=True)
+class SeatsAhead:
+    """The drivers a pasted list places before the one a guard is asked of (`/driver
+    assign-bulk`). The database holds none of them until the list is saved, so each guard adds
+    its own kind to the count it reads: *drivers* every driver, *reserves* those placed into the
+    reserve team, *classified* those placed into any other team. Zero for a single placement."""
+
+    drivers: int = 0
+    reserves: int = 0
+    classified: int = 0
 
 
 def _refusal(guard: str, problem: CapacityProblem) -> str:
@@ -149,7 +163,9 @@ class TemplateCapacityService:
         if problem is not None:
             raise Refused(_refusal(guard, problem))
 
-    async def _guard_reserve_capacity(self, division_id: int, team_name: str) -> None:
+    async def _guard_reserve_capacity(
+        self, division_id: int, team_name: str, ahead: SeatsAhead
+    ) -> None:
         """Refuse a reserve placement that would outgrow the lineup template (FR/R8).
 
         The reserve block is the one lineup collection whose slots the template fixes, so
@@ -175,11 +191,11 @@ class TemplateCapacityService:
             async with get_connection(self._db_path) as db:
                 if not await _is_reserve_team_on(db, division_id, team_name):
                     return None
-                return await _reserves_on(db, division_id) + 1
+                return await _reserves_on(db, division_id) + ahead.reserves + 1
 
         await self._guard("reserve", reserves_seated)
 
-    async def _guard_sheet_capacity(self, division_id: int) -> None:
+    async def _guard_sheet_capacity(self, division_id: int, ahead: SeatsAhead) -> None:
         """Refuse a placement that would outgrow the attendance sheet template (FR-042).
 
         The sheet draws every driver of the division, and its rows are counted from the file
@@ -206,11 +222,13 @@ class TemplateCapacityService:
 
         async def drivers_seated() -> int | None:
             async with get_connection(self._db_path) as db:
-                return await _drivers_on(db, division_id) + 1
+                return await _drivers_on(db, division_id) + ahead.drivers + 1
 
         await self._guard("sheet", drivers_seated)
 
-    async def _guard_standings_capacity(self, division_id: int, team_name: str) -> None:
+    async def _guard_standings_capacity(
+        self, division_id: int, team_name: str, ahead: SeatsAhead
+    ) -> None:
         """Refuse a placement that would outgrow the driver standings template (FR-044).
 
         The standings draw every driver of the division's classification, and their rows are
@@ -241,12 +259,16 @@ class TemplateCapacityService:
             async with get_connection(self._db_path) as db:
                 if await _is_reserve_team_on(db, division_id, team_name) is not False:
                     return None
-                return await _classified_on(db, division_id) + 1
+                return await _classified_on(db, division_id) + ahead.classified + 1
 
         await self._guard("standings", classified_seated)
 
     async def guard_image_capacity(
-        self, division_id: int, season_id: int, team_name: str
+        self,
+        division_id: int,
+        season_id: int,
+        team_name: str,
+        ahead: SeatsAhead = SeatsAhead(),
     ) -> None:
         """Refuse a placement that would outgrow any image template whose capacity is fixed
         in code, asking the image module's handed drawing (``_ask_drawing``).
@@ -258,20 +280,23 @@ class TemplateCapacityService:
         Reads its own count and asks the image module's handed drawing (``_ask_drawing``)
         under the one catch: never raises for its own reasons, only a genuine over-capacity
         the drawing reports may.
+
+        *ahead* counts the drivers a pasted list places before this one as seated, each guard
+        adding its own kind inside its count, so the one catch (`_ask_drawing`) covers it.
         """
         # The reserve block is guarded separately: it counts reserve drivers, not every
         # seated driver, and its capacity comes from the template rather than from here.
         # It needs the team, because only a placement into the reserve team joins it.
-        await self._guard_reserve_capacity(division_id, team_name)
+        await self._guard_reserve_capacity(division_id, team_name, ahead)
 
         # The attendance sheet's rows are likewise counted from the template rather than
         # declared in code, so they are invisible to the declared-capacity question below.
-        await self._guard_sheet_capacity(division_id)
+        await self._guard_sheet_capacity(division_id, ahead)
 
         # And so are the driver standings' — both standings catalogues declare no capacity
         # and derive their rows from the file. It needs the team too, because a reserve
         # joins no classification.
-        await self._guard_standings_capacity(division_id, team_name)
+        await self._guard_standings_capacity(division_id, team_name, ahead)
 
         async def division_seated() -> int | None:
             async with get_connection(self._db_path) as db:
@@ -281,6 +306,6 @@ class TemplateCapacityService:
                     (season_id, division_id),
                 )
                 row = await cursor.fetchone()
-            return ((row["seated"] if row else 0) or 0) + 1
+            return ((row["seated"] if row else 0) or 0) + ahead.drivers + 1
 
         await self._guard("declared", division_seated)
