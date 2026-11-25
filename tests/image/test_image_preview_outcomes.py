@@ -903,15 +903,58 @@ class TestAttendancePreview:
         marked = [n for n in spec.image_data if n.endswith("_points_background")]
         assert len(marked) < len(context.drivers)
 
-    async def test_the_preview_draws_its_rows_in_the_sheet_s_order(self, bot, league):
+    @pytest.mark.parametrize(
+        "against_teams",
+        [
+            pytest.param(False, id="names-follow-teams"),
+            pytest.param(
+                True,
+                id="names-against-teams",
+                marks=pytest.mark.xfail(
+                    strict=True,
+                    reason="#641: the preview still orders drivers level on points by name alone",
+                ),
+            ),
+        ],
+    )
+    async def test_the_preview_draws_its_rows_in_the_sheet_s_order(
+        self, bot, league, db_path, against_teams
+    ):
         """The Premier division's sheet after round 2, as `/images test attendance` previews it:
         its rows run from most points down, and drivers level on points stand in the order of
         the standings' final tiebreak, by team and then by name, as the textual sheet after a
-        round orders them (image spec, Attendance, Test data)."""
+        round orders them (image spec, Attendance, Test data). Once as the division stands, each
+        driver named after their team, where the two drivers level on points share Bluewave.
+        Once with Bluewave's first driver moved to a third seat in Redline and renamed Abe, and
+        Bluewave's second renamed Zed: the two level on points are then in different teams, and
+        ordered one way by team (Zed, Bluewave, first) and the other way by name (Abe first)."""
         from pathlib import Path
 
         from leaguebot.image.utils.svg_document import load_svg
 
+        if against_teams:
+            async with get_connection(db_path) as db:
+                await db.execute(
+                    "UPDATE team_instances SET max_seats = 3 WHERE name = 'Redline'"
+                )
+                cursor = await db.execute(
+                    "INSERT INTO team_seats (team_instance_id, seat_number) "
+                    "SELECT id, 3 FROM team_instances WHERE name = 'Redline'"
+                )
+                await db.execute(
+                    "UPDATE driver_season_assignments SET team_seat_id = ? "
+                    "WHERE driver_profile_id = (SELECT p.id FROM driver_profiles p "
+                    "JOIN signup_records s ON s.discord_user_id = p.discord_user_id "
+                    "WHERE s.server_display_name = 'Bluewave 1')",
+                    (cursor.lastrowid,),
+                )
+                for old_name, new_name in (("Bluewave 1", "Abe"), ("Bluewave 2", "Zed")):
+                    await db.execute(
+                        "UPDATE signup_records SET server_display_name = ? "
+                        "WHERE server_display_name = ?",
+                        (new_name, old_name),
+                    )
+                await db.commit()
         context = await _context(bot, round_number=2, require_teams=True)
         requests = await build_attendance_preview(bot, context)
 
@@ -930,6 +973,8 @@ class TestAttendancePreview:
 
         assert [row[0] for row in rows] == sorted((row[0] for row in rows), reverse=True)
         assert level, "the preview draws no two drivers level on points"
+        if against_teams:
+            assert any(a[1] != b[1] for a, b in level), "no two drivers level across teams"
         assert all(a[1:] <= b[1:] for a, b in level)
 
     async def test_a_league_that_collects_no_nationality_draws_no_flag(self, bot, league, db_path):
