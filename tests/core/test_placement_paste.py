@@ -2,8 +2,7 @@
 
 No fixtures: the parser resolves nothing against Discord or the database. It reads each line,
 names every line it cannot read at once, so a manager corrects one paste rather than one line per
-attempt, and numbers a line as the manager sees it in the box. The module does not exist until
-#633 is built, so each test imports it where it runs.
+attempt, and numbers a line as the manager sees it in the box.
 """
 from __future__ import annotations
 
