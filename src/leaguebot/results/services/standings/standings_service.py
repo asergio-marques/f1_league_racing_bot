@@ -210,6 +210,10 @@ def order_drivers(
     team; a driver absent from it holds no seat and ranks after both (decided 2026-09-15).
     *names* are the names the output will draw, since an order taken on one name while another
     is displayed reads as simply broken; a driver absent from it falls back to their id.
+
+    The attendance sheet also calls this, with attendance points and no finishes, so that only
+    the points and then step 5 order its drivers: a step added after the points here reaches that
+    sheet too, and is weighed for it (``after_round_order``).
     """
     positions = _deepest_position(finish_counts)
 

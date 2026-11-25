@@ -903,15 +903,70 @@ class TestAttendancePreview:
         marked = [n for n in spec.image_data if n.endswith("_points_background")]
         assert len(marked) < len(context.drivers)
 
-    async def test_the_preview_draws_its_rows_in_the_sheet_s_order(self, bot, league):
+    @pytest.mark.parametrize(
+        "case",
+        [
+            pytest.param("names-follow-teams", id="names-follow-teams"),
+            pytest.param("names-against-teams", id="names-against-teams"),
+            pytest.param("reserve-against-name", id="reserve-against-name"),
+        ],
+    )
+    async def test_the_preview_draws_its_rows_in_the_sheet_s_order(
+        self, bot, league, db_path, case
+    ):
         """The Premier division's sheet after round 2, as `/images test attendance` previews it:
         its rows run from most points down, and drivers level on points stand in the order of
-        their names, as the textual sheet after a round orders them (image spec, Attendance,
-        Test data)."""
+        the standings' final tiebreak, by team and then by name, as the textual sheet after a
+        round orders them (image spec, Attendance, Test data). Once as the division stands, each
+        driver named after their team, where the two drivers level on points share Bluewave.
+        Once with Bluewave's first driver moved to a third seat in Redline and renamed Abe, and
+        Bluewave's second renamed Zed: the two level on points are then in different teams, and
+        ordered one way by team (Zed, Bluewave, first) and the other way by name (Abe first).
+        Once with Bluewave's first driver moved to the reserve team and renamed Abe, Bluewave
+        renamed Williams and its second driver Zed: the reserve team ranks after every named
+        team, so Zed of Williams is drawn first, though both 'Reserve' and Abe sort before them."""
         from pathlib import Path
 
         from leaguebot.image.utils.svg_document import load_svg
 
+        if case != "names-follow-teams":
+            async with get_connection(db_path) as db:
+                if case == "names-against-teams":
+                    await db.execute(
+                        "UPDATE team_instances SET max_seats = 3 WHERE name = 'Redline'"
+                    )
+                    cursor = await db.execute(
+                        "INSERT INTO team_seats (team_instance_id, seat_number) "
+                        "SELECT id, 3 FROM team_instances WHERE name = 'Redline'"
+                    )
+                else:
+                    cursor = await db.execute(
+                        "INSERT INTO team_instances (division_id, name, full_name, max_seats, "
+                        "is_reserve) VALUES (?, 'Reserve', 'Reserve', 1, 1)",
+                        (league,),
+                    )
+                    cursor = await db.execute(
+                        "INSERT INTO team_seats (team_instance_id, seat_number) VALUES (?, 1)",
+                        (cursor.lastrowid,),
+                    )
+                    await db.execute(
+                        "UPDATE team_instances SET name = 'Williams', full_name = 'Williams' "
+                        "WHERE name = 'Bluewave'"
+                    )
+                await db.execute(
+                    "UPDATE driver_season_assignments SET team_seat_id = ? "
+                    "WHERE driver_profile_id = (SELECT p.id FROM driver_profiles p "
+                    "JOIN signup_records s ON s.discord_user_id = p.discord_user_id "
+                    "WHERE s.server_display_name = 'Bluewave 1')",
+                    (cursor.lastrowid,),
+                )
+                for old_name, new_name in (("Bluewave 1", "Abe"), ("Bluewave 2", "Zed")):
+                    await db.execute(
+                        "UPDATE signup_records SET server_display_name = ? "
+                        "WHERE server_display_name = ?",
+                        (new_name, old_name),
+                    )
+                await db.commit()
         context = await _context(bot, round_number=2, require_teams=True)
         requests = await build_attendance_preview(bot, context)
 
@@ -921,12 +976,25 @@ class TestAttendancePreview:
         rows = []
         while f"row_{len(rows) + 1}_points" in spec.text:
             n = len(rows) + 1
-            rows.append((int(spec.text[f"row_{n}_points"]), spec.text[f"row_{n}_driver_name"]))
+            team = spec.text[f"row_{n}_team_name"].casefold()
+            rows.append((
+                int(spec.text[f"row_{n}_points"]),
+                # The reserve team ranks after every named team, whatever its name.
+                team == "reserve",
+                team,
+                spec.text[f"row_{n}_driver_name"].casefold(),
+            ))
         level = [(a, b) for a, b in zip(rows, rows[1:]) if a[0] == b[0]]
 
-        assert [points for points, _ in rows] == sorted((p for p, _ in rows), reverse=True)
+        assert [row[0] for row in rows] == sorted((row[0] for row in rows), reverse=True)
         assert level, "the preview draws no two drivers level on points"
-        assert all(a[1].casefold() <= b[1].casefold() for a, b in level)
+        if case == "names-against-teams":
+            assert any(a[2] != b[2] for a, b in level), "no two drivers level across teams"
+        if case == "reserve-against-name":
+            assert [(a[2:], b[2:]) for a, b in level] == [
+                (("williams", "zed"), ("reserve", "abe"))
+            ]
+        assert all(a[1:] <= b[1:] for a, b in level)
 
     async def test_a_league_that_collects_no_nationality_draws_no_flag(self, bot, league, db_path):
         """FR-028 — the sheet does carry a flag element, and it obeys the switch."""

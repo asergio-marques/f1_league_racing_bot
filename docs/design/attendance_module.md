@@ -510,8 +510,20 @@ attendance's jobs in core's approval of a season's placements and in its complet
 occasion's heading. Each stops the queue where Discord refuses the post or the division has no
 attendance channel, to be set and retried. The rows are the drivers core seats full-time in the
 division (`seat_holders_on`), and every driver with a total recorded in the division up to the
-round, so that one sacked or moved to Reserve stays on the sheet (`_sheet_rows`' docstring). The
-opening sheet is drawn against the division's first round, the final sheet against the round the
+round, so that one sacked or moved to Reserve stays on the sheet (`_sheet_rows`' docstring). Each
+row carries the seat its driver holds now, a named team, the reserve team or none, and the rows are
+ordered through `after_round_order`, which calls results' `order_drivers` with the attendance
+points and no finishes, so that drivers level on points are ordered as the attendance
+specification, "Updating attendance sheets", asks.
+
+*Rejected:* a copy of the tiebreak in attendance, which would drift from the standings' the first
+time one changed. *Rejected:* a `final_tiebreak_key` split out of results, which adds a public
+function to results, with a test of its own, for one caller. The cost of calling `order_drivers`
+whole is that a step added to it after the points would reach the sheet too; the docstrings of
+`order_drivers` and `after_round_order` say so to whoever adds one, and the test named in the
+constraints table holds it for the drivers it separates.
+
+The opening sheet is drawn against the division's first round, the final sheet against the round the
 completion hands it, and the sync's, for its division, against the last round it recalculated, and
 for each other division an auto-sack reached, against that division's latest scored round; a
 penalty's change posts each division's once, against its latest approved round.
@@ -606,18 +618,20 @@ front like one it cannot see.
 ### The dependency table and the image module
 
 Attendance needs results (`NEEDS`, `core.md`, "The dependency table"): the sanctions and the
-recalculation both stand on a round's results. It may ask the image module to draw its posts, and
-uses no other module (the `attendance-uses-no-other-module-but-results-and-image` contract). The
-image module draws the call (`ImageDrawing.attach_check_in_call`) and the sheet
-(`ImageDrawing.attendance_wanted` and `draw_attendance_sheet`), both on the drawing the wiring hands
-the post jobs, from what attendance hands it, the call's deadline included: attendance works it out
-(`derive_checkin_deadline`) and hands it in. The recalculation's check that the attendance channel
-can use what it is sent reads the module's stated needs (`division_channels.channel_needs`, above)
-and, for the verdicts channel, results' (`channel_needs` in `results.services.module`); both ask the
-same drawing whether the aspect attaches files (`ImageDrawing.aspect_attaches_files`), which the cog
-reads off the bot. It also implements its share of the image module's `PreviewSources`, the check-in
-deadline the previews draw and the order its sheet lists drivers in after a round
-(`after_round_order_key`), and the builder joins it with results' share and hands the whole in as
+recalculation both stand on a round's results, and the sheet's order is results' `order_drivers`
+(see "The sheet"). It may ask the image module to draw its posts, and uses no other module (the
+`attendance-uses-no-other-module-but-results-and-image` contract). The image module draws the call
+(`ImageDrawing.attach_check_in_call`) and the sheet (`ImageDrawing.attendance_wanted` and
+`draw_attendance_sheet`), both on the drawing the wiring hands the post jobs, from what attendance
+hands it, the call's deadline included: attendance works it out (`derive_checkin_deadline`) and
+hands it in. The recalculation's check that the attendance channel can use what it is sent reads the
+module's stated needs (`division_channels.channel_needs`, above) and, for the verdicts channel,
+results' (`channel_needs` in `results.services.module`); both ask the same drawing whether the
+aspect attaches files (`ImageDrawing.aspect_attaches_files`), which the cog reads off the bot. It
+also implements its share of the image module's `PreviewSources`, the check-in deadline the previews
+draw and the order its sheet lists drivers in after a round (`attendance_sheet_order`, through
+`after_round_order`, handed each fabricated driver's team as a named team, read from the preview
+context's drivers), and the builder joins it with results' share and hands the whole in as
 `bot.preview_sources`.
 
 ---
@@ -696,4 +710,5 @@ Each is stated where it lives and pinned by the test named.
 | A button id the bot cannot read is a fault, not a refusal | `handle_rsvp_button`'s docstring | `test_an_unparseable_check_in_button_id_is_a_fault_not_a_refusal` |
 | A sheet whose round grid cannot be read leaves the standing one | `_round_grid`'s docstring | `test_a_sheet_whose_grid_cannot_be_read_stops_and_leaves_the_standing_one` |
 | A graphic that cannot be drawn is told as a line of its job | `_sheet_attachment`'s and `_checkin_attachment`'s docstrings | `test_a_sheet_whose_graphic_falls_back_is_told_as_a_line_of_its_job`, `test_a_call_whose_graphic_cannot_be_drawn_is_told_as_a_line_of_its_job` |
+| Drivers level on attendance points follow the standings' final tiebreak, and only it | `order_drivers`' and `after_round_order`'s docstrings | `test_drivers_level_on_points_are_ordered_by_the_standings_final_tiebreak` |
 | A seat holder with no placement in the division is refused as not a member | `check_in_answer_changes._facts`' docstring | `test_the_seat_read_through_core_judges_a_driver_as_the_old_join_did` |
