@@ -33,12 +33,14 @@ division records what that one left, and its reply reads "set" or "updated" by i
 
 **A save that moved a channel which still stands asks the carry.** The results and the standings
 channel each plan an `After` step, `ask_carry`, where the save replaced a channel (never a first
-set). It finds again that the channel moved away from stands, as the check did, and that the sync's own
-plan (`plan_division_posts`) has posts to move, and only then asks
-`results.channel.carry` (`publishing/channel_move`) as the bot's own follow-on, whose job it is to
-move the tables or standings already up across, as a sync would; the setting's reply then says so.
-The step asks and does nothing else, so the setting never stops the queue, and a channel that has
-gone since the save, whose posts went with it, and a division with no posts up ask nothing.
+set). It finds again that the channel the posts stand in stands, as the check did (the channel
+moved away from, or, where a carry still waiting was to move the posts there, the channel that
+carry takes them from), and that the sync's own plan (`plan_division_posts`) has posts to move, and
+only then asks `results.channel.carry` (`publishing/channel_move`) as the bot's own follow-on, whose
+job it is to move the tables or standings already up across, as a sync would; the setting's reply
+then says so. The step asks and does nothing else, so the setting never stops the queue, and a
+channel that has gone since the save, whose posts went with it, and a division with no posts up
+ask nothing.
 
 **Each overtakes a stopped job on the league lane** (`Setting.repairs_the_bot`): a stop notice for
 a channel gone tells the league to set the channel and press Retry, which a change waiting behind
@@ -254,14 +256,16 @@ def _channel_setting(
         old = next(
             (view.result or {}).get("replaced") for view in ctx.steps if view.name == SAVE
         )
-        if old is None or not await _stands(ctx.bot, int(old), (await channel_needs(drawing))[key]):
+        if old is None:
+            return StepResult(result={"carrying": False})
+        old = await _where_posts_stand(ctx.db_path, ctx.payload, key, int(old))
+        if not await _stands(ctx.bot, old, (await channel_needs(drawing))[key]):
             return StepResult(result={"carrying": False})
         async with get_connection(ctx.db_path) as db:
             up = await plan_division_posts(
                 db, int(ctx.payload["division_id"]), results_only=key == "results",
                 standings_only=key == "standings",
             )
-        old = await _where_posts_stand(ctx.db_path, ctx.payload, key, int(old))
         if not up:
             return StepResult(result={"carrying": False})
         carry = {
