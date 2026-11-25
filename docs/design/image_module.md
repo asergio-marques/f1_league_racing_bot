@@ -269,9 +269,10 @@ picture that was due was not drawn is headed by the aspect's own name (each post
 `*_TOGGLE_NAME`, the weather forecast's written in place), and its notices by what was drawn ("Image
 render notices — …", `ImageRenderService.format_notices`). Image hands the notices back grouped by
 kind (`grouped_notice_lines`), each kind headed by its words (`KIND_WORDS` in `image_constants`). A
-post aspect's drawing comes back as a `NoticeBlock`, marked and left unopened: a drawing knows no
-member, so the job that drew the picture opens the block with the member and the change
-(`framework.md`, "How a change is carried out"). What `ImageDrawing` draws for core comes back as
+post aspect's drawing comes back as a `NoticeBlock`, marked and left unopened, and the line saying
+why a picture was not drawn comes back unopened too: a drawing knows no member, so the job that drew
+the picture opens each with the member and the change (`framework.md`, "How a change is carried
+out"). What `ImageDrawing` draws for core comes back as
 the grouped lines alone, for core's jobs to head and open. The rules a league reads, the headings in
 plain words, repeats counted, a lone notice naming its field and no template's key, are the image
 specification's "Errors and the rejection of input". The one drawing that writes its own notices,
