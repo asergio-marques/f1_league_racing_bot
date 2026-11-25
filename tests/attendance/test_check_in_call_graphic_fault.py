@@ -26,6 +26,7 @@ from tests.support.season_league import (
     ongoing_league,
     round_id,
 )
+from tests.support.settings_league import unruled
 from tests.support.switches import answer_switch
 
 CHECK_IN = DIVISIONS[PRO][3].checkin
@@ -155,11 +156,39 @@ def _draw_with(league: SeasonLeague, tmp_path: Any, outcome: str) -> None:
     league.bot.image_render_service.render = AsyncMock(return_value=drawn)
 
 
+#: Why the check-in call's notice tests fail until #635 is built.
+NOT_YET_FRAMED = (
+    "#635: a check-in call's notices reach the log as a bare block headed by the kind's code, "
+    "the member and the change unnamed"
+)
+
+
+def _notice_is_framed(league: SeasonLeague) -> None:
+    """The log channel carries the call's one notice once, in a block opening with the bot and
+    the change it ran for ("posting the check-in call of round 4 in **Pro**"), then "Image render
+    notices — " naming round 4, season 3 and Pro, and beneath it the notice under "Artwork not
+    supplied by the league", naming its field `flag`, with no kind code and no template name."""
+    log = league.log()
+    assert log.count(NOTICE_DETAIL) == 1, log
+    [block] = [message for message in league.bot.log_channel.sent if NOTICE_DETAIL in message]
+    pro = DIVISIONS[PRO][0]
+    assert unruled(block).splitlines() == [
+        f"the bot | posting the check-in call of round 4 in **{pro}** | Image render notices — "
+        f"check-in call of round 4 in Season 3 **{pro}**:",
+        "  Artwork not supplied by the league",
+        f"    • `flag` — {NOTICE_DETAIL}",
+    ], block
+    assert "ASSET_FALLBACK_USED" not in block and "rsvp_template" not in block, block
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_YET_FRAMED)
 async def test_a_check_in_call_s_render_notices_reach_the_log_once_naming_the_round(tmp_path):
-    """Pro's round 4's check-in call is drawn, its flag falling back (one render notice). The
-    call posts with its picture, and the log channel carries the notice once, in a block whose
-    heading names round 4, season 3 and Pro; no block without a heading carries it a second
-    time."""
+    """Pro's round 4's check-in call is drawn, its flag falling back (one render notice), and
+    the bot posts the call at its time. The call posts with its picture, and the log channel
+    carries the notice once, in a block opening with the bot and the change ("posting the check-in
+    call of round 4 in **Pro**"), then a heading naming round 4, season 3 and Pro, and the notice
+    grouped beneath under its kind in plain words, naming its field; no block without a heading
+    carries it a second time (issue #635; Constitution V)."""
     league = await _league(tmp_path)
     _draw_with(league, tmp_path, "notice")
 
@@ -167,11 +196,7 @@ async def test_a_check_in_call_s_render_notices_reach_the_log_once_naming_the_ro
 
     assert await stopped_job(league.db_path) is None
     assert league.channel(CHECK_IN).files[-1] is not None
-    log = league.log()
-    assert log.count(NOTICE_DETAIL) == 1, log
-    [block] = [message for message in league.bot.log_channel.sent if NOTICE_DETAIL in message]
-    heading = block.splitlines()[0]
-    assert f"check-in call of round 4 in Season 3 **{DIVISIONS[PRO][0]}**:" in heading, block
+    _notice_is_framed(league)
 
 
 @pytest.mark.parametrize("outcome", [
@@ -206,7 +231,10 @@ async def test_a_check_in_call_s_render_fault_is_named_as_the_check_in_call_imag
         assert CONVERTER_ABSENT_REMEDY in line, line
 
 
-@pytest.mark.parametrize("outcome", ["notice", "fault"])
+@pytest.mark.parametrize("outcome", [
+    pytest.param("notice", marks=pytest.mark.xfail(strict=True, reason=NOT_YET_FRAMED)),
+    "fault",
+])
 async def test_a_refused_check_in_call_s_picture_line_reaches_the_log_once_when_it_is_retried(
     tmp_path, outcome
 ):
@@ -214,7 +242,9 @@ async def test_a_refused_check_in_call_s_picture_line_reaches_the_log_once_when_
     render fails on a template fault ("fault"), and Discord refuses the post: the queue stops at
     the call. Discord then accepts, Retry is pressed and the call goes out as text. The notice, or
     the fault's "⚠️ Check-in call image" line, reaches the log channel once, as it did when the
-    call was posted at the first try: never lost with the refused post, and never twice."""
+    call was posted at the first try: never lost with the refused post, and never twice. The
+    notice's block opens with the bot and the change, and carries it grouped beneath its kind in
+    plain words (issue #635)."""
     league = await _league(tmp_path)
     _draw_with(league, tmp_path, outcome)
     league.channel(CHECK_IN).send_fails = http_error(status=500, text="Internal Server Error")
@@ -234,6 +264,8 @@ async def test_a_refused_check_in_call_s_picture_line_reaches_the_log_once_when_
     if outcome == "fault":
         [line] = [line for line in log.splitlines() if RENDER_FAULT in line]
         assert line.startswith("⚠️ Check-in call image — "), line
+    else:
+        _notice_is_framed(league)
 
 
 async def test_a_check_in_call_whose_images_switch_nobody_signed_up_for_stops_its_job(tmp_path):
