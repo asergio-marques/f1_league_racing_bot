@@ -602,9 +602,9 @@ async def test_a_closed_notice_that_cannot_be_carried_stays_where_it_was(tmp_pat
 
     Where the post is refused, the configuration keeps 950 in 650 and nothing is deleted; the
     reply says the notice was not carried, naming 650, where the next `/signup open` takes it
-    down. Where the deletion is refused, the configuration keeps the copy posted in 700 (951);
-    the reply names the old notice with its link, to delete by hand; and the log channel carries
-    a failure line for `/signup channel`."""
+    down. Where the deletion is refused, the configuration keeps the copy posted in 700 (951),
+    and the reply names the old notice with its link, to delete by hand. Either way the log
+    channel carries one failure line for `/signup channel`."""
     league = await _league(tmp_path, held=OLD)
     await _closed_notice(league)
     events: list[tuple] = []
@@ -632,8 +632,8 @@ async def test_a_closed_notice_that_cannot_be_carried_stays_where_it_was(tmp_pat
         assert await _notice_kept(league.db_path) == (CARRIED_NOTICE, NEW)
         assert f"https://discord.com/channels/{SERVER_ID}/{OLD}/{OLD_NOTICE}" in replied
         assert "by hand" in replied
-        [failed] = [line for line in await log_lines(league) if line.startswith("❌ ")]
-        assert failed.startswith(f"❌ `/signup channel` failed for {NAMED} (")
+    [failed] = [line for line in await log_lines(league) if line.startswith("❌ ")]
+    assert failed.startswith(f"❌ `/signup channel` failed for {NAMED} (")
 
 
 @pytest.mark.parametrize("gone", [
