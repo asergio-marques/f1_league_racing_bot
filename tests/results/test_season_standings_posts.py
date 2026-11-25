@@ -18,6 +18,7 @@ that a posting raises where it cannot be made; what the standings *say* is cover
 """
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -693,9 +694,10 @@ _ASKED_BY = {
 }
 
 
+@pytest.mark.parametrize("refused", [False, True], ids=["posted", "refused_then_retried"])
 @pytest.mark.parametrize("occasion, job, word", _OCCASIONS)
 async def test_a_classification_s_notices_open_with_member_and_change_and_are_kept_for_the_reply(
-    tmp_path, monkeypatch, occasion, job, word,  # noqa: ARG001 — word is the other tests'
+    tmp_path, monkeypatch, occasion, job, word, refused,  # noqa: ARG001 — word is the other tests'
 ):
     """Images and results on, the standings aspect on and its templates sound. Season 3 is
     approved (the opening classification) or completed (the final one), and every championship
@@ -705,7 +707,14 @@ async def test_a_classification_s_notices_open_with_member_and_change_and_are_ke
     |" or "| /season complete |"), then "Image render notices — <picture>:" naming the division and the championship, and
     beneath it the notice grouped under "Font substituted", naming its field, every font once.
     The job keeps each picture's name and its grouped notices on its result, for the change's
-    reply to list (issue #635; Constitution V; image spec, Errors and the rejection of input)."""
+    reply to list. Run twice: posted on the first try; and with Discord taking Pro's drivers'
+    table, then refusing its constructors' table and the text in its place (Missing Access), so
+    the queue stops at Pro's job, and a Retry posting Pro's classification as text, which draws
+    no picture. Either way the queue runs to the end, the log holds each block once, the job
+    keeps every picture, the refused try's included, and the change's reply ends in one "Image
+    notices" section listing each of the four pictures once, linked to the log message holding
+    its block, its notice beneath, once (issue #635; Constitution V; image spec, Errors and the
+    rejection of input; code-1-1, owner decision 2026-11-25)."""
     from types import SimpleNamespace
 
     from leaguebot.framework.models.change import RESULT_DRAWN, RESULT_NOTICES, RESULT_PICTURES
@@ -733,12 +742,28 @@ async def test_a_classification_s_notices_open_with_member_and_change_and_are_ke
         return SimpleNamespace(notices=[notice], problem=None, posts_image=True, png_paths=[png])
 
     monkeypatch.setattr(image_standings_post, "render_png", _drawn)
+    standings = league.channel(DIVISIONS[PRO][3].standings)
+    taken: list[bool] = []
+
+    def _refuses_after_the_first_table(_content: Any, kwargs: dict[str, Any]) -> bool:
+        if kwargs.get("file") or kwargs.get("files"):
+            taken.append(True)
+            return len(taken) > 1
+        return bool(taken)
+
+    if refused:
+        standings.fail_when = _refuses_after_the_first_table
     if occasion is ClassificationOccasion.SEASON_OPENING:
-        await press_approve(league)
+        asked = await press_approve(league)
     else:
-        await complete_season(league)
+        asked = await complete_season(league)
 
     await run_queue(league.bot)
+    if refused:
+        assert await stopped_job(league.db_path) is not None
+        assert taken == [True, True], taken
+        standings.fail_when = None
+        await retry_job(league.bot)
 
     assert await stopped_job(league.db_path) is None
     assert len(fonts) == 2 * len(DIVISIONS), fonts
@@ -750,6 +775,7 @@ async def test_a_classification_s_notices_open_with_member_and_change_and_are_ke
         for result in kept for each in result[RESULT_PICTURES]
     }
     assert len(pictures) == len(fonts), pictures
+    linked: dict[str, int] = {}
     for name, *_rest in DIVISIONS.values():
         labels = {
             championship: [label for label in pictures
@@ -761,10 +787,14 @@ async def test_a_classification_s_notices_open_with_member_and_change_and_are_ke
             f"{opening}{label}:\n" + "\n".join(pictures[label])
             for [label] in labels.values()
         ]
-        held = [line for line in league.bot.log_channel.sent if blocks[0] in line]
+        held = [(n, line) for n, line in enumerate(league.bot.log_channel.sent, 1)
+                if blocks[0] in line]
         assert len(held) == 1, (blocks[0], league.bot.log_channel.sent)
-        assert blocks[1] in held[0], held[0]
-        assert "<@77>" in held[0].split(" | ", 1)[0], held[0]
+        [(n, line)] = held
+        assert blocks[1] in line, line
+        assert "<@77>" in line.split(" | ", 1)[0], line
+        for [label] in labels.values():
+            linked[label] = n
     for notices in pictures.values():
         assert notices[0] == "  Font substituted", pictures
         [font] = [font for font in fonts if f"`driver_name_1` — {font} was" in notices[1]]
@@ -773,3 +803,19 @@ async def test_a_classification_s_notices_open_with_member_and_change_and_are_ke
         ), pictures
     every = "\n".join(league.bot.log_channel.sent)
     assert all(every.count(font + " ") == 1 for font in fonts), every
+    told = _last_told(asked)
+    assert told.count("⚠️ **Image notices**") == 1, told
+    for label, n in linked.items():
+        assert told.count(f"**{label}**") == 1, told
+        assert f"  **{label}** ([see them in the log](https://discord.test/{n}))" in told, told
+    assert all(told.count(font + " ") == 1 for font in fonts), told
+
+
+def _last_told(press: Any) -> str:
+    """What *press*'s reply says as last edited, which a stop's edit may have gone before."""
+    from tests.support.change_queue import followup_edits
+
+    edits = [str(call.args[0]) if call.args else str(call.kwargs.get("content") or "")
+             for call in press.edit_original_response.await_args_list]
+    edits += followup_edits(press)
+    return edits[-1] if edits else ""
