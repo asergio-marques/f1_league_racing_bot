@@ -330,7 +330,7 @@ declares every attribute the builder attaches (`framework.md`, "How the code is 
 | `/season` | `season_cog` | `setup`, `placements-review`, `config-review`, `status`, `cancel`, `abort`, `complete` |
 | `/division` | `division_cog` | `add`, `duplicate`, `delete`, `rename`, `amend`, `cancel`, `lineup-channel`, `calendar-channel`, `calendar-sync` |
 | `/round` | `round_cog` | `add`, `add-bulk`, `add-xml`, `amend`, `delete`, `cancel` |
-| `/driver` | `driver_cog` (the member's), `driver_test_cog` (test mode's) | `reassign`, `assign`, `unassign`, `move`, `release`, `reject`, `sack`, in each |
+| `/driver` | `driver_cog` (the member's), `driver_test_cog` (test mode's) | `reassign`, `assign`, `assign-bulk`, `unassign`, `move`, `release`, `reject`, `sack`, in each |
 | `/team` | `team_cog` | `add`, `modify`, `remove`, `list`, `lineup`, `reserve-role` |
 | `/module` | `module_cog` | `enable`, `disable` |
 | `/test-mode` | `test_mode_cog` | `toggle`, `nationality`, `advance`, `review`, `set-former-driver`; `backup` (`save`, `lock`, `status`, `restore`); `roster` (`add`, `add-bulk`, `sign-up-bulk`, `remove`, `list`, `clear`) |
@@ -441,7 +441,7 @@ Every core change type runs on the league lane; none is a conversation's. Each i
 | `season.approve` | ✅ Approve | sessions, points snapshot, placements committed, the season Ongoing | arming, roles, lineups, calendars, the modules' opening posts |
 | `season.placements.confirm` | ✅ Confirm placements, mid-season | placements, the season back to Ongoing | roles, lineups |
 | `season.approve.tell`, `channel.tell` | an approval, or a mid-season confirmation, refused or discarded | none | one line in the review's channel |
-| `core.driver_*` (seven) | `/driver …` | the seats or the state, and the audit entry | role moves, lineups |
+| `core.driver_*` (eight) | `/driver …` | the seats or the state, and the audit entry; `core.driver_assign_bulk` seats every driver of a pasted list, an entry for each | role moves, lineups (`core.driver_assign_bulk`: none) |
 | `core.team_*` (four) | `/team add`, `modify`, `remove`, `reserve-role` | the list and the role mapping, audited | role moves |
 | `core.test_mode_toggle` | `/test-mode toggle` | the flag, the modules' part, the audit entries (its own and those the modules' part hands back); turned off, every fake driver deleted | the swap of the `/driver` and `/signup` commands, the jobs the modules hand back for what test mode posted, the backup deleted |
 | `core.test_mode_former_driver` | `/test-mode set-former-driver` | the flag and the audit entry | — |
@@ -941,6 +941,33 @@ connection (`DriverService.reassign_judged_on`), then writes; where the new acco
 driver's current one, the two profiles merge (`DriverService._merge`), the modules re-pointing their
 rows through `profiles_merged` first. Role moves, the modules' jobs (`driver_account_changed`) and
 the portrait's discard follow the save as jobs of their own.
+
+**A pasted list of placements is one change, judged in order.** `/driver assign-bulk` opens a form
+(`AssignBulkModal`) and asks `core.driver_assign_bulk` once for the whole list, which seats every
+driver or none (the core specification's "Placement into a division and team"). The list is read in
+three passes, each naming every fault of its kind: the text at the form (`parse_placement_paste`, a
+line that is not `<@id>, division, team`), the names by the command (the driver, the division, the
+team, the profile), and the seats, the stage and the capacity by the change. The command takes a
+driver by mention alone in both groups, as the member group's picker would name a member and the
+test-mode group's field a fake driver; the member group's resolver also requires the account to be in
+the server and swaps a past account for the current one, as a single `/driver assign` does.
+
+A line is judged by `judge_assign_on`, which reads the database, and the database does not yet hold
+what the lines above it take. `PlacementService.judge_assign_paste_on` therefore walks the list with
+a running tally, keyed on each line's current account: a driver placed earlier in the paste into the
+same division is refused as one already in it, and a race team's free seats (`_free_seats_on`) count
+down, the lines past the last refused in the words `_find_free_seat` uses; the Reserve team never
+runs out. The capacity guards count the same way: `SeatsAhead` (drivers, reserves, classified) is
+added to the count inside each guard of `TemplateCapacityService`, so `_ask_drawing` stays the one
+catch around the image module's reads. The check asks capacity, per division, only of the last line
+of each kind with every line before it ahead, and walks the lines one by one through `guard_assign`'s `ahead` only where that overflows, so the lines
+refused are the same and the templates are read far less. `guard_assign_paste_test_mode` and
+`guard_assign_paste` run first and in the check alone, being unable to run in a save; the save judges
+every line again on its own connection and then writes (`assign_on`, `profile_for_placement_on`),
+one `DRIVER_ASSIGN` audit entry per driver, as an audit entry carries one division. *Rejected:*
+judging the list by writing it inside a SAVEPOINT and rolling back on a fault, which finds the same
+refusals but writes in the judging, so a check would no longer be a read and the one-connection
+rule of a save could not be kept for the guards that ask the templates.
 
 **A driver's history outlives the profile.** `driver_history_entries` names the driver by account
 and lets go of the profile on delete. `delete_driver_profiles` (`season_lifecycle_service`) is the
