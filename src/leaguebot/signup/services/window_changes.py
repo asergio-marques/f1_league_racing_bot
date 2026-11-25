@@ -228,8 +228,7 @@ def window_open_change(
 
     def plan(payload: dict[str, Any]) -> tuple[PlannedStep, ...]:
         planned = [PlannedStep(POST_INFO, {
-            "channel_id": payload["channel_id"], "track_ids": list(payload["track_ids"]),
-            "close_at": payload["close_at"],
+            "track_ids": list(payload["track_ids"]), "close_at": payload["close_at"],
         })]
         if payload["close_at"]:
             planned.append(PlannedStep(ARM_CLOSE, {"close_at": payload["close_at"]}))
