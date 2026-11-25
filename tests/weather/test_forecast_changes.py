@@ -230,6 +230,10 @@ def _pictures_due(league: Any, *, valid: bool = True) -> None:
     })
 
 
+#: What every line of Phase 1's job opens with: the bot, then the change it ran for.
+PHASE_1_OPENING = "the bot | drawing the Phase 1 forecast of round 3 in **Pro** | "
+#: What every line of a mystery round notice's job opens with, in Phase 1's place.
+MYSTERY_OPENING = "the bot | posting the mystery round notice of round 3 in **Pro** | "
 #: How a fault in the bot met in drawing a forecast's picture is named in its line: by its kind.
 FAULT_IN_THE_BOT = "the bot hit an internal fault"
 #: The words the render gives where Inkscape is not installed, which the line keeps.
@@ -281,7 +285,8 @@ async def test_a_forecast_posted_as_text_where_a_picture_was_due_logs_why(
     """Phase 1 asked with pictures due, but its picture not drawn: the template file is invalid,
     the images switch cannot be read, the round cannot be read for the picture, the round cannot
     be found for it, or the drawing raises. The text forecast is posted and recorded, and the
-    reason is written to the log channel. With the images module off, or its weather pictures
+    reason is written to the log channel, on a line opening with the bot and the change it ran
+    for, then "⚠️ Weather image". With the images module off, or its weather pictures
     off, no picture was due: the text is posted and nothing about a picture is written, even
     where the round could not have been read for one (weather spec, "Image generation";
     criterion 4). Where round 3 is a mystery round, its notice is posted in place of Phase 1
@@ -330,13 +335,17 @@ async def test_a_forecast_posted_as_text_where_a_picture_was_due_logs_why(
         assert "image" not in written.lower() and "picture" not in written.lower()
         assert "could not be read" not in written
     else:
-        assert reason in written
+        opening = MYSTERY_OPENING if mystery else PHASE_1_OPENING
+        [line] = [line for line in written.splitlines() if reason in line]
+        assert line.startswith(f"{opening}⚠️ Weather image — "), line
     if raised is not None:
         assert raised not in written
     if cause == "converter absent":
         assert CONVERTER_ABSENT_REMEDY in written
     if mystery:
-        assert [line for line in written.splitlines() if "Weather image" in line] == [reason]
+        assert [line for line in written.splitlines() if "Weather image" in line] == [
+            MYSTERY_OPENING + reason
+        ]
 
 
 #: The detail of the one render notice a drawn forecast comes back with.
@@ -355,12 +364,13 @@ async def test_a_refused_forecast_s_picture_line_reaches_the_log_once_when_it_is
     """Phase 1 of Pro's round 3 is asked with pictures due, and its picture is drawn with one
     render notice (*outcome* "notice") or its render fails on a template fault ("fault"). Discord
     refuses the forecast's post, and the queue stops at it; Discord then accepts, Retry is pressed
-    and the forecast goes out as text. The notice, or the picture's "⚠️ Weather image" fault line,
-    reaches the log channel once, as it does when the forecast posts at the first try: never lost
-    with the refused post, and never twice. The notice's block opens with the bot and the change
-    ("drawing the Phase 1 forecast of round 3 in **Pro**"), then "Image render notices — round 3
-    in **Pro**, phase 1:", and the notice grouped beneath "Artwork not supplied by the league",
-    naming its field, with no kind code and no template name (issue #635; Constitution V)."""
+    and the forecast goes out as text. The notice, or the picture's fault line, opening with the
+    bot and the change, then "⚠️ Weather image", reaches the log channel once, as it does when
+    the forecast posts at the first try: never lost with the refused post, and never twice. The
+    notice's block opens with the bot and the change ("drawing the Phase 1 forecast of round 3 in
+    **Pro**"), then "Image render notices — round 3 in **Pro**, phase 1:", and the notice grouped
+    beneath "Artwork not supplied by the league", naming its field, with no kind code and no
+    template name (issue #635; Constitution V)."""
     from leaguebot.image.models.image_module import Problem, RenderNotice, RenderOutcome
 
     league = await _league(tmp_path)
@@ -393,7 +403,7 @@ async def test_a_refused_forecast_s_picture_line_reaches_the_log_once_when_it_is
     assert said.count(detail) == 1, said
     if outcome == "fault":
         [line] = [line for line in said.splitlines() if FORECAST_FAULT in line]
-        assert line.startswith("⚠️ Weather image — "), line
+        assert line.startswith(f"{PHASE_1_OPENING}⚠️ Weather image — "), line
     else:
         [block] = [each for each in league.bot.log_channel.sent if FORECAST_NOTICE in each]
         assert unruled(block).splitlines() == [

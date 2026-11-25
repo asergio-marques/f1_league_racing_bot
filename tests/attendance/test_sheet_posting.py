@@ -386,6 +386,10 @@ CONVERTER_ABSENT_REMEDY = (
 )
 
 
+#: How the sync's job lines open: Alex, as `_sync_pro` names him, and the command he ran.
+_SYNC_OPENING = "Alex (`<@4242>`) | `/attendance sync` | "
+
+
 @pytest.mark.parametrize("kind, detail", [
     ("TEMPLATE_INVALID", SHEET_RENDER_FAULT),
     pytest.param("CONVERTER_ABSENT", CONVERTER_ABSENT_WORDS),
@@ -397,8 +401,9 @@ async def test_a_sheet_s_render_fault_is_named_as_the_attendance_sheet_image(
     and the image module's render of Pro's sheet fails on a template fault, or for want of
     Inkscape. Alex runs `/attendance sync` for Pro from round 1: the sheet posts once, as text
     with no picture, and the queue runs to the end; the log channel gives the fault on one line
-    headed "⚠️ Attendance sheet image", the name `/images config toggle` offers, naming season 3,
-    Pro and round 1, and nothing in the log calls it a results image. Where Inkscape is not
+    opening with Alex and the command he ran, then "⚠️ Attendance sheet image", the name
+    `/images config toggle` offers, naming season 3, Pro and round 1, and nothing in the log calls
+    it a results image. Where Inkscape is not
     installed, the line keeps the render's words and says that the host must install it, and to
     run `/attendance sync` to post the sheet again once it has."""
     from leaguebot.image.models.image_module import Problem, RenderOutcome
@@ -426,8 +431,9 @@ async def test_a_sheet_s_render_fault_is_named_as_the_attendance_sheet_image(
     assert league.channel(SHEET).files[-1] is None
     log = await _said(league)
     [line] = [line for line in log.splitlines() if detail in line]
-    named = "⚠️ Attendance sheet image — Season 3 Pro — attendance after round 1"
-    assert line.startswith(named), line
+    assert line.startswith(
+        f"{_SYNC_OPENING}⚠️ Attendance sheet image — Season 3 Pro — attendance after round 1"
+    ), line
     assert "Results image" not in log, log
     if kind == "CONVERTER_ABSENT":
         assert CONVERTER_ABSENT_REMEDY in line, line

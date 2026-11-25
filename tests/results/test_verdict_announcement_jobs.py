@@ -621,8 +621,9 @@ async def test_a_review_s_attendance_sheet_drawn_without_its_graphic_tells_the_l
 ):
     """Attendance is on. Alex approves round 3's reports, and Pro's attendance sheet is posted
     as text, its graphic having failed: attendance's posting hands back the fault as a line. The
-    queue does not stop, and the log channel is told the fault, as it is for the sheet the sync
-    and a season's approval and completion post."""
+    queue does not stop, and the log channel is told the fault on a line opening with Alex and the
+    button he pressed, as it is for the sheet the sync and a season's approval and completion
+    post."""
     league = await review_league(tmp_path, attendance=True)
     fault = (
         "Season 1 **Pro** — attendance after round 3: the graphic could not be drawn, so it is "
@@ -637,7 +638,9 @@ async def test_a_review_s_attendance_sheet_drawn_without_its_graphic_tells_the_l
 
     assert await stopped_at(league) is None
     assert ("post_sheet", DIVISION_ID, False) in league.attendance.calls
-    assert any(fault in line for line in league.bot.log_channel.sent)
+    assert any(
+        f"{_JOB_OPENING}{fault}" in sent.splitlines() for sent in league.bot.log_channel.sent
+    ), league.bot.log_channel.sent
 
 
 async def test_an_amendment_s_attendance_sheet_with_no_channel_stops_the_queue(tmp_path):
@@ -936,7 +939,8 @@ async def test_a_verdict_whose_picture_fails_is_announced_as_text_and_says_why_i
     is cleared and the round is final, amending the round with `/results rounds amend` announces
     it again. Without Inkscape, the log channel keeps the render's words, and says the host must
     install it and that once it has and the round is final, amending the round announces it
-    again."""
+    again. The fault line, formed already opened with Alex and the button he pressed, opens with
+    them once, never twice."""
     from leaguebot.image.services.aspects import image_verdict_post
 
     raised = "the verdict picture's file could not be opened"
@@ -977,6 +981,9 @@ async def test_a_verdict_whose_picture_fails_is_announced_as_text_and_says_why_i
     faults = [line.lower() for line in league.bot.log_channel.sent
               if "Pro" in line and "round 3" in line.lower()]
     assert len(faults) == 1, league.bot.log_channel.sent
+    [opened] = [sent for sent in league.bot.log_channel.sent if "Verdict posted as text" in sent]
+    assert opened.startswith(f"{_JOB_OPENING}Verdict posted as text\n"), opened
+    assert opened.count(_JOB_OPENING) == 1, opened
     [line] = faults
     assert "verdict" in line and ("picture" in line or "image" in line), line
     assert "text" in line and "the bot hit an internal fault" in line, line
@@ -1016,8 +1023,9 @@ async def test_a_verdict_picture_s_render_fault_is_named_by_its_own_picture(
     valid. Alex approves a five-second penalty for Lewis in round 3 of Pro, and the image
     module's render of that picture fails on a template fault, or, for the banner, for want of
     Inkscape. The verdict is announced naming Lewis and the queue runs to the end; the log channel
-    gives the fault on a line headed "⚠️ <name> image", the name `/images config toggle` offers,
-    and nothing in the log calls it a results image. Where Inkscape is not installed, the banner's
+    gives the fault on a line opening with Alex and the button he pressed, then "⚠️ <name>
+    image", the name `/images config toggle` offers, and nothing in the log calls it a results
+    image. Where Inkscape is not installed, the banner's
     line keeps the render's words and says that the host must install it, and that once it has
     and the round is final, amending the round with `/results rounds amend` announces it
     again."""
@@ -1040,7 +1048,7 @@ async def test_a_verdict_picture_s_render_fault_is_named_by_its_own_picture(
     assert f"<@{LEWIS}>" in verdict
     log = league.log()
     [line] = [line for line in log.splitlines() if detail in line]
-    assert line.startswith(f"⚠️ {name} image — "), line
+    assert line.startswith(f"{_JOB_OPENING}⚠️ {name} image — "), line
     assert "Results image" not in log, log
     if kind == "CONVERTER_ABSENT":
         assert CONVERTER_ABSENT_REMEDY in line, line
@@ -1052,10 +1060,11 @@ NOTICE_DETAIL = "no `flag` image for “Lewis”"
 #: The job that posts each verdict picture.
 _POSTED_BY = {"verdicts": "announce_verdict", "verdict_banner": "announce_heading"}
 
-#: What a verdict picture's notice block opens with: Alex, then the button he pressed.
-_NOTICE_OPENING = (
-    "Admin (`<@4242>`) | ✅ Approve on round 3's penalty review | Image render notices — "
-)
+#: What every line of the review's jobs opens with: Alex, then the button he pressed.
+_JOB_OPENING = "Admin (`<@4242>`) | ✅ Approve on round 3's penalty review | "
+
+#: What a verdict picture's notice block opens with: the job's opening, then the block's heading.
+_NOTICE_OPENING = f"{_JOB_OPENING}Image render notices — "
 
 async def _notice_is_framed_and_kept(
     league: ReviewLeague, aspect: str, interaction: Any
@@ -1189,7 +1198,8 @@ async def test_a_verdict_picture_that_could_not_be_drawn_keeps_its_fault_line_wh
     and its render fails on a template fault, so the verdict is to be announced as text. The
     verdicts channel refuses every post on the first try, the text included, stopping the queue;
     the channel is let accept and a Retry announces the verdict. The log channel carries the
-    picture's fault line, headed "⚠️ Verdicts image", once: it is not lost with the refused try."""
+    picture's fault line, opening with Alex and the button he pressed, then "⚠️ Verdicts image",
+    once: it is not lost with the refused try."""
     from leaguebot.image.models.image_module import Problem, RenderOutcome
 
     league = await review_league(tmp_path)
@@ -1215,7 +1225,7 @@ async def test_a_verdict_picture_that_could_not_be_drawn_keeps_its_fault_line_wh
     log = league.log()
     lines = [line for line in log.splitlines() if RENDER_FAULT in line]
     assert len(lines) == 1, log
-    assert lines[0].startswith("⚠️ Verdicts image — "), lines[0]
+    assert lines[0].startswith(f"{_JOB_OPENING}⚠️ Verdicts image — "), lines[0]
 
 
 #: The notice the review's attendance sheet and its refreshed lineup are each drawn with, grouped

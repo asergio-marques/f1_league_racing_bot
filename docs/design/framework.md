@@ -52,12 +52,13 @@ one-league claim and the base classes of the command tree, views and modals (`le
 the hook types (`hooks.py`), the failure paths (`interaction_errors.py`, `answering.py`, the job
 runner `job_runner.py`), the helper that starts background work and holds it (`background.py`), the
 standard log lines, the words a reply uses to link to a logged line and to list the notices of the
-pictures its work drew, and the heading and body a job puts round those notices (`notices_block`,
-`job_notice_lines`, `framed_picture_lines` and its `PictureLines`, all in `log_lines.py`), a member
-as the log channel names them (`member_names.py`), the log filters, `bounded_autocomplete`
-(`autocomplete.py`), the guard that refuses a post made outside a job (`in_a_job.py`), the wait for
-the catch-up after a restart (`catch_up_gate.py`), the channel cast (`channels.py`) and the path
-resolution that keeps a path inside the project (`paths.py`).
+pictures its work drew, the heading and body a job puts round those notices and the opening it puts
+on every line it writes (`notices_block`, `job_notice_lines`, `framed_picture_lines` and its
+`PictureLines`, all in `log_lines.py`), a member as the log channel names them (`member_names.py`),
+the log filters, `bounded_autocomplete` (`autocomplete.py`), the guard that refuses a post made
+outside a job (`in_a_job.py`), the wait for the catch-up after a restart (`catch_up_gate.py`), the
+channel cast (`channels.py`) and the path resolution that keeps a path inside the project
+(`paths.py`).
 
 **The retry loop's cog** (`framework/cogs/retry_cog.py`) holds no command.
 
@@ -176,12 +177,15 @@ each pinned by a test in
   "Image notices", whichever change's reply it ends (the image specification's "Errors and the
   rejection of input"). *Rejected:* saving the link with the job, a column for a reply that cannot
   outlive the restart (`test_an_outcome_links_to_the_line_its_job_named`).
-- **A notice block is opened with the member and the change by the job that drew the picture, and
-  image marks a post aspect's block.** A drawing knows no member and no change, so image hands its
-  notices back grouped by kind and never opened. A post aspect's drawing (results, attendance and
-  weather) comes back headed, as a `NoticeBlock` (`ImageRenderService.format_notices`), and the job
-  that posted it opens each block through `framed_picture_lines`, with `named | what |`, and joins
-  its blocks in one line, so that they reach the log in one message and the reply links to it once.
+- **Every line a picture's drawing hands back is opened with the member and the change by the job
+  that drew it, and image marks a post aspect's notice block.** A drawing knows no member and no
+  change, so image hands its notices back grouped by kind, and its line saying why a picture was not
+  drawn, never opened. A post aspect's drawing (results, attendance and weather) comes back with its
+  notices headed, as a `NoticeBlock` (`ImageRenderService.format_notices`), and the job that posted
+  it opens every line it hands back, block or not, once, through `framed_picture_lines`
+  (`job_notice_lines`), with `named | what |`, a line already so opened being left as it is. It
+  joins only its blocks in one line, so that they reach the log in one message and the reply links
+  to it once: the mark tells a block from the job's other lines, and opening needs no mark.
   What `ImageDrawing` draws for core (the calendar, the lineups and a review's pictures) comes back
   as the grouped lines alone (`grouped_notice_lines`), with no heading and no mark, which core's
   jobs head and open in one go through `drawn_notices_line`, as does the lineup a command draws; a

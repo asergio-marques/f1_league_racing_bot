@@ -1896,12 +1896,14 @@ def _says_why(line: str, picture: str, source: str) -> bool:
 
 
 def _says_the_host_must_install_it(league: _League, sync: str) -> bool:
-    """The log channel keeps the render's words for Inkscape's absence on a line naming round 3
-    of Pro, and that line says the host must install it, and that `/results {sync} sync` posts
-    the picture once it has."""
+    """The log channel keeps the render's words for Inkscape's absence on a line opening with the
+    member and the change ("Admin (`<@4242>`) | the test's republication | ⚠️ ") and naming
+    round 3 of Pro, and that line says the host must install it, and that `/results {sync} sync`
+    posts the picture once it has."""
     lines = [line for line in league.bot.log_channel.sent if CONVERTER_ABSENT_WORDS in line]
     return any(
-        "Pro" in line and "round 3" in line.lower()
+        line.startswith("Admin (`<@4242>`) | the test's republication | ⚠️ ")
+        and "Pro" in line and "round 3" in line.lower()
         and f"{CONVERTER_ABSENT_REMEDY}run `/results {sync} sync`" in line
         for line in lines
     )

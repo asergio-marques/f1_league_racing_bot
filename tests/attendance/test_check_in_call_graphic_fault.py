@@ -31,6 +31,8 @@ from tests.support.switches import answer_switch
 
 CHECK_IN = DIVISIONS[PRO][3].checkin
 ROUND_4 = round_id(PRO, 4)
+#: What every line of the call's job opens with: the bot, then the change it ran for.
+OPENING = f"the bot | posting the check-in call of round 4 in **{DIVISIONS[PRO][0]}** | "
 #: What the drawing below raises: a fault in the bot, whose words never reach the log channel.
 RAISED = "template unreadable"
 #: The clause the log channel is given for a graphic that could not be drawn at all: the fault in
@@ -77,7 +79,8 @@ async def test_a_call_whose_graphic_cannot_be_drawn_is_told_as_a_line_of_its_job
     the log channel is told so, naming the fault by its kind alone and never in the words it was
     raised with. (no deadline) the configuration read for the deadline raises: the graphic is drawn
     without it, the call posts with it, and the log channel is told so. (none) the graphic is drawn
-    whole: no such line is written. Each line written names season 3, Pro and round 4."""
+    whole: no such line is written. Each line written opens with the bot and the change it ran
+    for, and names season 3, Pro and round 4."""
     from leaguebot.attendance.services.check_in.attendance_config_service import AttendanceService
 
     league = await _league(tmp_path)
@@ -105,8 +108,8 @@ async def test_a_call_whose_graphic_cannot_be_drawn_is_told_as_a_line_of_its_job
     assert record["message_id"] == str(_sent(league)[0])
     lines = [line for line in league.log().splitlines() if "check-in call of round 4:" in line]
     expected = {"not drawn": [NOT_DRAWN], "no deadline": [NO_DEADLINE], "none": []}[fault]
-    # Each line names the season, the division and the round.
-    heading = f"Season 3 **{DIVISIONS[PRO][0]}** — check-in call of round 4: "
+    # Each line opens with the bot and the change, and names the season, the division and the round.
+    heading = f"{OPENING}Season 3 **{DIVISIONS[PRO][0]}** — check-in call of round 4: "
     assert lines == [heading + clause for clause in expected]
     assert RAISED not in league.log()
 
@@ -200,8 +203,9 @@ async def test_a_check_in_call_s_render_fault_is_named_as_the_check_in_call_imag
 ):
     """Pro's round 4's check-in call is drawn, and its render fails on a template fault ("fault")
     or for want of Inkscape ("converter absent"). The call posts without a picture, and the log
-    channel gives the fault on one line headed "⚠️ Check-in call image", the name `/images config
-    toggle` offers, naming round 4, season 3 and Pro; nothing in the log calls it a results image.
+    channel gives the fault on one line opening with the bot and the change it ran for, then
+    "⚠️ Check-in call image", the name `/images config toggle` offers, naming round 4, season 3
+    and Pro; nothing in the log calls it a results image.
     Where Inkscape is not installed, the line keeps the render's words and says that the host must
     install it, and that the next check-in call is posted with its picture once it has."""
     league = await _league(tmp_path)
@@ -215,7 +219,8 @@ async def test_a_check_in_call_s_render_fault_is_named_as_the_check_in_call_imag
     detail = RENDER_FAULT if outcome == "fault" else CONVERTER_ABSENT_WORDS
     [line] = [line for line in log.splitlines() if detail in line]
     named = (
-        f"⚠️ Check-in call image — check-in call of round 4 in Season 3 **{DIVISIONS[PRO][0]}**: "
+        f"{OPENING}⚠️ Check-in call image — check-in call of round 4 in Season 3 "
+        f"**{DIVISIONS[PRO][0]}**: "
     )
     assert line.startswith(named), line
     assert "Results image" not in log, log
@@ -233,7 +238,8 @@ async def test_a_refused_check_in_call_s_picture_line_reaches_the_log_once_when_
     """Pro's round 4's check-in call is drawn with one render notice (*outcome* "notice") or its
     render fails on a template fault ("fault"), and Discord refuses the post: the queue stops at
     the call. Discord then accepts, Retry is pressed and the call goes out as text. The notice, or
-    the fault's "⚠️ Check-in call image" line, reaches the log channel once, as it did when the
+    the fault's line, opening with the bot and the change, then "⚠️ Check-in call image",
+    reaches the log channel once, as it did when the
     call was posted at the first try: never lost with the refused post, and never twice. The
     notice's block opens with the bot and the change, and carries it grouped beneath its kind in
     plain words (issue #635)."""
@@ -255,7 +261,7 @@ async def test_a_refused_check_in_call_s_picture_line_reaches_the_log_once_when_
     assert log.count(detail) == 1, log
     if outcome == "fault":
         [line] = [line for line in log.splitlines() if RENDER_FAULT in line]
-        assert line.startswith("⚠️ Check-in call image — "), line
+        assert line.startswith(f"{OPENING}⚠️ Check-in call image — "), line
     else:
         _notice_is_framed(league)
 

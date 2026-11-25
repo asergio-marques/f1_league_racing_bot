@@ -2733,8 +2733,8 @@ picture **reports** what it fell back on, as image notices:
 - **A preview** ends its reply with the same `⚠️ **Image notices**` section, each picture under its
   name and a link to the same block in `#bot-log`.
 
-No picture should post as text in this spec. A line in `#bot-log` beginning `⚠️` that names a
-picture which was not drawn (for example `⚠️ Weather image — …`) is a failure: report it.
+No picture should post as text in this spec. A line in `#bot-log` naming a picture which was not
+drawn (for example `… | ⚠️ Weather image — …`) is a failure: report it.
 
 ### What each step drew
 
