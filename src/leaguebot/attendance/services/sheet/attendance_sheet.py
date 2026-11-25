@@ -47,7 +47,8 @@ log = logging.getLogger(__name__)
 def after_round_order_key(total: int | None, name: str) -> tuple[int, str]:
     """The order of a sheet after a round and of the final one: most attendance points first, drivers
     level on points by name. The opening sheet is ordered by team then driver instead. The textual
-    sheet sorts by this, and whatever draws the sheet is handed its rows in this order."""
+    sheet sorts by this, and whatever draws the sheet is handed its rows in this order. The name is
+    the one the sheet draws for the driver."""
     return (-(total or 0), name.lower())
 
 
@@ -81,6 +82,8 @@ async def post_attendance_sheet(
     raises too, its message naming `/attendance channel attendance`, so the queue stops there and
     does not complete having posted nothing; a cancelled round posts nothing and raises nothing.
     *as_text* leaves the graphic out, which is how a job retries (Constitution XIV rule 8).
+    A fault of the name read (`read_driver_names`) is not caught here: it propagates and stops the
+    job for Retry, on the text-only path too, since the text sheet is ordered by the same names.
 
     *drawing* is the image module's, which the graphic is asked of; none draws no picture, as
     *as_text* does. What it hands back, the render's notices and the fault of a picture that was
@@ -165,19 +168,31 @@ async def post_attendance_sheet(
         )
         cfg_row = await cursor2.fetchone()
 
-    # Sort: descending total_points_after, then alphabetical by display name.
+    # The name each driver is ordered and drawn under: read once, through core's chain every graphic
+    # shares, so the text and the picture order by the same name (wip-spec, "The name of a person").
+    # A driver the server does not show — a fake driver, one who has left — is named by the name the
+    # bot holds for them, as the picture names them. A fault of the read stops the sheet's job.
+    from leaguebot.core.services.drivers.driver_names import read_driver_names
+
+    display_names = await read_driver_names(
+        db_path,
+        driver_names_read if driver_names_read is not None else AwaitedHook(),
+        guild,
+        [int(r["discord_user_id"]) for r in driver_rows],
+        division_id=division_id,
+    )
+
+    # Sort: descending total_points_after, then alphabetical by the name the sheet draws.
     def _sort_key(r):
-        member = guild.get_member(int(r["discord_user_id"]))
-        display = member.display_name if member else str(r["discord_user_id"])
-        return after_round_order_key(r["total_points_after"], display)
+        key = int(r["discord_user_id"])
+        return after_round_order_key(r["total_points_after"], display_names.get(key, str(key)))
 
     # Nobody has attended anything yet, so the points above separate nobody. The opening
     # sheet is ordered as the opening standings grid is — team, then driver — so that a
     # league's two opening sheets agree about the order of the same drivers.
     def _opening_sort_key(r):
-        member = guild.get_member(int(r["discord_user_id"]))
-        display = member.display_name if member else str(r["discord_user_id"])
-        return ((r["team_name"] or "").casefold(), display.casefold())
+        key = int(r["discord_user_id"])
+        return ((r["team_name"] or "").casefold(), display_names.get(key, str(key)).casefold())
 
     sorted_drivers = sorted(
         driver_rows,
@@ -237,6 +252,7 @@ async def post_attendance_sheet(
             db_path,
             drawing=drawing,
             driver_names_read=driver_names_read,
+            display_names=display_names,
             lines=drawn_lines,
             round_id=round_id,
             division_id=division_id,
@@ -504,6 +520,7 @@ async def _sheet_attachment(
     faults: list[str] | None = None,
     drawing: ImageDrawing | None = None,
     driver_names_read: AwaitedHook | None = None,
+    display_names: dict[int, str] | None = None,
     lines: list[str] | None = None,
 ):
     """The sheet graphic to attach, or None to post the textual sheet alone.
@@ -528,8 +545,9 @@ async def _sheet_attachment(
     drawn, is added to *lines*, if given, already worded, for the job to write beside them.
 
     *drawing* is the image module's: none draws no picture. *driver_names_read* is the hook signup
-    answers how a driver is named, which the names and flags are read through; none names each
-    driver by their account alone.
+    answers how a driver is named, which the flags are read through. *display_names* is the name
+    each driver is drawn under, read by the caller, which ordered *sorted_drivers* by it; none, or a
+    driver it lacks, names the driver by their account alone.
     """
     if bot is None or guild is None or drawing is None:
         return None
@@ -543,7 +561,6 @@ async def _sheet_attachment(
         from leaguebot.image.models.attendance_drawing import DriverRecord, resolve_drawing
 
         from leaguebot.core.services.drivers.driver_names import (
-            read_driver_names,
             read_driver_nationalities,
             read_nationality_collected,
         )
@@ -565,11 +582,10 @@ async def _sheet_attachment(
             for row in sorted_drivers
         }
 
-        # The name each driver is drawn under, and their flag — both through the conventions
-        # every graphic shares, called rather than restated (wip-spec § "The name of a person").
-        display_names = await read_driver_names(
-            db_path, names_read, guild, user_ids, division_id=division_id
-        )
+        # The name each driver is drawn under was read by the caller, which ordered the rows by it;
+        # their flag is read here, through the convention every graphic shares, called rather than
+        # restated (wip-spec § "The name of a person").
+        display_names = dict(display_names or {})
         nationalities = await read_driver_nationalities(
             db_path, names_read, user_ids, division_id=division_id
         )

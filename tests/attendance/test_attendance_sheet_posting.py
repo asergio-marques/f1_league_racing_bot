@@ -25,7 +25,7 @@ from leaguebot.attendance.services.sheet import attendance_sheet
 from leaguebot.attendance.services.check_in.attendance_config_service import derive_checkin_deadline
 from leaguebot.attendance.services.sheet.attendance_sheet import post_attendance_sheet
 from leaguebot.image.services.render.image_render_service import discard_attachment
-from tests.support.change_queue import in_a_job
+from tests.support.change_queue import http_error, in_a_job
 
 
 # ── The deadline derivation (T010/T011) ───────────────────────────────────
@@ -112,6 +112,13 @@ class _FakeGuild:
     def get_member(self, user_id):
         name = self._members.get(int(user_id))
         return _FakeMember(name) if name else None
+
+    async def fetch_member(self, user_id):
+        """Discord's answer for anyone the server does not show: not found."""
+        name = self._members.get(int(user_id))
+        if name is None:
+            raise http_error(discord.NotFound, status=404, text="Unknown Member")
+        return _FakeMember(name)
 
 
 def _fake_attachment(sentinel):
@@ -430,10 +437,10 @@ async def _seat(
 @pytest.mark.asyncio
 async def test_the_sheet_lists_the_most_points_first_then_by_name(sheet_db, monkeypatch):
     """FR-017/FR-018. Division 1's sheet after round 3, the images module on: Mike (222) on 5,
-    and Zebra (111) and Alpha (333) level on 3, so the name decides between them; the name is the
-    one the server shows, not the Discord id, which here sorts the other way. The picture draws
-    its rows in the text's order, though the names it draws (Aaron for 111, Zoe for 333) sort the
-    other way (owner's decision 2026-11-24, until #598/#641)."""
+    and 111 and 333 level on 3, so the name decides between them. The name is the one the sheet
+    draws (Aaron for 111, Zoe for 333), not the one the server's member cache shows (Zebra and
+    Alpha), which sorts the other way, nor the Discord id; the text and the picture list them in
+    the same order (image spec, Attendance, Resolution of the data to be placed)."""
     from types import SimpleNamespace
 
     from leaguebot.core.services.drivers import driver_names
@@ -467,9 +474,111 @@ async def test_the_sheet_lists_the_most_points_first_then_by_name(sheet_db, monk
         for line in channel.sent_content.splitlines()
         if line.startswith("<@")
     ]
-    assert listed == ["<@222>", "<@333>", "<@111>"]
+    assert listed == ["<@222>", "<@111>", "<@333>"]
     [sheet], _asked = drawing.draw_attendance_sheet.await_args
-    assert [entry.driver_name for entry in sheet.entries] == ["Mike", "Zoe", "Aaron"]
+    assert [entry.driver_name for entry in sheet.entries] == ["Mike", "Aaron", "Zoe"]
+
+
+@pytest.mark.parametrize(
+    "occasion_name,zulu_left",
+    [
+        pytest.param("AFTER_ROUND", False, id="two-fake-drivers-after-a-round"),
+        pytest.param("SEASON_OPENING", False, id="two-fake-drivers-on-the-opening-sheet"),
+        pytest.param("SEASON_FINAL", False, id="two-fake-drivers-on-the-final-sheet"),
+        pytest.param("AFTER_ROUND", True, id="a-driver-who-left-after-a-round"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_a_driver_off_the_server_is_ordered_by_the_name_the_bot_holds(
+    sheet_db, occasion_name, zulu_left
+):
+    """Division 1's textual sheet, with neither of its two drivers on the server: Alpha (333), a
+    fake driver, and Zulu (111), seated in the same team and level with Alpha on 4 points. Zulu
+    is a fake driver too, or a real driver who has left the server, named by their signup. The
+    sheet lists Alpha before Zulu, by the name the bot holds for each (image spec, "The name of a
+    person"), and not by account number, which sorts the other way (111 sorts before both 333 and
+    "Alpha"): on the opening sheet, within a team, and after a round and on the final sheet,
+    among drivers level on points."""
+    from types import SimpleNamespace
+
+    from leaguebot.core.models.driver_names import SignupName, SignupNames
+    from leaguebot.framework.utils.hooks import AwaitedHook
+
+    await _config(sheet_db, prior=None)
+    await _seat(sheet_db, profile_id=3, user_id="333", seat=2, total=4)
+    async with get_connection(sheet_db) as db:
+        await db.execute(
+            "UPDATE driver_profiles SET is_test_driver = 1, test_display_name = 'Alpha' "
+            "WHERE id = 3"
+        )
+        if not zulu_left:
+            await db.execute(
+                "UPDATE driver_profiles SET is_test_driver = 1, test_display_name = 'Zulu' "
+                "WHERE id = 1"
+            )
+        await db.commit()
+
+    names_read = AwaitedHook()
+    if zulu_left:
+
+        async def _signups(_profile_ids, _season_id):
+            return SignupNames(
+                drivers={1: SignupName(name="Zulu", username=None, nationality=None)},
+                nationality_collected=True,
+            )
+
+        names_read.subscribe(_signups)
+    channel = _FakeChannel([])
+    guild = _FakeGuild(channel, {})
+
+    with in_a_job():
+        await post_attendance_sheet(
+            SimpleNamespace(db_path=sheet_db), guild, sheet_db, round_id=3, division_id=7,
+            occasion=_occasion(occasion_name), as_text=True, driver_names_read=names_read,
+        )
+
+    listed = [
+        line.split(" ")[0]
+        for line in channel.sent_content.splitlines()
+        if line.startswith("<@")
+    ]
+    assert listed == ["<@333>", "<@111>"]
+
+
+@pytest.mark.parametrize("images_on", [False, True], ids=["text-only", "images-on"])
+@pytest.mark.asyncio
+async def test_a_name_read_that_fails_stops_the_sheet_for_retry(sheet_db, images_on):
+    """Owner, 2026-11-25: a failure of the read of drivers' names (a database error, a module's
+    code crashing) stops the sheet's job for Retry, as the standings do. Division 1's sheet after
+    round 3, its last sheet (message 4242) standing in the channel, and the signup module's
+    answer to the name read crashing; the league draws no picture, or draws one. The failure is
+    raised for the queue to stop on, nothing is sent, and the sheet in the channel stays the
+    division's."""
+    from types import SimpleNamespace
+
+    from leaguebot.framework.utils.hooks import AwaitedHook
+
+    async def _crashing(_profile_ids, _season_id):
+        raise RuntimeError("signup crashed")
+
+    names_read = AwaitedHook()
+    names_read.subscribe(_crashing)
+    await _config(sheet_db, prior="4242")
+    journal: list[str] = []
+    channel = _FakeChannel(journal)
+    guild = _FakeGuild(channel, {111: "Ayrton"})
+    picture = (
+        {"drawing": _drawing_that_draws_nothing("none")} if images_on else {"as_text": True}
+    )
+
+    with in_a_job(), pytest.raises(RuntimeError, match="signup crashed"):
+        await post_attendance_sheet(
+            SimpleNamespace(db_path=sheet_db), guild, sheet_db, round_id=3, division_id=7,
+            driver_names_read=names_read, **picture,
+        )
+
+    assert not [entry for entry in journal if entry.startswith(("send:", "delete:"))], journal
+    assert await _stored_message_id(sheet_db) == "4242"
 
 
 @pytest.mark.parametrize(

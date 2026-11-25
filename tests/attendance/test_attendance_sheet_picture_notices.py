@@ -146,9 +146,13 @@ def test_the_live_sheet_path_reads_the_nationality_switch():
     assert "nationality_collected=" in source
 
 
-def test_the_live_sheet_path_resolves_names_through_the_shared_convention():
+def test_the_live_sheet_path_reads_nationalities_through_the_shared_convention():
+    """The picture reads nationalities through the shared convention.
+
+    Drivers' names are read once, by the sheet itself, and handed to the picture
+    (``test_the_driver_name_is_resolved_by_the_shared_convention_not_a_second_one``).
+    """
     source = inspect.getsource(attendance_sheet._sheet_attachment)
-    assert "_driver_names" in source
     assert "_nationalities" in source
 
 

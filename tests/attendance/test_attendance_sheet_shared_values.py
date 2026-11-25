@@ -6,8 +6,8 @@ the team held at generation and the points total — so a later change to either
 silently part them. The sanction annotation, drawn as the plain literal the message emphasises,
 is pinned in `test_image_attendance_service.py`.
 
-It also covers the live grid resolution (FR-014, FR-016) and the two `/images test` guards
-(FR-068, FR-071), neither of which the pure-utility tests can reach.
+It also covers the live grid resolution (FR-014, FR-016), which the pure-utility tests cannot
+reach.
 """
 from __future__ import annotations
 
@@ -24,19 +24,22 @@ from leaguebot.image.services.aspects.image_attendance_service import resolve_dr
 
 
 def test_the_driver_name_is_resolved_by_the_shared_convention_not_a_second_one():
-    """One person is drawn under one name wherever a graphic names them.
+    """One person is named by one name wherever the sheet names them.
 
-    The sheet calls ``image_results_post._driver_names``, which is the same chain the results
-    and standings graphics use. A private name resolver here would be a second implementation
-    of the wip-spec's "name of a person".
+    ``post_attendance_sheet`` calls core's ``read_driver_names``, the chain the results and
+    standings graphics use, and orders the text and draws the picture by what it hands back. A
+    private name resolver in either would be a second implementation of the wip-spec's "name of
+    a person", and would part the text's order from the picture's.
     """
-    source = inspect.getsource(attendance_sheet._sheet_attachment)
-    assert "_driver_names" in source
-    assert "get_member" not in source, (
-        "the sheet must not reach for a Discord member itself: the shared convention falls "
-        "through the recorded names and the user id, and a local lookup would stop at the "
-        "first of those"
-    )
+    text_source = inspect.getsource(attendance_sheet.post_attendance_sheet)
+    picture_source = inspect.getsource(attendance_sheet._sheet_attachment)
+    assert "read_driver_names(" in text_source
+    for source in (text_source, picture_source):
+        assert "get_member" not in source, (
+            "the sheet must not reach for a Discord member itself: the shared convention falls "
+            "through the recorded names and the user id, and a local lookup would stop at the "
+            "first of those"
+        )
 
 
 def test_the_team_name_is_the_seat_held_at_generation_in_both_paths():
@@ -176,15 +179,3 @@ async def test_the_grid_needs_no_drivers_to_list_its_rounds(grid_db):
     assert len(headings) == 4
     assert cells == {}
 
-
-# ── The two /images test guards (FR-068, FR-071) ──────────────────────────
-
-
-# Two tests stood here asserting on the source text of the withdrawn
-# `/images test <kind>` command's `needs_tracks` and `needs_teams` guards. Feature 045
-# replaces that command with eleven previews whose refusals are covered directly against
-# `resolve_context` in `tests/image/test_image_preview_service.py`.
-#
-# The team guard's successor is `require_teams`, which the attendance preview sets and
-# `test_a_division_with_only_a_reserve_team_is_refused` covers. The track guard has no
-# successor: a preview draws a real round, which names a real circuit.
