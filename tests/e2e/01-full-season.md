@@ -570,13 +570,9 @@ sessions `Sprint Qualifying`, `Sprint Race`, `Feature Qualifying` and `Feature R
 22. **A refusal: the open submission holds the advance.** **Do:** `/test-mode advance`
 
     **Expect:**
-    - **Reply:** `⏸️ **Division 1** — **Round 1** is awaiting penalty review approval. Please complete the penalty review in the submission channel before advancing.`
-    - **Log:** ``⛔ `/test-mode advance` refused for <you> — **Division 1** — **Round 1** is awaiting penalty review approval. Please complete the penalty review in the submission channel before advancing.``
+    - **Reply:** `⏸️ Result submission for **Division 1** — **Round 1** is already in progress. Please submit results in the submission channel before advancing.`
+    - **Log:** ``⛔ `/test-mode advance` refused for <you> — Result submission for **Division 1** — **Round 1** is already in progress. Please submit results in the submission channel before advancing.``
     - Nothing posted.
-
-    The round is not in its penalty review yet: it is awaiting its results. The reply is the one
-    the advance gives any open submission that is not final (a defect, noted in the report on
-    this spec); what matters here is that nothing else advances until the results are in.
 
 23. **Do:** in `#s1-division-1-r1-results`, send this message as it stands:
 
@@ -2908,8 +2904,8 @@ backup is gone.
      - **Log:** ``⛔ `/test-mode advance` refused for <you> — All phases for all rounds and divisions have been executed. There is nothing left to advance.``
      - Nothing posted.
 
-     Any other reply — a step on the change queue, or a `⏸️ … is awaiting penalty review approval`
-     — means a round or a clean-up is still outstanding: go back and finish it first.
+     Any other reply — a step on the change queue, or a `⏸️` refusal naming a round — means a
+     round or a clean-up is still outstanding: go back and finish it first.
 
 154. **Do:** `/season complete`
 
