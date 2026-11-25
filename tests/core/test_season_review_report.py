@@ -1245,11 +1245,6 @@ async def test_a_posted_placements_review_writes_no_line_of_its_own_and_asks_the
 # ---------------------------------------------------------------------------
 
 
-#: Why a review's pictures do not yet follow the sections they belong under.
-_NOT_PLACED = ("#638: a review's pictures are posted ahead of its whole report, not each after "
-               "its division's sections")
-
-
 def _laid_out(cog) -> list[str]:
     """The review asked of the queue as its channel will read it: the report's sections in order,
     each picture, as ``picture: <name>``, after the number of sections it follows (none where it
@@ -1272,7 +1267,6 @@ def _pictures_wanted(monkeypatch, cog) -> None:
     cog.bot.image_drawing.lineup_wanted = AsyncMock(return_value=True)
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_PLACED)
 async def test_a_switched_on_calendar_and_lineup_are_asked_as_pictures_in_place_of_their_text(
         db_path, monkeypatch):
     """Reverses 038 FR-027 (decided 2026-08-27): where an aspect is switched on, its picture
@@ -1317,7 +1311,6 @@ async def test_with_the_image_module_off_no_picture_is_asked_and_the_sections_ar
     assert "*(no drivers assigned)*" in _public(messages)
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_PLACED)
 async def test_a_lineup_shown_as_a_picture_still_warns_of_a_team_without_a_role(
         db_path, monkeypatch):
     """A finding the picture cannot show is posted either way. Pro's team Ghost has no role and
@@ -1342,7 +1335,6 @@ async def test_a_lineup_shown_as_a_picture_still_warns_of_a_team_without_a_role(
     assert 'No role assigned:** "Ghost"' in _asked(cog)["report"][lineup["after_sections"]]
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_PLACED)
 async def test_a_calendar_shown_as_a_picture_still_names_a_round_gone_by(db_path, monkeypatch):
     """#181: a calendar picture is drawn from the very rounds that are wrong and says nothing of
     which have gone by, so the finding is posted whichever form the calendar takes. Pro's round 1
@@ -1360,7 +1352,6 @@ async def test_a_calendar_shown_as_a_picture_still_names_a_round_gone_by(db_path
     assert not _offered(cog)
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_PLACED)
 async def test_each_division_s_pictures_follow_its_own_configuration(db_path, monkeypatch):
     """Season 4 has two divisions, Pro (tier 1) and Am (tier 2), each with round 1 three days ago
     and the team Ghost, which has no role; the calendar and lineup pictures are switched on. The

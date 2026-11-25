@@ -571,8 +571,9 @@ class SeasonCog(commands.Cog):
                     await self.bot.season_service.get_division_rounds(_div.id)
                 )
         # The pictures the league will see in place of a section's text are asked of the
-        # queue, which draws and posts them ahead of the report; the section that stands
-        # in for each is carried with it (posted only where Discord refuses the file).
+        # queue, which draws and posts each after the report sections queued before it
+        # (`after_sections`), so a division's pictures stand under its own banner; the section
+        # that stands in for each is carried with it (posted only where Discord refuses the file).
         draws_calendar, draws_lineup = await self._review_picture_gates()
 
         # The leads both date faults are judged against, read once for the season
@@ -641,6 +642,7 @@ class SeasonCog(commands.Cog):
                     "division_id": div.id,
                     "kind": "calendar", "text": "\n".join(cal_lines),
                     "season_number": season.season_number or None,
+                    "after_sections": len(report),
                 })
                 if fault_lines:
                     report.append("\n".join(fault_lines))
@@ -692,12 +694,13 @@ class SeasonCog(commands.Cog):
             else:
                 lineup_lines.append("  *(no drivers assigned)*")
             if draws_lineup:
-                if role_warning is not None:
-                    report.append(role_warning.strip())
                 pictures.append({
                     "name": f"{div.name} lineup", "division_id": div.id,
                     "kind": "lineup", "text": "\n".join(lineup_lines),
+                    "after_sections": len(report),
                 })
+                if role_warning is not None:
+                    report.append(role_warning.strip())
             else:
                 report.append("\n".join(lineup_lines))
 
