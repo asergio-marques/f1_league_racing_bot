@@ -368,7 +368,7 @@ setting, which would let a refused post stop the lane at a setting and make a re
 it. The carry takes the league lane and so waits behind a stopped job as a sync does.
 `ask_carry` takes the old channel from `_where_posts_stand`, which reads the queue for a carry of
 the division still waiting to move its posts into the channel being replaced, so that a second move
-asked before the first carry has run carries from where the posts stand. **`note_old_channel` comes
+asked before the first carry has run carries from where the posts stand, and a move back to that channel asks no carry, since the channel tested for standing is the one the posts stand in. **`note_old_channel` comes
 first** because the setting has already saved the new channel: a post that records no channel is
 taken to stand in the present one (see the posting's channel above), so without the note its old
 message would be deleted from the channel it was carried into. **The carry's check splits its
