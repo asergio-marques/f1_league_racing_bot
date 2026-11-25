@@ -595,9 +595,6 @@ async def test_a_closed_notice_already_in_the_new_channel_or_none_held_posts_not
     assert await _stored(league.db_path) == NEW
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#665: a move while signups are closed does not yet carry the closed notice"
-)
 @pytest.mark.parametrize("refused", ["post", "delete"])
 async def test_a_closed_notice_that_cannot_be_carried_stays_where_it_was(tmp_path, refused):
     """Signups are closed and the last close's notice (950) stands in the signup channel, 650. The

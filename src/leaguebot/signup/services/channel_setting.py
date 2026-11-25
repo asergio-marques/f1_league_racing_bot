@@ -63,6 +63,7 @@ from leaguebot.core.services.seasons.approval_checks import channel_on_server
 from leaguebot.framework.models.refusal import Refused
 from leaguebot.framework.services.queue.change_types import CheckContext, Step, StepContext
 from leaguebot.framework.services.queue.setting_change import (
+    LEFT,
     RENAMED_OUTCOME,
     SAVE,
     After,
@@ -285,13 +286,22 @@ def _carry_closed(signup: "SignupModuleService") -> After:
         guild = await league_guild(ctx.bot)
         if guild is None:
             raise RuntimeError("the league's server is not in the cache")
+        left = (
+            f"The closed notice was not carried to <#{new_id}>: it still stands in "
+            f"<#{standing[1]}>, where the next `/signup open` takes it down."
+        )
         channel = guild.get_channel(new_id)
         if not isinstance(channel, discord.TextChannel):
-            raise StepFailedOnDiscord("the signup channel could not be found to post in")
-        message_id = await post_standing_message(
-            channel, CLOSED_NOTICE, mentions=discord.AllowedMentions.none(),
-            refused=f"the closed notice could not be posted in channel {new_id}",
-        )
+            raise StepFailedOnDiscord(
+                "the signup channel could not be found to post in", notice=left
+            )
+        try:
+            message_id = await post_standing_message(
+                channel, CLOSED_NOTICE, mentions=discord.AllowedMentions.none(),
+                refused=f"the closed notice could not be posted in channel {new_id}",
+            )
+        except StepFailedOnDiscord as error:
+            raise StepFailedOnDiscord(error.reason, notice=left) from error
         return StepResult(result={
             "new": message_id, "channel_id": new_id, "old": standing[0],
             "old_channel_id": standing[1],
@@ -348,7 +358,14 @@ def _delete_carried_closed() -> After:
         deleting = carried(ctx)
         if deleting is None:
             raise RuntimeError("no closed notice was carried to take down the old one of")
-        return await inner.run(deleting)
+        try:
+            return await inner.run(deleting)
+        except StepFailedOnDiscord as error:
+            link = (error.result or {}).get("link") or f"in <#{deleting.step_payload['channel_id']}>"
+            raise StepFailedOnDiscord(
+                error.reason,
+                notice=f"The old closed notice could not be deleted ({link}): delete it by hand.",
+            ) from error
 
     async def describe(ctx: StepContext) -> str:
         return "taking down the old closed notice from the earlier signup channel"
@@ -456,6 +473,9 @@ def channel_setting(
         text = f"✅ Signup channel set to <#{channel_id}>."
         for fault in (results.get(SET_PERMISSIONS) or {}).get("faults", ()):
             text += f"\n⚠️ {fault}"
+        for name in (CARRY_CLOSED, DELETE_CARRIED_CLOSED):
+            if notice := (results.get(name) or {}).get(LEFT):
+                text += f"\n⚠️ {notice}"
         return text
 
     return Setting(
