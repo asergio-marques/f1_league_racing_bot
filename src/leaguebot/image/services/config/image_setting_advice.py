@@ -166,16 +166,16 @@ def fastest_lap_contrast_lines(reading: FastestLapContrast) -> list[str]:
     figure = f"**{reading.ratio:.2f}:1**"
     if reading.every_division:
         lines = [
-            f"Contrast against the template's plate{colour} is the same for every "
+            f"Contrast against the background behind the fastest lap{colour} is the same for every "
             f"division: {figure}"
         ]
     elif reading.divisions:
         lines = [
-            f"Contrast against the template's plate is lowest for "
+            f"Contrast against the background behind the fastest lap is lowest for "
             f"{_listed(reading.divisions)}{colour}: {figure}"
         ]
     else:
-        lines = [f"Contrast against the template's plate{colour}: {figure}"]
+        lines = [f"Contrast against the background behind the fastest lap{colour}: {figure}"]
     if not meets_aa_normal(reading.ratio):
         lines.append(
             f"⚠️ That is below {CONTRAST_AA_NORMAL}:1, the threshold at which text "

@@ -1279,17 +1279,6 @@ async def _measure(config_service, module_service, colour):
     )
 
 
-#: Why the contrast tests of #616 fail until the check finds the background by its class.
-_NOT_YET_BY_CLASS = (
-    "#616: the contrast check does not yet find the background by the "
-    "fastest-lap-background class"
-)
-
-
-#: Why the reply's wording fails until it names the background behind the fastest lap.
-_NOT_YET_WORDED = "#616: the reply still measures against the template's plate"
-
-
 def _race_template(background_markup: str) -> bytes:
     """A sound race results template carrying *background_markup* behind the field.
 
@@ -1762,7 +1751,6 @@ async def test_the_contrast_check_paints_each_tier_through_the_render_path(
     [[], [("SETUP", [])]],
     ids=["no season", "a season with no division"],
 )
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_BY_CLASS)
 async def test_no_season_under_way_measures_as_authored_and_says_so(
     db_path, module_service, config_service, template_dir, monkeypatch, seasons
 ):
@@ -1807,7 +1795,6 @@ async def test_per_tier_colours_off_say_nothing_of_a_season(
     assert len(_lines(reading)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_BY_CLASS)
 async def test_contrast_names_every_tier_sharing_the_lowest(
     db_path, module_service, config_service, template_dir, monkeypatch
 ):
@@ -1836,7 +1823,6 @@ async def test_contrast_names_every_tier_sharing_the_lowest(
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_BY_CLASS)
 async def test_contrast_says_it_is_the_same_for_every_division(
     db_path, module_service, config_service, template_dir, monkeypatch
 ):
@@ -1860,7 +1846,6 @@ async def test_contrast_says_it_is_the_same_for_every_division(
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_WORDED)
 def test_three_tiers_sharing_the_lowest_are_listed_as_a_sentence():
     from leaguebot.image.services.config.image_setting_advice import FastestLapContrast
 
@@ -1874,7 +1859,6 @@ def test_three_tiers_sharing_the_lowest_are_listed_as_a_sentence():
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_WORDED)
 def test_tiers_tied_on_different_colours_are_named_without_one():
     """Two plates can differ and still read at the same figure; neither colour is *the* one."""
     from leaguebot.image.services.config.image_setting_advice import FastestLapContrast
@@ -1887,7 +1871,6 @@ def test_tiers_tied_on_different_colours_are_named_without_one():
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_BY_CLASS)
 async def test_a_tier_whose_plate_cannot_be_measured_is_named_with_the_reason(
     db_path, module_service, config_service, template_dir, monkeypatch
 ):
@@ -1959,7 +1942,6 @@ async def test_every_tier_unmeasurable_is_reported_once(
     assert _lines(reading) == [f"ℹ️ Contrast could not be measured: {reading.problem}"]
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_WORDED)
 def test_the_reply_warns_below_the_legibility_threshold():
     from leaguebot.image.services.config.image_setting_advice import FastestLapContrast, fastest_lap_contrast_lines
 
