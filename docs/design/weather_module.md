@@ -72,8 +72,10 @@ done: its notice where it is a mystery round, Phase 1 otherwise. So a mystery ro
 another type is judged by the forecasts drawn for it, of which there are none, and its Phase 1 is
 still owed (weather specification, "Mystery rounds"). The notice's flag is lowered
 as the notice's record is dropped (`forget_forecast_on`), so a round that is mystery again is owed
-its notice again, except under a clean-up, which keeps it (weather specification, "Supersession and
-cleanup"). Core carries none of the four flags.
+its notice again, except under the clean-up a day after the round (`keep_notice_given`): that
+takes the notice down and leaves the flag set, as it leaves `phaseN_done`, so that the round is not
+read as one whose notice was never given (`forget_forecast_on`'s docstring; weather specification,
+"Supersession and cleanup"). Core carries none of the four flags.
 
 ### The switch
 
@@ -258,8 +260,8 @@ weather specification's "Supersession and cleanup". Every moment is judged at th
 `weather.forecast.clean_up` plans a `delete_forecast` job for each of a round's phase 1 to 3
 forecasts that stands, and for a mystery round's notice, at `clean_up_moment`; the phases it reads
 are one set, `CLEAN_UP_PHASES` in `forecast_kinds`, which the amendment, the recovery and the
-test-mode steps read too, so that none can leave the notice out. A clean-up keeps the notice's
-flag (`keep_notice_given`; see "Weather's own columns on core's tables"). Which rounds are owed it is
+test-mode steps read too, so that none can leave the notice out. Why a clean-up keeps the notice's
+flag is under "Weather's own columns on core's tables". Which rounds are owed it is
 the weather specification's "Supersession and cleanup" and "Changes to a round after generation".
 
 ### The settings and the switch
@@ -339,8 +341,8 @@ of `forecast_recovery` handed the database's path and the change queue, in the o
 1. **missed phases** (`recover_missed_phases`): each phase whose horizon passed while the bot was
    down, for a round whose race is still ahead, is asked; a mystery round's notice included (weather
    specification, "Recovery"; core specification, "When the bot stops");
-2. **missed forecast clean-ups** (`recover_missed_forecast_clean_ups`): each forecast whose clean-up
-   fell due is asked to come down.
+2. **missed forecast clean-ups** (`recover_missed_forecast_clean_ups`): each forecast, or mystery
+   round notice, whose clean-up fell due is asked to come down.
 
 The phases come before the clean-ups. A recovery posts nothing: it asks the queue, which runs what
 is asked once it starts, and every moment it judges is read at the queue's clock
@@ -464,7 +466,10 @@ generation".
 
 When the round is armed again, weather answers `round_armed` with its steps and its forecast leads,
 leaving out the phases the amendment draws at once, whose timer, having no lateness limit, would
-otherwise draw them again (`forecast_amendment.round_armed`). Core arms the leads and holds no rule
+otherwise draw them again (`forecast_amendment.round_armed`). A mystery round moved inside its
+first horizon is answered its clean-up lead alone: its notice already told the drivers and no phase
+is fired retroactively, but the clean-up must still take the notice down a day after the race
+(`round_armed`'s docstring). Core arms the leads and holds no rule
 of weather's about which jobs a round owes.
 
 ### What weather reads of others
@@ -562,6 +567,8 @@ Each is stated where it lives and pinned by the test named.
 | The four timers have no lateness limit; the work's own check judges lateness | architecture.md's "Timed work and restarts", and `forecast_leads`' module docstring | `test_a_phase_timer_missed_while_down_and_asked_by_the_restart_draws_once` |
 | A recovery judges every moment at the queue's clock | `forecast_recovery`'s docstring | `test_the_missed_phases_catch_up_reads_the_queue_s_clock` |
 | A failed recovery stops none of the other rounds and is reported once | `forecast_recovery`'s docstring | `test_one_round_failing_its_recovery_stops_none_of_the_others` |
+| A clean-up takes a mystery round's notice down and keeps `mystery_notice_given` | `forget_forecast_on`'s docstring | `test_a_clean_up_deletes_a_mystery_round_s_notice_and_keeps_it_given` |
+| A mystery round moved inside its first horizon is armed its clean-up alone, and no phase | `forecast_amendment.round_armed`'s docstring | `test_a_mystery_round_moved_inside_its_first_horizon_is_armed_its_results_and_clean_up` |
 | A phase the amendment draws at once is skipped by its timer | `forecast_amendment.round_armed`'s docstring | `test_core_arms_what_a_module_s_arming_answer_hands_back` |
 | A mystery round's restart still posts its notice | `recover_missed_phases`' docstring | `test_a_missed_mystery_notice_is_asked_for_when_the_bot_starts` |
 | A job that fires after the switch-off's flag is saved, before its timer is removed, does nothing | `module_switch_settings`' docstring | `test_phase_runner_produces_nothing_while_weather_is_disabled` |
