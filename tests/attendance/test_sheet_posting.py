@@ -435,13 +435,52 @@ async def test_a_sheet_s_render_fault_is_named_as_the_attendance_sheet_image(
 #: The detail of the one render notice the sheet's render below comes back with.
 SHEET_NOTICE = "no `flag` image for “Lewis”"
 
+#: Why the two tests below fail until #635 is built.
+NOT_YET_FRAMED = (
+    "#635: a sheet's notices reach the log as a bare block headed by the kind's code, the member "
+    "and the command unnamed, and its job keeps nothing of them for the reply"
+)
 
+
+async def _sheet_notice_is_framed_and_kept(league: Any) -> None:
+    """The log channel carries the sheet's one notice once, in a line opening with Alex and the
+    command he ran, then "Image render notices — <sheet>:" naming Pro and round 1, and beneath it
+    the notice under "Artwork not supplied by the league", naming its field `flag`, with no kind
+    code and no template name; the sheet's job keeps the sheet's name and its grouped notices on
+    its result, for the sync's reply to list."""
+    log = await _said(league)
+    assert log.count(SHEET_NOTICE) == 1, log
+    [block] = [message for message in league.bot.log_channel.sent if SHEET_NOTICE in message]
+    heading, *grouped = block.splitlines()
+    assert heading.count(" | ") >= 2, block
+    named, what, drawn = heading.split(" | ", 2)
+    assert "<@4242>" in named and "/attendance sync" in what, block
+    assert drawn.startswith("Image render notices — "), block
+    assert "Pro" in drawn and "round 1" in drawn.lower(), block
+    assert grouped == [
+        "  Artwork not supplied by the league", f"    • `flag` — {SHEET_NOTICE}",
+    ], block
+    assert "ASSET_FALLBACK_USED" not in block and "_template" not in block, block
+    from leaguebot.attendance.services.sheet.sheet_posting import POST_SHEET
+    from leaguebot.framework.models.change import RESULT_DRAWN, RESULT_NOTICES, RESULT_PICTURES
+
+    [kept] = [row["result"] for row in await step_rows(league.db_path)
+              if row["name"] == POST_SHEET]
+    assert kept[RESULT_PICTURES] == [{
+        RESULT_DRAWN: drawn.removeprefix("Image render notices — ").removesuffix(":"),
+        RESULT_NOTICES: grouped,
+    }], kept
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_YET_FRAMED)
 async def test_a_sheet_s_render_notices_reach_the_log_once_naming_the_round(tmp_path):
     """The image module is on with the attendance graphic switched on and its template valid,
     and the image module's render of Pro's sheet is drawn with one notice, a flag falling back.
     Alex runs `/attendance sync` for Pro from round 1: the sheet posts once, as a picture, and the
-    queue runs to the end; the log channel carries the notice once, in a block whose heading
-    names season 3, Pro and round 1, and no block without a heading carries it a second time."""
+    queue runs to the end; the log channel carries the notice once, in a line opening with Alex
+    and the command, then a heading naming season 3, Pro and round 1, and the notice grouped
+    beneath under its kind in plain words, naming its field; the sheet's job keeps the sheet's
+    name and grouped notices for the reply (issue #635; Constitution V)."""
     from leaguebot.image.models.image_module import RenderNotice, RenderOutcome
     from leaguebot.image.services.aspects.image_attendance_post import (
         ATTENDANCE_ASPECT,
@@ -470,20 +509,21 @@ async def test_a_sheet_s_render_notices_reach_the_log_once_naming_the_round(tmp_
     assert await stopped_job(league.db_path) is None
     assert _sends(league) == 1
     assert league.channel(SHEET).files[-1] is not None
-    log = await _said(league)
-    assert log.count(SHEET_NOTICE) == 1, log
+    await _sheet_notice_is_framed_and_kept(league)
     [block] = [message for message in league.bot.log_channel.sent if SHEET_NOTICE in message]
-    heading = block.splitlines()[0]
-    assert "Season 3 Pro — attendance after round 1" in heading, block
+    assert "Season 3 Pro — attendance after round 1" in block.splitlines()[0], block
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_FRAMED)
 async def test_a_refused_sheet_s_render_notices_reach_the_log_once_when_it_is_retried(tmp_path):
     """The image module is on with the attendance graphic switched on and its template valid,
     and the image module's render of Pro's sheet is drawn with one notice, a flag falling back.
     Pro's attendance channel refuses every send. Alex runs `/attendance sync` for Pro from round 1
     and the queue stops at the sheet; the channel is let accept and a Retry posts the sheet as
-    text. The queue runs to the end, and the log channel carries the notice once, in a block whose
-    heading names Pro and round 1, never lost with the refused try."""
+    text. The queue runs to the end, and the log channel carries the notice once, in a line opening
+    with Alex and the command, then a heading naming Pro and round 1, and the notice grouped
+    beneath; the sheet's job keeps the sheet's name and grouped notices across the stop, never
+    lost with the refused try (issue #635; image spec, Errors and the rejection of input, #550)."""
     from leaguebot.image.models.image_module import RenderNotice, RenderOutcome
     from leaguebot.image.services.aspects.image_attendance_post import (
         ATTENDANCE_ASPECT,
@@ -518,11 +558,7 @@ async def test_a_refused_sheet_s_render_notices_reach_the_log_once_when_it_is_re
 
     assert await stopped_job(league.db_path) is None
     assert league.channel(SHEET).files[-1] is None
-    log = await _said(league)
-    assert log.count(SHEET_NOTICE) == 1, log
-    [block] = [message for message in league.bot.log_channel.sent if SHEET_NOTICE in message]
-    heading = block.splitlines()[0]
-    assert "Pro" in heading and "round 1" in heading.lower(), block
+    await _sheet_notice_is_framed_and_kept(league)
 
 
 async def test_a_sheet_whose_images_switch_nobody_signed_up_for_stops_its_job(tmp_path):
