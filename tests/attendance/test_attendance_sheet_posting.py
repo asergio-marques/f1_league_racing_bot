@@ -553,6 +553,46 @@ async def test_a_driver_off_the_server_is_ordered_by_the_name_the_bot_holds(
     assert listed == ["<@333>", "<@111>"]
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#598: a name read that fails is swallowed, or never made, and the sheet posts anyway",
+)
+@pytest.mark.parametrize("images_on", [False, True], ids=["text-only", "images-on"])
+@pytest.mark.asyncio
+async def test_a_name_read_that_fails_stops_the_sheet_for_retry(sheet_db, images_on):
+    """Owner, 2026-11-25: a failure of the read of drivers' names (a database error, a module's
+    code crashing) stops the sheet's job for Retry, as the standings do. Division 1's sheet after
+    round 3, its last sheet (message 4242) standing in the channel, and the signup module's
+    answer to the name read crashing; the league draws no picture, or draws one. The failure is
+    raised for the queue to stop on, nothing is sent, and the sheet in the channel stays the
+    division's."""
+    from types import SimpleNamespace
+
+    from leaguebot.framework.utils.hooks import AwaitedHook
+
+    async def _crashing(_profile_ids, _season_id):
+        raise RuntimeError("signup crashed")
+
+    names_read = AwaitedHook()
+    names_read.subscribe(_crashing)
+    await _config(sheet_db, prior="4242")
+    journal: list[str] = []
+    channel = _FakeChannel(journal)
+    guild = _FakeGuild(channel, {111: "Ayrton"})
+    picture = (
+        {"drawing": _drawing_that_draws_nothing("none")} if images_on else {"as_text": True}
+    )
+
+    with in_a_job(), pytest.raises(RuntimeError, match="signup crashed"):
+        await post_attendance_sheet(
+            SimpleNamespace(db_path=sheet_db), guild, sheet_db, round_id=3, division_id=7,
+            driver_names_read=names_read, **picture,
+        )
+
+    assert not [entry for entry in journal if entry.startswith(("send:", "delete:"))], journal
+    assert await _stored_message_id(sheet_db) == "4242"
+
+
 @pytest.mark.parametrize(
     "autoreserve,autosack,footer",
     [
