@@ -322,14 +322,20 @@ def abandoned_line(named: str, what: str, *, lapsed: bool, detail: str | None = 
     return line
 
 
-def drawn_notices_line(named: str, what: str, drawn: str, notices: Iterable[str]) -> str:
+def notices_block(drawn: str | None, body: Iterable[str]) -> str:
+    """The block a picture's render notices are reported in, wherever they are: "Image render
+    notices — *drawn*:" ("Image render notices:" where nothing names what was drawn), then *body*,
+    the notices as image hands them back, already grouped by kind and indented beneath it."""
+    heading = f"Image render notices — {drawn}:" if drawn else "Image render notices:"
+    return "\n".join([heading, *body])
+
+
+def drawn_notices_line(named: str, what: str, drawn: str, body: Iterable[str]) -> str:
     """The line of a job that drew a picture which came back with render notices: the member and
-    the change it ran for, as every job line opens, then *drawn*, what was drawn ("lineup —
-    Pro"), and each notice beneath. The notices are one line of the job, so they reach the log
-    channel once, in one message, never as a second unheaded block."""
-    return f"{named} | {what} | Image render notices — {drawn}:" + "".join(
-        f"\n  • {each}" for each in notices
-    )
+    the change it ran for, as every job line opens, then the `notices_block` for *drawn*, what
+    was drawn ("lineup — Pro"), over *body*, the grouped notices. The notices are one line of the
+    job, so they reach the log channel once, in one message, never as a second unheaded block."""
+    return f"{named} | {what} | " + notices_block(drawn, body)
 
 
 def log_link(url: str) -> str:
@@ -342,7 +348,7 @@ def log_link(url: str) -> str:
 def drawn_notices_section(groups: Iterable[DrawnNotices]) -> str:
     """The section a reply ends with for the pictures its work drew with render notices: the
     heading "⚠️ **Image notices**", then each picture under its label, with the `log_link` to the
-    log message holding them where there is one, and each notice beneath. "" where *groups*
+    log message holding them where there is one, and its grouped notices beneath. "" where *groups*
     is empty, so a caller adds it and its separating blank line only when there is something to
     say (Constitution XIV.4: a command's output carries the notices of what it drew)."""
     lines: list[str] = []
@@ -350,7 +356,7 @@ def drawn_notices_section(groups: Iterable[DrawnNotices]) -> str:
         lines.append(
             f"  **{group.label}**" + (f" {log_link(group.link)}" if group.link else "")
         )
-        lines.extend(f"  • {each}" for each in group.notices)
+        lines.extend(f"  {each}" for each in group.notices)
     return "\n".join(["⚠️ **Image notices**", *lines]) if lines else ""
 
 

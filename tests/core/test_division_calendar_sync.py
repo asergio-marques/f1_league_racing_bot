@@ -244,9 +244,6 @@ async def test_a_refused_render_posts_nothing_and_says_the_old_calendar_stands(t
     ]
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#635: the reply bullets each of the drawing's grouped lines again"
-)
 @pytest.mark.parametrize("case", ["takes", "refuses", "rejected"])
 async def test_render_notices_are_shown_in_the_reply_and_not_repeated_in_the_close_line(
     tmp_path, case,

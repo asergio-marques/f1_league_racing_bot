@@ -897,7 +897,6 @@ async def test_the_builder_s_drawing_of_a_review_lineup_that_will_not_draw_keeps
 NOT_YET_GROUPED = "#635: the review's job bullets each of the drawing's grouped lines again"
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_GROUPED)
 @pytest.mark.parametrize("outcome", ["posted", "refused-then-retried", "lineup-not-drawn"])
 async def test_a_review_s_lineup_and_calendar_notices_reach_the_log_once_in_its_posting_job(
         posting, monkeypatch, tmp_path, outcome):
@@ -1008,7 +1007,6 @@ async def test_a_review_s_lineup_and_calendar_notices_reach_the_log_once_in_its_
         assert "✅ Review posted.\n\n⚠️ **Image notices**\n" in told, told
 
 
-@pytest.mark.xfail(strict=True, reason="#635: a review's picture hands back each notice, one apiece")
 async def test_a_review_picture_s_repeated_notice_is_counted_once_in_the_log_and_the_reply(
         posting, monkeypatch, tmp_path):
     """The real change types are registered, as the builder registers them, and the bot carries

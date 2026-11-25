@@ -152,7 +152,6 @@ async def test_a_rejected_directory_is_carried_through_as_a_fault():
     assert "flag" in spec.asset_directory_faults
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_GROUPED)
 async def test_a_calendar_drawing_hands_its_notices_back_and_logs_nothing():
     """Elite's calendar drawn with a notice. Every calendar is drawn inside a change's job, so the
     drawing writes nothing to the log channel itself and hands the notice back with the picture,
@@ -176,7 +175,6 @@ async def test_a_calendar_drawing_hands_its_notices_back_and_logs_nothing():
 _ABSENT_WORDS = "Inkscape is not installed on this host."
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_GROUPED)
 @pytest.mark.parametrize(
     "drawn,problem,source",
     [

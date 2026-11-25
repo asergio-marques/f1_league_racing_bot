@@ -304,7 +304,6 @@ GROUPED = (
 )
 
 
-@pytest.mark.xfail(strict=True, reason="#635: each grouped line is bulleted again as a notice")
 def test_a_job_s_notice_line_opens_with_member_and_change_and_carries_the_grouped_body():
     from leaguebot.framework.utils.log_lines import drawn_notices_line
 
@@ -337,7 +336,6 @@ def test_a_job_frames_its_notice_blocks_with_member_and_change_and_leaves_its_ot
     ]
 
 
-@pytest.mark.xfail(strict=True, reason="#635: each grouped line is bulleted again in the reply")
 def test_a_reply_s_image_notices_list_each_picture_s_grouped_notices_beneath_its_label():
     from leaguebot.framework.models.change import DrawnNotices
     from leaguebot.framework.utils.log_lines import drawn_notices_section

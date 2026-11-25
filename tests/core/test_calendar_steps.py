@@ -520,7 +520,6 @@ async def _cancel_division(league: Any) -> Any:
     return await cancel_division(league, "Pro")
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_GROUPED)
 @pytest.mark.parametrize(("cancel", "change"), [
     pytest.param(_cancel, "`/round cancel`", id="/round cancel"),
     pytest.param(_cancel_division, "`/division cancel`", id="/division cancel"),
@@ -561,7 +560,6 @@ async def test_a_drawn_calendar_s_notices_reach_the_log_once_in_its_posting_job(
     assert _notices_told(league) in told, told
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_GROUPED)
 async def test_a_refused_calendar_s_notices_reach_the_log_once_when_it_is_retried(
     tmp_path, monkeypatch,
 ):

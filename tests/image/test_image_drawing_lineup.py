@@ -299,7 +299,6 @@ IN_A_JOB_DRAWS = [
 ]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_GROUPED)
 @pytest.mark.parametrize("draw", IN_A_JOB_DRAWS)
 async def test_a_lineup_drawn_inside_a_job_hands_its_notices_back_and_logs_nothing(
     db_path, monkeypatch, draw,
@@ -325,7 +324,6 @@ async def test_a_lineup_drawn_inside_a_job_hands_its_notices_back_and_logs_nothi
     assert bool(captured["kwargs"].get("raise_faults")) is (draw == "draw_review_lineup")
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_GROUPED)
 async def test_a_review_lineup_hands_back_identical_notices_counted_and_a_lone_one_naming_its_field(
     db_path, monkeypatch,
 ):

@@ -96,6 +96,7 @@ from leaguebot.image.services.aspects.image_lineup_post import LINEUP_TEMPLATE_K
 from leaguebot.image.services.render.image_render_service import (
     ImageRenderService,
     discard_render,
+    grouped_notice_lines,
     resolve_configured_directories,
     spec_builder_with_faults,
 )
@@ -1062,7 +1063,7 @@ class ImageDrawing:
         )
 
         problem = outcome.problem.detail if outcome.problem is not None else None
-        notices = tuple(each.detail for each in outcome.notices)
+        notices = tuple(grouped_notice_lines(outcome.notices))
         path = outcome.png_paths[0] if outcome.png_paths else None
         return CalendarPicture(
             path=path, problem=problem, notices=notices, fault_source=_source_of(outcome)
@@ -1153,7 +1154,7 @@ class ImageDrawing:
         _division, outcome = await self._render_lineup(guild, division_id)
 
         problem = outcome.problem.detail if outcome.problem is not None else None
-        notices = tuple(each.detail for each in outcome.notices)
+        notices = tuple(grouped_notice_lines(outcome.notices))
         path = outcome.png_paths[0] if outcome.png_paths else None
         return LineupPicture(
             path=path, problem=problem, notices=notices, fault_source=_source_of(outcome)
@@ -1180,7 +1181,7 @@ class ImageDrawing:
             jump_url = getattr(logged, "jump_url", None)
             log_link = jump_url if isinstance(jump_url, str) and jump_url else None
         problem = outcome.problem.message("the lineup") if outcome.problem is not None else None
-        notices = tuple(each.detail for each in outcome.notices)
+        notices = tuple(grouped_notice_lines(outcome.notices))
         path = outcome.png_paths[0] if outcome.png_paths else None
         return LineupPicture(
             path=path, problem=problem, notices=notices, log_link=log_link,
@@ -1204,7 +1205,7 @@ class ImageDrawing:
             include_uncommitted=include_uncommitted, obtain_missing_portraits=True,
             raise_faults=True,
         )
-        notices = tuple(each.detail for each in outcome.notices)
+        notices = tuple(grouped_notice_lines(outcome.notices))
         if outcome.problem is not None:
             return LineupPicture(
                 path=None, problem=f"❌ {outcome.problem.message('the lineup')}", notices=notices,

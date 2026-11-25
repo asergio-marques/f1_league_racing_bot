@@ -519,7 +519,6 @@ async def _placements_confirmed(tmp_path: Any, monkeypatch: Any, drawing: Any) -
 NOT_YET_GROUPED = "#635: the lineup job bullets each of the drawing's grouped lines again"
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_GROUPED)
 async def test_a_drawn_lineup_s_notices_reach_the_log_once_in_its_posting_job(
     tmp_path, monkeypatch,
 ):
@@ -551,7 +550,6 @@ async def test_a_drawn_lineup_s_notices_reach_the_log_once_in_its_posting_job(
     assert sum(notices[2] in each for each in logged) == 1, logged
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_GROUPED)
 @pytest.mark.parametrize("start", [
     pytest.param(_lineup_asked, id="a lineup asked"),
     pytest.param(_placements_approved, id="the placements approved"),

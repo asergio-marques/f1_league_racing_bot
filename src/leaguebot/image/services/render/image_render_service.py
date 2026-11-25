@@ -25,6 +25,7 @@ from pathlib import Path
 from dataclasses import dataclass, field as dataclass_field
 
 from leaguebot.framework.utils.interaction_errors import describe_fault
+from leaguebot.framework.utils.log_lines import notices_block
 from leaguebot.image.models.image_constants import (
     KIND_WORDS,
     NOTICE_TIER_COLOURS_NOT_APPLIED,
@@ -956,10 +957,7 @@ class ImageRenderService:
         which is not the same thing as naming the championship or the session a reader is
         looking for in a log of many.
         """
-        heading = "Image render notices:"
-        if subject:
-            heading = f"Image render notices — {subject}:"
-        return "\n".join([heading, *grouped_notice_lines(notices)])
+        return notices_block(subject, grouped_notice_lines(notices))
 
     # ── Posting: the commanded / uncommanded split (Constitution XIV.7) ────
 
