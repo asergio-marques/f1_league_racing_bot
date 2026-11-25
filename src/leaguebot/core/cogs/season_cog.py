@@ -28,6 +28,7 @@ from leaguebot.framework.services.switches.module_service import SwitchNotSigned
 from leaguebot.core.services.rounds.round_moments import read_phases_drawn, read_round_leads
 from leaguebot.core.services.seasons.confirmation_refusals import Confirmation, read_refusals
 from leaguebot.core.services.seasons.review_sections import (
+    MODULE_ORDER,
     Review,
     module_review_lines,
     read_division_lines,
@@ -130,6 +131,13 @@ class SeasonCog(commands.Cog):
         False there and needs no catch-all here."""
         drawing = self.bot.image_drawing
         return await drawing.calendar_wanted(), await drawing.lineup_wanted()
+
+    async def _module_states(self) -> list[tuple[str, bool]]:
+        """Each module's switch by its key, in the reviews' one order (`MODULE_ORDER`), as both
+        reviews' Modules section is written from."""
+        return [
+            (key, await self.bot.module_service.is_enabled(key)) for key in MODULE_ORDER
+        ]
 
     async def _ask_review(
         self,
@@ -919,13 +927,6 @@ class SeasonCog(commands.Cog):
     # ------------------------------------------------------------------
     # /season config-review — confirming the configuration
     # ------------------------------------------------------------------
-
-    async def _module_states(self) -> list[tuple[str, bool]]:
-        """Each module's switch by its key, as the reviews' Modules section is written from."""
-        return [
-            (key, await self.bot.module_service.is_enabled(key))
-            for key in ("weather", "signup", "results", "attendance", "images")
-        ]
 
     async def _league_roles_review_lines(self) -> list[str]:
         """The league's base role and driver role, as the configuration review reports them.

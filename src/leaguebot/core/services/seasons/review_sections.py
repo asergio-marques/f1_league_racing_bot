@@ -76,7 +76,9 @@ async def read_division_lines(
     )
 
 
-_MODULE_ORDER = ("weather", "signup", "results", "attendance", "images")
+MODULE_ORDER = ("weather", "signup", "results", "attendance", "images")
+"""The one order the reviews' Modules section lists the modules in, by key: the cog reads each
+module's switch in it, so a module is added here and nowhere else."""
 
 
 def module_review_lines(
@@ -95,7 +97,7 @@ def module_review_lines(
     """
     enabled = dict(states)
     lines = ["**Modules**"]
-    for key in _MODULE_ORDER:
+    for key in MODULE_ORDER:
         on = enabled[key]
         if key == "signup":
             change = "fixed for the season once the configuration is confirmed"
