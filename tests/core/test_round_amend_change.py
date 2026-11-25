@@ -1331,14 +1331,16 @@ async def test_the_arming_is_not_due_once_the_round_can_no_longer_be_cancelled(t
         assert await _moment(league) != _when(league, days=91)
 
 
-async def test_a_mystery_round_moved_inside_its_first_horizon_keeps_its_results_submission(
-    tmp_path,
+@pytest.mark.parametrize("weather", [True, False], ids=["weather on", "weather off"])
+async def test_a_mystery_round_moved_inside_its_first_horizon_is_armed_its_results_and_clean_up(
+    tmp_path, weather,
 ):
-    """Weather on, horizons 5 days, 2 days, 2 hours; Pro's round 3 is a mystery round. It is
-    brought forward to three days out, inside its first horizon, so its forecasts are not armed
-    again. Its results submission is armed all the same, so that the round still opens its
-    submission and can finish."""
-    league = await ongoing_league(tmp_path, weather=True, horizons=HORIZONS)
+    """Horizons 5 days, 2 days, 2 hours; Pro's round 3 is a mystery round. It is brought forward
+    to three days out, inside its first horizon, so its forecasts are not armed again. Its results
+    submission is armed all the same, so that the round still opens its submission and can finish.
+    With weather on, its forecast clean-up is armed too, and no phase, for the clean-up a day after
+    the race takes its notice down; with weather off, no clean-up is armed."""
+    league = await ongoing_league(tmp_path, weather=weather, horizons=HORIZONS)
     await league.write("UPDATE rounds SET format = 'MYSTERY' WHERE id = ?", R3)
     await _amended(league, scheduled_at=_at(league, days=3))
 
@@ -1347,6 +1349,14 @@ async def test_a_mystery_round_moved_inside_its_first_horizon_keeps_its_results_
     assert (await _change(league))["state"] == "DONE"
     assert ("results", [R3]) in league.armed
     assert ("weather", [R3]) not in league.armed
+    leads = [lead for each in leads_armed(league.bot.round_jobs) if each["rnd"].id == R3
+             for lead in each["leads"]]
+    assert not any(lead.kind.startswith("weather_p") for lead in leads)
+    cleanups = [lead for lead in leads if lead.kind == "cleanup"]
+    if weather:
+        assert cleanups and all(lead.clean_up for lead in cleanups)
+    else:
+        assert cleanups == []
 
 
 async def test_a_mystery_round_whose_save_is_discarded_is_armed_again_with_its_mystery_notice(
