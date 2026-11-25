@@ -118,7 +118,8 @@ def _nothing_left(cog, monkeypatch):
 
 
 def _submission_open(status: str):
-    """Round 2 of Pro waiting on its results, its submission channel open, in *status*.
+    """Round 2 of Pro with its submission channel open, the round in *status*: a review under way
+    (`AWAITING_REPORT_VERDICTS`) or none (`FINAL`).
 
     Results' own step refuses it, read from the round's state; the cog has no database, so once
     advance runs the step signed up for the kind, a stand-in signed up for `results` refuses as
@@ -225,7 +226,7 @@ _CASES = {
     "advance awaiting review": (
         "test-mode advance",
         _command("advance"),
-        _submission_open("AWAITING_PENALTY_REVIEW"),
+        _submission_open("AWAITING_REPORT_VERDICTS"),
         "is awaiting penalty review approval",
     ),
     "advance with a submission in progress": (
