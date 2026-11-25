@@ -17,6 +17,8 @@ from unittest.mock import AsyncMock, MagicMock, call
 import discord
 import pytest
 
+from leaguebot.core.services.test_mode.driver_commands import RELOAD
+
 
 async def _ready_bot(tmp_path, *, test_mode: bool):
     """The bot the entry point builds, on the league's server, found by id, with test mode as
@@ -206,6 +208,7 @@ async def test_the_sync_command_leaves_the_driver_the_flag_calls_for(tmp_path, t
     assert (bot.tree.get_command("driver"), bot.tree.get_command("driver", guild=guild)) == expected
     [reply] = [each.args[0] for each in ctx.send.await_args_list]
     assert reply.startswith("✅ Cleared guild overrides and synced ")
+    assert reply.endswith(f"\n\n{RELOAD}")
     assert sorted(seen, key=lambda each: each[0] is not None) == [
         (None, expected[0]), (guild, expected[1])
     ]
@@ -261,3 +264,4 @@ async def test_the_sync_command_in_a_direct_message_keeps_the_global_commands(
     assert left_over.name in server_names
     [reply] = [each.args[0] for each in ctx.send.await_args_list]
     assert reply.startswith("✅ Synced ") and "overrides" not in reply
+    assert reply.endswith(f"\n\n{RELOAD}")
