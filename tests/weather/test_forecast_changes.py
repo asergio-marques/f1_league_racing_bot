@@ -1045,9 +1045,7 @@ async def test_a_clean_up_deletes_whichever_phase_is_still_standing(tmp_path, st
     pytest.param((2,), "the Phase 2 forecast", id="phase 3 never posted"),
     pytest.param((1, 2), "the Phase 1 and 2 forecasts", id="phases 1 and 2 standing"),
     pytest.param((0, 3), "the mystery round notice and the Phase 3 forecast",
-                 id="mystery notice and phase 3 standing",
-                 marks=pytest.mark.xfail(strict=True, reason="#595: the clean-up does not yet "
-                                         "delete a mystery round's notice, nor name it")),
+                 id="mystery notice and phase 3 standing"),
 ])
 async def test_a_clean_up_is_named_by_the_phases_it_deletes(tmp_path, standing, named):
     """A day after round 3's race, Pro's clean-up is asked with Phase 3 standing, or Phase 2 alone
@@ -1066,8 +1064,6 @@ async def test_a_clean_up_is_named_by_the_phases_it_deletes(tmp_path, standing, 
     assert row["what"] == f"deleting {named} of round 3 in **Pro** a day after it"
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#595: the clean-up does not yet delete a mystery round's notice")
 async def test_a_clean_up_deletes_a_mystery_round_s_notice_and_keeps_it_given(tmp_path):
     """Round 3 is a mystery round, whose notice (phase 0) was posted in place of its forecasts:
     a day after its race the clean-up deletes the notice by a `delete_forecast` job of its own,

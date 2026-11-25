@@ -9,7 +9,8 @@ their format, race time and status, and orders what comes back. Weather reads a 
 itself, from the round it is handed, to tell a mystery round's notice from Phase 1.
 
 Weather's steps of a round are a mystery round's notice (0) until it is posted, or each of Phases 1
-to 3 (1, 2, 3) not done, and the forecast clean-up (8) while a forecast of Phases 1 to 3 stands. A
+to 3 (1, 2, 3) not done, and the forecast clean-up (8) while a forecast of Phases 1 to 3, or a
+mystery round's notice, stands. A
 step of a round whose race has been run is passed over: the change queue drops a forecast for a
 race already run as not due, so advance does not offer it, though it names it. The clean-up is
 never passed over, and never a step already asked of the change queue and not yet run: the advance
@@ -44,7 +45,8 @@ from leaguebot.core.services.test_mode.test_mode_service import (
 from leaguebot.weather.services.draw_guard import weather_enabled_on
 from leaguebot.weather.services.round_phases import PhasesDrawn, phases_drawn_on
 
-#: The step that takes the forecasts of Phases 1 to 3 down, a day after the round.
+#: The step that takes the forecasts of Phases 1 to 3, or a mystery round's notice, down, a day after
+#: the round.
 CLEAN_UP_PHASE = 8
 
 #: The kind of round job each of weather's advance phases is armed under, the one map weather's
@@ -57,7 +59,7 @@ _STEP_KINDS = {0: "weather_p1", **ADVANCE_KINDS}
 
 
 async def _standing_forecasts(db: aiosqlite.Connection) -> set[int]:
-    """The rounds with a forecast of Phase 1 to 3 still standing."""
+    """The rounds with a forecast of Phase 1 to 3, or a mystery round's notice, still standing."""
     cursor = await db.execute(
         "SELECT DISTINCT round_id FROM forecast_messages "
         f"WHERE phase_number IN ({', '.join(map(str, CLEAN_UP_PHASES))})"

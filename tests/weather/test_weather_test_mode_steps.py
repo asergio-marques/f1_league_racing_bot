@@ -100,9 +100,7 @@ def _round(*, format: str, scheduled_at: str):
     pytest.param({"format": "MYSTERY"}, [(0, "weather_p1")], [],
                  id="a mystery round's notice still to post"),
     pytest.param({"format": "MYSTERY", "notice": True, "standing": (0,)}, [(8, "cleanup")], [],
-                 id="a mystery round's notice posted and still up",
-                 marks=pytest.mark.xfail(strict=True, reason="#595: a mystery round's notice "
-                                         "still up does not yet leave its clean-up pending")),
+                 id="a mystery round's notice posted and still up"),
     pytest.param({"format": "MYSTERY", "notice": True}, [], [],
                  id="a mystery round's notice posted and taken down"),
     pytest.param({"forecasts_in_hand": (1,)}, [(2, "weather_p2"), (3, "weather_p3")], [],

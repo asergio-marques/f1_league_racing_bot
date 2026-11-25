@@ -21,7 +21,7 @@ for the forecasts' timers of a round armed again and for the phases the amendmen
   plans a `delete_forecast_part` job, weather's own step built on the shared `delete_replaced`
   handler, for each earlier part of a forecast posted in more than one.
 - `plan_forecast_deletes`: finds the forecasts a clean-up (whichever of a round's Phase 1 to 3
-  forecasts still stands, a day after it) or a flush (every forecast, when test mode is switched off) deletes, and plans a
+  forecasts, or its mystery round notice, still stands, a day after it) or a flush (every forecast, when test mode is switched off) deletes, and plans a
   `delete_forecast` for each, so that each deletion is a job of its own.
 
 A forecast whose turn comes after its round's race is dropped as the change starts (its check) and
@@ -635,7 +635,9 @@ def _clean_up_doing(payload: dict[str, Any]) -> str:
 def forecast_clean_up_change(*, now: Callable[[], datetime], drawing: ImageDrawing) -> ChangeType:
     """`weather.forecast.clean_up`: the bot's change that deletes a round's forecast a day after its
     race, whichever of Phases 1 to 3 still stands (a Phase 3 never posted leaves Phase 2 standing),
-    one `delete_forecast` job for each, planned by `plan_forecast_deletes`. A round called off, or
+    or a mystery round's notice, one `delete_forecast` job for each, planned by
+    `plan_forecast_deletes`. The notice is taken down as a forecast is, and the round stays owed
+    no notice again (the job keeps `mystery_notice_given`). A round called off, or
     of a division called off, is owed none; a round that ended cancelled because every session was
     entered as not held (`rounds.not_held`) is owed it as any round is, its forecasts having
     stood until then.
@@ -661,7 +663,7 @@ def forecast_clean_up_change(*, now: Callable[[], datetime], drawing: ImageDrawi
         if not weather_on:
             return Verdict.not_due(Lapse.OFF.value)
         if not recorded:
-            return Verdict.not_due("no Phase 1 to 3 forecast is recorded")
+            return Verdict.not_due("no forecast or mystery round notice is recorded")
         return Verdict.go()
 
     def outcome(_ctx: OutcomeContext) -> str:
@@ -699,7 +701,8 @@ class CleanUpAsked:
 async def ask_forecast_clean_up(
     queue: ChangeQueue, db_path: str, round_id: int
 ) -> CleanUpAsked | None:
-    """Ask the queue to delete the forecast of *round_id* that still stands (Phase 1 to 3), as its
+    """Ask the queue to delete the forecast of *round_id* that still stands (Phase 1 to 3, or a
+    mystery round's notice), as its
     timer does a day after the race, and return what was asked; None where nothing was. A round
     that is not there asks nothing; the change's check drops a request that is no longer due. The
     phases standing as it is asked (`standing`) name the change; the jobs delete what stands when
@@ -896,7 +899,7 @@ async def amendment_clean_ups(
     **_context: Any,
 ) -> tuple[PlannedStep, ...]:
     """The clean-up of the round's forecast a day after the round, planned where that day has
-    come and a forecast stands (whichever of Phases 1 to 3), named by the phases standing. Read on
+    come and a forecast stands (whichever of Phases 1 to 3, or a mystery round's notice), named by the phases standing. Read on
     *db*. Subscribed to core's `round_clean_ups_due`."""
     if clean_up_moment(rnd.scheduled_at) > now():
         return ()

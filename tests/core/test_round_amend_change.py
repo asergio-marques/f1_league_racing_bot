@@ -1821,9 +1821,7 @@ async def test_the_clean_ups_that_fell_due_while_the_save_stood_stopped_are_run_
 
 @pytest.mark.parametrize("standing", [
     pytest.param("phase 2", id="phase 3 never posted"),
-    pytest.param("mystery notice", id="a mystery round's notice",
-                 marks=pytest.mark.xfail(strict=True, reason="#595: the clean-up does not yet "
-                                         "delete a mystery round's notice")),
+    pytest.param("mystery notice", id="a mystery round's notice"),
 ])
 async def test_a_late_clean_up_deletes_whichever_phase_is_still_standing(tmp_path, standing):
     """Weather on. Pro's round 3 is thirty minutes out with one forecast recorded: (phase 3 never
@@ -1856,9 +1854,7 @@ async def test_a_late_clean_up_deletes_whichever_phase_is_still_standing(tmp_pat
 
 @pytest.mark.parametrize("standing, named", [
     pytest.param((3, 8003), "the Phase 3 forecast", id="phase 3"),
-    pytest.param((0, 8000), "the mystery round notice", id="a mystery round's notice",
-                 marks=pytest.mark.xfail(strict=True, reason="#595: a mystery round's notice is "
-                                         "not yet cleaned up, nor named as the notice")),
+    pytest.param((0, 8000), "the mystery round notice", id="a mystery round's notice"),
 ])
 async def test_a_late_clean_up_s_forecast_deletion_is_named_as_the_clean_up_names_it(
     tmp_path, standing, named,

@@ -772,7 +772,7 @@ async def test_an_advanced_forecast_cleanup_is_asked_of_the_change_queue(tmp_pat
 
     assert _asked(cog) == [(
         FORECAST_CLEAN_UP,
-        {"round_id": ROUND_ID, "phases": [1, 2, 3], "clean_up": True, "standing": [],
+        {"round_id": ROUND_ID, "phases": [0, 1, 2, 3], "clean_up": True, "standing": [],
          "division_name": "Division 1", "round_number": 3},
         "deleting the forecast of round 3 in **Division 1** a day after it",
         ChangeOrigin.BOT,
@@ -1107,9 +1107,7 @@ async def test_an_advanced_forecast_cleanup_deletes_an_earlier_phase_still_stand
 
 @pytest.mark.parametrize("phase, named", [
     pytest.param(2, "the Phase 2 forecast", id="phase 2"),
-    pytest.param(0, "the mystery round notice", id="a mystery round's notice",
-                 marks=pytest.mark.xfail(strict=True, reason="#595: the forecast cleanup does "
-                                         "not yet name a mystery round's notice")),
+    pytest.param(0, "the mystery round notice", id="a mystery round's notice"),
 ])
 async def test_an_advanced_forecast_cleanup_names_the_phase_it_deletes(tmp_path, phase, named):
     """Season 3 is being raced in test mode, with weather on; Pro's round 3 was raced a day and

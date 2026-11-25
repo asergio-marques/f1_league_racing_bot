@@ -10,9 +10,9 @@ from collections.abc import Iterable
 FORECAST = "weather.forecast"
 FORECAST_CLEAN_UP = "weather.forecast.clean_up"
 
-#: The phases whose forecasts a clean-up deletes: whichever of them still stands a day after the
-#: race. A mystery round's notice (phase 0) is no forecast, and stands.
-CLEAN_UP_PHASES = (1, 2, 3)
+#: The phases a clean-up deletes: whichever of them still stands a day after the race. A mystery
+#: round's notice (phase 0) is no forecast and is taken down like one.
+CLEAN_UP_PHASES = (0, 1, 2, 3)
 
 
 def forecasts_named(phases: Iterable[int]) -> str:
