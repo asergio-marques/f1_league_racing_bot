@@ -59,6 +59,7 @@ import pytest
 
 from leaguebot.core.cogs.bot_cog import BotCog
 from leaguebot.framework.db.database import get_connection, run_migrations
+from tests.support.current_documents import ROOT, current_text_paths
 from tests.support.undecorate import undecorate
 
 SERVER_ID = 27601
@@ -1014,20 +1015,12 @@ def test_nothing_current_names_a_withdrawn_signup_role_command():
     when the roles became the league's (issue #276). A reply or a guide naming one sends a
     league to a command Discord no longer offers. `specs/` and the constitution's sync
     reports are historical records and are not read."""
-    import pathlib
     import re
 
-    root = pathlib.Path(__file__).resolve().parents[2]
     withdrawn = re.compile(r"/signup (?:base-role|complete-role|config roles)\b")
-    paths = [
-        *sorted((root / "src").rglob("*.py")),
-        root / "README.md",
-        *sorted((root / "docs" / "how-to").glob("*.md")),
-        *sorted((root / "docs" / "wip-specs").glob("*.md")),
-    ]
     offenders = sorted(
-        str(path.relative_to(root))
-        for path in paths
+        str(path.relative_to(ROOT))
+        for path in current_text_paths()
         if withdrawn.search(path.read_text(encoding="utf-8"))
     )
     assert offenders == []
