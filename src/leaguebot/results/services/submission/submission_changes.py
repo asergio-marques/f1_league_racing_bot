@@ -403,12 +403,14 @@ def advance_step(queue: ChangeQueue, db_path: str) -> AdvanceStep:
     """The step `/test-mode advance` runs for a round's results: it asks *queue*, as the bot, to
     open the round's submission, early.
 
-    **It refuses while a submission channel stands open**, and names the review the round is
-    awaiting, so that the maintainer finishes the round in front of them before stepping past it.
-    A round awaiting appeal verdicts has had its report verdicts settled already, so the refusal
-    reads the round's actual status rather than always saying "penalty review". The round's results
-    job is already down by then (`run_advance_step`): a refusal means the submission is open, so
-    the job has run.
+    **It refuses while a submission channel stands open**, so that the maintainer finishes the
+    round in front of them before stepping past it. Advance offers this step only while no results
+    stand for the round, so an open channel means the round awaits its results, and the refusal
+    asks for them. The refusal names a review only where the round's status says one is under way,
+    which happens only where a paste lands between advance choosing the step and running it: the
+    penalty review for a round awaiting report verdicts, the appeals review for one awaiting appeal
+    verdicts, whose report verdicts are settled already. The round's results job is already down by
+    then (`run_advance_step`): a refusal means the submission is open, so the job has run.
 
     **Where the queue drops the opening as not due, it replies so and records nothing** (core
     specification, "Test mode"), as a check-in step does: the round was cancelled or deleted, or its
