@@ -2186,6 +2186,8 @@ the auto-sack. The two thresholds cannot both be active, so the auto-reserve goe
        ✅ Attendance of **Division 1** recalculated from round 1 on.
        No sanction was owed.
        ```
+       followed, where the sheet drew with notices, by a blank line and a `⚠️ **Image notices**`
+       section naming it with a *see them in the log* link and its notices beneath.
      - **Posts** (`#d1-attendance`): the attendance sheet posted again, the previous one deleted,
        its totals as step 108 left them, its plate now `SACKED AT 6`, Pim Prasert (7) drawing the
        limit-reached mark.
@@ -2707,31 +2709,33 @@ the markers, weather icons and tyres. That is no fault, and nothing posts as tex
 picture **reports** what it fell back on, as image notices:
 
 - **A timed posting** (a forecast, a check-in call, a results table, a standings picture, an
-  attendance sheet, a verdict, a banner, a final classification) writes its notices to `#bot-log`,
-  in one of two forms. A posting that names the change it ran for writes one line of its job
-  (`drawn_notices_line`):
+  attendance sheet, a verdict, a banner, a final classification) writes its notices to `#bot-log`
+  as one line of its job, opening as every line of the log does with whoever caused it (`System`
+  where nobody did) and the change it ran for, in one message for the whole job:
   ```
   <you or System> | <the change> | Image render notices — <what was drawn>:
-    • <notice>
+    Artwork not supplied by the league ×<n: how many>
+      • no `flag` image is supplied for “<a nationality>”; the directory's fallback was drawn instead. (×<n>)
+      • no `team` image is supplied for “<a team>”; the directory's fallback was drawn instead. (×<n>)
   ```
-  and the others a block of their own (`format_notices`):
-  ```
-  Image render notices — <subject: what was drawn, as the table below names it>:
-    [ASSET_FALLBACK_USED] ×<n: how many>
-      • <image type> — no `flag` image is supplied for “<a nationality>”; the directory's fallback was drawn instead. (×<n>)
-      • <image type> — no `team` image is supplied for “<a team>”; the directory's fallback was drawn instead. (×<n>)
-  ```
-  A notice met once names its field (`• <image type> / `<field id>` — …`); one met many times is
-  counted (`(×<n>)`). A closed-set class drawn from the bot's own file reads instead
+  Each kind of notice is headed in plain words and never by a code, and no line names a template
+  by its key: `Font substituted`, `Text set smaller`, `Artwork not supplied by the league`,
+  `Packaged artwork stretched`, `Field left empty`, `Crop point off the canvas` and `Tier colours
+  not applied`. A notice met once names its field (``• `<field id>` — …``) and the heading carries
+  no count; one met many times is counted (`(×<n>)`), and a heading over several carries their total
+  (`×<n>`). A closed-set class drawn from the bot's own file sits under the same
+  `Artwork not supplied by the league` heading and reads instead
   ``the configured `<class>` directory has no image for “<datum>”; the bot's own `<slug>.svg` was drawn instead.``
   A division logo's fallback is blank by design and raises no notice.
-  > UNVERIFIED: which postings take which form, each `<datum>` as drawn, and any notice of
-  > another kind (`FONT_SUBSTITUTED`, `FIELD_REDUCED`), which depends on the host's fonts. Record
-  > what appears.
-- **A command that draws** (a review, the approval) ends its reply with `⚠️ **Image notices**`,
-  as `00-base.md` steps 35 and 37 say.
-- **A preview** ends its reply with `⚠️ **Notices** — the render survived these:` and a link to
-  the same block in `#bot-log`.
+  > UNVERIFIED: which postings carry which change in the line's opening, each `<datum>` as drawn,
+  > and any notice of another kind (`Font substituted`, `Text set smaller`), which depends on the
+  > host's fonts. Record what appears.
+- **A command that draws** (a review, the approval, the completion, a results approval or
+  amendment, a results sync, an attendance sync) ends its reply with `⚠️ **Image notices**`, each
+  picture under its name with a *see them in the log* link and its notices beneath, as
+  `00-base.md` steps 35 and 37 say.
+- **A preview** ends its reply with the same `⚠️ **Image notices**` section, each picture under its
+  name and a link to the same block in `#bot-log`.
 
 No picture should post as text in this spec. A line in `#bot-log` beginning `⚠️` that names a
 picture which was not drawn (for example `⚠️ Weather image — …`) is a failure: report it.
@@ -2769,20 +2773,22 @@ there is one. Its reply, in every step below:
 ✅ <label of the next picture>
 …
 
-⚠️ **Notices** — the render survived these: ([see them in the log](<link to the #bot-log message>))
-  [ASSET_FALLBACK_USED] ×<n>
-    • <image type> — <detail> (×<n>)
+⚠️ **Image notices**
+  **<label> — <division>, round <R>** ([see them in the log](<link to the #bot-log message>))
+  Artwork not supplied by the league ×<n>
+    • <detail> (×<n>)
 ```
 
 with `, round <R>` left out for the calendar and the lineup. No line saying the season's
 placements are yet to be confirmed, none saying the division has no seated driver, none about
 drivers recording no nationality, and no `⚠️ **Asset directories**` section. A `❌ <label>: …`
-line in place of a `✅` is a failure. Its **Log**, where it has notices:
+line in place of a `✅` is a failure. Its **Log**, where it has notices, opens with you and the
+preview's command (``<you> | `/images test <kind> …` |``):
 
 ```
-Image render notices — <title> — <division>, round <R>:
-  [ASSET_FALLBACK_USED] ×<n>
-    • <image type> — <detail> (×<n>)
+<you> | `/images test <kind> division:<division> …` | Image render notices — <label> — <division>, round <R>:
+  Artwork not supplied by the league ×<n>
+    • <detail> (×<n>)
 ```
 
 140. **Do:** `/images test calendar division:Division 2`
@@ -2904,9 +2910,11 @@ backup is gone.
 
      **Expect:**
      - **Ack:** `Completing season 1`
-     - **Then:** `✅ Season marked as complete.`, with nothing beneath it: the lines that may follow
-       name only a job a league admin discarded, or a real driver with no signup channel left, and
-       this season has neither.
+     - **Then:** `✅ Season marked as complete.`, followed by a `⚠️ **Image notices**` section where a
+       final classification or a final attendance sheet drew with notices (each picture named as
+       the log's block names it, a *see them in the log* link, its notices beneath), and by nothing
+       else: the other lines that may follow name only a job a league admin discarded, or a real
+       driver with no signup channel left, and this season has neither.
      - **Posts**, one division at a time, Division 1 then Division 2:
        - `#d1-standings`, `#d2-standings`: the **final classification**, two pictures, drivers then
          constructors, each posted with no message text, the occasion `Final Classification` drawn
@@ -2924,7 +2932,7 @@ backup is gone.
        > UNVERIFIED: what the final pictures hold beside the classification (the rounds' grid, the
        > reserves). Look at each as a PNG and record it.
      - **Roles:** none taken back: roles are taken back from real drivers only.
-     - **Log:** any notice blocks, headed
+     - **Log:** any notice blocks, each opening `<you> | /season complete |` and headed
        `Image render notices — Season 1 Division 1 — Final Classification — drivers standings:`,
        `… — constructors standings:` and
        `Image render notices — Season 1 Division 1 — attendance, Final Classification:`, and the

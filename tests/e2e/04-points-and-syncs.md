@@ -1125,7 +1125,9 @@ division counts as having something to post once any round of it holds results, 
 
     **Expect:**
     - **Ack:** `Syncing the results of every round of **Division 1**`
-    - **Then:** `✅ Results for all rounds in **Division 1** synced to the results channel.`
+    - **Then:** `✅ Results for all rounds in **Division 1** synced to the results channel.`,
+      followed, where a table drew with notices, by a blank line and a `⚠️ **Image notices**`
+      section naming each picture, a *see them in the log* link and its notices beneath.
     - **Posts** (`#d1-results`): the two pictures of round 1 again, `Final Results`, as step 74
       left them, and the pair before them deleted. Nothing in `#d1-standings`: the standings are
       the other sync's.
