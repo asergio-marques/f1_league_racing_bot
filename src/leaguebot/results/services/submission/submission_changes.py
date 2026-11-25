@@ -598,8 +598,9 @@ def submission_all_cancelled_change(
 
     The payload is the last turn's: ``round_id``, ``channel_id``, ``round_number`` and
     ``sessions``, each ``{"session_id", "session_type"}`` of the round's cancelled sessions in
-    running order. A resubmission's adds ``resubmission`` and ``old_tables``, the ids of the
-    earlier results tables the new sessions could not carry. *seasons* posts the calendar, drawn
+    running order. A resubmission's adds ``resubmission`` and ``old_tables``, each the channel an
+    earlier results table was recorded as posted in (None where none was) and its message id,
+    for the tables the new sessions could not carry. *seasons* posts the calendar, drawn
     through *drawing*, the image module's own answer to core's drawing protocol (#283),
     *attendance* is attendance's share of a round's review, asked inside the save, on its
     connection, to plan the reading of the round's check-in, *cancellation_notices* is the hook
