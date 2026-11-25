@@ -329,8 +329,14 @@ def _carry_closed(signup: "SignupModuleService") -> After:
     async def describe(ctx: StepContext) -> str:
         return f"posting the closed notice in <#{int(ctx.payload['channel_id'])}>"
 
-    def fault_reply(_payload: dict[str, Any], reply: str) -> str:
-        return reply
+    def fault_reply(payload: dict[str, Any], reply: str) -> str:
+        said = f"The closed notice was not carried to <#{int(payload['channel_id'])}>"
+        if said in reply:
+            return reply
+        return (
+            f"{reply}\n⚠️ {said}: check where it stands in the signup channels, and delete any "
+            "copy by hand."
+        )
 
     return After(
         step=Step(CARRY_CLOSED, StepKind.ACT, run, still_due=due, describe=describe, record=record),
@@ -381,7 +387,12 @@ def _delete_carried_closed() -> After:
         return "taking down the old closed notice from the earlier signup channel"
 
     def fault_reply(_payload: dict[str, Any], reply: str) -> str:
-        return reply
+        said = "The old closed notice could not be"
+        if said in reply:
+            return reply
+        return (
+            f"{reply}\n⚠️ {said} taken down: delete it from the earlier signup channel by hand."
+        )
 
     return After(
         step=dataclasses.replace(inner, run=run, still_due=due, describe=describe),
