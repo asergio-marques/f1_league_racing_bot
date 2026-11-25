@@ -326,9 +326,9 @@ async def test_a_standings_sync_s_reply_names_the_standings_pictures_drawn_with_
     """Images and results on, the standings aspect on and its templates sound: Admin runs
     `/results standings sync` for Pro, and round 3's drivers' and constructors' pictures each
     draw as a PNG with one font substituted, a font of its own. Either they post at the first
-    try, or (*refused*) Discord takes the first table and refuses the second and its text, the queue stops at the standings job, and
-    once Discord takes posts again Retry posts the second table as text. Each notice reaches the log channel
-    once, in a block opening with the member and the command ("| `/results standings sync` |"),
+    try, or (*refused*) Discord takes the first table and refuses the second and its text, the
+    queue stops at the standings job, and once Discord takes posts again Retry posts the second
+    table as text. Each notice reaches the log channel once, in a block opening with the member and the command ("| `/results standings sync` |"),
     then "Image render notices — <picture>:" and the notice grouped beneath "Font substituted".
     The reply says the standings synced and ends in one "Image notices" section listing each
     picture once under the name its log line gives it, linked to the log channel's message
