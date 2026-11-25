@@ -199,7 +199,7 @@ it only to place it; the rules governing it belong to its own specification.
 #### Factory reset
 - A factory reset shall be the server owner's command alone. It shall be given from any channel of a server the bot is not refusing.
 - A factory reset shall first take a backup of both the bot's databases on the host, and shall not go ahead, erasing nothing, if the backup cannot be taken; that shall be recorded in the log channel as a failure, and the reply shall say that nothing was erased. The backup shall not replace an earlier one. Restoring a backup shall be the host's task and not a command's.
-- A factory reset shall then erase the league: the bot shall hold only the packaged circuit list, no scheduled work, nothing in memory, and no claim upon any server.
+- A factory reset shall then erase the league: the bot shall hold only the packaged circuit list and the Reserve team, no scheduled work, nothing in memory, and no claim upon any server.
 - A factory reset shall then clean the server it was given upon:
     - it shall delete the channels the bot created — signup wizard channels, results submission channels and results amendment channels;
     - it shall delete the bot's own messages in every channel it posts to or reads from, in any season, save the one line of the next rule. A message of anybody else shall never be deleted.

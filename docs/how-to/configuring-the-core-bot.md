@@ -829,7 +829,7 @@ you. The old server's channels and roles do not, so you set those again on the n
 
 Only the Discord **server owner** can run this, from any channel. It takes a backup of both of
 the bot's databases on the computer running it, and erases nothing if the backup fails, saying so in the reply and in the log channel. Then it
-erases the league — seasons, drivers, teams, settings, all of it — and deletes the channels the
+erases the league — seasons, drivers, every team but Reserve, settings, all of it — and deletes the channels the
 bot created and every message the bot posted on this server. Nobody else's messages are touched.
 When the clean-up ends, the bot leaves one line in the log channel saying who ran the reset and how the clean-up ended; it is the one message of its own that stays. `/bot init` is refused until the clean-up has finished. Afterwards you start again from step 1 of this guide.
 

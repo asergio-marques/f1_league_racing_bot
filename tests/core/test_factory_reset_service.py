@@ -331,6 +331,9 @@ async def test_the_wipe_leaves_exactly_a_fresh_install(db_path, tmp_path):
             "INSERT INTO driver_profiles (discord_user_id, current_state) "
             "VALUES ('900', 'NOT_SIGNED_UP')"
         )
+        await db.execute(
+            "INSERT INTO default_teams (name, full_name) VALUES ('ALP', 'Alpine')"
+        )
         await db.commit()
     fresh = str(tmp_path / "fresh-for-comparison.db")
     await run_migrations(fresh)
@@ -339,6 +342,9 @@ async def test_the_wipe_leaves_exactly_a_fresh_install(db_path, tmp_path):
 
     assert _contents(db_path) == _contents(fresh)
     assert _contents(db_path)["tracks"], "the packaged circuits are kept"
+    assert [(team[1], team[4]) for team in _contents(db_path)["default_teams"]] == [
+        ("Reserve", 1)
+    ], "the Reserve team alone is kept"
 
 
 async def test_the_wipe_frees_the_claim(db_path):
