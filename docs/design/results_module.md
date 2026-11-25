@@ -159,6 +159,12 @@ payload, so a stop loses none of it. `clear_held_reviews` empties the store on `
 `/bot factory-reset` (`in_memory_state_cleared`;
 `test_clearing_a_leagues_state_drops_the_penalty_reviews_held_for_staging`).
 
+A prompt standing over a restart has its buttons, Remove included, answered by views registered at
+start-up (`prompt_views_at_start`) that refuse and record, until the reopened review deletes it. The
+Remove buttons exist only on a live prompt's own view, so the stand-ins carry the ids a prompt can
+give them (`_RemoveAfterRestartView`); `test_every_remove_button_a_prompt_can_carry_is_answered_after_a_restart`
+pins that none is left out.
+
 The drafts are rows, and outlive a restart, but a restart ends the work that held them: a
 resubmission cut short is ended by the review's opening (results specification, "Penalties and
 appeals are settled in the submission channel"), and an amendment open at the restart is lapsed
@@ -759,8 +765,8 @@ results specification's "Penalties and appeals are settled in the submission cha
 - **a round's start that passed** is opened late (above), save under test mode;
 - **the configuration picker, Cancel Amendment and the resubmission's Cancel** are not registered
   at start-up; the work they belong to is ended or restarted by the recoveries above. The review's
-  three persistent views (`PenaltyReviewView`, `ApprovalView`, `AppealsReviewView`) are registered
-  by the builder.
+  three persistent views (`PenaltyReviewView`, `ApprovalView`, `AppealsReviewView`) and the stand-ins
+  for its Remove buttons are registered by the builder, through `prompt_views_at_start`.
 
 ---
 

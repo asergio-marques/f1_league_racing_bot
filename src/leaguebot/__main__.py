@@ -1343,8 +1343,7 @@ async def build(settings: Settings) -> LeagueBot:
         NoPreferenceTeammateView,
     )
     from leaguebot.signup.services.signup_views import AdminReviewView, CorrectionParameterView
-    from leaguebot.results.services.review.penalty_review_views import PenaltyReviewView, ApprovalView
-    from leaguebot.results.services.review.appeals_review_views import AppealsReviewView
+    from leaguebot.results.services.review.review_prompts import prompt_views_at_start
     from leaguebot.attendance.cogs.check_in_buttons import RsvpView
 
     # Each wizard view is handed the services it judges who may answer with: a league admin
@@ -1384,9 +1383,7 @@ async def build(settings: Settings) -> LeagueBot:
             change_queue=bot.change_queue, signup=bot.signup_module_service,
             config=bot.config_service,
         ),
-        PenaltyReviewView(),
-        ApprovalView(),
-        AppealsReviewView(),
+        *prompt_views_at_start(),
         RsvpView(),  # stub registration; the message-specific re-arm is the start-up step "RSVP views and deadlines"
     ):
         bot.add_view(_view)

@@ -166,6 +166,8 @@ class AppealsReviewView(LeagueView):
     - ✅ Approve — applies staged corrections and asks the queue for ``results.appeals.approve``
 
     Dynamic Remove buttons are added per staged_appeals entry at construction time.
+    After a restart a Remove button of an old prompt is answered by the stand-in view
+    `_RemoveAfterRestartView`, registered at start-up, which refuses it and records the refusal.
     """
 
     def __init__(self, state: PenaltyReviewState | None = None) -> None:
@@ -185,37 +187,30 @@ class AppealsReviewView(LeagueView):
             _add_remove_buttons(
                 self,
                 [
-                    (f"Remove #{idx + 1}", f"ar_remove_{idx}", self._make_remove_cb(idx))
+                    (f"Remove #{idx + 1}", f"ar_remove_{idx}", self._make_remove_cb(idx, state))
                     for idx in range(len(state.staged_appeals))
                 ],
             )
 
-    def _make_remove_cb(self, idx: int):
+    def _make_remove_cb(self, idx: int, state: PenaltyReviewState):
         async def cb(interaction: discord.Interaction) -> None:
-            if self.state is None:
-                await refuse(
-                    interaction,
-                    "⚠️ The bot was restarted. Please wait for the appeals prompt to refresh.",
-                    what=_button(f"Remove #{idx + 1}", None, "appeals"),
-                )
-                return
             if not await _require_lm(
-                interaction, self.state, what=_button(f"Remove #{idx + 1}", self.state, "appeals")
+                interaction, state, what=_button(f"Remove #{idx + 1}", state, "appeals")
             ):
                 return
             if not await _require_appeals_current(
-                interaction, self.state, what=_button(f"Remove #{idx + 1}", self.state, "appeals")
+                interaction, state, what=_button(f"Remove #{idx + 1}", state, "appeals")
             ):
                 return
-            if idx < len(self.state.staged_appeals):
-                removed = self.state.staged_appeals[idx]
+            if idx < len(state.staged_appeals):
+                removed = state.staged_appeals[idx]
                 pl = _pen_label(removed)
-                shown = await _shown(self.state, removed.driver_user_id)
-                what = _button(f"Remove #{idx + 1}", self.state, "appeals")
+                shown = await _shown(state, removed.driver_user_id)
+                what = _button(f"Remove #{idx + 1}", state, "appeals")
                 await _ask_stage(
-                    self.state.queue,
+                    state.queue,
                     interaction,
-                    self.state,
+                    state,
                     {"op": "remove", "list": "appeals", "entry": removed.to_payload()},
                     appeals=True,
                     doing="Removing a staged correction from the appeals review",
@@ -228,7 +223,7 @@ class AppealsReviewView(LeagueView):
                 await refuse(
                     interaction,
                     "⚠️ That entry no longer exists (the list may have changed).",
-                    what=_button(f"Remove #{idx + 1}", self.state, "appeals"),
+                    what=_button(f"Remove #{idx + 1}", state, "appeals"),
                 )
         return cb
 

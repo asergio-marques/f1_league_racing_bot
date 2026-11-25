@@ -854,6 +854,11 @@ async def _approval_not_posted(
 # Main persistent view (T010, T011, T018)
 # ---------------------------------------------------------------------------
 
+#: The rows Remove buttons are placed in, and the most a prompt can carry: five to a row.
+_REMOVE_ROWS = range(1, 5)
+_REMOVE_SLOTS = 5 * len(_REMOVE_ROWS)
+
+
 def _add_remove_buttons(view: discord.ui.View, buttons: list[tuple]) -> None:
     """Add a view's Remove buttons in rows 1 to 4, into whatever room those rows have left.
 
@@ -871,7 +876,7 @@ def _add_remove_buttons(view: discord.ui.View, buttons: list[tuple]) -> None:
     for item in view.children:
         if item.row is not None:
             used[item.row] += item.width
-    slots = [row for row in range(1, 5) for _ in range(5 - used[row])]
+    slots = [row for row in _REMOVE_ROWS for _ in range(5 - used[row])]
     if len(buttons) > len(slots):
         log.warning(
             "_add_remove_buttons: %d Remove buttons, room for %d; the rest are not shown",
@@ -886,6 +891,50 @@ def _add_remove_buttons(view: discord.ui.View, buttons: list[tuple]) -> None:
             on_press=callback,
         )
         view.add_item(btn)
+
+
+class _RemoveAfterRestartView(LeagueView):
+    """The stand-in for the Remove buttons of a review prompt that stood over a restart.
+
+    A Remove button exists only on a live prompt's own view, built with the review's state, so
+    the start-up registration of the static buttons does not cover it: a press on one of a
+    prompt posted before the bot stopped matched no registered view, and Discord showed "This
+    interaction failed" with nothing logged. This view carries a button for every id the prompts
+    can give a Remove button (``f"{prefix}{i}"``, up to the most a prompt holds) and refuses
+    each press as every other button of the prompt does after a restart, in the restart reply
+    and one line in the log.
+
+    It is registered with no message, as the static views are. discord.py offers a press first
+    to a view registered for the message, and only then to one registered for no message, so a
+    live prompt's own Remove button, registered for its message, answers first and this view
+    only ever sees a press the live one cannot answer. A ``discord.ui.DynamicItem`` was
+    rejected for the same job: it is matched before that per-message lookup, so a live Remove
+    would be answered by it as well as by its own button.
+    """
+
+    def __init__(self, prefix: str, label: str, review: str) -> None:
+        super().__init__(timeout=None)
+        for index in range(_REMOVE_SLOTS):
+            named = f"{label} #{index + 1}"
+            self.add_item(
+                CallbackButton(
+                    label=named,
+                    style=discord.ButtonStyle.danger,
+                    custom_id=f"{prefix}{index}",
+                    on_press=self._refusal(named, review),
+                )
+            )
+
+    @staticmethod
+    def _refusal(named: str, review: str):
+        async def press(interaction: discord.Interaction) -> None:
+            await refuse(
+                interaction,
+                f"⚠️ The bot was restarted. Please wait for the {review} prompt to refresh.",
+                what=_button(named, None, review),
+            )
+
+        return press
 
 
 async def _ask_reports_approved(
@@ -952,13 +1001,14 @@ class PenaltyReviewView(LeagueView):
     back to this class after a bot restart.
 
     Dynamic Remove buttons are added per staged entry at construction time.
-    They are registered per-message (``bot.add_view(view, message_id=msg.id)``)
-    and are intentionally NOT covered by the global restart registration — the
-    T030 recovery re-posts the prompt with an empty staged list, so there are
-    no dangling Remove buttons to handle after restart.
+    They are registered per-message (``bot.add_view(view, message_id=msg.id)``),
+    and the restart loses them with the state they belong to.
 
-    Registered globally on startup via ``bot.add_view(PenaltyReviewView(state=None))``
-    to catch any leftover Add/Confirm/Approve clicks on old messages after restart.
+    Registered globally on startup via ``prompt_views_at_start()``, to catch any
+    leftover Add/Confirm/Approve clicks on old messages after restart. The Remove
+    buttons of such a message are caught by `_RemoveAfterRestartView`, registered
+    beside it: the restart reply and one line in the log, until the reopened review
+    deletes the old prompt.
     """
 
     def __init__(self, state: PenaltyReviewState | None = None) -> None:
@@ -988,42 +1038,35 @@ class PenaltyReviewView(LeagueView):
         # round (#345).
         if state is not None:
             buttons = [
-                (f"Remove #{idx + 1}", f"pw_remove_{idx}", self._make_remove_cb(idx))
+                (f"Remove #{idx + 1}", f"pw_remove_{idx}", self._make_remove_cb(idx, state))
                 for idx in range(len(state.staged))
             ]
             buttons += [
                 (f"Remove Pardon #{idx + 1}", f"pw_pardon_remove_{idx}",
-                 self._make_pardon_remove_cb(idx))
+                 self._make_pardon_remove_cb(idx, state))
                 for idx in range(len(state.staged_pardons))
             ]
             _add_remove_buttons(self, buttons)
 
-    def _make_remove_cb(self, idx: int):
+    def _make_remove_cb(self, idx: int, state: PenaltyReviewState):
         async def cb(interaction: discord.Interaction) -> None:
-            if self.state is None:
-                await refuse(
-                    interaction,
-                    "⚠️ The bot was restarted. Please wait for the penalty prompt to refresh.",
-                    what=_button(f"Remove #{idx + 1}", None),
-                )
-                return
             if not await _require_lm(
-                interaction, self.state, what=_button(f"Remove #{idx + 1}", self.state)
+                interaction, state, what=_button(f"Remove #{idx + 1}", state)
             ):
                 return
             if not await _require_current(
-                interaction, self.state, what=_button(f"Remove #{idx + 1}", self.state)
+                interaction, state, what=_button(f"Remove #{idx + 1}", state)
             ):
                 return
-            if idx < len(self.state.staged):
-                removed = self.state.staged[idx]
+            if idx < len(state.staged):
+                removed = state.staged[idx]
                 pl = _pen_label(removed)
-                shown = await _shown(self.state, removed.driver_user_id)
-                what = _button(f"Remove #{idx + 1}", self.state)
+                shown = await _shown(state, removed.driver_user_id)
+                what = _button(f"Remove #{idx + 1}", state)
                 await _ask_stage(
-                    self.state.queue,
+                    state.queue,
                     interaction,
-                    self.state,
+                    state,
                     {"op": "remove", "list": "staged", "entry": removed.to_payload()},
                     appeals=False,
                     doing="Removing a staged penalty from the penalty review",
@@ -1036,37 +1079,30 @@ class PenaltyReviewView(LeagueView):
                 await refuse(
                     interaction,
                     "⚠️ That entry no longer exists (the list may have changed).",
-                    what=_button(f"Remove #{idx + 1}", self.state),
+                    what=_button(f"Remove #{idx + 1}", state),
                 )
         return cb
 
-    def _make_pardon_remove_cb(self, idx: int):
+    def _make_pardon_remove_cb(self, idx: int, state: PenaltyReviewState):
         async def cb(interaction: discord.Interaction) -> None:
-            if self.state is None:
-                await refuse(
-                    interaction,
-                    "⚠️ The bot was restarted. Please wait for the penalty prompt to refresh.",
-                    what=_button(f"Remove Pardon #{idx + 1}", None),
-                )
-                return
             if not await _require_lm(
-                interaction, self.state, what=_button(f"Remove Pardon #{idx + 1}", self.state)
+                interaction, state, what=_button(f"Remove Pardon #{idx + 1}", state)
             ):
                 return
             # Once a first pass's reports are approved its pardons are granted, and removing
             # one would change nothing the round carries (#356, #402).
             if not await _require_current(
-                interaction, self.state, what=_button(f"Remove Pardon #{idx + 1}", self.state)
+                interaction, state, what=_button(f"Remove Pardon #{idx + 1}", state)
             ):
                 return
-            if idx < len(self.state.staged_pardons):
-                removed = self.state.staged_pardons[idx]
-                shown = await _shown(self.state, removed.driver_user_id)
-                what = _button(f"Remove Pardon #{idx + 1}", self.state)
+            if idx < len(state.staged_pardons):
+                removed = state.staged_pardons[idx]
+                shown = await _shown(state, removed.driver_user_id)
+                what = _button(f"Remove Pardon #{idx + 1}", state)
                 await _ask_stage(
-                    self.state.queue,
+                    state.queue,
                     interaction,
-                    self.state,
+                    state,
                     {"op": "remove", "list": "pardons", "entry": removed.to_payload()},
                     appeals=False,
                     doing="Removing a staged pardon from the penalty review",
@@ -1079,7 +1115,7 @@ class PenaltyReviewView(LeagueView):
                 await refuse(
                     interaction,
                     "⚠️ That pardon no longer exists (the list may have changed).",
-                    what=_button(f"Remove Pardon #{idx + 1}", self.state),
+                    what=_button(f"Remove Pardon #{idx + 1}", state),
                 )
         return cb
 

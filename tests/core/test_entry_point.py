@@ -1492,3 +1492,25 @@ async def test_the_builder_signs_signup_up_to_a_confirmation_refused_after_resul
         ("signup faults",
          (bot.module_service, bot.signup_module_service, bot.config_service, 7, None), {}),
     ]
+
+
+async def test_the_builder_registers_a_view_for_every_remove_button_a_review_prompt_can_carry(
+    tmp_path,
+):
+    """`build` registers, among the bot's persistent views, one answering every Remove button of
+    the penalty and appeals review prompts (`pw_remove_`, `pw_pardon_remove_` and `ar_remove_`,
+    up to twenty each): a prompt posted before a restart keeps its buttons on screen, and one
+    that no registered view answers shows the manager "This interaction failed" and leaves the
+    log nothing. The views being right is `prompt_views_at_start`'s test; this is the builder
+    handing them to the bot."""
+    bot = await built_bot(tmp_path, now=_NOW)
+
+    registered = {
+        item.custom_id for view in bot.persistent_views for item in view.children
+    }
+    wanted = {
+        f"{prefix}{index}"
+        for prefix in ("pw_remove_", "pw_pardon_remove_", "ar_remove_")
+        for index in range(20)
+    }
+    assert sorted(wanted - registered) == []

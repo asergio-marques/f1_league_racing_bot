@@ -24,6 +24,31 @@ if TYPE_CHECKING:
     from leaguebot.results.services.review.review_state import PenaltyReviewState, ReadServerConfig
 
 
+def prompt_views_at_start() -> list[discord.ui.View]:
+    """The views the bot registers at start-up for the review prompts that outlive it.
+
+    The three static views catch the buttons every prompt carries, and the stand-ins catch the
+    Remove buttons, which a live prompt's own view carries only while its state is in memory.
+    A press on any of them after a restart is refused and recorded; the reopened review
+    deletes the old prompt.
+    """
+    from leaguebot.results.services.review.appeals_review_views import AppealsReviewView
+    from leaguebot.results.services.review.penalty_review_views import (
+        ApprovalView,
+        PenaltyReviewView,
+        _RemoveAfterRestartView,
+    )
+
+    return [
+        PenaltyReviewView(),
+        ApprovalView(),
+        AppealsReviewView(),
+        _RemoveAfterRestartView("pw_remove_", "Remove", "penalty"),
+        _RemoveAfterRestartView("pw_pardon_remove_", "Remove Pardon", "penalty"),
+        _RemoveAfterRestartView("ar_remove_", "Remove", "appeals"),
+    ]
+
+
 async def channel_in_penalty_review_on(db: aiosqlite.Connection, channel_id: int) -> bool:
     """Whether *channel_id* is an open submission channel in penalty review, on a handed
     connection: not closed, not being resubmitted, and a round not yet final (the one reading
