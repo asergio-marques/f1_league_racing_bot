@@ -668,7 +668,7 @@ channel is moved, or the signup channel's permissions set (the new channel's fir
 cleared last); see "The record is the queue's"), after any step before the save, and the work after
 it that the setting does not need (checking it against the templates, arming or removing a timed
 job, granting a role to every driver, asking the hub's panel to be posted again as the bot's own
-change, posting the signup information in the new signup channel where a window is open) is work
+change, posting the signup information in the new signup channel where a window is open, or the closed notice carried to it, posted before the old one is taken down in a step of its own, where signups are closed) is work
 nothing later depends on. Work the save waits on may come before it (a module's kept channels
 checked before it is switched on, the channels an output switched to a picture posts to, and what it
 put back on Discord): it saves nothing, and a fault in it, or a refusal by it, ends the setting with
