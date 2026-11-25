@@ -1331,11 +1331,6 @@ async def test_a_retried_final_classification_is_posted_as_text(tmp_path):
     assert await _status(league) == "COMPLETED"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#635: the final classification and final sheet jobs keep nothing of their notices "
-           "for the completion's reply, which lists no Image notices",
-)
 async def test_the_completion_s_reply_names_the_final_standings_and_sheets_drawn_with_notices(
     tmp_path, monkeypatch,
 ):

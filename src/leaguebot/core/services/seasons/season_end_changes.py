@@ -85,6 +85,7 @@ from leaguebot.framework.services.queue.change_types import (
     Step,
     StepContext,
     StepView,
+    drawn_notices_in,
 )
 from leaguebot.core.services.seasons.season_end_service import (
     DISCARD_BACKUP,
@@ -130,7 +131,11 @@ from leaguebot.core.services.test_mode.test_mode_service import (
     test_mode_on,
 )
 from leaguebot.framework.utils.hooks import AwaitedHook, Hook
-from leaguebot.framework.utils.log_lines import refusal_line, reply_reason
+from leaguebot.framework.utils.log_lines import (
+    drawn_notices_section,
+    refusal_line,
+    reply_reason,
+)
 
 if TYPE_CHECKING:
     from leaguebot.core.services.rounds.round_jobs import RoundJobs
@@ -724,13 +729,17 @@ def season_complete_change(
             return WIND_DOWN_DISCARDED
         if not _completed(ctx):
             return END_DISCARDED.format(number=number)
-        return (
+        text = (
             COMPLETED
             + not_done_reply(
                 _not_done(ctx, steps, classification_names), discarded=anything_discarded(ctx)
             )
             + swap_not_done_reply(ctx.steps)
         )
+        # The final classifications and sheets drew their pictures with notices, which the posting
+        # jobs hold in the log channel: the reply lists them beneath, each with its link.
+        section = drawn_notices_section(drawn_notices_in(ctx.steps))
+        return text + "\n\n" + section if section else text
 
     # ── How each job is named, in the lines that say it stopped the queue ──────
 
