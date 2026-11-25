@@ -218,7 +218,7 @@ See [Test mode](test-mode.md) for the whole picture.
 
 > **Test mode is chosen for a season, in its configuration.** `/test-mode toggle` works only while a season is in configuration, and is refused while any real driver is signed up, unassigned or assigned — which, once a season has ended, nobody is. A season confirmed in test mode opens its signup windows as any other does, but only fake drivers sign up in it, and while test mode is on no real driver may sign up or be placed. It stays on until that season is completed, cancelled or aborted, which switches it off and deletes the fake drivers — so test in a season of its own, and abort it with `/season abort` if you would rather not race it out. See [Setting up the bot for your league](configuring-the-core-bot.md) for the season's stages.
 
-> **A round that has been submitted but not settled blocks `/test-mode advance`.** Finish the penalty and appeals stages first; the refusal tells you which round is waiting.
+> **A round whose submission is open blocks `/test-mode advance`.** Paste its results first, then finish the penalty and appeals stages; the refusal tells you which round is waiting, and for what.
 
 ---
 
@@ -539,4 +539,4 @@ Worth knowing so you do not go looking for the setting.
 | `/results amend review` refuses, naming a round being amended | A `/results rounds amend` is open. Nothing was changed — review again once it has finished |
 | `/results amend toggle` refused | Changes are staged — revert or review them first. Or every division of the season is done, in which case the whole group is closed and the season is completed as it stands |
 | Text where you expected a picture | The table worked and the drawing did not — often a drawing file with fewer rows than the division needs. The log channel names the reason |
-| `/test-mode advance` refused | A round is submitted but not settled. Finish its penalty and appeals stages |
+| `/test-mode advance` refused | A round's submission is open: its results are still to be pasted, or it is submitted but not settled. Paste its results, or finish its penalty and appeals stages |
