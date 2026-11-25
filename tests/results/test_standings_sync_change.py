@@ -314,3 +314,84 @@ async def test_a_refused_standings_post_stops_the_queue_and_a_discard_says_what_
     [line] = [line for line in league.bot.log_channel.sent
               if "| /results standings sync |" in line]
     assert line.startswith("Admin (`<@4242>`) | /results standings sync | Incomplete")
+
+
+@pytest.mark.parametrize("refused", [
+    pytest.param(False, id="first try"),
+    pytest.param(True, id="retried as text"),
+])
+async def test_a_standings_sync_s_reply_names_the_standings_pictures_drawn_with_notices(
+    tmp_path, monkeypatch, refused,
+):
+    """Images and results on, the standings aspect on and its templates sound: Admin runs
+    `/results standings sync` for Pro, and round 3's drivers' and constructors' pictures each
+    draw as a PNG with one font substituted, a font of its own. Either they post at the first
+    try, or (*refused*) Discord takes the first table and refuses the second and its text, the queue stops at the standings job, and
+    once Discord takes posts again Retry posts the second table as text. Each notice reaches the log channel
+    once, in a block opening with the member and the command ("| `/results standings sync` |"),
+    then "Image render notices — <picture>:" and the notice grouped beneath "Font substituted".
+    The reply says the standings synced and ends in one "Image notices" section listing each
+    picture once under the name its log line gives it, linked to the log channel's message
+    holding it, its notice beneath, once (image spec, Errors and the rejection of input, #550;
+    issue #671)."""
+    from leaguebot.image.models.image_module import RenderNotice
+    from leaguebot.image.services.aspects import image_standings_post
+    from tests.support.season_league import standings_pictures_are_due
+
+    league = await _league(tmp_path)
+    answer_switch(league.bot.module_service, "images", True)
+    league.bot.image_config_service.is_aspect_enabled = AsyncMock(return_value=True)
+    standings_pictures_are_due(monkeypatch)
+    fonts: list[str] = []
+
+    async def _drawn(*_args: Any, **_kwargs: Any) -> Any:
+        fonts.append(f"Font{len(fonts) + 1}")
+        png = tmp_path / f"standings_{len(fonts)}.png"
+        png.write_bytes(b"\x89PNG\r\n\x1a\n")
+        notice = RenderNotice(
+            image_type="standings", notice_kind="FONT_SUBSTITUTED", field_id="driver_name_1",
+            detail=f"{fonts[-1]} was unavailable, so a substitute was drawn",
+        )
+        return SimpleNamespace(notices=[notice], problem=None, posts_image=True, png_paths=[png])
+
+    monkeypatch.setattr(image_standings_post, "render_png", _drawn)
+    standings = league.channel(STANDINGS_CHANNEL)
+    taken: list[bool] = []
+
+    def _refuses_after_the_first_table(_content: Any, kwargs: dict[str, Any]) -> bool:
+        if kwargs.get("file") or kwargs.get("files"):
+            taken.append(True)
+            return len(taken) > 1
+        return bool(taken)
+
+    if refused:
+        standings.fail_when = _refuses_after_the_first_table
+
+    interaction = await _sync(league)
+    await run_queue(league.bot)
+    if refused:
+        assert await stopped_job(league.db_path) is not None
+        standings.fail_when = None
+        await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert len(fonts) >= 2, fonts
+    told = _outcome(interaction)
+    assert told.startswith("✅ Standings for **Pro** synced to the standings channel."), told
+    assert told.count("⚠️ **Image notices**") == 1, told
+    assert "\n\n⚠️ **Image notices**\n" in told, told
+    opening = "Admin (`<@4242>`) | `/results standings sync` | Image render notices — "
+    held = [(n, line) for n, line in enumerate(league.bot.log_channel.sent, 1)
+            if line.startswith(opening)]
+    assert held, league.bot.log_channel.sent
+    labelled = 0
+    for n, line in held:
+        for block in line.split(opening)[1:]:
+            label = block.split(":\n", 1)[0]
+            assert f"  **{label}** ([see them in the log](https://discord.test/{n}))" in told, told
+            labelled += 1
+    assert labelled == told.count("(["), told
+    every = "\n".join(league.bot.log_channel.sent)
+    for font in fonts:
+        assert every.count(font + " ") == 1, every
+        assert told.count(font + " ") == 1, told
