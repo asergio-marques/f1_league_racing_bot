@@ -12,15 +12,16 @@ the lane. Its scope is what the syncs repost. The payload is `{"division_id", "d
 **Whether the carry is still due is judged as it starts, never at the ask**, for a change ahead of
 it may have switched results off, opened an amendment, ended the season's racing or moved the
 channel again. A carry no longer due is dropped, and the log channel is told that the posts stay in
-the old channel and why (`Verdict.not_due`'s line): the posts are not lost, and a sync posts them in
-the new channel once the league wants them there. Where results was switched off, the line says
-instead that nothing was carried, since the switch-off took the posts down. Where the channel moved
-again, the line says only that the carry was not made and that the channel changed: the later move
-asks a carry of its own, from the channel the posts stand in
+the old channel and why (`Verdict.not_due`'s line): the posts are not lost. After an amendment
+opened, a sync posts them in the new channel once the amendment ends; in pending completion they
+stay in the old channel for the rest of the season, the syncs being closed then. Where results was
+switched off, the line says instead that nothing was carried, since the switch-off took the posts
+down. Where the channel moved again, the line says only that the carry was not made and that the
+channel changed: the later move asks a carry of its own, from the channel the posts stand in
 (`channel_settings._where_posts_stand`), which is the first carry's old channel while that carry
-waits. A carry whose new channel has gone, or which the
-bot cannot post in, is refused, which stops the lane at the carry for the league to set a channel
-and press Retry: the move is saved, and the posts have still to be carried.
+waits. A carry whose new channel has gone, or which the bot cannot post in, is refused, which
+stops the lane at the carry for the league to set a channel and press Retry: the move is saved,
+and the posts have still to be carried.
 
 **The old channel is noted on posts that record none before the carry posts anything.** A post
 that records no channel is taken to stand in the division's present channel (`standing_posts.
