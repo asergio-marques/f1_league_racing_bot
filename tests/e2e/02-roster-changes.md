@@ -124,7 +124,7 @@ server: delete it by hand at the end if you wish.
    **Expect:**
    - **Reply:**
      ```
-     ✅ The backup is staged. **Restart the bot** and it will come back on the restored database — under a service it will restart itself; from a terminal, stop it and run it again.
+     ✅ The backup is staged. **Restart the bot** and it will come back on the restored database — under a service it will restart itself; from a terminal, stop it and run it again. Once it is back, reload Discord (Ctrl+R on desktop) before using the `/driver` and `/signup` commands, which the restart may change.
      The database being replaced was copied to `bot.prerestore.db` first, so this can be walked back by hand if it was not what you wanted.
      ```
    - **Log:**
@@ -134,7 +134,8 @@ server: delete it by hand at the end if you wish.
      ```
 
 4. **Restart the bot.** From a terminal, stop it and run `python -m leaguebot` again; under a
-   service, restart the service (`systemctl restart <unit>`).
+   service, restart the service (`systemctl restart <unit>`). Then **reload Discord** (Ctrl+R on desktop): the restart swaps `/driver` and `/signup` to suit the
+   restored state, and a client loaded before it may still offer the other forms.
 
    **Expect:**
    - **Host log:** `Started on a restored database.`, before `Logged in as <bot user> (id=<bot id>)`.
@@ -467,7 +468,14 @@ roster change posts nothing, and in placements no lineup is posted until approva
     **Expect:**
     - **Ack:** `Cancelling season 1`
     - **Then:** `✅ Season cancelled.`, followed, where a calendar drew with notices, by a blank
-      line and a `⚠️ **Image notices**` section naming each calendar with its notices.
+      line and a `⚠️ **Image notices**` section naming each calendar with its notices, and
+      last, after a blank line, the reload notice, the cancellation having swapped `/driver` and
+      `/signup` back:
+      ```
+      🔄 Reload Discord (Ctrl+R on desktop) before using the `/driver` and `/signup` commands, which have just changed. Reloading clears every reply only you can see, this one included.
+      ```
+      No step until step 57 uses either command: reload Discord then, once step 49 has swapped them
+      again, not now.
     - **Posts**, for each division in turn, Division 1 then Division 2 (`N` being its number):
       - `#dN-rsvp`:
         ```
@@ -713,7 +721,13 @@ cancelled, so this is Season #2.
     - **Then:** ``✅ Test mode **enabled**. Use `/test-mode advance` to step through phases, or `/test-mode review` to inspect season status.``
       No `📌 Added default point configs` line: the server already holds `Standard` and
       `Half Points` from Season #1, and test mode seeds them only on a server holding none
-      (`seed_test_configs_on`). Nor are they attached to Season #2: step 53 attaches one.
+      (`seed_test_configs_on`). Nor are they attached to Season #2: step 53 attaches one. After a
+      blank line the reply ends with the reload notice:
+      ```
+      🔄 Reload Discord (Ctrl+R on desktop) before using the `/driver` and `/signup` commands, which have just changed. Reloading clears every reply only you can see, this one included.
+      ```
+      **Reload Discord now**, once you have read it: step 57 is the first to use `/signup`, and a
+      client loaded before the swap answers it `Unknown Integration`.
     - **Log:**
       ```
       <you> | /test-mode toggle | Success
@@ -1281,7 +1295,7 @@ Season #2 is left in placements, test mode on. Putting the base back is what let
 start where `00-base.md` left off.
 
 90. **Do:** steps 1 to 4 again: `/test-mode backup status`, `/test-mode backup restore`, press
-    **♻️ Restore**, and restart the bot.
+    **♻️ Restore**, restart the bot and reload Discord.
 
     **Expect:** as steps 1 to 4. `bot.prerestore.db` and `scheduler.prerestore.db` now hold
     Season #2 as this part found it, should it be wanted.

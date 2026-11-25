@@ -217,7 +217,7 @@ Clears any guild-scoped command overrides and pushes the latest global slash com
 1. Clears any guild-specific command overrides for the current server (sent in a direct message there is no server, so none is cleared and the global commands are left as they are)
 2. Syncs the cleared guild state (removes leftover duplicates)
 3. Pushes the full global command tree to Discord, and leaves the server showing the right [`/driver`](#driver-commands) and `/signup`: with test mode on, the test-mode ones on the server and none on the global list; off, the member ones on the global list and none on the server. Where no server is claimed it syncs the global commands, the member `/driver` and `/signup` among them, and takes both off every server the bot is on, as a start-up does
-4. Confirms with the count of synced commands (message auto-deletes after 15 seconds)
+4. Confirms with the count of synced commands, and ends the reply with the notice to reload Discord (Ctrl+R on desktop) before using `/driver` and `/signup` (message auto-deletes after 15 seconds)
 
 If the sync fails, it replies "⚠️ The commands could not be synced; the failure is in the log channel." (also auto-deleted after 15 seconds), and posts the failure to the log channel.
 
@@ -381,7 +381,7 @@ Exempt from the interaction-channel rule, since no channel is configured until i
 
 **Its reply and its log line name all four settings**, the league admin role among them.
 
-**After a pack, with test mode still on**, its reply adds that the `/driver` and `/signup` commands will show correctly once the bot is restarted: `/bot init` does not change the commands the server shows.
+**After a pack, with test mode still on**, its reply adds that the `/driver` and `/signup` commands will show correctly once the bot is restarted, then to reload Discord (Ctrl+R on desktop) before using them: `/bot init` does not change the commands the server shows.
 
 **It refuses a channel the bot cannot use.** Where either channel lacks a permission the bot needs there, `/bot init` is refused naming each permission missing and the channel it is missing in, and where both fail it names both, the interaction channel first. Nothing is claimed or saved, and the refusal goes to the host's log alone, as no log channel is set yet. It is judged again as the server is claimed, so a channel that breaks while the command waits refuses it then. A server already configured is answered that it runs once, and neither channel is judged.
 
@@ -513,7 +513,7 @@ Erases the league entire and cleans the bot out of this server. Only the server'
 3. **Then the clean-up.** The bot deletes the channels it created (signup wizard channels, results submission and amendment channels), and **its own messages** in every channel it posts to, in every season. Nobody else's messages are touched.
 4. **Then one line in the log channel**, once the clean-up ends however it ends, naming you, what was erased and how the clean-up ended. It is the one message of the bot's left standing; if it cannot be posted it goes to the host's log.
 
-**Where test mode was on**, the reply adds that the `/driver` and `/signup` commands will show correctly once the bot is restarted: a factory reset does not change the commands the server shows.
+**Where test mode was on**, the reply adds that the `/driver` and `/signup` commands will show correctly once the bot is restarted, then to reload Discord (Ctrl+R on desktop) before using them: a factory reset does not change the commands the server shows.
 
 > **The clean-up can take a long time.** Discord deletes messages under 14 days old in batches, but older ones one at a time and under rate limits. The bot sends you a direct message and edits it as it goes, naming each channel before it starts on it, so if the clean-up is interrupted the message says where it stopped. If your direct messages are closed, the progress goes to the host's log instead. A channel the bot cannot clean is listed at the end and skipped. A second factory reset, and `/bot init`, are refused until the clean-up has finished.
 
@@ -972,7 +972,7 @@ Test mode drives the season's scheduled events on demand, without waiting for th
 
 No parameters. Flips test mode on/off; state persists across bot restarts. The acknowledgement names the way it goes (*"⏳ Turning test mode on. …"*), and a second press while the first waits is refused as a repeat rather than flipping it back. A save discarded leaves test mode as it was (*"Nothing was changed: test mode is still **off**. Run `/test-mode toggle` again."*).
 
-**It changes the form of `/driver` and `/signup`.** Turning test mode on shows the [test-mode `/driver`](#driver-commands) and the [test-mode `/signup`](#test-mode-signup) in place of the member ones, and turning it off, or the season ending, shows the member ones again. If Discord refuses the change, test mode is still switched and the reply says the `/driver` and `/signup` commands could not be changed and will be put right when the bot next restarts.
+**It changes the form of `/driver` and `/signup`.** Turning test mode on shows the [test-mode `/driver`](#driver-commands) and the [test-mode `/signup`](#test-mode-signup) in place of the member ones, and turning it off, or the season ending, shows the member ones again. If Discord refuses the change, test mode is still switched and the reply says the `/driver` and `/signup` commands could not be changed and will be put right when the bot next restarts. Where the change is made, the reply ends by telling you to reload Discord (Ctrl+R on desktop) before using the `/driver` and `/signup` commands, which have just changed: a client loaded before the change still offers the old commands, and Discord answers them with `Unknown Integration` without the bot seeing them. A reload clears every reply only you can see, that one included. The same notice ends the reply to completing, aborting or cancelling a test season, which also changes them, and no other season's, and the reply to the owner's `!sync`, which syncs them again. A restart replies to no one, so the reply to `/test-mode backup restore`, which stages the restore until the bot is restarted, says to reload Discord once the bot is back, as [Testing with test mode](docs/how-to/test-mode.md) says.
 
 **Test mode is chosen for a season, in its configuration.** The toggle is refused unless a season is in configuration — start one with `/season setup` first. Confirming the configuration with `/season config-review` fixes test mode for the rest of that season. A season in test mode opens its signup windows as any other does: confirming its configuration, with the signup module on, takes it to waiting, and `/signup open` opens the window. Only fake drivers sign up in it — a real member pressing Sign Up is refused.
 

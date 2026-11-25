@@ -44,6 +44,7 @@ from leaguebot.core.services.drivers.driver_reference import (
     reference_name,
     resolve_driver,
 )
+from leaguebot.core.services.test_mode.driver_commands import COMMANDS_NAMED
 from leaguebot.core.services.test_mode.test_mode_settings import NOT_IN_TEST_MODE
 from leaguebot.core.services.test_mode.test_roster_sign_up_change import (
     TEST_ROSTER_SIGN_UP_BULK,
@@ -964,7 +965,8 @@ class _ConfirmRestoreView(LeagueView):
         await interaction.followup.send(
             "✅ The backup is staged. **Restart the bot** and it will come back on the "
             "restored database — under a service it will restart itself; from a terminal, "
-            "stop it and run it again.\n"
+            "stop it and run it again. Once it is back, reload Discord (Ctrl+R on desktop) "
+            f"before using {COMMANDS_NAMED}, which the restart may change.\n"
             "The database being replaced was copied to `bot.prerestore.db` first, so this "
             "can be walked back by hand if it was not what you wanted.",
             ephemeral=True,

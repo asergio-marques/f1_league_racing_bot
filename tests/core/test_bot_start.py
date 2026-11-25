@@ -17,6 +17,8 @@ from unittest.mock import AsyncMock, MagicMock, call
 import discord
 import pytest
 
+from leaguebot.core.services.test_mode.driver_commands import RELOAD
+
 
 async def _ready_bot(tmp_path, *, test_mode: bool):
     """The bot the entry point builds, on the league's server, found by id, with test mode as
@@ -206,9 +208,29 @@ async def test_the_sync_command_leaves_the_driver_the_flag_calls_for(tmp_path, t
     assert (bot.tree.get_command("driver"), bot.tree.get_command("driver", guild=guild)) == expected
     [reply] = [each.args[0] for each in ctx.send.await_args_list]
     assert reply.startswith("✅ Cleared guild overrides and synced ")
+    assert reply.endswith(f"\n\n{RELOAD}")
     assert sorted(seen, key=lambda each: each[0] is not None) == [
         (None, expected[0]), (guild, expected[1])
     ]
+
+
+async def test_a_sync_discord_refuses_gets_the_warning_and_no_reload_notice(tmp_path):
+    """The owner sends `!sync` and Discord refuses the sync. The one reply is the warning that the
+    commands could not be synced, which does not tell the owner to reload Discord, nothing having
+    changed, and the failure is posted to the log channel."""
+    from tests.support.change_queue import http_error
+
+    bot, guild = await _ready_bot(tmp_path, test_mode=True)
+    bot.tree.sync = AsyncMock(side_effect=http_error())
+    ctx = MagicMock(guild=guild, send=AsyncMock())
+    ctx.message.delete = AsyncMock()
+
+    await bot.get_command("sync").callback(ctx)
+
+    [reply] = [each.args[0] for each in ctx.send.await_args_list]
+    assert reply.startswith("⚠️ The commands could not be synced")
+    assert RELOAD not in reply
+    bot.output_router.post_log.assert_awaited_once()
 
 
 @pytest.mark.parametrize(
@@ -261,3 +283,4 @@ async def test_the_sync_command_in_a_direct_message_keeps_the_global_commands(
     assert left_over.name in server_names
     [reply] = [each.args[0] for each in ctx.send.await_args_list]
     assert reply.startswith("✅ Synced ") and "overrides" not in reply
+    assert reply.endswith(f"\n\n{RELOAD}")

@@ -95,7 +95,8 @@ online in the member list earlier, while the catch-up is still running.
      restore: staged; the bot must be restarted to come back on it
    ```
 
-3. **Restart the bot.**
+3. **Restart the bot**, then **reload Discord** (Ctrl+R on desktop): the restart swaps `/driver` and
+   `/signup` to suit the restored state, and a client loaded before it may still offer the other forms.
 
    **Expect:**
    - **Host log:** `Started on a restored database.`, then the usual three lines.
@@ -730,7 +731,7 @@ sets up Season #2 to configuration, as `02-roster-changes.md` does. It restores 
 that the cancellation reads as that spec gives it.
 
 40. **Do:** steps 1 to 3 again: `/test-mode backup status`, `/test-mode backup restore` and
-    **♻️ Restore**, and restart the bot.
+    **♻️ Restore**, restart the bot and reload Discord.
 
     **Expect:** as steps 1 to 3. `bot.prerestore.db` and `scheduler.prerestore.db` now hold the
     season as Part G left it.
@@ -739,14 +740,17 @@ that the cancellation reads as that spec gives it.
 
     **Expect:** as `02-roster-changes.md` step 31: `Cancelling season 1`, `✅ Season cancelled.`,
     the cancellation notices in each division's channels, and `<you> | /season cancel | Success`.
-    Test mode is off and the fake drivers deleted; `bot.bkup.db`, `scheduler.bkup.db` and
+    The reply ends with the reload notice, and no step after it uses `/driver` or `/signup`, so
+    there is nothing to reload for. Test mode is off and the fake drivers deleted; `bot.bkup.db`, `scheduler.bkup.db` and
     `backup.lock` remain.
 
 42. **Do:** `/season setup game_edition:25`, then `/test-mode toggle`, then
     `/results config append name:Standard`, each once the last has answered.
 
     **Expect:** as `02-roster-changes.md` steps 47, 49 and 53: Season #2 (F1 25) set up, test
-    mode on with no configurations seeded, and `Standard` attached.
+    mode on with no configurations seeded, and `Standard` attached. The toggle's reply ends with the
+    reload notice (step 49 there quotes it); no later step of this spec uses `/driver` or
+    `/signup`, so a reload is owed only before the next spec's first.
 
 ### A review standing, and its five minutes run out while the bot is down
 
@@ -834,7 +838,7 @@ itself a restart: the staged files are swapped in as the bot starts, before the 
 catch-up runs on the base, which has nothing to catch up.
 
 47. **Do:** steps 1 to 3 again: `/test-mode backup status`, `/test-mode backup restore` and
-    **♻️ Restore**, and restart the bot.
+    **♻️ Restore**, restart the bot and reload Discord.
 
     **Expect:** as steps 1 to 3: still `Readable: yes` and locked, the cancellation of step 41
     having kept the backup; `Started on a restored database.` in the host log; and nothing in

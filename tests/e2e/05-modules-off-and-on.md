@@ -111,7 +111,7 @@ channel, so nothing is posted for it.
    **Expect:**
    - **Reply:**
      ```
-     ✅ The backup is staged. **Restart the bot** and it will come back on the restored database — under a service it will restart itself; from a terminal, stop it and run it again.
+     ✅ The backup is staged. **Restart the bot** and it will come back on the restored database — under a service it will restart itself; from a terminal, stop it and run it again. Once it is back, reload Discord (Ctrl+R on desktop) before using the `/driver` and `/signup` commands, which the restart may change.
      The database being replaced was copied to `bot.prerestore.db` first, so this can be walked back by hand if it was not what you wanted.
      ```
    - **Log:**
@@ -121,7 +121,8 @@ channel, so nothing is posted for it.
      ```
 
 4. **Restart the bot.** From a terminal, stop it and run `python -m leaguebot` again; under a
-   service, restart the service (`systemctl restart <unit>`).
+   service, restart the service (`systemctl restart <unit>`). Then **reload Discord** (Ctrl+R on desktop): the restart swaps `/driver` and `/signup` to suit the
+   restored state, and a client loaded before it may still offer the other forms.
 
    **Expect:**
    - **Host log:** `Started on a restored database.`, before `Logged in as <bot user> (id=<bot id>)`.
@@ -716,7 +717,13 @@ their channels is told; with images off, the calendars go out as text.
 
     **Expect:**
     - **Ack:** `Cancelling season 1`
-    - **Then:** `✅ Season cancelled.` No `⚠️ **Image notices**` section: nothing was drawn.
+    - **Then:** `✅ Season cancelled.` No `⚠️ **Image notices**` section: nothing was drawn. After a
+      blank line the reply ends with the reload notice, the cancellation having swapped `/driver`
+      and `/signup` back:
+      ```
+      🔄 Reload Discord (Ctrl+R on desktop) before using the `/driver` and `/signup` commands, which have just changed. Reloading clears every reply only you can see, this one included.
+      ```
+      **Reload Discord now**, once you have read it: step 63 is the first to use `/signup`.
     - **Posts**, for each division:
       - `#d1-calendar`: the calendar again, as text, as step 36 gave it but with Rounds 2 and 3
         struck through and marked, and step 36's text calendar deleted:
@@ -971,7 +978,12 @@ while a season is in configuration. A Season #2 is set up for that alone, as
     - **Ack:** `Turning test mode on`
     - **Then:** ``✅ Test mode **enabled**. Use `/test-mode advance` to step through phases, or `/test-mode review` to inspect season status.``
       No `📌 Added default point configs` line: the server still holds `Standard` and
-      `Half Points` (step 50).
+      `Half Points` (step 50). After a blank line the reply ends with the reload notice:
+      ```
+      🔄 Reload Discord (Ctrl+R on desktop) before using the `/driver` and `/signup` commands, which have just changed. Reloading clears every reply only you can see, this one included.
+      ```
+      **Reload Discord after the restart of step 72**, once you have read it: step 75 is the first
+      to use `/signup`.
     - **Log:**
       ```
       <you> | /test-mode toggle | Success
@@ -979,7 +991,7 @@ while a season is in configuration. A Season #2 is set up for that alone, as
       ```
 
 72. **Do:** steps 1 to 4 again: `/test-mode backup status`, `/test-mode backup restore`, press
-    **♻️ Restore**, and restart the bot.
+    **♻️ Restore**, restart the bot and reload Discord.
 
     **Expect:** as steps 1 to 4: the backup taken at `00-base.md` step 38, readable and locked,
     survived the cancellation. `bot.prerestore.db` and `scheduler.prerestore.db` now hold the

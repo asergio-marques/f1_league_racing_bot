@@ -78,7 +78,8 @@ shorthand, as in `02-roster-changes.md` step 78.
 
 ## Part B — The season, confirmed straight into placements
 
-6. **Do** `00-base.md` steps 18 and 19: `/season setup game_edition:25`, then `/test-mode toggle`.
+6. **Do** `00-base.md` steps 18 and 19: `/season setup game_edition:25`, then `/test-mode toggle`,
+   and **reload Discord** as the toggle's reply says: step 13 is the first to use `/driver`.
    **Skip step 20: there is no availability slot to add**, the slot being the signup
    module's setting.
 

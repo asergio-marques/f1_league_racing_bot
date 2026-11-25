@@ -123,6 +123,7 @@ from leaguebot.core.services.seasons.season_service import (
 )
 from leaguebot.core.services.test_mode.driver_commands import (
     SWAP_TEST_MODE_COMMANDS,
+    reload_reply,
     swap_not_done_line,
     swap_not_done_reply,
 )
@@ -739,7 +740,7 @@ def season_complete_change(
         # The final classifications and sheets drew their pictures with notices, which the posting
         # jobs hold in the log channel: the reply lists them beneath, each with its link.
         section = drawn_notices_section(drawn_notices_in(ctx.steps))
-        return text + "\n\n" + section if section else text
+        return (text + "\n\n" + section if section else text) + reload_reply(ctx.steps)
 
     # ── How each job is named, in the lines that say it stopped the queue ──────
 
@@ -946,6 +947,7 @@ def season_abort_change(
             ABORTED
             + not_done_reply(shared_not_done(ctx, steps), discarded=anything_discarded(ctx))
             + swap_not_done_reply(ctx.steps)
+            + reload_reply(ctx.steps)
         )
 
     async def describe_end(_ctx: StepContext) -> str:
