@@ -305,7 +305,7 @@ def _carry_closed(signup: "SignupModuleService") -> After:
             if not await channel_on_server(guild, standing[1]):
                 return (
                     f"{said}: the old signup channel is gone, so no notice stands to take down, "
-                    "and the next `/signup open` posts there as usual."
+                    f"and the next `/signup open` posts in <#{new_id}> as usual."
                 )
             return (
                 f"{said}: it still stands in <#{standing[1]}>, where the next `/signup open` "
@@ -346,7 +346,8 @@ def _carry_closed(signup: "SignupModuleService") -> After:
         if said in reply:
             return reply
         return (
-            f"{reply}\n⚠️ {said}: check both signup channels and keep a single copy."
+            f"{reply}\n⚠️ {said}: delete any copy of it in <#{payload['channel_id']}> by hand; "
+            "the one in the earlier signup channel stays for the next `/signup open` to take down."
         )
 
     return After(

@@ -479,7 +479,7 @@ the old message with its link
 `test_a_signup_channel_replaced_while_signups_are_open_carries_the_sign_up_button`,
 `test_a_move_while_signups_are_closed_carries_the_closed_notice_across`,
 `test_a_closed_notice_that_cannot_be_carried_stays_where_it_was`,
-`test_a_closed_notice_refused_for_a_signup_channel_deleted_from_the_server_says_none_stands` and
+`test_a_refused_carry_from_a_deleted_signup_channel_says_no_notice_stands` and
 `test_a_closed_notice_carry_or_take_down_that_fails_without_a_refusal_is_named_in_the_reply`.
 
 **The switch-on and the switch-off read the season's stage again as they start**, so one asked

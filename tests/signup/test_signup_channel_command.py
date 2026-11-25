@@ -643,7 +643,7 @@ async def test_a_closed_notice_that_cannot_be_carried_stays_where_it_was(tmp_pat
     assert replied.count(said) == 1
 
 
-async def test_a_closed_notice_refused_for_a_signup_channel_deleted_from_the_server_says_none_stands(
+async def test_a_refused_carry_from_a_deleted_signup_channel_says_no_notice_stands(
     tmp_path
 ):
     """Signups are closed and the last close's notice (950) was posted in the signup channel, 650,
@@ -676,7 +676,7 @@ async def test_a_closed_notice_refused_for_a_signup_channel_deleted_from_the_ser
     replied = last_said(asked)
     assert (
         f"⚠️ The closed notice was not carried to <#{NEW}>: the old signup channel is gone, so "
-        "no notice stands to take down, and the next `/signup open` posts there as usual."
+        f"no notice stands to take down, and the next `/signup open` posts in <#{NEW}> as usual."
     ) in replied
     assert "still stands" not in replied
     assert replied.count("was not carried") == 1
@@ -685,8 +685,9 @@ async def test_a_closed_notice_refused_for_a_signup_channel_deleted_from_the_ser
 @pytest.mark.parametrize("step, warning", [
     pytest.param(
         "carry",
-        f"⚠️ The closed notice was not carried to <#{NEW}>: check both signup channels and keep "
-        "a single copy.",
+        f"⚠️ The closed notice was not carried to <#{NEW}>: delete any copy of it in <#{NEW}> by "
+        "hand; the one in the earlier signup channel stays for the next `/signup open` to take "
+        "down.",
         id="carry-posted-but-not-recorded",
     ),
     pytest.param(
@@ -704,8 +705,8 @@ async def test_a_closed_notice_carry_or_take_down_that_fails_without_a_refusal_i
     or the league's server is unavailable as the old notice is taken down from 650 (*take-down*).
     700 is saved as the signup channel, the queue goes on, and the manager's reply carries that
     step's warning line, once, saying what was not done and what to do by hand: for the carry, to
-    check both signup channels and keep a single copy, never to delete the only notice; for the
-    take-down, naming 650, where the old notice stands."""
+    delete any copy in 700 by hand, the recorded notice in 650 staying for the next `/signup open`;
+    for the take-down, naming 650, where the old notice stands."""
     from leaguebot.framework.models.change import GuildUnavailable
 
     league = await _league(tmp_path, held=OLD)
