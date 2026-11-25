@@ -1675,13 +1675,6 @@ async def _standings_ids(db_path: str) -> tuple[int | None, int | None]:
     )
 
 
-#: Why a moved standings channel's case fails until standings keep the channel they were posted in.
-STANDINGS_POSTED_IN = (
-    "#645: posted standings keep no channel they were posted in, so the old ones are looked for "
-    "in the present standings channel"
-)
-
-
 async def _standings_posted_in(db_path: str) -> int | None:
     """The channel round 3's drivers' standings are recorded as posted in."""
     async with get_connection(db_path) as db:
@@ -1692,7 +1685,6 @@ async def _standings_posted_in(db_path: str) -> int | None:
     return row[0]
 
 
-@pytest.mark.xfail(strict=True, reason=STANDINGS_POSTED_IN)
 async def test_standings_whose_channel_moved_are_posted_afresh_and_the_old_deleted_where_they_stand(
     tmp_path,
 ):
@@ -1719,8 +1711,7 @@ async def test_standings_whose_channel_moved_are_posted_afresh_and_the_old_delet
 
 @pytest.mark.parametrize("present, posted_in", [
     pytest.param(STANDINGS_CHANNEL, None, id="kept"),
-    pytest.param(NEW_STANDINGS_CHANNEL, STANDINGS_CHANNEL, id="moved",
-                 marks=pytest.mark.xfail(strict=True, reason=STANDINGS_POSTED_IN)),
+    pytest.param(NEW_STANDINGS_CHANNEL, STANDINGS_CHANNEL, id="moved"),
 ])
 async def test_a_standings_picture_s_old_message_is_deleted_by_a_job_of_its_own(
     tmp_path, present, posted_in,

@@ -981,7 +981,7 @@ async def _post_standings(
     then: list[PlannedStep] = []
     new: list[int] = []
     for table in tables:
-        then.extend(_deletes(channel_id, table.old, what))
+        then.extend(_deletes(standing_posts.posted_in(table.old_channel_id, channel_id), table.old, what))
         if not table.edited:
             new.extend(table.new)
     result = {

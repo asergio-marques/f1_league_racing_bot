@@ -1013,10 +1013,12 @@ async def produce_standings(
                         )
                         faults[name] = UploadFault.of(exc)
                         continue
+                    replaced, replaced_in = await _standings_replaced(
+                        db_path, division_id, round_id, name, occasion
+                    )
                     pictures.append(PostedTable(
-                        [message_id], await _standings_replaced(
-                            db_path, division_id, round_id, name, occasion
-                        ), drawn=True, championship=name,
+                        [message_id], replaced, drawn=True, championship=name,
+                        old_channel_id=replaced_in,
                     ))
             finally:
                 # Through the attachment, so the handle is closed before the file is removed, and
@@ -1058,6 +1060,12 @@ async def produce_standings(
 
     # Look for existing standings message (kept on the round's row in `round_standings_posts`)
     existing_msg_id = await get_standings_message_id(db_path, division_id, round_id)
+    existing_in = await get_standings_message_channel_id(db_path, division_id, round_id)
+    if existing_in is not None and existing_in != standings_channel.id:
+        # The division's standings channel has moved since this table was posted: it is posted
+        # afresh in the present channel and the old one deleted where it stands, never edited in
+        # place in a channel that is no longer the division's.
+        fresh = True
 
     # **A text table posted over standings that also stand as a constructors message** (a graphic
     # per championship, or a text table per championship) is posted afresh, and takes both
@@ -1067,6 +1075,9 @@ async def produce_standings(
         db_path, division_id, round_id, STANDINGS_CONSTRUCTORS
     )
     constructors_old: list[int] = []
+    constructors_in = await get_standings_message_channel_id(
+        db_path, division_id, round_id, STANDINGS_CONSTRUCTORS
+    )
     if constructors_id is not None:
         constructors_old = list(
             await get_standings_message_ids(
@@ -1123,15 +1134,21 @@ async def produce_standings(
 
         if sent_msg is None:
             sent = await _send_chunked(standings_channel, content)
-            tables = [PostedTable(sent, stale, championship=STANDINGS_DRIVERS, fault=fault)]
+            tables = [PostedTable(
+                sent, stale, championship=STANDINGS_DRIVERS, fault=fault, old_channel_id=existing_in
+            )]
             if constructors_old:
                 # Nothing new carries the constructors now: the table forgets its id and loses its
                 # messages with the drivers' (see `review_posting._record_standings_post`).
-                tables.append(PostedTable([], constructors_old, championship=STANDINGS_CONSTRUCTORS))
+                tables.append(PostedTable(
+                    [], constructors_old, championship=STANDINGS_CONSTRUCTORS,
+                    old_channel_id=constructors_in,
+                ))
             return tables
         # Edited in place, so it is the one message it always was and occupies no others.
         return [PostedTable(
-            [sent_msg.id], stale, edited=True, championship=STANDINGS_DRIVERS, fault=fault
+            [sent_msg.id], stale, edited=True, championship=STANDINGS_DRIVERS, fault=fault,
+            old_channel_id=existing_in,
         )]
     except Exception as failure:
         # The picture that gave way to this text is kept on the stop, as the pictures' path keeps
@@ -1156,9 +1173,10 @@ async def _round_is_cancelled(db_path: str, round_id: int) -> bool:
 async def _standings_replaced(
     db_path: str, division_id: int, round_id: int, championship: str,
     occasion: ClassificationOccasion,
-) -> list[int]:
+) -> tuple[list[int], int | None]:
     """The ids of the messages a championship's picture replaces and leaves standing, the anchor
-    first; empty where nothing stood and for a season-boundary sheet.
+    first, and the channel they were recorded as posted in (None where none was recorded);
+    empty where nothing stood and for a season-boundary sheet.
 
     A standings message id is keyed by round, on the round's row in `round_standings_posts`. A
     season-boundary sheet has no round and no such row to carry one, replaces nothing, and will
@@ -1166,16 +1184,16 @@ async def _standings_replaced(
     of them: the change queue's job takes them down once the picture stands.
     """
     if not occasion.names_a_round:
-        return []
+        return [], None
     previous_id = await get_standings_message_id(db_path, division_id, round_id, championship)
     if previous_id is None:
-        return []
+        return [], None
     # The whole posting it replaces, which may be a chunked textual one (#345).
     previous_ids = await get_standings_message_ids(db_path, division_id, round_id, championship)
     old = [int(each) for each in previous_ids or [previous_id]]
     if previous_id not in old:
         old.insert(0, previous_id)
-    return old
+    return old, await get_standings_message_channel_id(db_path, division_id, round_id, championship)
 
 
 async def _produce_standings_sections(
@@ -1235,7 +1253,10 @@ async def _produce_standings_sections(
             if previous_id not in old:
                 old.insert(0, previous_id)
         posted.append(PostedTable(
-            sent, old, championship=championship, fault=(faults or {}).get(championship)
+            sent, old, championship=championship, fault=(faults or {}).get(championship),
+            old_channel_id=await get_standings_message_channel_id(
+                db_path, division_id, round_id, championship
+            ),
         ))
     return posted
 
@@ -1332,6 +1353,26 @@ async def get_standings_message_ids(
         )
         row = await cursor.fetchone()
     return _parse_ids(row["message_ids"] if row else None)
+
+
+async def get_standings_message_channel_id(
+    db_path: str,
+    division_id: int,
+    round_id: int,
+    championship: str = STANDINGS_DRIVERS,
+) -> int | None:
+    """Return the channel *championship*'s posting for the round was recorded as posted in, or
+    None where none was recorded (`standing_posts.posted_in` then takes the present channel)."""
+    column = _STANDINGS_CHANNEL_COLUMNS[championship]
+    anchor_column = _STANDINGS_ID_COLUMNS[championship]
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            f"SELECT {column} AS channel_id FROM round_standings_posts "  # noqa: S608
+            f"WHERE division_id = ? AND round_id = ? AND {anchor_column} IS NOT NULL",
+            (division_id, round_id),
+        )
+        row = await cursor.fetchone()
+    return int(row["channel_id"]) if row and row["channel_id"] else None
 
 
 async def set_standings_message_id_on(
