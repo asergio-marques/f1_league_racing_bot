@@ -562,6 +562,106 @@ async def test_a_refused_sheet_s_render_notices_reach_the_log_once_when_it_is_re
     await _sheet_notice_is_framed_and_kept(league)
 
 
+#: What each season sheet's job lines name the change by: the approval's button, or the
+#: completion; and the job that posts the sheet.
+_SEASON_SHEETS = {
+    "opening": ("the ✅ Approve button of `/season placements-review`", "opening_sheet"),
+    "final": ("/season complete", "final_sheet"),
+}
+
+
+@pytest.mark.parametrize("occasion", ["opening", "final"])
+@pytest.mark.xfail(
+    strict=True,
+    reason="#635: a season sheet's notices reach the log as a bare block, the member and the "
+           "change unnamed, and its job keeps nothing of them for the reply, across a stop or not",
+)
+async def test_a_season_sheet_s_notices_open_with_member_and_change_and_are_kept_across_a_stop(
+    tmp_path, monkeypatch, occasion,
+):
+    """Images and attendance on, the attendance graphic asked for, and every sheet drawn as a PNG
+    with one font substituted, a font of its own. Season 3 is approved (each division's opening
+    sheet) or completed (each division's final sheet), and Pro's attendance channel refuses the
+    first send: the queue stops at Pro's sheet. The channel is let accept and a Retry posts Pro's
+    sheet as text, and Am's sheet is drawn and posted. Each sheet's notice reaches the log channel
+    once, in a line opening with the member and the change ("| the ✅ Approve button of `/season
+    placements-review` |" or "| /season complete |"), then "Image render notices — <sheet>:", and
+    beneath it the notice grouped under "Font substituted", naming its field. Each division's job
+    keeps its sheet's name and its grouped notices on its result, Pro's across the stop, for the
+    approval's or the completion's reply to list (issue #635; Constitution V; image spec, Errors
+    and the rejection of input, #550)."""
+    from leaguebot.image.models.image_module import RenderNotice
+    from leaguebot.image.services.aspects import image_attendance_post
+    from leaguebot.image.services.aspects.image_attendance_post import SheetRender
+    from tests.support.season_league import (
+        complete_season,
+        pending_completion_league,
+        press_approve,
+        season_league,
+    )
+
+    asked, job = _SEASON_SHEETS[occasion]
+    if occasion == "opening":
+        league = await season_league(
+            tmp_path, monkeypatch=monkeypatch, attendance=True, images=True,
+        )
+    else:
+        league = await pending_completion_league(tmp_path, attendance=True, images=True)
+    monkeypatch.setattr(league.bot.image_drawing, "attendance_wanted",
+                        AsyncMock(return_value=True))
+    fonts: list[str] = []
+
+    async def _sheet(*_args: Any, **_kwargs: Any) -> Any:
+        fonts.append(f"Font{len(fonts) + 1}")
+        png = tmp_path / f"sheet_{len(fonts)}.png"
+        png.write_bytes(b"\x89PNG\r\n\x1a\n")
+        return SheetRender(png=png, notices=[RenderNotice(
+            image_type="attendance_sheet", notice_kind="FONT_SUBSTITUTED",
+            field_id="driver_name_1",
+            detail=f"{fonts[-1]} was unavailable, so a substitute was drawn",
+        )])
+
+    monkeypatch.setattr(image_attendance_post, "render_sheet", _sheet)
+    pro_sheet = league.channel(DIVISIONS[PRO][3].attendance)
+    pro_sheet.send_fails = http_error(status=500, text="Internal Server Error")
+    if occasion == "opening":
+        await press_approve(league)
+    else:
+        await complete_season(league)
+
+    await run_queue(league.bot)
+    assert await stopped_job(league.db_path) is not None
+    pro_sheet.send_fails = None
+    await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert len(fonts) == 2, fonts
+    log = await _said(league)
+    told = []
+    for font in fonts:
+        assert log.count(font + " ") == 1, log
+        [message] = [line for line in league.bot.log_channel.sent if font + " " in line]
+        heading, *grouped = unruled(message).splitlines()
+        assert heading.count(" | ") >= 2, message
+        named, what, drawn = heading.split(" | ", 2)
+        assert "<@77>" in named and what == asked, message
+        label = drawn.removeprefix("Image render notices — ").removesuffix(":")
+        assert drawn == f"Image render notices — {label}:", message
+        assert grouped == [
+            "  Font substituted",
+            f"    • `driver_name_1` — {font} was unavailable, so a substitute was drawn",
+        ], message
+        told.append((label, grouped))
+    from leaguebot.framework.models.change import RESULT_DRAWN, RESULT_NOTICES, RESULT_PICTURES
+
+    kept = [row["result"] for row in await step_rows(league.db_path) if row["name"] == job]
+    assert len(kept) == 2, kept
+    pictures = [each for result in kept for each in result[RESULT_PICTURES]]
+    assert sorted(pictures, key=str) == sorted(
+        ({RESULT_DRAWN: label, RESULT_NOTICES: grouped} for label, grouped in told), key=str,
+    ), pictures
+
+
 async def test_a_sheet_whose_images_switch_nobody_signed_up_for_stops_its_job(tmp_path):
     """The image module is on with the attendance graphic switched on, but the images module's
     switch reader was never signed up (`SwitchNotSignedUp`), a fault in the bot's own wiring.
