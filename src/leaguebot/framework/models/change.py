@@ -72,12 +72,15 @@ class Verdict:
 
     `go()`: carry on. `refuse(reply)`: a member's change is not allowed, `reply` being what the
     member is told and `reason` an optional line written beneath the refusal's line in the log
-    channel. `not_due(reason)`: the bot's change no longer has anything to do.
+    channel. `not_due(reason, line=...)`: the bot's change no longer has anything to do; *line*,
+    where given, is what the log channel is told of it as it is dropped, for a change whose
+    dropping is something a league should read (a carry that leaves its posts where they are).
     """
 
     kind: VerdictKind
     reply: str = ""
     reason: str = ""
+    line: str = ""
 
     @classmethod
     def go(cls) -> Verdict:
@@ -88,8 +91,8 @@ class Verdict:
         return cls(VerdictKind.REFUSE, reply=reply, reason=reason)
 
     @classmethod
-    def not_due(cls, reason: str) -> Verdict:
-        return cls(VerdictKind.NOT_DUE, reason=reason)
+    def not_due(cls, reason: str, *, line: str = "") -> Verdict:
+        return cls(VerdictKind.NOT_DUE, reason=reason, line=line)
 
 
 @dataclass(frozen=True)

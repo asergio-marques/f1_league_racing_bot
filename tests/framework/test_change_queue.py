@@ -350,15 +350,26 @@ async def test_a_member_s_request_failing_its_check_is_refused_at_once_and_nothi
     assert ran == []
 
 
-async def test_a_bot_change_no_longer_due_is_dropped(env, caplog):
-    """A bot change found no longer due when it runs is dropped, with a line in the host's log only."""
+#: The line a check may give for the log channel as it drops a bot change no longer due.
+DROPPED_LINE = "ℹ️ The dummy was not carried out: the season has ended."
+
+
+@pytest.mark.parametrize("line", [
+    pytest.param("", id="its check gives no line"),
+    pytest.param(DROPPED_LINE, id="its check gives a line"),
+])
+async def test_a_bot_change_no_longer_due_is_dropped(env, caplog, line):
+    """A bot change found no longer due when it runs is dropped, with a line in the host's log; the
+    log channel is told of it only where its check gave a line for it, and then that line alone."""
     caplog.set_level(logging.INFO)
     holder = {"due": True}
     ran: list[str] = []
 
     async def _check(_ctx):
         api = _api()
-        return api.Verdict.go() if holder["due"] else api.Verdict.not_due("the season has ended")
+        if holder["due"]:
+            return api.Verdict.go()
+        return api.Verdict.not_due("the season has ended", line=line)
 
     _queue(env, _type(steps=[_act("a", ran)], check=_check))
     api = _api()
@@ -369,7 +380,7 @@ async def test_a_bot_change_no_longer_due_is_dropped(env, caplog):
 
     assert await _states(env) == ["DROPPED"]
     assert ran == []
-    assert await _lines(env) == []
+    assert await _lines(env) == ([line] if line else [])
     assert any("the season has ended" in r.getMessage() for r in caplog.records)
 
 

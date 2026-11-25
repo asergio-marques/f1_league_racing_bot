@@ -397,6 +397,7 @@ def register_change_types(
         review_prompt_change,
     )
     from leaguebot.results.services.review.review_stage_change import review_stage_change
+    from leaguebot.results.services.publishing.channel_move import channel_move_change
     from leaguebot.results.services.publishing.rounds_sync_change import rounds_sync_change
     from leaguebot.results.services.standings.standings_sync_change import standings_sync_change
     from leaguebot.results.services.submission.submission_changes import (
@@ -591,6 +592,11 @@ def register_change_types(
     )
     bot.change_queue.register(
         rounds_sync_change(
+            bot.season_service, bot.module_service, as_image_drawing(bot.image_drawing), bot.driver_names_read
+        )
+    )
+    bot.change_queue.register(
+        channel_move_change(
             bot.season_service, bot.module_service, as_image_drawing(bot.image_drawing), bot.driver_names_read
         )
     )

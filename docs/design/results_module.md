@@ -199,7 +199,7 @@ beside the configurations it amends. The table names a service by its file.
 | `round_amendment/` | `amend_changes` (the amendment opened), `amend_turn_change` (each paste a turn, stage one recorded, the channel closed), `amend_end_changes` (the cancel, the lapse, the lapse's timer and the restart's recovery), `amendment_stage_changes` (the two stages approved), `amendment_writes` (the snapshot, the rewrite, the revert, the holds and the sweep), `amend_views` (Cancel Amendment) | `round_amend_channels`, `amend_drafts` |
 | `points/` | `points_config_service` (the league's configurations), `points_settings` (`/results config` and the reserves toggle as settings), `points_paste` (a points table pasted at once), `season_points_service` (attaching, the season's copy, validation, the staged changes and their install, and test mode's seeding, which sits beside `attach_config_on` because it attaches through it), `amendment_mode_service` and `amendment_settings` (the amendment mode and its settings), `points_amendment_change` (its approval), `points_amendment_faults` (what stops its publication), `scoring` (points applied to a session's rows) | the points tables, the season's copy and the modification store |
 | `standings/` | `standings_service` (standings computed, the snapshots and the cascade), `season_standings_posts` (the opening and final classifications, and the season's history reads), `standings_sync_change` | the snapshots |
-| `publishing/` | `results_post_service` (a table or standings posted, edited and deleted, the standings posting's and the classifications' ids, the reserves flag, the repost faults), `results_drawing_composer` and `standings_drawing_composer` (a session's results, and a round's two standings, composed into the models the image module declares), `preview_sources` (results' share of the image module's `PreviewSources`), `rounds_sync_change`, `cancellation_notice` (the called-off note) | `round_standings_posts`, `classification_posts`, `called_off_notes` |
+| `publishing/` | `results_post_service` (a table or standings posted, edited and deleted, the standings posting's and the classifications' ids, the reserves flag, the repost faults), `results_drawing_composer` and `standings_drawing_composer` (a session's results, and a round's two standings, composed into the models the image module declares), `preview_sources` (results' share of the image module's `PreviewSources`), `rounds_sync_change`, `channel_move` (the posts of a moved results or standings channel carried across), `cancellation_notice` (the called-off note) | `round_standings_posts`, `classification_posts`, `called_off_notes` |
 | `module/` | `module_switch_settings` (the switch-on and the switch reader), `results_off_change` (the switch-off), `results_purge_service` (the season erased, and the delete, merge and pack hooks), `channel_settings` and `division_channels` (a division's channels), `fingerprint_areas`, `test_mode_steps`, `attendance_hook` (`AttendanceAfterReview`) | `division_results_config`, `results_module_config` |
 
 **Every service is module functions**, and every change type a factory the builder calls with what
@@ -282,7 +282,8 @@ must write all or nothing; the posts follow it. A step marked † cannot be disc
 | Kind | Asked by | Jobs |
 |---|---|---|
 | `results.setting.config_*` (seven), `results.setting.amend_*` (four), `results.setting.reserves` | the `/results config` and `/results amend` commands that change a value, `/results reserves toggle` | a `Setting`: **the value and its audit entry** (`core.md`, "A league's settings") |
-| `results.setting.results_channel`, `standings_channel`, `verdicts_channel` | `/results channel …` | a `Setting` that overtakes a stopped job (`Setting.repairs_the_bot`) |
+| `results.setting.results_channel`, `standings_channel` | `/results channel results`, `standings` | a `Setting` that overtakes a stopped job (`Setting.repairs_the_bot`): **the column and the audit entry**; the setting's check, which refuses a move away from a channel that still stands (results specification, "Assigning channels to divisions"; core specification, "Building a season"); and, where the save replaced a channel, the `After` step `ask_carry`, which asks `results.channel.carry` only where the channel the posts stand in still stands and is not the channel set, and the sync's plan has posts up |
+| `results.setting.verdicts_channel` | `/results channel verdicts` | a `Setting` that overtakes a stopped job: **the column and the audit entry**; it carries nothing, and has no such refusal |
 | `module.on:results` | core's `/module enable results` | a `Setting`: before it, `check_kept_channels`; then **the flag, the clear of each channel another setting took, and the audit entries**; then the hub's refresh and the sweep armed, each an `After` step |
 | `module.off:results` | core's `/module disable results` | **`switch_off`**: the season erased, the flag down, attendance off where cascaded, the rounds waiting on results closed; `disarm_sweep`; one `take_down` for each message or channel; **`close`** |
 | `results.rounds.sync`, `results.standings.sync` | `/results rounds sync`, `/results standings sync` | each round's posts, each followed by the deletion of what it replaces; `close`. Repeatable |
@@ -350,12 +351,35 @@ typed in a locked review channel is asked as `results.review.lock`, which is no 
 | `results.amend.stage_one` | the last amendment draft | `names`; **`record_stage_one`**: the round snapshotted, the classification rewritten, points and standings recomputed, nothing posted |
 | `results.amend.prompt` | stage one's save, and the report stage's `close` | a stage's prompt put up, on the amendment's lane |
 | `results.amend.close` | an amendment ending itself (a refused paste, stage one refused) | the channel deleted, on the amendment's lane |
+| `results.channel.carry` | the save of a results or standings channel where the channel the posts stand in still stands, through `ask_carry` | `note_old_channel`: the old channel, as `channel_settings._where_posts_stand` found it when the carry was asked, recorded on posts that name none; `plan_carry`: the sync's plan of the division's tables or standings, each post followed by the deletion of its old message; `close`. On the league lane, behind any stopped job as a sync is |
 
 **A hook.** Core's changes call results' functions inside their own saves (below, "How modules and
 core fit together"): the deletes and the pack, the rounds called off and made final, the season's
 approval and completion, test mode turned on. The jobs results plans through a hook (the opening
 and final classifications, the deletion of a called-off submission channel, the called-off note)
 are core's change's jobs, each defined by results.
+
+**The carry of a moved channel is a change of its own, never a step of the setting** (results
+specification, "Assigning channels to divisions"). The setting saves the channel and stays a plain
+setting that never stops the queue; its check carries the refusal, and `ask_carry`, an `After`
+step, asks `results.channel.carry` only where the channel the posts stand in still stands (the
+channel replaced, or the old channel of a carry still waiting to move the posts into it) and the
+sync's plan (`plan_division_posts`) has posts up. *Rejected:* carrying the posts as steps of the
+setting, which would let a refused post stop the lane at a setting, and a setting never stops the
+queue. The carry takes the league lane and so waits behind a stopped job as a sync does.
+`ask_carry` takes the old channel from `_where_posts_stand`, which reads the queue for a carry of
+the same division and kind, queued or started and not ended, whose new channel is the one being
+replaced, so that a second move asked before the first carry has ended carries from where the posts
+stand, and a move back to that channel asks no carry, the posts already standing in the channel
+set. **`note_old_channel` comes first** because the setting has already saved the new channel: a
+post that records no channel is taken to stand in the present one (under the tables above, "Each
+posting keeps the channel it was posted in"), so without the note the deletion of its old message
+would be aimed at the new channel, where it never stood, and the old message would be left up.
+**The carry's check splits its verdicts**: a carry no longer due is dropped (`Verdict.not_due`),
+not stopped, and carries its line so the log channel says why (results specification, "Assigning
+channels to divisions"); a new channel that has gone or that the bot cannot post in is refused,
+stopping the lane for the league to repair and press Retry. Its docstring
+(`publishing/channel_move`) holds the conditions and the line.
 
 Each file's docstring holds its change's check, its jobs and the reason for each.
 
@@ -556,6 +580,9 @@ docstring holds the shape:
   on its next try.
 - **A division is rebuilt whole and in round order**, a repost landing at the bottom of a
   channel (`plan_division_posts`'s docstring).
+- **A moved channel's posts are carried by the same plan**, `plan_division_posts` limited to the
+  tables or to the standings, so that a carry posts and deletes as a sync does
+  (`results.channel.carry`, under "What starts each change").
 
 **A table too long for one message is split** (`_split_content`, under Discord's limit, on line
 breaks) and sent through the standing-post handler one chunk after another, with nothing pacing the
