@@ -541,7 +541,7 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
       messages, each a complete table repeating the heading. It ends:
       ```
       Copy mention strings above when submitting results in the format:
-      `Position, <@user_id>, <@&role_id>, ...`
+      `Position, <@user_id>, <team shorthand>, ...`
       ```
     - **Log:** nothing; it is a view.
 
@@ -786,7 +786,7 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
       table repeating the heading. It ends:
       ```
       Copy mention strings above when submitting results in the format:
-      `Position, <@user_id>, <@&role_id>, ...`
+      `Position, <@user_id>, <team shorthand>, ...`
       ```
     - **Log:** nothing; it is a view.
 

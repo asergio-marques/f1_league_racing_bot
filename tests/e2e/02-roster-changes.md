@@ -73,7 +73,7 @@ rule of 110 `-`, and beneath it:
 
 ```
 Copy mention strings above when submitting results in the format:
-`Position, <@user_id>, <@&role_id>, ...`
+`Position, <@user_id>, <team shorthand>, ...`
 ```
 
 Every fake driver is listed, in the order they were created, or, where a division is given, only
