@@ -1473,7 +1473,7 @@ Sets the Discord role granted to (and revoked from) drivers placed in the Reserv
 
 > **Setting the signup module up for the first time?** This section is the reference — every command, in its own right. For the order to do them in, follow [Configuring the signup module](docs/how-to/configuring-the-signup-module.md).
 
-All commands below require the signup module to be enabled (`/module enable signup`). Most commands also require being invoked from the configured interaction channel.
+All commands below require the signup module to be enabled (`/module enable signup`), save `/signup config view`, which still answers while the module is off. Most commands also require being invoked from the configured interaction channel.
 
 > **Every completed signup is kept, under its season.** A signup that reaches review is stored as a record of the season and the window it came through, and nothing overwrites it — a driver who signs up again, in a later window or a later season, gains a second record beside the first. A correction amends the signup it was asked of. A former driver's signups are kept whole when they leave.
 
