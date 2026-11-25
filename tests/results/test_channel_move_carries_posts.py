@@ -151,9 +151,12 @@ async def _pending_completion(league: ReviewLeague) -> None:
     )
 
 
-async def _move(league: ReviewLeague, which: str, name: str = "Pro") -> Any:
-    """Admin (4242) runs `/results channel <which>` for *name* and the command's new channel; the
-    queue is not run. Gives the interaction, whose words `last_said` reads."""
+async def _move(
+    league: ReviewLeague, which: str, name: str = "Pro", to: int | None = None,
+) -> Any:
+    """Admin (4242) runs `/results channel <which>` for *name* and channel *to*, the command's new
+    channel where none is given; the queue is not run. Gives the interaction, whose words
+    `last_said` reads."""
     from leaguebot.results.cogs.results_cog import ResultsCog
 
     cog = ResultsCog.__new__(ResultsCog)
@@ -161,7 +164,7 @@ async def _move(league: ReviewLeague, which: str, name: str = "Pro") -> Any:
     interaction = member_asks(league.bot, f"results channel {which}")
     interaction.guild = league.guild
     await undecorate(getattr(ResultsCog, f"channel_{which}"))(
-        cog, interaction, name, league.channel(MOVES[which][1])
+        cog, interaction, name, league.channel(MOVES[which][1] if to is None else to)
     )
     return interaction
 
@@ -577,3 +580,44 @@ async def test_a_fault_in_asking_the_carry_says_the_posts_were_not_moved(
     assert await _carries(league) == []
     assert league.sent_to(new) == []
 
+
+async def test_a_second_move_before_the_first_carry_runs_carries_from_where_the_posts_stand(
+    tmp_path,
+):
+    """Round 3's table stands in 700 and the league's lane is stopped at a job of another change.
+    Admin moves Pro's results channel from 700 to 703: the setting saves 703 and its carry waits
+    behind the stop. Admin then moves it again, from 703 to 706, which stands on the server: the
+    setting saves 706 and asks a carry of its own, from 700, where the table still stands. Once
+    the stop is retried and the queue moves, the first carry is dropped, its line in the log
+    channel saying the results channel has changed (now 706) and not that the posts stay in 700;
+    the second carries the table from 700 to 706: it goes up in 706 before 8800 is deleted from
+    700, which ends empty, and the session records it; nothing is posted to 703, and the second
+    carry's line is a Success naming 700 and 706."""
+    league = await _league(tmp_path)
+    holder = await block_queue(league)
+    league.channels[MOVED_AGAIN] = channel(MOVED_AGAIN, league.events)
+    league.channels[MOVED_AGAIN].guild = league.guild
+    await _move(league, "results")
+    await run_queue(league.bot)
+    await _move(league, "results", to=MOVED_AGAIN)
+    await run_queue(league.bot)
+    assert await _held(league, "results") == MOVED_AGAIN
+    since = len(league.bot.log_channel.sent)
+
+    holder["fail"] = False
+    await retry_job(league.bot)
+
+    assert [row["state"] for row in await _carries(league)] == ["DROPPED", "DONE"]
+    lines = _lines(league, since)
+    dropped = [line for line in lines
+               if "changed" in line.lower() and f"<#{MOVED_AGAIN}>" in line]
+    assert dropped, lines
+    assert not [line for line in dropped if "stay in" in line.lower()], dropped
+    assert league.sent_to(NEW_RESULTS) == []
+    [new] = league.sent_to(MOVED_AGAIN)
+    assert await _results_id(league, ROUND_ID) == new
+    assert league.events.index(("send", MOVED_AGAIN, new)) < league.events.index(
+        ("delete", RESULTS_CHANNEL, OLD_RESULTS))
+    assert league.channel(RESULTS_CHANNEL).messages == {}
+    assert any("| Success" in line and f"{RESULTS_CHANNEL}" in line and f"{MOVED_AGAIN}" in line
+               for line in lines), lines
