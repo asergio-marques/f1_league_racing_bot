@@ -47,6 +47,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from leaguebot.core.cogs.season_cog import SeasonCog
+from leaguebot.core.models.round import RoundFormat
 from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.services.drivers.placement_service import PlacementService
 from leaguebot.framework.utils.hooks import AwaitedHook
@@ -175,7 +176,7 @@ def _round(number: int = 1, *, days_away: float = 30):
         round_number=number,
         track_name="Silverstone",
         status="NOT_RUN",
-        format=SimpleNamespace(value="NORMAL"),
+        format=RoundFormat.NORMAL,
         scheduled_at=datetime.now(timezone.utc) + timedelta(days=days_away),
     )
 
@@ -728,8 +729,8 @@ async def test_the_textual_calendar_lists_the_rounds(db_path):
     messages = await _review(cog, _interaction())
 
     public = _public(messages)
-    assert "Round 1: NORMAL @ Silverstone" in public
-    assert "Round 2: NORMAL @ Silverstone" in public
+    assert "Round 1: Normal @ Silverstone" in public
+    assert "Round 2: Normal @ Silverstone" in public
 
 
 async def test_a_mystery_round_is_named_as_one(db_path):
@@ -1263,9 +1264,9 @@ async def test_a_switched_on_calendar_and_lineup_are_asked_as_pictures_in_place_
     ]
     calendar, lineup = pictures
     assert (calendar["name"], lineup["name"]) == ("Season 4 Pro calendar", "Pro lineup")
-    assert "Round 1: NORMAL @ Silverstone" in calendar["text"]
+    assert "Round 1: Normal @ Silverstone" in calendar["text"]
     assert "*(no drivers assigned)*" in lineup["text"]
-    assert "Round 1: NORMAL @ Silverstone" not in _public(messages)
+    assert "Round 1: Normal @ Silverstone" not in _public(messages)
     assert "*(no drivers assigned)*" not in _public(messages)
     assert _offered(cog)
 
@@ -1279,7 +1280,7 @@ async def test_with_the_image_module_off_no_picture_is_asked_and_the_sections_ar
     messages = await _review(cog, _interaction())
 
     assert _pictures(cog) == []
-    assert "Round 1: NORMAL @ Silverstone" in _public(messages)
+    assert "Round 1: Normal @ Silverstone" in _public(messages)
     assert "*(no drivers assigned)*" in _public(messages)
 
 

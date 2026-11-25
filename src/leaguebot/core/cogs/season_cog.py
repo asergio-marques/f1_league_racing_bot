@@ -634,7 +634,7 @@ class SeasonCog(commands.Cog):
             cal_lines: list[str] = ["\U0001f4c5 **Calendar**"]
             for r in rounds_db:
                 cal_lines.append(
-                    f"  Round {r.round_number}: {r.format.value} "
+                    f"  Round {r.round_number}: {r.format.label} "
                     f"@ {r.track_name or 'Mystery'} \u2014 {discord_ts(r.scheduled_at)}"
                 )
             if draws_calendar:
