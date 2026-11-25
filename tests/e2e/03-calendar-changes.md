@@ -407,9 +407,9 @@ ways out, then the amendments: two go through, and one is refused for the moment
       ✅ Round amended successfully.
 
       **Rounds:**
-        Round 1: NORMAL @ Silverstone Circuit — <t:<unix time: <YEAR+1>-03-01 20:00 UTC>:F>
-        Round 2: MYSTERY @ TBD — <t:<unix time: <YEAR+1>-03-15 20:00 UTC>:F>
-        Round 3: SPRINT @ Hungaroring — <t:<unix time: <YEAR+1>-03-22 20:00 UTC>:F>
+        Round 1: Normal @ Silverstone Circuit — <t:<unix time: <YEAR+1>-03-01 20:00 UTC>:F>
+        Round 2: Mystery @ TBD — <t:<unix time: <YEAR+1>-03-15 20:00 UTC>:F>
+        Round 3: Sprint @ Hungaroring — <t:<unix time: <YEAR+1>-03-22 20:00 UTC>:F>
       ```
       Moving the date renumbered the division: Hungaroring is round 3 now, and the mystery round
       round 2.
@@ -447,12 +447,8 @@ ways out, then the amendments: two go through, and one is refused for the moment
     - **Reply**, with **✅ Confirm** and **❌ Cancel**:
       ```
       **Amend Round 1** in division **Division 2**:
-        • `format` → `RoundFormat.SPRINT`
+        • `format` → `Sprint`
       ```
-      The format is shown by its enum's name, `RoundFormat.SPRINT`, where `SPRINT` or `Sprint`
-      is meant: `round_cog.round_amend` interpolates the `RoundFormat` itself, which Python 3.12
-      and later format by name (`RoundFormat.label` warns of exactly this). Believed a bot
-      defect: record it, and carry on.
 
 29. **Do:** within two minutes, press **✅ Confirm**.
 
@@ -463,15 +459,15 @@ ways out, then the amendments: two go through, and one is refused for the moment
       ✅ Round amended successfully.
 
       **Rounds:**
-        Round 1: SPRINT @ Autodromo Nazionale Monza — <t:<…>:F>
-        Round 2: SPRINT @ Circuit de Spa-Francorchamps — <t:<…>:F>
-        Round 3: NORMAL @ Circuit Zandvoort — <t:<…>:F>
+        Round 1: Sprint @ Autodromo Nazionale Monza — <t:<…>:F>
+        Round 2: Sprint @ Circuit de Spa-Francorchamps — <t:<…>:F>
+        Round 3: Normal @ Circuit Zandvoort — <t:<…>:F>
       ```
     - **Log:**
       ```
       <you> | /round amend | Success
         round 1 (round_id: <id: Division 2's Monza round>)
-        format: NORMAL → SPRINT
+        format: Normal → Sprint
       ```
     - **Posts:** none.
 
@@ -682,9 +678,9 @@ round has started cannot be reached with a round dated a year ahead.
       ✅ Round amended successfully.
 
       **Rounds:**
-        Round 1: NORMAL @ Suzuka International Racing Course — <t:<…>:F>
-        Round 2: MYSTERY @ TBD — <t:<…>:F>
-        Round 3: SPRINT @ Hungaroring — <t:<…>:F>
+        Round 1: Normal @ Suzuka International Racing Course — <t:<…>:F>
+        Round 2: Mystery @ TBD — <t:<…>:F>
+        Round 3: Sprint @ Hungaroring — <t:<…>:F>
       ```
     - **Posts**, each a job of the amendment's, the check-in's before the forecasts'
       (`round_amend_change`, `plan_posts`):
