@@ -771,6 +771,79 @@ async def test_an_outcome_links_to_the_line_its_job_named(env, case):
         assert seen["link"] is None
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#635: a job hands back one picture's notices alone, and a stop keeps them unlabelled",
+)
+async def test_an_outcome_gathers_every_picture_s_notices_once_a_stopped_job_kept_each_label(env):
+    """Two jobs draw pictures with notices. The first, Pro's calendar, hands back one picture and
+    names its line. The second draws Pro's drivers' and teams' standings into one line holding
+    both notice blocks, and stops when Discord refuses the post, keeping that line and each
+    picture's label and notices; its Retry draws nothing and hands back what was kept. The outcome
+    gathers, in the jobs' order, the calendar's notices linked to its line, then each standings
+    picture under its own label, both linked to the one line their job named, every notice once
+    (issue #635; image spec, Errors and the rejection of input, #550)."""
+    from leaguebot.framework.models.change import (
+        RESULT_DRAWN, RESULT_NOTICES, RESULT_PICTURES, DrawnNotices, drawn_kept,
+    )
+    from leaguebot.framework.services.queue.change_types import drawn_notices_in
+
+    api = _api()
+    calendar = DrawnNotices("calendar — Pro", ("  Text set smaller", "    • `round_12_track` — x"))
+    drivers = DrawnNotices("standings — Pro drivers", ("  Font substituted ×25",))
+    teams = DrawnNotices("standings — Pro teams", ("  Field left empty", "    • `team_name_3` — y"))
+    tries: list[Any] = []
+    seen: dict[str, Any] = {}
+
+    async def _calendar(_ctx):
+        return api.StepResult(
+            result={RESULT_NOTICES: list(calendar.notices), RESULT_DRAWN: calendar.label},
+            lines=("Admin (<@4242>) | /dummy | the calendar's notices",), linked=0,
+        )
+
+    async def _standings(ctx):
+        tries.append(ctx.kept)
+        if len(tries) == 1:
+            raise api.StepFailedOnDiscord("Discord refused").carrying(
+                ("Admin (<@4242>) | /dummy | the standings' notices",),
+                pictures=(drivers, teams), linked=0,
+            )
+        kept = drawn_kept(ctx.kept)
+        return api.StepResult(
+            result={RESULT_PICTURES: [
+                {RESULT_DRAWN: each.label, RESULT_NOTICES: list(each.notices)}
+                for each in kept.pictures
+            ]},
+            lines=kept.lines, linked=kept.linked,
+        )
+
+    def _outcome(ctx):
+        seen["pictures"] = drawn_notices_in(ctx.steps)
+        return "✅ Done."
+
+    _queue(env, _type(
+        steps=[api.Step("calendar", api.StepKind.ACT, _calendar),
+               api.Step("standings", api.StepKind.ACT, _standings)],
+        outcome=_outcome,
+    ))
+
+    await _ask(env)
+    await run_queue(env.bot)
+    await retry_job(env.bot)
+
+    assert await _states(env) == ["DONE"]
+    sent = env.bot.log_channel.sent
+    held = {
+        job: next(n for n, line in enumerate(sent, 1) if f"| the {job}" in line)
+        for job in ("calendar", "standings")
+    }
+    assert seen["pictures"] == (
+        dataclasses.replace(calendar, link=f"https://discord.test/{held['calendar']}"),
+        dataclasses.replace(drivers, link=f"https://discord.test/{held['standings']}"),
+        dataclasses.replace(teams, link=f"https://discord.test/{held['standings']}"),
+    )
+
+
 async def test_a_queued_line_the_log_channel_refuses_is_told_to_the_member_alone(env):
     """Through the held interaction, seen by the member alone; the interaction channel is sent
     nothing, and the line still waits on the retry queue."""
