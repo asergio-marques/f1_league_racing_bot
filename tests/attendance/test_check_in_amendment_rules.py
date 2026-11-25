@@ -155,11 +155,17 @@ def test_a_move_refused_for_its_last_notice_keeps_what_an_allowed_one_keeps():
     """A round three hours out on the default windows, its call posted and its last notice not.
     Moved there, it is refused for its last notice; corrected there without moving, it is allowed.
     Both keep the same for the save and the arming (reopened), the re-arming of a round judging it
-    as it stands and arming from what is kept, whatever is refused."""
+    as it stands and arming from what is kept, whatever is refused. Each window is judged on the
+    new moment alone, the same either way: the call and the last notice would have gone out
+    already, so they stand; only the deadline, still ahead, is armed again."""
     refused = _judged(NOW + timedelta(hours=3), called=True, notified=False, moved=True)
     allowed = _judged(NOW + timedelta(hours=3), called=True, notified=False, moved=False)
     assert refused.part.refusals and not allowed.part.refusals
     assert refused.part.kept == allowed.part.kept == {"reopened": True}
+    for judgement in (refused, allowed):
+        assert judgement.windows["call"].stands
+        assert judgement.windows["last_notice"].stands
+        assert judgement.windows["deadline"].rearm
 
 
 @pytest.mark.xfail(strict=True, reason=_NOT_YET)
