@@ -296,14 +296,26 @@ def _carry_closed(signup: "SignupModuleService") -> After:
         guild = await league_guild(ctx.bot)
         if guild is None:
             raise RuntimeError("the league's server is not in the cache")
-        left = (
-            f"The closed notice was not carried to <#{new_id}>: it still stands in "
-            f"<#{standing[1]}>, where the next `/signup open` takes it down."
-        )
+
+        async def left() -> str:
+            """What the reply says of a notice not carried: where it stands and who takes it
+            down, or, where its channel is gone from the server, that nothing stands to take
+            down."""
+            said = f"The closed notice was not carried to <#{new_id}>"
+            if not await channel_on_server(guild, standing[1]):
+                return (
+                    f"{said}: the old signup channel is gone, so no notice stands to take down, "
+                    "and the next `/signup open` posts there as usual."
+                )
+            return (
+                f"{said}: it still stands in <#{standing[1]}>, where the next `/signup open` "
+                "takes it down."
+            )
+
         channel = guild.get_channel(new_id)
         if not isinstance(channel, discord.TextChannel):
             raise StepFailedOnDiscord(
-                "the signup channel could not be found to post in", notice=left
+                "the signup channel could not be found to post in", notice=await left()
             )
         try:
             message_id = await post_standing_message(
@@ -311,7 +323,7 @@ def _carry_closed(signup: "SignupModuleService") -> After:
                 refused=f"the closed notice could not be posted in channel {new_id}",
             )
         except StepFailedOnDiscord as error:
-            raise StepFailedOnDiscord(error.reason, notice=left) from error
+            raise StepFailedOnDiscord(error.reason, notice=await left()) from error
         return StepResult(result={
             "new": message_id, "channel_id": new_id, "old": standing[0],
             "old_channel_id": standing[1],
@@ -334,8 +346,7 @@ def _carry_closed(signup: "SignupModuleService") -> After:
         if said in reply:
             return reply
         return (
-            f"{reply}\n⚠️ {said}: check where it stands in the signup channels, and delete any "
-            "copy by hand."
+            f"{reply}\n⚠️ {said}: check both signup channels and keep a single copy."
         )
 
     return After(
@@ -352,8 +363,10 @@ def _delete_carried_closed() -> After:
     step runs with the notice and its channel the carry kept in its result (`old`,
     `old_channel_id`) as its payload: a message or a channel already gone counts as done, which is
     what a replacement for a deleted channel finds. The step is due only where the carry posted.
-    It is a `DELETE` step, not an `ACT` one, so that a `NotFound` completes it. Like every step
-    after a setting's save it ends on a fault and never stops the lane.
+    It is a `DELETE` step, not an `ACT` one, so that a `NotFound` completes it. A fault of any other
+    kind, a refusal or a failure of the bot's own, is turned into the one notice naming the old
+    channel, or the link where Discord gave one, for the reply and the log to carry. Like every
+    step after a setting's save it ends on a fault and never stops the lane.
     """
     inner = standing_posts.delete_replaced_step(DELETE_CARRIED_CLOSED)
 
@@ -377,11 +390,14 @@ def _delete_carried_closed() -> After:
             raise RuntimeError("no closed notice was carried to take down the old one of")
         try:
             return await inner.run(deleting)
-        except StepFailedOnDiscord as error:
+        except discord.NotFound:
+            raise
+        except Exception as error:  # noqa: BLE001 — every other fault names the old notice
+            refused = error if isinstance(error, StepFailedOnDiscord) else None
             where = deleting.step_payload["channel_id"]
-            link = (error.result or {}).get("link") or f"in <#{where}>"
+            link = ((refused.result if refused else None) or {}).get("link") or f"in <#{where}>"
             raise StepFailedOnDiscord(
-                error.reason,
+                refused.reason if refused else "the old closed notice could not be deleted",
                 notice=f"The old closed notice could not be deleted ({link}): delete it by hand.",
             ) from error
 

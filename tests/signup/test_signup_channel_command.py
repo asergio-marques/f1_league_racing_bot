@@ -643,17 +643,55 @@ async def test_a_closed_notice_that_cannot_be_carried_stays_where_it_was(tmp_pat
     assert replied.count(said) == 1
 
 
+async def test_a_closed_notice_refused_for_a_signup_channel_deleted_from_the_server_says_none_stands(
+    tmp_path
+):
+    """Signups are closed and the last close's notice (950) was posted in the signup channel, 650,
+    which has since been deleted from the server, taking the notice with it. The admin replaces
+    the signup channel with 700, and Discord refuses the notice's post in 700. 700 is saved as the
+    signup channel and the queue goes on; the reply says the notice was not carried and that the
+    old signup channel is gone, so none stands to take down, never that it still stands in 650."""
+    league = await _league(tmp_path, held=OLD)
+    await _closed_notice(league)
+    events: list[tuple] = []
+    new = _holding(_channel(NEW), events, post_fault=_forbidden())
+    _discord(league, new)
+    missing = discord.NotFound(MagicMock(status=404, reason="Not Found"), "Unknown Channel")
+
+    fetch = league.bot.fetch_channel
+
+    async def _fetch(channel_id):
+        if channel_id == OLD:
+            raise missing
+        return await fetch(channel_id)
+
+    league.guild.fetch_channel = AsyncMock(side_effect=_fetch)
+    league.bot.fetch_channel = AsyncMock(side_effect=_fetch)
+
+    asked = await _run(league, new)
+
+    assert await _stored(league.db_path) == NEW
+    assert await stopped_job(league.db_path) is None
+    assert _sent(events) == [] and _deleted(events) == []
+    replied = last_said(asked)
+    assert (
+        f"⚠️ The closed notice was not carried to <#{NEW}>: the old signup channel is gone, so "
+        "no notice stands to take down, and the next `/signup open` posts there as usual."
+    ) in replied
+    assert "still stands" not in replied
+    assert replied.count("was not carried") == 1
+
+
 @pytest.mark.parametrize("step, warning", [
     pytest.param(
         "carry",
-        f"⚠️ The closed notice was not carried to <#{NEW}>: check where it stands in the signup "
-        "channels, and delete any copy by hand.",
+        f"⚠️ The closed notice was not carried to <#{NEW}>: check both signup channels and keep "
+        "a single copy.",
         id="carry-posted-but-not-recorded",
     ),
     pytest.param(
         "take-down",
-        "⚠️ The old closed notice could not be taken down: delete it from the earlier signup "
-        "channel by hand.",
+        f"⚠️ The old closed notice could not be deleted (in <#{OLD}>): delete it by hand.",
         id="take-down-server-unavailable",
     ),
 ])
@@ -665,7 +703,9 @@ async def test_a_closed_notice_carry_or_take_down_that_fails_without_a_refusal_i
     refusal from Discord: the copy is posted in 700 but the database will not record it (*carry*),
     or the league's server is unavailable as the old notice is taken down from 650 (*take-down*).
     700 is saved as the signup channel, the queue goes on, and the manager's reply carries that
-    step's warning line, once, saying what was not done and what to do by hand."""
+    step's warning line, once, saying what was not done and what to do by hand: for the carry, to
+    check both signup channels and keep a single copy, never to delete the only notice; for the
+    take-down, naming 650, where the old notice stands."""
     from leaguebot.framework.models.change import GuildUnavailable
 
     league = await _league(tmp_path, held=OLD)
