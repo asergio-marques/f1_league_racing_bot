@@ -38,9 +38,9 @@ moved away from, or, where a carry still waiting was to move the posts there, th
 carry takes them from), and that the sync's own plan (`plan_division_posts`) has posts to move, and
 only then asks `results.channel.carry` (`publishing/channel_move`) as the bot's own follow-on, whose
 job it is to move the tables or standings already up across, as a sync would; the setting's reply
-then says so. The step asks and does nothing else, so the setting never stops the queue, and a
-channel that has gone since the save, whose posts went with it, and a division with no posts up
-ask nothing.
+then says so. The step asks and does nothing else, so the setting never stops the queue. A channel
+that has gone since the save, whose posts went with it, a division with no posts up, and a channel
+given back to the one the posts stand in (a move away and back before the carry ran) ask nothing.
 
 **Each overtakes a stopped job on the league lane** (`Setting.repairs_the_bot`): a stop notice for
 a channel gone tells the league to set the channel and press Retry, which a change waiting behind
@@ -259,7 +259,9 @@ def _channel_setting(
         if old is None:
             return StepResult(result={"carrying": False})
         old = await _where_posts_stand(ctx.db_path, ctx.payload, key, int(old))
-        if not await _stands(ctx.bot, old, (await channel_needs(drawing))[key]):
+        if old == int(ctx.payload["value"]) or not await _stands(
+            ctx.bot, old, (await channel_needs(drawing))[key]
+        ):
             return StepResult(result={"carrying": False})
         async with get_connection(ctx.db_path) as db:
             up = await plan_division_posts(
