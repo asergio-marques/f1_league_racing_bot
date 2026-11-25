@@ -81,7 +81,7 @@ from leaguebot.framework.services.queue.change_types import (
     Step,
     StepContext,
     StepView,
-    drawn_notices_of,
+    drawn_notices_in,
 )
 from leaguebot.framework.utils.channels import as_text_channel
 from leaguebot.core.services.seasons.season_fingerprint_service import SeasonFingerprint, take_fingerprint
@@ -908,11 +908,10 @@ def _left(ctx: OutcomeContext, steps: Mapping[str, Step], *, told: bool = True) 
 
 def _drawn_notices(ctx: OutcomeContext) -> tuple[DrawnNotices, ...]:
     """The notices of the pictures the approval drew, for the reply's one "Image notices" section:
-    each division's calendar and then its lineup, labelled and linked as the posting job's own log
-    line is. A picture fallen back to text is not reported here — that is the posting's own log line — and the
+    every calendar, lineup, opening standings and opening attendance sheet any job of it drew
+    (`drawn_notices_in`), labelled and linked as the posting job's own log line is. A picture
+    fallen back to text is not reported here — that is the posting's own log line — and the
     notices themselves are a line of the posting's job, in the log channel, so this reply carries
     them without the approval logging them again (Constitution XIV.4, "where each is reported",
     "how they are reported")."""
-    return (
-        drawn_notices_of(ctx.steps, POST_CALENDAR) + drawn_notices_of(ctx.steps, REFRESH_LINEUP)
-    )
+    return drawn_notices_in(ctx.steps)

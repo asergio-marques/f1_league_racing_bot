@@ -1261,11 +1261,6 @@ async def test_the_approval_s_reply_names_a_calendar_s_notices_and_not_its_fallb
                 and (notice in line or lineup_notice in line or "the template has no rows" in line)]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#635: the opening standings and sheet jobs hand their notices to neither the opening "
-           "of their log line nor the approval's reply",
-)
 async def test_the_approval_s_reply_names_the_opening_standings_and_sheet_drawn_with_notices(
     tmp_path, monkeypatch,
 ):
