@@ -5,9 +5,9 @@ image's models (`leaguebot.image.models.attendance_drawing`); this file projects
 drawing onto the template and declares nothing the attendance module composes.
 
 **The row ordinal is a place in the layout and not a datum** (XIV.11, v4.6.0). The sheet is a
-record and not a classification: rows are ordered by total accrued, two drivers level on totals
-stand level, and no position is drawn. A numbered row would publish a ranking the module never
-computed.
+record and not a classification: rows are in the order the textual sheet lists them, two
+drivers level on totals stand level, and no position is drawn. A numbered row would publish a
+ranking the module never computed.
 
 See specs/041-attendance-image-generation/contracts/ — attendance-catalogues.md for the fields,
 sibling-and-floor.md for the floor.
