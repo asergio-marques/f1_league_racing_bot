@@ -8,8 +8,8 @@ Pure: no database, no Discord. Both validate through the same gates the single-c
 command uses — `normalise_slot`, because a slot reaches a CSS selector, and `normalise_hex`,
 because a colour reaches a stylesheet.
 
-**The division is the unit of atomicity** (decided 2026-09-08). A block naming an unknown
-division, or carrying one bad slot or colour, is rejected whole and reported; the other
+**The division is the unit of atomicity** (decided 2026-09-08). A block naming no division,
+naming one twice, or carrying one bad slot or colour, is rejected whole and reported; the other
 blocks still import. A division is never half-applied — a tier drawn in four of its ten
 colours is worse than a tier not yet configured, because it looks deliberate.
 
