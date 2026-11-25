@@ -146,7 +146,7 @@ def test_the_live_sheet_path_reads_the_nationality_switch():
     assert "nationality_collected=" in source
 
 
-def test_the_live_sheet_path_resolves_names_through_the_shared_convention():
+def test_the_live_sheet_path_reads_nationalities_through_the_shared_convention():
     """The picture reads nationalities through the shared convention.
 
     Drivers' names are read once, by the sheet itself, and handed to the picture
