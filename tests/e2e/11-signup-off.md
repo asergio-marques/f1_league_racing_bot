@@ -52,7 +52,7 @@ the outcome it is updated to; `<you>` in a log line is your display name and men
 **Reply:** and **Log:** for it. A refusal changes nothing and posts nothing.
 
 **Under test mode `/driver` takes a driver as text**, a mention or an ID, and a team by its
-shorthand, as in `00-base.md` step 32.
+shorthand, as in `02-roster-changes.md` step 78.
 
 ---
 
