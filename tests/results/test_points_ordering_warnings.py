@@ -196,12 +196,7 @@ async def test_warnings_are_silent_on_a_table_running_down(db_path):
     ("first", "second", "expected"),
     [
         (10, 25, "position 1 (10 pts) < position 2 (25 pts)"),
-        pytest.param(
-            25,
-            25,
-            "position 1 (25 pts) = position 2 (25 pts)",
-            marks=pytest.mark.xfail(strict=True, reason="#669: a tie is warned about as <, not ="),
-        ),
+        (25, 25, "position 1 (25 pts) = position 2 (25 pts)"),
     ],
     ids=["rise", "tie"],
 )
