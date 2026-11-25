@@ -53,8 +53,8 @@ the hook types (`hooks.py`), the failure paths (`interaction_errors.py`, `answer
 runner `job_runner.py`), the helper that starts background work and holds it (`background.py`), the
 standard log lines, the words a reply uses to link to a logged line and to list the notices of the
 pictures its work drew, and the heading and body a job puts round those notices (`notices_block`,
-`job_notice_lines`, `framed_picture_lines` and its `PictureLines`, all in `log_lines.py`), a member as the
-log channel names them (`member_names.py`), the log filters, `bounded_autocomplete`
+`job_notice_lines`, `framed_picture_lines` and its `PictureLines`, all in `log_lines.py`), a member
+as the log channel names them (`member_names.py`), the log filters, `bounded_autocomplete`
 (`autocomplete.py`), the guard that refuses a post made outside a job (`in_a_job.py`), the wait for
 the catch-up after a restart (`catch_up_gate.py`), the channel cast (`channels.py`) and the path
 resolution that keeps a path inside the project (`paths.py`).
