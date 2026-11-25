@@ -787,9 +787,11 @@ async def test_a_forecast_cleanup_is_offered_for_an_earlier_phase_still_standing
     assert (result["round_id"], result["phase_number"], result["kind"]) == (1, 8, "cleanup")
 
 
-async def test_a_mystery_round_s_notice_is_offered_no_forecast_cleanup(tmp_path) -> None:
+async def test_a_mystery_round_s_notice_is_offered_its_forecast_cleanup(tmp_path) -> None:
     """A finished mystery round, its check-in cleared, with its notice (phase 0) standing: the
-    notice is not a forecast the clean-up deletes, so nothing is offered."""
+    clean-up a day after the race deletes the notice as it deletes a forecast, so its cleanup (8)
+    is offered, of kind `cleanup`: from its job in the store, or from the database once the store
+    is empty."""
     db_path = str(tmp_path / "notice_standing.db")
     await run_migrations(db_path)
     await _seed_all_done(db_path, [{"track_name": None, "format": "MYSTERY"}])
@@ -798,13 +800,12 @@ async def test_a_mystery_round_s_notice_is_offered_no_forecast_cleanup(tmp_path)
         await db.execute("UPDATE rounds SET checkin_cleared = 1 WHERE id = 1")
         await db.commit()
 
-    assert await get_next_pending_phase(
-        db_path, _StubScheduler([_job(1, 8, days=1)]), now=NOW,
-        pending_steps_read=pending_steps_read(),
-    ) is None
-    assert await get_next_pending_phase(
-        db_path, _StubScheduler(), now=NOW, pending_steps_read=pending_steps_read(),
-    ) is None
+    for stub in (_StubScheduler([_job(1, 8, days=1)]), _StubScheduler()):
+        result = await get_next_pending_phase(
+            db_path, stub, now=NOW, pending_steps_read=pending_steps_read(),
+        )
+        assert result is not None
+        assert (result["round_id"], result["phase_number"], result["kind"]) == (1, 8, "cleanup")
 
 
 # ---------------------------------------------------------------------------
@@ -970,7 +971,8 @@ async def test_the_review_lists_a_division_s_rounds_in_the_order_they_race(tmp_p
 
 
 async def test_the_review_marks_every_queued_job_as_queued(tmp_path, paused_round_jobs) -> None:
-    """Every step of a season armed as approval arms it has its job queued, and reads ⏳."""
+    """Every step of a season armed as approval arms it has its job queued, and reads ⏳: a
+    mystery round's notice and its clean-up among them."""
     db_path = await _season_armed_as_approval_arms_it(tmp_path, paused_round_jobs)
 
     summary = await build_review_summary(
@@ -979,7 +981,7 @@ async def test_the_review_marks_every_queued_job_as_queued(tmp_path, paused_roun
 
     check_in = "Results: ⏳  |  RSVP: ⏳  Last: ⏳  Deadline: ⏳  Cleared: ⏳"
     assert _round_row(summary, 1).endswith(f"P1: ⏳  P2: ⏳  P3: ⏳  Cleanup: ⏳  |  {check_in}")
-    assert _round_row(summary, 2).endswith(f"Notice: ⏳  |  {check_in}")
+    assert _round_row(summary, 2).endswith(f"Notice: ⏳  Cleanup: ⏳  |  {check_in}")
     assert _round_row(summary, 3).endswith(f"P1: ⏳  P2: ⏳  P3: ⏳  Cleanup: ⏳  |  {check_in}")
 
 
@@ -996,17 +998,19 @@ async def test_the_review_marks_every_queued_job_as_queued(tmp_path, paused_roun
         (1, "rsvp_deadline", "Deadline"),
         (1, "rsvp_cleanup", "Cleared"),
         (2, "weather_p1", "Notice"),
+        (2, "cleanup", "Cleanup"),
     ],
     ids=[
         "p1", "p2", "p3", "forecast-cleanup", "results", "call", "last-notice", "deadline",
-        "check-in-cleanup", "mystery-notice",
+        "check-in-cleanup", "mystery-notice", "mystery-cleanup",
     ],
 )
 async def test_a_job_taken_from_the_store_reads_as_missing(
     tmp_path, paused_round_jobs, round_id, event_type, cell
 ) -> None:
     """Each cell reads its own job and no other. A mystery round's notice is armed as
-    `weather_p1`, so taking that job away is what leaves its `Notice` without one."""
+    `weather_p1`, so taking that job away is what leaves its `Notice` without one; its clean-up
+    is armed as `cleanup`, as any round's is."""
     db_path = await _season_armed_as_approval_arms_it(tmp_path, paused_round_jobs)
     paused_round_jobs.cancel_round(round_id, only=frozenset({event_type}))
 

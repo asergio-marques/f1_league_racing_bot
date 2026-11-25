@@ -580,8 +580,8 @@ def _round_change(
         ctx: StepContext, rnd: Round, *, kept: Mapping[str, Any]
     ) -> tuple[PlannedStep, ...]:
         """The clean-ups a day after the round, which the modules plan where that day has come:
-        the forecast (whichever of Phases 1 to 3 still stands), then the standing check-in call.
-        Read when the arming runs, as the arming reads the round."""
+        the forecast (whichever of Phases 1 to 3 still stands, or a mystery round's notice), then
+        the standing check-in call. Read when the arming runs, as the arming reads the round."""
         async with get_connection(ctx.db_path) as db:
             handed = await round_clean_ups_due.call(db, rnd.id, rnd=rnd, kept=kept, now=now)
         return tuple(step for steps in handed for step in steps or ())

@@ -94,6 +94,8 @@ async def forget_forecast_on(
     division_id: int,
     phase_number: int,
     message_id: int | None,
+    *,
+    keep_notice_given: bool = False,
 ) -> None:
     """Drop the record of the forecast of *phase_number* of *round_id* on *db*, committing
     nothing, once its message is deleted.
@@ -101,9 +103,12 @@ async def forget_forecast_on(
     Only the row holding *message_id* goes, so that a newer forecast recorded for the phase is
     never dropped with the one it replaced; with no *message_id* the phase's row goes whatever
     it holds. A mystery round's notice (phase 0) closes the round's notice flag with its record,
-    so that a round that is a mystery round again is owed its notice again.
+    so that a round that is a mystery round again is owed its notice again, unless
+    *keep_notice_given*: the clean-up a day after the round takes the notice down and leaves the
+    flag set, as it leaves `phaseN_done`, so that the round is not read as one whose notice was
+    never given.
     """
-    if phase_number == 0:
+    if phase_number == 0 and not keep_notice_given:
         await db.execute("UPDATE rounds SET mystery_notice_given = 0 WHERE id = ?", (round_id,))
     if message_id is None:
         await db.execute(
@@ -160,9 +165,10 @@ async def forecast_deletes(
 ) -> tuple[PlannedStep, ...]:
     """One `delete_forecast` job for each recorded forecast, in round, division, phase order.
 
-    The clean-up a day after a round (T010, SC-005) asks for whichever of Phases 1 to 3 still
-    stands for one round (*round_id* and *phases* given); the flush when test mode is switched off (T013, SC-004, FR-015)
-    and the season end's for all of them (neither given). Each job carries the round (and its
+    The clean-up a day after a round (T010, SC-005) asks for whichever of Phases 1 to 3, or a
+    mystery round's notice, still stands for one round (*round_id* and *phases* given); the flush
+    when test mode is switched off (T013, SC-004, FR-015) and the season end's for all of them
+    (neither given). Each job carries the round (and its
     number), division, phase and message it was planned for, and deletes that message alone: the
     deletion is a job of the change queue, whose refusal stops it, so nothing is deleted here.
     Under *clean_up* each job is marked (``"clean_up": True``), so that a change naming it says it

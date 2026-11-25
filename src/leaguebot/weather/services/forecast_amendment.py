@@ -23,7 +23,7 @@ import aiosqlite
 from leaguebot.framework.db.database import get_connection
 from leaguebot.core.models.amendment import AmendmentPart, RoundArming
 from leaguebot.framework.models.change import PlannedStep
-from leaguebot.core.models.round import Round, RoundFormat
+from leaguebot.core.models.round import Round, RoundFormat, RoundLead
 from leaguebot.weather.models.weather_config import WeatherWindows
 from leaguebot.weather.services.forecast_leads import forecast_leads, forecast_moments
 from leaguebot.weather.services.draw_guard import weather_enabled_on
@@ -222,7 +222,8 @@ async def round_armed(
 
     The forecasts are armed only while weather is on, and not for a mystery round moved inside its
     first horizon, whose notice already told the drivers and which must not be fired
-    retroactively. Subscribed to core's `round_armed`.
+    retroactively: that round is armed its clean-up alone, which takes the notice down a day after
+    the race. Subscribed to core's `round_armed`.
     """
     at = now()
     weather = windows_kept(kept) or windows_of(await read_config_on(db))
@@ -240,7 +241,11 @@ async def round_armed(
         planned.append(PlannedStep(NOTIFY_INVALIDATION, {"track": kept["track"]}))
     planned += [PlannedStep(RERUN_PHASE, {"phase": n}) for n in draw]
     armed = on and (rnd.format != RoundFormat.MYSTERY or first_horizon_ahead(rnd, weather, at))
-    return RoundArming(
-        steps=tuple(planned),
-        jobs=forecast_leads(weather, skip_phases=draw) if armed else None,
-    )
+    jobs: tuple[RoundLead, ...] | None = None
+    if armed:
+        jobs = forecast_leads(weather, skip_phases=draw)
+    elif on:
+        # A mystery round moved inside its first horizon: its notice stands, and only the clean-up
+        # a day after the race takes it down, so that timer is armed though no phase is.
+        jobs = tuple(lead for lead in forecast_leads(weather) if lead.clean_up)
+    return RoundArming(steps=tuple(planned), jobs=jobs)

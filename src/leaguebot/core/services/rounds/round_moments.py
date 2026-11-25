@@ -18,9 +18,9 @@ from leaguebot.core.models.round import RoundLead
 from leaguebot.framework.utils.hooks import AwaitedHook
 
 #: How long after a round's scheduled start its posted messages come down: the weather module's
-#: forecast, whichever of Phases 1 to 3 still stands, and the attendance module's check-in call
-#: with its last notice and its distribution message. One figure for both, so a round's
-#: channels clear together.
+#: forecast, whichever of Phases 1 to 3 still stands, or a mystery round's notice, and the
+#: attendance module's check-in call with its last notice and its distribution message. One figure
+#: for both, so a round's channels clear together.
 POST_RACE_CLEANUP_DELAY = timedelta(hours=24)
 
 

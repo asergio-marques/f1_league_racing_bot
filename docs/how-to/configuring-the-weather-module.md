@@ -194,7 +194,7 @@ The higher the chance of rain from phase 1, the more rain and mixed sessions pha
 
 > **Nothing arrives with the module switched off.** The cancellation note, the mystery round notice and the invalidation notice are all this module's own output and wait for it. With weather off, a cancellation posts nothing in the forecast channel, and amending a round still throws its old forecasts away and deletes the messages that carried them, but nothing is posted in their place and no new forecast is drawn. Switch weather on afterwards and that round's forecasts are drawn then, as though they had never been attempted.
 
-**And one disappears.** Twenty-four hours after a race starts, the bot deletes whichever of that round's forecasts still stands — the final one, unless it was never posted — so the channel holds the forecast that matters and nothing else. A mystery round's notice stays.
+**And one disappears.** Twenty-four hours after a race starts, the bot deletes whichever of that round's forecasts still stands — the final one, unless it was never posted — so the channel holds the forecast that matters and nothing else. A mystery round's notice is taken down then too.
 
 ---
 
@@ -208,7 +208,7 @@ Worth knowing so you do not go looking for the setting.
 | The weather words themselves | Sunny, Mixed and Rain for a session; Clear, Light Cloud, Overcast, Wet and Very Wet for a slot |
 | How many slots a session gets | Fixed by the kind of session — see the table in step 4 |
 | The wording and symbols of the posts | Fixed. The symbols become pictures you can replace once the image module is on |
-| When the forecast is tidied away | Always 24 hours after the race starts, or as soon as the bot starts again if it was switched off then. Whichever of the round's Phase 1, 2 and 3 forecasts still stands is deleted, each deletion a job on the change queue; a mystery round's notice stays |
+| When the forecast is tidied away | Always 24 hours after the race starts, or as soon as the bot starts again if it was switched off then. Whichever of the round's Phase 1, 2 and 3 forecasts, or its mystery round notice, still stands is deleted, each deletion a job on the change queue |
 | Re-rolling a round's weather | There is no command for it. Amending the round is what clears the old forecast and draws a new one |
 
 The bot keeps a full record of every draw in the log channel, so a forecast that looks surprising can always be checked rather than argued about.

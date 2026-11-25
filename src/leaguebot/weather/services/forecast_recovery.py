@@ -32,7 +32,7 @@ from datetime import datetime
 import aiosqlite
 
 from leaguebot.framework.db.database import get_connection
-from leaguebot.weather.models.forecast_kinds import forecasts_named
+from leaguebot.weather.models.forecast_kinds import CLEAN_UP_PHASES, forecasts_named
 from leaguebot.core.models.division import DivisionStatus
 from leaguebot.core.models.round import RoundFormat, RoundStatus
 from leaguebot.framework.services.queue.change_queue import ChangeQueue
@@ -125,8 +125,8 @@ async def recover_missed_forecast_clean_ups(db_path: str, *, queue: ChangeQueue)
     """Take down the forecasts whose clean-up fell due while the bot was down: weather's part of
     the start-up's missed clean-ups.
 
-    A round's forecast (whichever of Phases 1 to 3 still stands, which the host's log line names)
-    comes down `POST_RACE_CLEANUP_DELAY` after the round's start, by the ``cleanup`` job. A job
+    A round's forecast (whichever of Phases 1 to 3 still stands, or a mystery round's notice,
+    which the host's log line names) comes down `POST_RACE_CLEANUP_DELAY` after the round's start, by the ``cleanup`` job. A job
     falling due while the bot is stopped fires late when the bot is back, having no lateness
     limit, and this ask meets the timer's on the change's key, so the forecast comes down once.
 
@@ -172,11 +172,13 @@ async def recover_missed_forecast_clean_ups(db_path: str, *, queue: ChangeQueue)
 
 
 async def _standing_forecasts(db: aiosqlite.Connection) -> dict[int, list[int]]:
-    """The phases of Phases 1 to 3 whose forecast is recorded as standing, by round id, in round
-    and phase order. A mystery round's notice (phase 0) is no forecast the clean-up deletes."""
+    """The phases whose forecast is recorded as standing, by round id, in round and phase order:
+    Phases 1 to 3, and a mystery round's notice (phase 0), which the clean-up deletes."""
     cursor = await db.execute(
         "SELECT round_id, phase_number FROM forecast_messages "
-        "WHERE phase_number IN (1, 2, 3) ORDER BY round_id, phase_number"
+        "WHERE phase_number IN (?, ?, ?, ?) "
+        "ORDER BY round_id, phase_number",
+        CLEAN_UP_PHASES,
     )
     standing: dict[int, list[int]] = {}
     for row in await cursor.fetchall():

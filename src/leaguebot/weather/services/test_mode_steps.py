@@ -9,7 +9,8 @@ their format, race time and status, and orders what comes back. Weather reads a 
 itself, from the round it is handed, to tell a mystery round's notice from Phase 1.
 
 Weather's steps of a round are a mystery round's notice (0) until it is posted, or each of Phases 1
-to 3 (1, 2, 3) not done, and the forecast clean-up (8) while a forecast of Phases 1 to 3 stands. A
+to 3 (1, 2, 3) not done, and the forecast clean-up (8) while a forecast of Phases 1 to 3, or a
+mystery round's notice, stands. A
 step of a round whose race has been run is passed over: the change queue drops a forecast for a
 race already run as not due, so advance does not offer it, though it names it. The clean-up is
 never passed over, and never a step already asked of the change queue and not yet run: the advance
@@ -17,10 +18,10 @@ that asked for it cancelled the scheduler's job, so the database alone would off
 weather is off nothing of it is armed and nothing is handed back.
 
 The review's marks of a round come through core's `review_marks_read` hook: Phases 1 to 3 and the
-clean-up, or a mystery round's notice alone, each done (✅), pending with its job queued or with no
-scheduler to ask (⏳), pending with no job (⚠️), or, where the round's race has been run, passed
-over (⏭️). The clean-up is done once nothing of Phases 1 to 3 stands and Phase 3 has run or the
-race has.
+clean-up, or a mystery round's notice and the clean-up, each done (✅), pending with its job queued
+or with no scheduler to ask (⏳), pending with no job (⚠️), or, where the round's race has been run,
+passed over (⏭️). The clean-up is done once nothing of Phases 1 to 3 stands and Phase 3 has run or
+the race has; a mystery round's, once its notice no longer stands and was given or the race has run.
 """
 
 from __future__ import annotations
@@ -31,7 +32,7 @@ from datetime import datetime
 import aiosqlite
 
 from leaguebot.framework.db.database import get_connection
-from leaguebot.weather.models.forecast_kinds import FORECAST, FORECAST_CLEAN_UP
+from leaguebot.weather.models.forecast_kinds import CLEAN_UP_PHASES, FORECAST, FORECAST_CLEAN_UP
 from leaguebot.framework.services.queue.queue_records import unfinished
 from leaguebot.core.services.test_mode.test_mode_service import (
     PASSED_OVER,
@@ -44,7 +45,8 @@ from leaguebot.core.services.test_mode.test_mode_service import (
 from leaguebot.weather.services.draw_guard import weather_enabled_on
 from leaguebot.weather.services.round_phases import PhasesDrawn, phases_drawn_on
 
-#: The step that takes the forecasts of Phases 1 to 3 down, a day after the round.
+#: The step that takes the forecasts of Phases 1 to 3, or a mystery round's notice, down, a day after
+#: the round.
 CLEAN_UP_PHASE = 8
 
 #: The kind of round job each of weather's advance phases is armed under, the one map weather's
@@ -57,9 +59,11 @@ _STEP_KINDS = {0: "weather_p1", **ADVANCE_KINDS}
 
 
 async def _standing_forecasts(db: aiosqlite.Connection) -> set[int]:
-    """The rounds with a forecast of Phase 1 to 3 still standing."""
+    """The rounds with a forecast of Phase 1 to 3, or a mystery round's notice, still standing."""
     cursor = await db.execute(
-        "SELECT DISTINCT round_id FROM forecast_messages WHERE phase_number IN (1, 2, 3)"
+        "SELECT DISTINCT round_id FROM forecast_messages "
+        "WHERE phase_number IN (?, ?, ?, ?)",
+        CLEAN_UP_PHASES,
     )
     return {int(row["round_id"]) for row in await cursor.fetchall()}
 
@@ -141,7 +145,13 @@ async def review_marks(
         if rnd.format.upper() == "MYSTERY":
             # A mystery round's notice is armed as `weather_p1`: weather's `ask_forecast` reads
             # the round's format as it fires.
-            marks[rid] = [("Notice", mark(first, "weather_p1"))]
+            marks[rid] = [
+                ("Notice", mark(first, "weather_p1")),
+                (
+                    "Cleanup",
+                    phase_mark((first or raced) and rid not in standing, (rid, "cleanup"), queued),
+                ),
+            ]
         else:
             marks[rid] = [
                 ("P1", mark(p1, "weather_p1")),

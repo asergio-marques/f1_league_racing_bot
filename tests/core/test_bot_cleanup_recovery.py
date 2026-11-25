@@ -308,18 +308,23 @@ async def test_a_superseded_forecast_whose_deletion_was_discarded_is_caught_up_w
 
 
 @pytest.mark.parametrize(
-    "phases, named",
-    [((3,), "the Phase 3 forecast"), ((2,), "the Phase 2 forecast"),
-     ((1, 2), "the Phase 1 and 2 forecasts")],
-    ids=["phase-3-posted", "phase-3-never-posted", "phases-1-and-2-standing"],
+    "phases, round_format, named",
+    [
+        pytest.param((3,), "NORMAL", "the Phase 3 forecast", id="phase-3-posted"),
+        pytest.param((2,), "NORMAL", "the Phase 2 forecast", id="phase-3-never-posted"),
+        pytest.param((1, 2), "NORMAL", "the Phase 1 and 2 forecasts",
+                     id="phases-1-and-2-standing"),
+        pytest.param((0,), "MYSTERY", "the mystery round notice", id="mystery-round-notice"),
+    ],
 )
 async def test_the_catch_up_s_log_line_names_the_forecast_it_deletes(
-    tmp_path, caplog, phases, named
+    tmp_path, caplog, phases, round_format, named
 ):
     """The host's log line for a forecast clean-up the catch-up asks names the forecast still
-    standing, "deleting the Phase 2 forecast of round_id=21", never a phase that is not, and
-    begins with the name of weather's recovery that writes it."""
-    db_path = await _make_db(tmp_path, phases=phases)
+    standing, "deleting the Phase 2 forecast of round_id=21", never a phase that is not, and a
+    mystery round's notice as "the mystery round notice", never as a phase; it begins with the
+    name of weather's recovery that writes it."""
+    db_path = await _make_db(tmp_path, phases=phases, round_format=round_format)
 
     with caplog.at_level("INFO", logger="leaguebot"):
         await _recover(_bot(db_path))
@@ -329,12 +334,13 @@ async def test_the_catch_up_s_log_line_names_the_forecast_it_deletes(
             in lines), lines
 
 
-async def test_a_mystery_round_s_notice_asks_no_forecast_cleanup(tmp_path):
-    """A mystery round's notice (phase 0) is not a forecast the clean-up deletes: with nothing
-    else recorded, the catch-up asks no clean-up of it."""
+async def test_a_mystery_round_s_notice_asks_its_forecast_cleanup(tmp_path):
+    """A mystery round a day past, with its notice (phase 0) still recorded and nothing else: the
+    catch-up asks its forecast clean-up, which deletes the notice as it deletes a forecast, and
+    its check-in clean-up as of any round."""
     db_path = await _make_db(tmp_path, phases=(0,), round_format="MYSTERY")
 
-    assert await _recover(_bot(db_path)) == ([], [ROUND_ID])
+    assert await _recover(_bot(db_path)) == ([ROUND_ID], [ROUND_ID])
 
 
 # ---------------------------------------------------------------------------

@@ -1044,15 +1044,19 @@ async def test_a_clean_up_deletes_whichever_phase_is_still_standing(tmp_path, st
     pytest.param((3,), "the Phase 3 forecast", id="phase 3 posted"),
     pytest.param((2,), "the Phase 2 forecast", id="phase 3 never posted"),
     pytest.param((1, 2), "the Phase 1 and 2 forecasts", id="phases 1 and 2 standing"),
+    pytest.param((0, 3), "the mystery round notice and the Phase 3 forecast",
+                 id="mystery notice and phase 3 standing"),
 ])
 async def test_a_clean_up_is_named_by_the_phases_it_deletes(tmp_path, standing, named):
     """A day after round 3's race, Pro's clean-up is asked with Phase 3 standing, or Phase 2 alone
-    (Phase 3 never posted), or Phases 1 and 2. The change is named by the forecast it really
-    deletes, "deleting the Phase 2 forecast of round 3 in **Pro** a day after it", never by a
-    phase that is not standing."""
+    (Phase 3 never posted), or Phases 1 and 2, or Phase 3 beside the notice of the mystery round
+    it was until amended, whose deletion a league admin discarded. The change is named by what it
+    really deletes, "deleting the Phase 2 forecast of round 3 in **Pro** a day after it", the
+    notice as "the mystery round notice", never by a phase that is not standing."""
     league = await _league(tmp_path)
     for phase in standing:
         await posted_forecast(league, ROUND, phase, 9300 + phase)
+    await league.write("UPDATE rounds SET format = 'NORMAL' WHERE id = ?", ROUND)
 
     await _clean_up(league)
 
@@ -1060,9 +1064,10 @@ async def test_a_clean_up_is_named_by_the_phases_it_deletes(tmp_path, standing, 
     assert row["what"] == f"deleting {named} of round 3 in **Pro** a day after it"
 
 
-async def test_a_clean_up_leaves_a_mystery_round_s_notice_standing(tmp_path):
+async def test_a_clean_up_deletes_a_mystery_round_s_notice_and_keeps_it_given(tmp_path):
     """Round 3 is a mystery round, whose notice (phase 0) was posted in place of its forecasts:
-    a day after its race the clean-up deletes nothing, and the notice and its record stand."""
+    a day after its race the clean-up deletes the notice by a `delete_forecast` job of its own,
+    and drops its record. The round still reads its notice given, so nothing owes it again."""
     league = await _league(tmp_path, mystery=True)
     await _posted(league, 1)
     [notice] = _ids(_events(league), "send")
@@ -1071,10 +1076,13 @@ async def test_a_clean_up_leaves_a_mystery_round_s_notice_standing(tmp_path):
     await run_queue(league.bot)
 
     assert await stopped_job(league.db_path) is None
-    assert ("delete", notice) not in _events(league)
-    assert notice in league.channel(FORECAST).messages
-    assert await _forecasts(league) == {0: notice}
-    assert await _deletes_of(league, CLEAN_UP_KIND) == []
+    assert ("delete", notice) in _events(league)
+    assert notice not in league.channel(FORECAST).messages
+    assert await _forecasts(league) == {}
+    [job] = await _deletes_of(league, CLEAN_UP_KIND)
+    assert job["payload"]["phase"] == 0
+    [row] = await league.rows("SELECT mystery_notice_given FROM rounds WHERE id = ?", ROUND)
+    assert row["mystery_notice_given"] == 1
 
 
 @pytest.mark.parametrize("gone", ["message gone", "row already gone"])
