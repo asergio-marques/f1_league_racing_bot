@@ -870,7 +870,7 @@ At least one optional field must be provided. Amending `scheduled_at` automatica
 
 > **Past the check-in deadline, the check-in is settled.** Amend a round whose deadline has gone by and the call is neither reposted nor taken down, and no answer can be changed: the reserves have been distributed against it and reopening it would unsettle a grid already told who is racing. Moving such a round far enough out puts its check-in back in play.
 
-> **A round cannot be moved into the past**, whatever modules you run. A round's result submission opens at the round's own moment, and one armed in the past would be opened late, at once, and not at the round's moment. Give it a moment still to come. Moving a round *forward* is untouched, and is how you correct a circuit or a format late.
+> **A round cannot be moved into the past**, whatever modules you run. A round's result submission opens at the round's own moment, and one armed in the past would be opened late, at once, and not at the round's moment. Give it a moment still to come. Moving a round *forward*, far enough out that its check-in is not refused (see above), is untouched, and is how you correct a circuit or a format late.
 
 > **A round cannot be moved inside its own check-in deadline.** With the default two-hour deadline, moving a round to less than two hours away is refused outright — the check-in would open and close in the same instant, and the round would read afterwards as perfect attendance for a division nobody asked. Move it further out, or shorten the deadline first.
 
