@@ -6,8 +6,8 @@ the team held at generation and the points total — so a later change to either
 silently part them. The sanction annotation, drawn as the plain literal the message emphasises,
 is pinned in `test_image_attendance_service.py`.
 
-It also covers the live grid resolution (FR-014, FR-016) and the two `/images test` guards
-(FR-068, FR-071), neither of which the pure-utility tests can reach.
+It also covers the live grid resolution (FR-014, FR-016), which the pure-utility tests cannot
+reach.
 """
 from __future__ import annotations
 
@@ -176,15 +176,3 @@ async def test_the_grid_needs_no_drivers_to_list_its_rounds(grid_db):
     assert len(headings) == 4
     assert cells == {}
 
-
-# ── The two /images test guards (FR-068, FR-071) ──────────────────────────
-
-
-# Two tests stood here asserting on the source text of the withdrawn
-# `/images test <kind>` command's `needs_tracks` and `needs_teams` guards. Feature 045
-# replaces that command with eleven previews whose refusals are covered directly against
-# `resolve_context` in `tests/image/test_image_preview_service.py`.
-#
-# The team guard's successor is `require_teams`, which the attendance preview sets and
-# `test_a_division_with_only_a_reserve_team_is_refused` covers. The track guard has no
-# successor: a preview draws a real round, which names a real circuit.
