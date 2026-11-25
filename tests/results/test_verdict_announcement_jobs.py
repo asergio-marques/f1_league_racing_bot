@@ -1055,13 +1055,6 @@ _NOTICE_OPENING = (
     "Admin (`<@4242>`) | ✅ Approve on round 3's penalty review | Image render notices — "
 )
 
-#: Why the two tests below fail until #635 is built.
-NOT_YET_FRAMED = (
-    "#635: a verdict picture's notices reach the log as a bare block headed by the kind's code, "
-    "the member and the change unnamed, and its job keeps nothing of them for the reply"
-)
-
-
 async def _notice_is_framed_and_kept(
     league: ReviewLeague, aspect: str, interaction: Any
 ) -> None:
@@ -1102,7 +1095,6 @@ async def _notice_is_framed_and_kept(
     ("aspect", "template", "name"), _FAULTED_PICTURES,
     ids=[aspect for aspect, _t, _n in _FAULTED_PICTURES],
 )
-@pytest.mark.xfail(strict=True, reason=NOT_YET_FRAMED)
 async def test_a_verdict_picture_s_render_notices_reach_the_log_once_naming_the_round(
     tmp_path, aspect, template, name,
 ):
@@ -1143,7 +1135,6 @@ async def test_a_verdict_picture_s_render_notices_reach_the_log_once_naming_the_
     ("aspect", "template", "name"), _FAULTED_PICTURES,
     ids=[aspect for aspect, _t, _n in _FAULTED_PICTURES],
 )
-@pytest.mark.xfail(strict=True, reason=NOT_YET_FRAMED)
 async def test_a_refused_verdict_picture_s_notice_reaches_the_log_once_when_it_is_retried(
     tmp_path, aspect, template, name,
 ):

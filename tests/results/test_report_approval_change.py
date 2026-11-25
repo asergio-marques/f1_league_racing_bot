@@ -538,11 +538,6 @@ async def test_a_repost_discord_refuses_is_retried_and_the_approval_finishes_onc
 SESSION_NOTICE = "Font7 was unavailable, so a substitute was drawn"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#635: the approval's reply lists no Image notices, its session job keeping nothing "
-           "of its picture's notices for it",
-)
 async def test_the_approval_s_reply_names_the_session_picture_drawn_with_notices(tmp_path):
     """Images on and the results picture's template sound: the league manager Alex presses
     Approve on round 3's penalty review, and the republished Feature Race picture draws as a PNG

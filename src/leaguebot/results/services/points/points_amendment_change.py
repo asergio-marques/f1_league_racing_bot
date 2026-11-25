@@ -458,7 +458,8 @@ def points_amendment_change(
         if not _applied(ctx):
             return NOTHING_CHANGED
         left = _left(ctx)
-        return "\n".join([APPROVED_BUT_INCOMPLETE, *left]) if left else SUCCESS
+        text = "\n".join([APPROVED_BUT_INCOMPLETE, *left]) if left else SUCCESS
+        return review_posting.with_drawn_notices(ctx, text)
 
     steps: dict[str, Step] = {
         **posting_steps(drawing, driver_names_read),

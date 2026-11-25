@@ -124,8 +124,10 @@ def rounds_sync_change(
         name = ctx.payload["division_name"]
         left = not_synced(ctx)
         if left:
-            return "\n".join([f"⚠️ The results of **{name}** were not all synced:", *left])
-        return f"✅ Results for all rounds in **{name}** synced to the results channel."
+            text = "\n".join([f"⚠️ The results of **{name}** were not all synced:", *left])
+        else:
+            text = f"✅ Results for all rounds in **{name}** synced to the results channel."
+        return review_posting.with_drawn_notices(ctx, text)
 
     steps: dict[str, Step] = {
         **review_posting.posting_steps(drawing, driver_names_read),

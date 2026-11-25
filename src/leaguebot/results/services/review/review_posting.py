@@ -76,7 +76,9 @@ from leaguebot.core.models.fault_source import FaultSource, source_of
 from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.services.modules.image_drawing import picture_remedy, with_host_remedy
 from leaguebot.core.services.seasons import season_service
-from leaguebot.framework.services.queue.change_types import OutcomeContext, Step, StepContext
+from leaguebot.framework.services.queue.change_types import (
+    OutcomeContext, Step, StepContext, drawn_notices_in,
+)
 from leaguebot.framework.utils.channels import as_text_channel
 from leaguebot.framework.utils.league_server import league_guild
 from leaguebot.framework.services.posting.notice_handler import delete_notice, send_notice
@@ -84,7 +86,7 @@ from leaguebot.framework.services.posting.owned_channel_handler import delete_in
 from leaguebot.framework.services.posting import standing_posts
 from leaguebot.framework.services.posting.standing_post_handler import delete_standing
 from leaguebot.framework.utils.hooks import AwaitedHook
-from leaguebot.framework.utils.log_lines import framed_picture_lines
+from leaguebot.framework.utils.log_lines import drawn_notices_section, framed_picture_lines
 from leaguebot.framework.utils.league_bot import LeagueBot
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.models.standings_snapshot import (
@@ -599,6 +601,16 @@ def not_done(ctx: OutcomeContext, *, reposted: bool = False) -> list[str]:
             f"Repair the cause, then run `{_RESULTS_SYNC}` and `{_STANDINGS_SYNC}`."
         )
     return lines
+
+
+def with_drawn_notices(ctx: OutcomeContext, reply: str) -> str:
+    """*reply* with the section its change ends in for the pictures its jobs drew with render
+    notices (`drawn_notices_in`), each under the label its log line gives it with the link to the
+    message holding it, after a blank line; *reply* as it stood where none was. The reply a
+    results change that posts pictures (an approval, an amendment's rebuild, a sync) ends with
+    (Constitution XIV.4: a command's output carries the notices of what it drew)."""
+    section = drawn_notices_section(drawn_notices_in(ctx.steps))
+    return f"{reply}\n\n{section}" if section else reply
 
 
 # ---------------------------------------------------------------------------

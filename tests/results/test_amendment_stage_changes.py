@@ -717,11 +717,6 @@ async def test_the_rebuild_goes_in_the_order_a_league_reads_it(tmp_path):
 SESSION_NOTICE = "Font7 was unavailable, so a substitute was drawn"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#635: the amendment's reply lists no Image notices, its session job keeping nothing "
-           "of its picture's notices for it",
-)
 async def test_the_amendment_s_reply_names_the_session_picture_drawn_with_notices(tmp_path):
     """Images on and the results picture's template sound: round 3's amendment has its reports
     approved, and the league manager Alex presses Approve on its appeals stage. The rebuild's

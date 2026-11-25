@@ -765,11 +765,6 @@ async def test_the_admin_is_told_at_once_and_the_reply_is_updated_when_every_rou
 SESSION_NOTICE = "Font7 was unavailable, so a substitute was drawn"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#635: the approval's reply lists no Image notices, its session jobs keeping nothing "
-           "of their pictures' notices for it",
-)
 async def test_the_approval_s_reply_names_each_picture_drawn_with_notices(tmp_path):
     """Images on and the results picture's template sound: the league admin presses ✅ Approve
     on `/results amend review`, and every round of every division is posted again, each session's
