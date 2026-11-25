@@ -10,8 +10,7 @@ placements are unconfirmed, so no role is given and no lineup posted.
 These run on `season_league`'s season in Placements (`_placing_bulk`): Charles alone at McLaren in
 Am, its second seat free; Williams in Am with two free seats; Alpine in Pro with one free seat;
 Valtteri (106) approved and never placed; Oscar (108) a member of the server holding no profile.
-The signup module is off unless a test turns it on. The command does not exist until #633 is
-built, so every test here is marked.
+The signup module is off unless a test turns it on.
 """
 from __future__ import annotations
 
