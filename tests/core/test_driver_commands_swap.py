@@ -323,7 +323,9 @@ async def test_a_swap_discord_refuses_ends_on_a_fault_and_the_toggle_stands(togg
     """Discord refuses every sync. Admin turns test mode on: test mode is on all the same, the
     queue is not stopped, and both Admin's reply and a line in the log channel say the `/driver`
     and `/signup` commands could not be changed and will be put right when the bot next restarts, never asking
-    for the toggle again. A second toggle, turning it off, then runs."""
+    for the toggle again, and it does not tell the member to reload Discord, nothing having changed.
+    A second toggle, turning it off, then runs."""
+    from leaguebot.core.services.test_mode.driver_commands import RELOAD
     from tests.support.settings_league import last_said
 
     bot, path, _guild = toggling
@@ -336,6 +338,7 @@ async def test_a_swap_discord_refuses_ends_on_a_fault_and_the_toggle_stands(togg
         assert (await cursor.fetchone())["test_mode_active"] == 1
     assert await stopped_job(path) is None
     reply = last_said(asked)
+    assert RELOAD not in reply
     tail = reply.split("/driver", 1)[1]
     assert "/signup" in tail and "restart" in tail and "toggle" not in tail
     assert any(
@@ -424,7 +427,8 @@ async def test_a_swap_discord_refuses_at_a_test_seasons_end_ends_on_a_fault_and_
     `/season cancel`, and the queue carries it out: the season has ended all the same (completed,
     deleted, or cancelled), test mode is off, the queue is not stopped, and both the reply and a
     line in the log channel name `/driver`, `/signup` and a restart, never asking for anything to
-    be run again."""
+    be run again; the reply does not tell the member to reload Discord, nothing having changed."""
+    from leaguebot.core.services.test_mode.driver_commands import RELOAD
     from tests.support.season_league import SEASON_ID, reply
 
     league, ending = await _ENDS[end](tmp_path, True)
@@ -440,6 +444,7 @@ async def test_a_swap_discord_refuses_at_a_test_seasons_end_ends_on_a_fault_and_
         "test_mode_active"
     ] == 0
     assert await stopped_job(league.db_path) is None
+    assert RELOAD not in reply(asked)
     logged = [line for posted in _log_lines(bot) for line in posted.splitlines()]
     for told in (reply(asked).splitlines(), logged):
         named = [line for line in told if "/driver" in line]
