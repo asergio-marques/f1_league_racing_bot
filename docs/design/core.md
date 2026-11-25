@@ -371,9 +371,11 @@ describe line names them in words. The reload notice is given by `reload_reply`,
 swap's step in the outcome, where the step is done with no problem: a refused swap changed nothing
 for a client to reload, and a real season's end plans no swap, so the notice follows from the plan
 and no outcome tests the season's kind. `!sync` is no change on the queue and ends its reply with
-`RELOAD` itself once its sync has gone through; `/bot init` and a factory reset swap nothing and so
-give none, and a restart, which swaps and replies to no one, gives none either. It runs as the step after the save of the toggle and of a test
-season's completion, abort and cancellation, and off the queue as start-up's command sync and
+`RELOAD` itself once its sync has gone through. `/bot init`, a factory reset and a restore swap
+nothing and a restart, which swaps, replies to no one, so none of them gives `RELOAD`: their replies
+say to reload once the bot is restarted instead (`DRIVER_RESTART`, built from `COMMANDS_NAMED`, and
+the restore's own sentence, which names the commands the same way). The swap runs as the step after
+the save of the toggle and of a test season's completion, abort and cancellation, and off the queue as start-up's command sync and
 `!sync`'s, both trees. How a refusal is met in each, the swap being a fifth exception to the lane
 stop, is `architecture.md`'s. The moments of the swap, and the restart a factory reset's and
 `/bot init`'s replies name, are the core specification's ("Test mode"). A swap that failed may leave
