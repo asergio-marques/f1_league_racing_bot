@@ -499,8 +499,6 @@ async def test_each_review_picture_is_drawn_and_posted_by_a_job_of_its_own_in_or
 
 
 
-@pytest.mark.xfail(strict=True, reason="#638: a review picture is posted ahead of the whole report, "
-                   "whatever report sections it follows")
 async def test_a_review_picture_is_posted_after_the_report_sections_it_follows(posting):
     """Alex's review of season 1 has three report sections: the season's heading, Pro's
     configuration and the season's unsettled signups. Pro's calendar and lineup each follow one
