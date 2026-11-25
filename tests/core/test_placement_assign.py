@@ -363,3 +363,154 @@ async def test_a_placed_driver_becomes_assigned(tmp_path):
             "SELECT current_state FROM driver_profiles WHERE id = ?", (PROFILE_ID,)
         )
         assert (await cursor.fetchone())["current_state"] == DriverState.ASSIGNED.value
+
+
+# ---------------------------------------------------------------------------
+# Judging a pasted list of placements, in order (`/driver assign-bulk`)
+# ---------------------------------------------------------------------------
+#
+# A check writes nothing, so judging each line against the database alone would pass two lines
+# that fill one team's last seat, or one driver twice in one division. The paste is judged in
+# order with a running tally of what its earlier lines would take, and a line refused is named
+# by its number in the box, in the words a single `/driver assign` would use.
+
+
+def _pasted(
+    line: int,
+    *,
+    profile_id: int | None,
+    user_id: str,
+    team: str = "Alpha",
+    division_id: int = DIVISION_ID,
+    division: str = "Division 1",
+) -> dict:
+    """One line of a pasted list as the bulk change carries it."""
+    return {
+        "line": line,
+        "driver_profile_id": profile_id,
+        "discord_user_id": user_id,
+        "driver_name": f"Driver {user_id}",
+        "division_id": division_id,
+        "division": division,
+        "team_name": team,
+        "team_full_name": team,
+    }
+
+
+async def _judge_paste(db_path: str, lines: list[dict], *, signup_off: bool = False) -> list[str]:
+    async with get_connection(db_path) as db:
+        return await _service(db_path).judge_assign_paste_on(
+            db, lines, season_id=SEASON_ID, signup_off=signup_off
+        )
+
+
+async def test_a_clean_paste_is_judged_with_no_faults(tmp_path):
+    """Three Unassigned drivers into a division whose Alpha has two free seats: two into Alpha,
+    one into Reserve. Nothing is refused, and nothing is written."""
+    db_path = await _make_db(tmp_path, team_seats=2)
+    await _add_driver(db_path, 102)
+    await _add_driver(db_path, 103)
+
+    faults = await _judge_paste(db_path, [
+        _pasted(1, profile_id=PROFILE_ID, user_id="4242"),
+        _pasted(2, profile_id=102, user_id="4102"),
+        _pasted(3, profile_id=103, user_id="4103", team="Reserve"),
+    ])
+
+    assert faults == []
+    assert await _seat_of(db_path) is None
+
+
+async def test_lines_past_a_teams_last_free_seat_are_refused(tmp_path):
+    """Alpha has two free seats and three drivers are pasted into it, on lines 1, 2 and 4 (a
+    blank line between). The first two fit; the third is refused as line 4, in the words a
+    single assign uses for a full team."""
+    db_path = await _make_db(tmp_path, team_seats=2)
+    await _add_driver(db_path, 102)
+    await _add_driver(db_path, 103)
+
+    faults = await _judge_paste(db_path, [
+        _pasted(1, profile_id=PROFILE_ID, user_id="4242"),
+        _pasted(2, profile_id=102, user_id="4102"),
+        _pasted(4, profile_id=103, user_id="4103"),
+    ])
+
+    assert len(faults) == 1
+    assert faults[0].startswith("Line 4:")
+    assert "**Alpha** in this division has no available seats." in faults[0]
+
+
+async def test_a_driver_pasted_twice_into_one_division_is_refused_the_second_time(tmp_path):
+    """The same driver on line 1 into Alpha and on line 2 into Reserve, both of Division 1. The
+    second line is refused in a single assign's words for a driver already in the division."""
+    db_path = await _make_db(tmp_path)
+
+    faults = await _judge_paste(db_path, [
+        _pasted(1, profile_id=PROFILE_ID, user_id="4242"),
+        _pasted(2, profile_id=PROFILE_ID, user_id="4242", team="Reserve"),
+    ])
+
+    assert len(faults) == 1
+    assert faults[0].startswith("Line 2:")
+    assert "Driver is already assigned to a team in **Division 1**." in faults[0]
+
+
+async def test_a_driver_pasted_into_two_divisions_is_not_refused(tmp_path):
+    """The same driver on line 1 into Division 1's Alpha and on line 2 into Division 2's Alpha.
+    A driver may race in more than one division, so neither line is refused."""
+    db_path = await _make_db(tmp_path)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "
+            "VALUES (12, ?, 'Division 2', 2, 556)",
+            (SEASON_ID,),
+        )
+        await db.execute(
+            "INSERT INTO team_instances (id, division_id, name, full_name, max_seats, is_reserve) "
+            "VALUES (20, 12, 'Alpha', 'Alpha', 2, 0)"
+        )
+        await db.execute(
+            "INSERT INTO team_seats (team_instance_id, seat_number, driver_profile_id) "
+            "VALUES (20, 1, NULL)"
+        )
+        await db.commit()
+
+    faults = await _judge_paste(db_path, [
+        _pasted(1, profile_id=PROFILE_ID, user_id="4242"),
+        _pasted(2, profile_id=PROFILE_ID, user_id="4242", division_id=12, division="Division 2"),
+    ])
+
+    assert faults == []
+
+
+async def test_the_reserve_team_never_runs_out_in_a_paste(tmp_path):
+    """Reserve has one free seat and three drivers are pasted into it. None is refused: the
+    reserve team makes another seat rather than refusing."""
+    db_path = await _make_db(tmp_path, reserve_seats=1)
+    await _add_driver(db_path, 102)
+    await _add_driver(db_path, 103)
+
+    faults = await _judge_paste(db_path, [
+        _pasted(1, profile_id=PROFILE_ID, user_id="4242", team="Reserve"),
+        _pasted(2, profile_id=102, user_id="4102", team="Reserve"),
+        _pasted(3, profile_id=103, user_id="4103", team="Reserve"),
+    ])
+
+    assert faults == []
+
+
+async def test_a_member_with_no_profile_pasted_twice_into_one_division_is_refused(tmp_path):
+    """Signup is off. A member holding no profile yet is pasted on line 1 into Alpha and on line 2
+    into Reserve, both of Division 1. Without a profile the tally follows the member's account,
+    so the second line is refused in a single assign's words, as it would be for a driver with
+    one."""
+    db_path = await _make_db(tmp_path)
+
+    faults = await _judge_paste(db_path, [
+        _pasted(1, profile_id=None, user_id="5555"),
+        _pasted(2, profile_id=None, user_id="5555", team="Reserve"),
+    ], signup_off=True)
+
+    assert len(faults) == 1
+    assert faults[0].startswith("Line 2:")
+    assert "Driver is already assigned to a team in **Division 1**." in faults[0]

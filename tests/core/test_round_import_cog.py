@@ -219,19 +219,42 @@ async def test_the_xml_modal_applies_a_sound_payload(tmp_path):
     ]
 
 
-# ── The rejection is capped ───────────────────────────────────────────────
+# ── The rejection names every fault ───────────────────────────────────────
 
 
-def test_a_long_list_of_faults_is_capped():
-    """A payload wrong in one systematic way produces one error per round, and Discord
-    refuses an over-long message whole rather than truncating it."""
+def test_a_long_list_of_faults_is_named_in_full():
+    """A calendar wrong in one systematic way: sixty rounds, every track unknown. The rejection
+    counts sixty problems and names all sixty lines, with no "…and N more" line."""
     errors = [f"Line {n}: unknown track `x`." for n in range(1, 61)]
 
     rendered = round_cog._format_import_errors(errors)
 
     assert "60 problem(s)" in rendered
-    assert "…and 35 more." in rendered
-    assert len(rendered) < 2000
+    for n in range(1, 61):
+        assert f"Line {n}: unknown track `x`." in rendered
+    assert "more." not in rendered
+
+
+async def test_a_rejection_too_long_for_one_message_arrives_in_parts(tmp_path):
+    """Season #1 in Placements, Pro holding no round. Admin pastes sixty lines into
+    `/round add-bulk`'s form for Pro, each reading only `x`, which is no round at all. The
+    rejection is too long for one Discord message, so it arrives in more than one, each under
+    2000 characters, and together they name every one of the sixty lines."""
+    from tests.support.settings_league import said
+
+    league = await setup_league(tmp_path, divisions=_PRO)
+    paste = "\n".join("x" for _ in range(60))
+    assert len(paste) <= BulkRoundModal.entries.max_length, "longer than the form accepts"
+
+    asked = await import_rounds(league, "bulk", paste)
+
+    parts = said(asked)
+    assert len(parts) > 1
+    assert all(len(part) < 2000 for part in parts)
+    rejection = "\n".join(parts)
+    assert "60 problem(s)" in rejection
+    for n in range(1, 61):
+        assert f"Line {n}: expected `datetime, format, track`" in rejection
 
 
 # ── The same rule in `/round add` ─────────────────────────────────────────

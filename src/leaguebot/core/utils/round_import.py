@@ -68,19 +68,14 @@ class ParsedDivisionRounds:
     rounds: list[ParsedRound]
 
 
-#: How many faults a rejection lists before it stops. A payload wrong in one systematic
-#: way — every format misspelled, every track unknown — produces one error per round, and
-#: a reply over 2000 characters is refused by Discord whole rather than truncated, which
-#: would lose the report entirely.
-_MAX_REPORTED_ERRORS = 25
-
-
 def format_import_errors(errors: list[str]) -> str:
-    """The rejection a manager reads, capped so that the reply survives sending."""
-    shown = errors[:_MAX_REPORTED_ERRORS]
-    body = "\n".join(f"  • {error}" for error in shown)
-    if len(errors) > len(shown):
-        body += f"\n  …and {len(errors) - len(shown)} more."
+    """The rejection a manager reads, naming every fault.
+
+    A payload wrong in one systematic way produces one fault per round, and a reply over 2000
+    characters is refused by Discord whole. The list is not cut to fit: whoever sends a long
+    rejection divides it into parts.
+    """
+    body = "\n".join(f"  • {error}" for error in errors)
     return (
         f"❌ Import rejected — {len(errors)} problem(s). "
         f"**No rounds were added.**\n{body}"

@@ -1,11 +1,9 @@
 """`/test-mode roster add-bulk` — the command, the box and the reply.
 
-Two things here are easy to get wrong and silent when they are. `send_modal` must be the
-interaction's *first* response, so this command does not defer — the opposite of every
-other command in the cog, and exactly the sort of thing a later reader "corrects". And a
-refusal listing one fault per row of a fifty-one row file exceeds Discord's 2000-character
-limit, which refuses the whole message rather than truncating it: the manager would get no
-reply at all.
+`send_modal` must be the interaction's *first* response, so this command does not defer — the
+opposite of every other command in the cog, and exactly the sort of thing a later reader
+"corrects". A refusal names every fault, however many rows are wrong: a reply longer than
+Discord's 2000 characters is divided by whoever sends it, never cut short (#633).
 
 What a submission creates, refuses and records, on the change queue, is in
 test_test_mode_roster_add_bulk.
@@ -120,19 +118,27 @@ def test_a_refusal_says_nothing_was_added():
     assert "No drivers were added" in text
 
 
-def test_a_systematically_wrong_file_still_fits_in_one_message():
-    """Fifty-one faults at full width exceed 2000 characters, and Discord refuses the
-    whole message rather than truncating it — the manager would see no reply at all."""
-    text = _format_roster_errors(
+@pytest.mark.parametrize("refusal", ["roster", "sign-up"])
+def test_a_systematically_wrong_file_names_every_fault(refusal):
+    """A pasted roster (`/test-mode roster add-bulk`) or sign-up list
+    (`/test-mode roster sign-up-bulk`) of fifty-one rows, every one holding five columns. The
+    refusal names all fifty-one rows, each with its fault, and has no "…and N more" line: the core
+    specification says every fault is named at once, and the reply is divided into parts as it is
+    sent."""
+    from leaguebot.core.utils.roster_import import format_sign_up_errors
+
+    format_errors = _format_roster_errors if refusal == "roster" else format_sign_up_errors
+    text = format_errors(
         [f"Line {n}: expected 2 columns (ID, driver name) but found 5." for n in range(1, 52)]
     )
 
-    assert len(text) < 2000
-    assert "and 36 more" in text
+    for n in range(1, 52):
+        assert f"Line {n}: expected 2 columns" in text
+    assert "more." not in text
 
 
 def test_the_count_reported_is_the_true_one():
-    """Capping the list must not cap the number."""
+    """The headline counts every fault."""
     text = _format_roster_errors([f"Line {n}: bad" for n in range(1, 52)])
 
     assert "51 problem(s)" in text

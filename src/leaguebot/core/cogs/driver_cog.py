@@ -24,6 +24,9 @@ from leaguebot.framework.utils.log_lines import refuse
 
 log = logging.getLogger(__name__)
 
+#: What a pasted mention of someone outside the server is refused with.
+NOT_A_MEMBER = "<@{account}> is not a member of this server."
+
 
 class DriverCog(commands.Cog):
     def __init__(self, bot: LeagueBot) -> None:
@@ -54,20 +57,32 @@ class DriverCog(commands.Cog):
         )
         if current == str(user.id):
             return user
-        guild = interaction.guild
+        member, fault = await self._member_of_current_account(
+            interaction.guild, user.id, current
+        )
+        if member is None:
+            await refuse(interaction, f"⛔ {fault}", what=describe(interaction))
+        return member
+
+    async def _member_of_current_account(
+        self, guild: discord.Guild | None, account: int, current: str
+    ) -> tuple[discord.Member | None, str | None]:
+        """The member behind *current*, the current account of the driver the *account* names, or
+        the words that say there is none: that *account* is not in the server, or that it is a past
+        account of a driver whose current account has left it."""
         member = guild.get_member(int(current)) if guild is not None else None
         if member is None and guild is not None:
             try:
                 member = await guild.fetch_member(int(current))
             except discord.HTTPException:
                 member = None
-        if member is None:
-            await refuse(
-                interaction,
-                PAST_ACCOUNT_REFUSAL.format(account=user.id, current=current),
-                what=describe(interaction),
-            )
-        return member
+        if member is not None:
+            return member, None
+        if current == str(account):
+            return None, NOT_A_MEMBER.format(account=account)
+        return None, PAST_ACCOUNT_REFUSAL.format(account=account, current=current).removeprefix(
+            "⛔ "
+        )
 
     async def _resolved(
         self, interaction: discord.Interaction, user: discord.Member
@@ -161,6 +176,38 @@ class DriverCog(commands.Cog):
         if driver is None:
             return
         await driver_commands.assign(self.bot, interaction, driver, division, team)
+
+    # ------------------------------------------------------------------
+    # /driver assign-bulk
+    # ------------------------------------------------------------------
+
+    async def _resolve_pasted(
+        self, interaction: discord.Interaction, account: int
+    ) -> ResolvedDriver | str:
+        """The driver a pasted mention names, as a command acts on them, or the words that say
+        why not: the account's driver is found by the current account they use now, which
+        must be in the server, whichever account was pasted."""
+        current = await self.bot.driver_service.current_account(account)
+        member, fault = await self._member_of_current_account(
+            interaction.guild, account, current
+        )
+        if member is None:
+            return fault or NOT_A_MEMBER.format(account=account)
+        return ResolvedDriver(str(member.id), member.display_name)
+
+    @driver.command(
+        name="assign-bulk",
+        description="Assign many drivers to teams and divisions from a pasted list.",
+    )
+    @league_manager_only
+    async def assign_bulk(self, interaction: discord.Interaction) -> None:
+        """Open the form that takes the list, a driver a line (`driver_commands.assign_bulk`).
+
+        Not deferred: a form is the interaction's first response, which a deferral forbids.
+        """
+        await interaction.response.send_modal(
+            driver_commands.AssignBulkModal(self.bot, self._resolve_pasted)
+        )
 
     # ------------------------------------------------------------------
     # /driver unassign

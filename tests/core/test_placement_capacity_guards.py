@@ -156,10 +156,17 @@ def _guarded(db_path, drawing):
     return PlacementService(db_path, capacity=_capacity(db_path, drawing))
 
 
-async def _place(service, season_id, division_id, team):
+async def _place(service, season_id, division_id, team, ahead=None):
     """Ask *service* whether the unplaced driver 9999 may be assigned to *team*: the guards
-    `/driver assign` asks at the ask and again as its change starts."""
-    await service.guard_assign(division_id, season_id, team, 9999)
+    `/driver assign` asks at the ask and again as its change starts. *ahead*, where given, is the
+    `SeatsAhead` keywords of the drivers a pasted list places before this one, which
+    `/driver assign-bulk` asks the guards to count as seated (#633)."""
+    if ahead is None:
+        await service.guard_assign(division_id, season_id, team, 9999)
+        return
+    from leaguebot.core.services.drivers.template_capacity_service import SeatsAhead
+
+    await service.guard_assign(division_id, season_id, team, 9999, ahead=SeatsAhead(**ahead))
 
 
 @pytest.mark.parametrize(
@@ -263,39 +270,71 @@ async def test_a_capacity_guard_s_own_read_fault_lets_the_placement_through(
     assert any(record.exc_info and record.exc_info[1] is fault for record in caplog.records)
 
 
+#: Drivers a pasted list places before driver 9999: one reserve and two race drivers.
+_PASTED_AHEAD = {"drivers": 3, "reserves": 1, "classified": 2}
+
+
 @pytest.mark.parametrize(
-    "team, asked",
+    "team, ahead, asked",
     [
-        (
+        pytest.param(
             RESERVE,
+            None,
             [
                 ("reserve_capacity_problem", 2),
                 ("sheet_capacity_problem", 4),
                 ("declared_capacity_problem", 4),
             ],
+            id="reserve",
         ),
-        (
+        pytest.param(
             ORDINARY,
+            None,
             [
                 ("sheet_capacity_problem", 4),
                 ("standings_capacity_problem", 3),
                 ("declared_capacity_problem", 4),
             ],
+            id="ordinary",
+        ),
+        pytest.param(
+            RESERVE,
+            _PASTED_AHEAD,
+            [
+                ("reserve_capacity_problem", 3),
+                ("sheet_capacity_problem", 7),
+                ("declared_capacity_problem", 7),
+            ],
+            id="reserve_after_a_paste",
+        ),
+        pytest.param(
+            ORDINARY,
+            _PASTED_AHEAD,
+            [
+                ("sheet_capacity_problem", 7),
+                ("standings_capacity_problem", 5),
+                ("declared_capacity_problem", 7),
+            ],
+            id="ordinary_after_a_paste",
         ),
     ],
-    ids=["reserve", "ordinary"],
 )
-async def test_a_placement_asks_each_guard_its_own_count(tmp_path, team, asked):
+async def test_a_placement_asks_each_guard_its_own_count(tmp_path, team, ahead, asked):
     """Core counts, and the drawing is asked of the count alone: the reserve block counts the
     reserves, the sheet every driver of the division, the standings the race drivers, the
     declared capacity every driver of the season's division. A reserve joins no classification,
     so a reserve placement never asks the standings; only a reserve fills the reserve block, so
-    an ordinary placement never asks it (#140)."""
+    an ordinary placement never asks it (#140).
+
+    Where a pasted list places drivers before this one (`/driver assign-bulk`, #633) — here one
+    reserve and two race drivers — each guard counts them as seated too: the reserve block one
+    more reserve, the standings two more race drivers, the sheet and the declared capacity three
+    more drivers."""
 
     db_path, season_id, division_id = await _seed(tmp_path)
     drawing = _Drawing({})
 
-    await _place(_guarded(db_path, drawing), season_id, division_id, team)
+    await _place(_guarded(db_path, drawing), season_id, division_id, team, ahead)
 
     assert drawing.asked == asked
 

@@ -44,7 +44,7 @@ early March is UTC.
 
 **Drivers.** Fake drivers, IDs 9000000000000000001 to 9000000000000000045, created, signed up
 and approved with the nationality below by `/test-mode roster sign-up-bulk` (step 24) while
-signups are open, then each seated in the team and division below by `/driver assign` (step 32)
+signups are open, then all seated in the team and division below by one `/driver assign-bulk` (step 32)
 once the season is in placements. Seats are per division, so each division's lineup is its own:
 Division 1 fills every team; Division 2 leaves `BRV` empty and `CHL` with one driver.
 
@@ -697,74 +697,79 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
 
 ### Seating the drivers
 
-32. Under test mode `/driver` is the test-mode group: its `user` option is text, a mention or an
-    ID, with the server's drivers offered by name as it is typed. A team is typed by its
-    shorthand.
+32. Under test mode `/driver` is the test-mode group, and its `assign-bulk` takes every
+    placement from one pasted list: a driver to a line, `<@id>, division, team`, the driver as a
+    mention, the division by its name and the team by its shorthand. Every line is judged as a
+    single `/driver assign` is, in the order of the list, and the 45 are placed together or not at
+    all. (A single placement stays covered by `02-roster-changes.md` step 77.)
 
-    **Do**, once for each row below, in this order, each after the last one's reply:
-
-    | ID | Driver | Do | Team's full name |
-    |---|---|---|---|
-    | 9000000000000000001 | Adam Archer | `/driver assign user:9000000000000000001 division:Division 1 team:ALP` | Alpha Racing |
-    | 9000000000000000002 | Bruno Bianchi | `/driver assign user:9000000000000000002 division:Division 1 team:ALP` | Alpha Racing |
-    | 9000000000000000003 | Carlos Cortes | `/driver assign user:9000000000000000003 division:Division 1 team:BRV` | Bravo Motorsport |
-    | 9000000000000000004 | Dirk Dekker | `/driver assign user:9000000000000000004 division:Division 1 team:BRV` | Bravo Motorsport |
-    | 9000000000000000005 | Emil Engel | `/driver assign user:9000000000000000005 division:Division 1 team:CHL` | Charlie GP |
-    | 9000000000000000006 | Felix Fournier | `/driver assign user:9000000000000000006 division:Division 1 team:CHL` | Charlie GP |
-    | 9000000000000000007 | Gabriel Gomes | `/driver assign user:9000000000000000007 division:Division 1 team:DLT` | Delta Racing |
-    | 9000000000000000008 | Hiro Hayashi | `/driver assign user:9000000000000000008 division:Division 1 team:DLT` | Delta Racing |
-    | 9000000000000000009 | Ian Irwin | `/driver assign user:9000000000000000009 division:Division 1 team:ECH` | Echo Racing |
-    | 9000000000000000010 | Jari Jokinen | `/driver assign user:9000000000000000010 division:Division 1 team:ECH` | Echo Racing |
-    | 9000000000000000011 | Kevin Keller | `/driver assign user:9000000000000000011 division:Division 1 team:FOX` | Foxtrot Motorsport |
-    | 9000000000000000012 | Liam Lavoie | `/driver assign user:9000000000000000012 division:Division 1 team:FOX` | Foxtrot Motorsport |
-    | 9000000000000000013 | Mateo Morales | `/driver assign user:9000000000000000013 division:Division 1 team:GLF` | Golf GP |
-    | 9000000000000000014 | Niels Nygaard | `/driver assign user:9000000000000000014 division:Division 1 team:GLF` | Golf GP |
-    | 9000000000000000015 | Olivier Orsini | `/driver assign user:9000000000000000015 division:Division 1 team:HTL` | Hotel Racing |
-    | 9000000000000000016 | Pim Prasert | `/driver assign user:9000000000000000016 division:Division 1 team:HTL` | Hotel Racing |
-    | 9000000000000000017 | Quinn Quayle | `/driver assign user:9000000000000000017 division:Division 1 team:IND` | India Motorsport |
-    | 9000000000000000018 | Rafael Rossi | `/driver assign user:9000000000000000018 division:Division 1 team:IND` | India Motorsport |
-    | 9000000000000000019 | Samuel Shaw | `/driver assign user:9000000000000000019 division:Division 1 team:JLT` | Juliett GP |
-    | 9000000000000000020 | Tomas Torres | `/driver assign user:9000000000000000020 division:Division 1 team:JLT` | Juliett GP |
-    | 9000000000000000021 | Ugo Ulivi | `/driver assign user:9000000000000000021 division:Division 1 team:KLO` | Kilo Racing |
-    | 9000000000000000022 | Victor Vance | `/driver assign user:9000000000000000022 division:Division 1 team:KLO` | Kilo Racing |
-    | 9000000000000000023 | Willem Wouters | `/driver assign user:9000000000000000023 division:Division 1 team:Reserve` | Reserve |
-    | 9000000000000000024 | Xavier Xu | `/driver assign user:9000000000000000024 division:Division 1 team:Reserve` | Reserve |
-    | 9000000000000000025 | Yuki Yamada | `/driver assign user:9000000000000000025 division:Division 2 team:ALP` | Alpha Racing |
-    | 9000000000000000026 | Zane Zeller | `/driver assign user:9000000000000000026 division:Division 2 team:ALP` | Alpha Racing |
-    | 9000000000000000027 | Aaron Abbott | `/driver assign user:9000000000000000027 division:Division 2 team:CHL` | Charlie GP |
-    | 9000000000000000028 | Bastien Blanc | `/driver assign user:9000000000000000028 division:Division 2 team:DLT` | Delta Racing |
-    | 9000000000000000029 | Conor Cole | `/driver assign user:9000000000000000029 division:Division 2 team:DLT` | Delta Racing |
-    | 9000000000000000030 | Diego Duarte | `/driver assign user:9000000000000000030 division:Division 2 team:ECH` | Echo Racing |
-    | 9000000000000000031 | Elias Eriksen | `/driver assign user:9000000000000000031 division:Division 2 team:ECH` | Echo Racing |
-    | 9000000000000000032 | Finn Fischer | `/driver assign user:9000000000000000032 division:Division 2 team:FOX` | Foxtrot Motorsport |
-    | 9000000000000000033 | Gianni Galli | `/driver assign user:9000000000000000033 division:Division 2 team:FOX` | Foxtrot Motorsport |
-    | 9000000000000000034 | Hugo Hartley | `/driver assign user:9000000000000000034 division:Division 2 team:GLF` | Golf GP |
-    | 9000000000000000035 | Isaac Ingram | `/driver assign user:9000000000000000035 division:Division 2 team:GLF` | Golf GP |
-    | 9000000000000000036 | Jonas Janssen | `/driver assign user:9000000000000000036 division:Division 2 team:HTL` | Hotel Racing |
-    | 9000000000000000037 | Kai Kimura | `/driver assign user:9000000000000000037 division:Division 2 team:HTL` | Hotel Racing |
-    | 9000000000000000038 | Lucas Lambert | `/driver assign user:9000000000000000038 division:Division 2 team:IND` | India Motorsport |
-    | 9000000000000000039 | Marco Moretti | `/driver assign user:9000000000000000039 division:Division 2 team:IND` | India Motorsport |
-    | 9000000000000000040 | Noah Novak | `/driver assign user:9000000000000000040 division:Division 2 team:JLT` | Juliett GP |
-    | 9000000000000000041 | Owen Oakley | `/driver assign user:9000000000000000041 division:Division 2 team:JLT` | Juliett GP |
-    | 9000000000000000042 | Pablo Pena | `/driver assign user:9000000000000000042 division:Division 2 team:KLO` | Kilo Racing |
-    | 9000000000000000043 | Quentin Quint | `/driver assign user:9000000000000000043 division:Division 2 team:KLO` | Kilo Racing |
-    | 9000000000000000044 | Rory Reid | `/driver assign user:9000000000000000044 division:Division 2 team:Reserve` | Reserve |
-    | 9000000000000000045 | Stefan Sommer | `/driver assign user:9000000000000000045 division:Division 2 team:Reserve` | Reserve |
-
+    **Do:** `/driver assign-bulk`. In the form **Assign drivers in bulk**, paste the following
+    into **<@driver>, division, team — one per line**, and submit. A team's two seats are taken
+    in the order its drivers are listed, so Aaron Abbott holds `CHL`'s first seat in Division 2.
     No refusal is expected for Division 2's empty `BRV` or half-filled `CHL`: nothing requires a
-    team's seats filled. A team's two seats are taken in the order its drivers are assigned, so
-    Aaron Abbott holds `CHL`'s first seat in Division 2.
+    team's seats filled.
 
-    **Expect**, for each, `<driver>`, `<ID>`, `<full name>` and `<division>` being the row's:
-    - **Ack:** `Assigning **<driver>** to **<full name>** in **<division>**`
-    - **Then:** `✅ Assigned **<driver>** to **<full name>** in **<division>**.`
+    ```
+    <@9000000000000000001>, Division 1, ALP
+    <@9000000000000000002>, Division 1, ALP
+    <@9000000000000000003>, Division 1, BRV
+    <@9000000000000000004>, Division 1, BRV
+    <@9000000000000000005>, Division 1, CHL
+    <@9000000000000000006>, Division 1, CHL
+    <@9000000000000000007>, Division 1, DLT
+    <@9000000000000000008>, Division 1, DLT
+    <@9000000000000000009>, Division 1, ECH
+    <@9000000000000000010>, Division 1, ECH
+    <@9000000000000000011>, Division 1, FOX
+    <@9000000000000000012>, Division 1, FOX
+    <@9000000000000000013>, Division 1, GLF
+    <@9000000000000000014>, Division 1, GLF
+    <@9000000000000000015>, Division 1, HTL
+    <@9000000000000000016>, Division 1, HTL
+    <@9000000000000000017>, Division 1, IND
+    <@9000000000000000018>, Division 1, IND
+    <@9000000000000000019>, Division 1, JLT
+    <@9000000000000000020>, Division 1, JLT
+    <@9000000000000000021>, Division 1, KLO
+    <@9000000000000000022>, Division 1, KLO
+    <@9000000000000000023>, Division 1, Reserve
+    <@9000000000000000024>, Division 1, Reserve
+    <@9000000000000000025>, Division 2, ALP
+    <@9000000000000000026>, Division 2, ALP
+    <@9000000000000000027>, Division 2, CHL
+    <@9000000000000000028>, Division 2, DLT
+    <@9000000000000000029>, Division 2, DLT
+    <@9000000000000000030>, Division 2, ECH
+    <@9000000000000000031>, Division 2, ECH
+    <@9000000000000000032>, Division 2, FOX
+    <@9000000000000000033>, Division 2, FOX
+    <@9000000000000000034>, Division 2, GLF
+    <@9000000000000000035>, Division 2, GLF
+    <@9000000000000000036>, Division 2, HTL
+    <@9000000000000000037>, Division 2, HTL
+    <@9000000000000000038>, Division 2, IND
+    <@9000000000000000039>, Division 2, IND
+    <@9000000000000000040>, Division 2, JLT
+    <@9000000000000000041>, Division 2, JLT
+    <@9000000000000000042>, Division 2, KLO
+    <@9000000000000000043>, Division 2, KLO
+    <@9000000000000000044>, Division 2, Reserve
+    <@9000000000000000045>, Division 2, Reserve
+    ```
+
+    **Expect:**
+    - **Ack:** `Assigning **45** driver(s) from a pasted list`
+    - **Then:** `✅ Assigned **45** driver(s).`
     - **Log:**
       ```
-      <you> | /driver assign | Success
-        user: <driver> (<@<ID>>)
-        team: <full name>
-        division: <division>
+      <you> | /driver assign-bulk | Success
+        placed: 45
       ```
+      then one line for each driver, in the order of the list, of the form
+      `<driver> (<@ID>) → <team's full name> in <division>`: the first
+      `Adam Archer (<@9000000000000000001>) → Alpha Racing in Division 1`, the last
+      `Stefan Sommer (<@9000000000000000045>) → Reserve in Division 2`. A long record may arrive as
+      several messages.
     - No role is granted and no lineup is posted: the placement is unconfirmed until the season
       is approved.
 

@@ -294,13 +294,13 @@ are the framework's models (`framework.md`, "How the code is laid out").
 **Core's helpers** (`core/utils/`) are the tier guards (`channel_guard.py`), the season-stage gate
 (`season_gate.py`), the team choices a command's autocomplete offers (`team_autocomplete.py`),
 core's own listings (`formatting.py`), readers of what a league types (`input_validator.py`,
-`round_import.py`, `roster_import.py`), the asset slug (`asset_slug.py`) and the nationalities a
-driver may give (`nationality_data.py`). The bot's type, the one-league claim and the base classes,
-the hook types, the failure paths, the standard log lines, `bounded_autocomplete` and the posting
-guard are the framework's helpers (`framework/utils/`, `framework.md`). The helpers that know
-nothing of the bot, reading a typed time, the time zones, the version and the fitting of text to
-Discord's limits, are the `utils` layer's (`architecture.md`, "How the code is laid out"), and the
-rendering of a date for a graphic is the image module's.
+`round_import.py`, `roster_import.py`, `placement_paste.py`), the asset slug (`asset_slug.py`) and
+the nationalities a driver may give (`nationality_data.py`). The bot's type, the one-league claim
+and the base classes, the hook types, the failure paths, the standard log lines,
+`bounded_autocomplete` and the posting guard are the framework's helpers (`framework/utils/`,
+`framework.md`). The helpers that know nothing of the bot, reading a typed time, the time zones, the
+version and the fitting of text to Discord's limits, are the `utils` layer's (`architecture.md`,
+"How the code is laid out"), and the rendering of a date for a graphic is the image module's.
 
 **The database code** is the framework's (`framework.md`, "The database").
 
@@ -330,7 +330,7 @@ declares every attribute the builder attaches (`framework.md`, "How the code is 
 | `/season` | `season_cog` | `setup`, `placements-review`, `config-review`, `status`, `cancel`, `abort`, `complete` |
 | `/division` | `division_cog` | `add`, `duplicate`, `delete`, `rename`, `amend`, `cancel`, `lineup-channel`, `calendar-channel`, `calendar-sync` |
 | `/round` | `round_cog` | `add`, `add-bulk`, `add-xml`, `amend`, `delete`, `cancel` |
-| `/driver` | `driver_cog` (the member's), `driver_test_cog` (test mode's) | `reassign`, `assign`, `unassign`, `move`, `release`, `reject`, `sack`, in each |
+| `/driver` | `driver_cog` (the member's), `driver_test_cog` (test mode's) | `reassign`, `assign`, `assign-bulk`, `unassign`, `move`, `release`, `reject`, `sack`, in each |
 | `/team` | `team_cog` | `add`, `modify`, `remove`, `list`, `lineup`, `reserve-role` |
 | `/module` | `module_cog` | `enable`, `disable` |
 | `/test-mode` | `test_mode_cog` | `toggle`, `nationality`, `advance`, `review`, `set-former-driver`; `backup` (`save`, `lock`, `status`, `restore`); `roster` (`add`, `add-bulk`, `sign-up-bulk`, `remove`, `list`, `clear`) |
@@ -441,7 +441,7 @@ Every core change type runs on the league lane; none is a conversation's. Each i
 | `season.approve` | ✅ Approve | sessions, points snapshot, placements committed, the season Ongoing | arming, roles, lineups, calendars, the modules' opening posts |
 | `season.placements.confirm` | ✅ Confirm placements, mid-season | placements, the season back to Ongoing | roles, lineups |
 | `season.approve.tell`, `channel.tell` | an approval, or a mid-season confirmation, refused or discarded | none | one line in the review's channel |
-| `core.driver_*` (seven) | `/driver …` | the seats or the state, and the audit entry | role moves, lineups |
+| `core.driver_*` (eight) | `/driver …` | the seats or the state, and the audit entry; `core.driver_assign_bulk` seats every driver of a pasted list, an entry for each | role moves, lineups (`core.driver_assign_bulk`: none) |
 | `core.team_*` (four) | `/team add`, `modify`, `remove`, `reserve-role` | the list and the role mapping, audited | role moves |
 | `core.test_mode_toggle` | `/test-mode toggle` | the flag, the modules' part, the audit entries (its own and those the modules' part hands back); turned off, every fake driver deleted | the swap of the `/driver` and `/signup` commands, the jobs the modules hand back for what test mode posted, the backup deleted |
 | `core.test_mode_former_driver` | `/test-mode set-former-driver` | the flag and the audit entry | — |
@@ -914,7 +914,7 @@ roles", "Test mode"); this is the mechanism. The widening above is the one move 
 profile of a member holding none is made in the save that places them, by `profile_for_placement_on`,
 the one place a profile is made for a placement: it resolves the account through every account a
 driver has held and inserts only where none names a driver, so a past account never gains a profile
-beside its driver's. Assign, unassign, reject and reassign read signup's switch as
+beside its driver's. Assign, assign-bulk, unassign, reject and reassign read signup's switch as
 `architecture.md`'s "How modules and core fit together" has it, on a connection of the check's or the
 save's, and the command's own read at the ask is judged again by the check. The switch is fixed for
 the season once its configuration is confirmed, so a read in the check and another in the save
@@ -941,6 +941,43 @@ connection (`DriverService.reassign_judged_on`), then writes; where the new acco
 driver's current one, the two profiles merge (`DriverService._merge`), the modules re-pointing their
 rows through `profiles_merged` first. Role moves, the modules' jobs (`driver_account_changed`) and
 the portrait's discard follow the save as jobs of their own.
+
+**A pasted list of placements is one change, judged in order.** `/driver assign-bulk` opens a form
+(`AssignBulkModal`) and asks `core.driver_assign_bulk` once for the whole list, which seats every
+driver or none (the core specification's "Placement into a division and team"). The list is judged
+in three passes, each naming every fault of its kind: the text at the form (`parse_placement_paste`,
+a line that is not `<@id>, division, team`); the names by the command (the driver, the division, the
+team, the profile); and the seats, the drivers' states, test mode and the capacity by the change.
+Between the first and the second, before any line is looked up, the command refuses the whole list
+once where the stage places no drivers or the season is archived; the change judges the stage, and
+the profile, again. Each group hands `AssignBulkModal` a `Resolver` for the mention on a line: the
+member group's checks that the account is in the server and swaps a past account for the current
+one, as a single `/driver assign` does; the test-mode group's goes through `resolve_driver`. The core
+specification's "Placement into a division and team" and "Fake drivers and rosters" give the rule.
+
+A line is judged by `judge_assign_on`, which reads the database, and the database does not yet hold
+what the lines above it take. `PlacementService.judge_assign_paste_on` therefore walks the list with
+a running tally, keyed on each line's current account: a driver placed earlier in the paste into the
+same division is refused as one already in it, and a race team's free seats (`_free_seats_on`) count
+down, the lines past its last free seat refused in `_find_free_seat`'s words; the Reserve team never
+runs out. The capacity guards count the same way: `SeatsAhead` (drivers, reserves, classified) is
+added to the count inside each guard of `TemplateCapacityService`, so `_ask_drawing` stays the one
+catch around the image module's reads. `PlacementService.guard_assign_paste` asks capacity, per
+division, only of the last line of each kind with every line before it ahead; only where that
+overflows does it walk the lines one by one through `TemplateCapacityService.guard_image_capacity`,
+each with its own `SeatsAhead`, so the same lines are refused as a walk of every line would refuse,
+and the templates are read far less. The test-mode guard (`guard_assign_paste_test_mode`) runs
+before the seats are judged, so that a refused real driver takes no seat from the lines after it;
+the capacity guard runs after, on the lines judged sound. Neither can run in a save
+(`architecture.md`, "While a save is open, the bot waits on nothing but that save's own
+connection"), so both run in the check alone: the capacity guard reads templates off the loop, and
+the test-mode guard opens a connection of its own. The save judges every line again on its own
+connection and then writes (`assign_on`, `profile_for_placement_on`), one `DRIVER_ASSIGN` audit
+entry per driver, as an audit entry carries one division. *Rejected:* judging the list by writing it
+inside a SAVEPOINT and rolling back on a fault: a check is a read (`CheckContext`), and a save waits
+on nothing but its own connection (`architecture.md`, "While a save is open, the bot waits on nothing
+but that save's own connection"), so a trial write inside the save could not ask the templates for
+the capacity refusals.
 
 **A driver's history outlives the profile.** `driver_history_entries` names the driver by account
 and lets go of the profile on delete. `delete_driver_profiles` (`season_lifecycle_service`) is the
@@ -976,11 +1013,11 @@ What the reply of a discarded save needs is read into the payload at the ask (`f
 in a save stops the lane. What each kind judges and writes is its docstring's. A roster the file
 shows wrong on its own is refused by the form before the ask. A roster command is judged in no stage
 of the season, only on test mode being on and a season standing: a fake driver is created unsigned,
-and the signup and `/driver assign` after it, or `/driver assign` alone with the signup module
-off, carry every rule of the stage (`sign-up-bulk`, which makes the signup, being the exception,
-below). Removal asks whether the driver has raced through core's reader of the divisions a driver
-raced in (`divisions_raced_read`) and the former-driver flag, and whether it holds a committed
-seat, never the results tables, so core reads no table another module owns.
+and the signup and `/driver assign` or `/driver assign-bulk` after it, or those alone with the
+signup module off, carry every rule of the stage (`sign-up-bulk`, which makes the signup, being the
+exception, below). Removal asks whether the driver has raced through core's reader of the divisions
+a driver raced in (`divisions_raced_read`) and the former-driver flag, and whether it holds a
+committed seat, never the results tables, so core reads no table another module owns.
 
 **`/test-mode roster sign-up-bulk` creates in core and signs up in signup.** The one roster command
 judged on the season's state: it is refused unless signups are open (core specification, "Fake
@@ -1000,11 +1037,11 @@ queue's clock is passed in.
 
 **Fake drivers are seeded, not moved through the state machine.** `test_roster_service` inserts a
 fake driver at Not Signed Up with no seat, flagged as a test driver, with a synthetic id above any
-real Discord id; the signup, or with the signup module off `/driver assign` alone, then moves it
-through the state machine, and its docstring says why the insert bypasses `write_transition`. They
-are removed through `delete_driver_profiles`, keeping their history. A fake driver always has its
-row, so the test-mode guard of `PlacementService` reads a missing profile as a real member and
-refuses it (core specification, "Test mode").
+real Discord id; the signup, or with the signup module off `/driver assign` or `/driver assign-bulk`
+alone, then moves it through the state machine, and its docstring says why the insert bypasses
+`write_transition`. They are removed through `delete_driver_profiles`, keeping their history. A fake
+driver always has its row, so the test-mode guard of `PlacementService` reads a missing profile as a
+real member and refuses it (core specification, "Test mode").
 
 **Advancing reads one moment and asks the modules.** `advance_next_step` reads the next step and
 the steps passed over at one `now`, for the reason its docstring gives. Each module hands back its

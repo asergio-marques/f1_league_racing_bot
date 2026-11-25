@@ -24,7 +24,7 @@ from leaguebot.framework.models.refusal import Refused
 from leaguebot.framework.services.queue.audit_service import record_change_on
 from leaguebot.core.services.drivers.driver_service import write_transition
 from leaguebot.core.services.drivers.team_role_service import TeamRoleService
-from leaguebot.core.services.drivers.template_capacity_service import TemplateCapacityService
+from leaguebot.core.services.drivers.template_capacity_service import SeatsAhead, TemplateCapacityService
 
 
 @dataclass
@@ -223,6 +223,22 @@ class PlacementService:
         if not is_reserve:
             raise Refused(f"**{team_name}** in this division has no available seats.")
         return None, is_reserve
+
+    @staticmethod
+    async def _free_seats_on(db, division_id: int, team_name: str) -> int | None:
+        """How many seats of the race team *team_name* in *division_id* are free, read only; None
+        for the reserve team, which makes another seat rather than running out, and for a team the
+        division does not hold."""
+        cursor = await db.execute(
+            "SELECT ti.is_reserve, COUNT(CASE WHEN ts.driver_profile_id IS NULL THEN 1 END) AS free "
+            "FROM team_instances ti LEFT JOIN team_seats ts ON ts.team_instance_id = ti.id "
+            "WHERE ti.division_id = ? AND ti.name = ? GROUP BY ti.id",
+            (division_id, team_name),
+        )
+        row = await cursor.fetchone()
+        if row is None or row["is_reserve"]:
+            return None
+        return int(row["free"])
 
     async def _free_seat(self, db, division_id: int, team_name: str) -> tuple[int, bool]:
         """The first free seat of *team_name* in *division_id*, and whether it is Reserve,
@@ -490,7 +506,12 @@ class PlacementService:
     # ------------------------------------------------------------------
 
     async def guard_assign(
-        self, division_id: int, season_id: int, team_name: str, driver_profile_id: int | None
+        self,
+        division_id: int,
+        season_id: int,
+        team_name: str,
+        driver_profile_id: int | None,
+        ahead: SeatsAhead = SeatsAhead(),
     ) -> None:
         """Refuse an assignment that would outgrow a template or seat a real driver in test mode.
 
@@ -498,10 +519,102 @@ class PlacementService:
         (`TemplateCapacityService.guard_image_capacity`), then the server's test-mode flag (`_guard_test_mode`). Public
         so that the assignment's check, a job of its own, can ask them at the ask and again as the
         change starts, since they read templates off the loop and cannot run inside a save.
+        *ahead* is what a pasted list places before this driver, counted as seated.
         Raises Refused.
         """
-        await self._capacity.guard_image_capacity(division_id, season_id, team_name)
+        await self._capacity.guard_image_capacity(division_id, season_id, team_name, ahead)
         await self._guard_test_mode(driver_profile_id)
+
+    async def guard_assign_paste_test_mode(self, lines: list[dict]) -> list[str]:
+        """Make `guard_assign`'s test-mode guard of every line of a pasted list of placements: the
+        lines that would seat a real driver in test mode, each "Line N: " and then the words a
+        single assignment refuses in. Asked before the lines are judged against the seats, as a
+        single assignment asks it before it judges, so that a refused line is named for this and
+        takes no seat from those after it.
+
+        Each line is a dict carrying ``line`` and ``driver_profile_id`` (None where the member has
+        no profile).
+        """
+        faults: list[str] = []
+        for line in lines:
+            try:
+                await self._guard_test_mode(line["driver_profile_id"])
+            except Refused as refusal:
+                faults.append(f"Line {line['line']}: {refusal}")
+        return faults
+
+    async def guard_assign_paste(self, season_id: int, lines: list[dict]) -> list[str]:
+        """Make `guard_assign`'s capacity guards of a pasted list of placements, in order, writing
+        nothing: the faults of every line, each "Line N: " and then the words a single assignment
+        refuses in. Empty where the whole list may be placed.
+
+        A line is refused where, with the lines placed before it in its division counted as seated
+        (`SeatsAhead`), it would outgrow an image template. A refused line takes nothing from the
+        count, so one fault does not cascade onto the lines after it. The templates are read off
+        the loop, so they are asked once per division, of the last line of each kind (the last
+        line, the last reserve and the last race driver, each with every line before it ahead):
+        the counts only grow down the list, so where those pass every line does. Only where one
+        is refused is each line asked in turn, to name the lines past what a template draws.
+
+        Each line is a dict carrying ``line``, ``division_id`` and ``team_name``; the caller passes
+        only lines already judged sound by `guard_assign_paste_test_mode` and
+        `judge_assign_paste_on`.
+        """
+        faults: dict[int, str] = {}
+        by_division: dict[int, list[dict]] = {}
+        for line in lines:
+            by_division.setdefault(line["division_id"], []).append(line)
+        reserve: dict[tuple[int, str], bool] = {}
+        async with get_connection(self._db_path) as db:
+            for division_id, placed in by_division.items():
+                for line in placed:
+                    key = (division_id, line["team_name"])
+                    if key not in reserve:
+                        cursor = await db.execute(
+                            "SELECT is_reserve FROM team_instances "
+                            "WHERE division_id = ? AND name = ?", key,
+                        )
+                        row = await cursor.fetchone()
+                        reserve[key] = bool(row and row["is_reserve"])
+        for division_id, placed in by_division.items():
+            ahead_of: list[tuple[dict, SeatsAhead]] = []
+            reserves = classified = 0
+            for line in placed:
+                ahead_of.append((line, SeatsAhead(len(ahead_of), reserves, classified)))
+                if reserve[(division_id, line["team_name"])]:
+                    reserves += 1
+                else:
+                    classified += 1
+            last = {
+                kind: next(
+                    (each for each in reversed(ahead_of)
+                     if kind is None or reserve[(division_id, each[0]["team_name"])] is kind),
+                    None,
+                )
+                for kind in (None, True, False)
+            }
+            try:
+                for each in {id(found): found for found in last.values() if found}.values():
+                    await self._capacity.guard_image_capacity(
+                        division_id, season_id, each[0]["team_name"], each[1]
+                    )
+            except Refused:
+                drivers = reserves = classified = 0
+                for line, _ in ahead_of:
+                    try:
+                        await self._capacity.guard_image_capacity(
+                            division_id, season_id, line["team_name"],
+                            SeatsAhead(drivers, reserves, classified),
+                        )
+                    except Refused as refusal:
+                        faults[line["line"]] = f"Line {line['line']}: {refusal}"
+                        continue
+                    drivers += 1
+                    if reserve[(division_id, line["team_name"])]:
+                        reserves += 1
+                    else:
+                        classified += 1
+        return [faults[number] for number in sorted(faults)]
 
     async def judge_assign_on(
         self,
@@ -573,6 +686,54 @@ class PlacementService:
 
         await self._find_free_seat(db, division_id, team_name)
         return {"current_state": current_state}
+
+    async def judge_assign_paste_on(
+        self, db, lines: list[dict], *, season_id: int, signup_off: bool = False
+    ) -> list[str]:
+        """Judge a pasted list of placements on *db*, in order, writing nothing: the faults of
+        every line, each "Line N: " and then the words a single assignment refuses in. Empty where
+        the whole paste may be placed.
+
+        A line is judged as `judge_assign_on` judges one, which reads the database alone, and then
+        against a running tally of what the lines accepted before it would take, since nothing is
+        written until the list is saved: a driver placed earlier into the same division is refused
+        as `judge_assign_on` refuses one already in it, and a race team's free seats are counted
+        down, the lines past the last refused as `_find_free_seat` refuses a full team. The reserve
+        team never runs out. A refused line takes nothing from the tally, so one fault does not
+        cascade onto the lines after it. The tally follows each line's account
+        (``discord_user_id``), which a member holding no profile has as well as one with.
+
+        Each line is a dict carrying ``line``, ``driver_profile_id`` (None where the member has no
+        profile), ``discord_user_id``, ``division_id`` and ``team_name``.
+        """
+        faults: list[str] = []
+        placed: set[tuple[str, int]] = set()
+        seats_taken: dict[tuple[int, str], int] = {}
+        for line in lines:
+            division_id, team_name = line["division_id"], line["team_name"]
+            try:
+                await self.judge_assign_on(
+                    db, driver_profile_id=line["driver_profile_id"], division_id=division_id,
+                    team_name=team_name, season_id=season_id, uncommitted_only=True,
+                    signup_off=signup_off,
+                )
+                who = (str(line["discord_user_id"]), division_id)
+                if who in placed:
+                    cursor = await db.execute(
+                        "SELECT name FROM divisions WHERE id = ?", (division_id,)
+                    )
+                    row = await cursor.fetchone()
+                    name = row["name"] if row else str(division_id)
+                    raise Refused(f"Driver is already assigned to a team in **{name}**.")
+                free = await self._free_seats_on(db, division_id, team_name)
+                if free is not None and seats_taken.get((division_id, team_name), 0) >= free:
+                    raise Refused(f"**{team_name}** in this division has no available seats.")
+            except Refused as refusal:
+                faults.append(f"Line {line['line']}: {refusal}")
+                continue
+            placed.add(who)
+            seats_taken[(division_id, team_name)] = seats_taken.get((division_id, team_name), 0) + 1
+        return faults
 
     async def assign_on(
         self,

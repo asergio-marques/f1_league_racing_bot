@@ -135,6 +135,8 @@ A fake driver is created at **Not Signed Up**, from a name alone: no seat, no si
 
 **Placing and changing a fake driver's seat.** `/driver` seats a fake driver once its signup is approved (or, with the signup module off, straight from Not Signed Up), and changes it afterwards, as it does a real one: name the driver by ID (the one `roster list` prints) or pick it by its test name from the list the field offers.
 
+**Seating a whole roster at once.** `/driver assign-bulk` opens a box that takes one fake driver to a line, `<@driver>, division, team`, the mention as `roster list` prints it, and seats every one in the order of the list, or none. Each line is held to the checks `/driver assign` makes, the template capacities included, and to the lines above it, so seats a team runs out of are refused at the line that overruns them. Where any line is refused the reply names every one by its number, and nothing is placed. A line naming no fake driver (a real member's mention included, while test mode is on) is refused as a numbered line, and an ID in place of a mention is refused the same way.
+
 While placements are open, `/driver assign` gives a seated fake driver a seat in a second division, which a real driver may hold as well. Once the season is ongoing, `/driver move` changes a confirmed seat:
 
 ```
@@ -142,7 +144,7 @@ While placements are open, `/driver assign` gives a seated fake driver a seat in
 /driver move user:9000000000000000001 from_division:Pro team:FER
 ```
 
-`division` and `from_division` take the tier number or the name, and `team` the team's shorthand. Leave out `to_division` and the driver stays in the division; name it to move them across. `/driver unassign`, `release`, `reject` and `sack` work the same way, mid-season included, and no Discord role is given or taken. `/driver assign` still refuses a real driver, and `/driver reassign` refuses a fake one on either side. Text that names no driver is refused, naming what was typed. A `/driver` command of this form given while test mode is off is refused, saying a restart puts `/driver` right.
+`division` and `from_division` take the tier number or the name, and `team` the team's shorthand. Leave out `to_division` and the driver stays in the division; name it to move them across. `/driver unassign`, `release`, `reject` and `sack` work the same way, mid-season included, and no Discord role is given or taken. `/driver assign` and `/driver assign-bulk` still refuse a real driver, and `/driver reassign` refuses a fake one on either side. Text that names no driver is refused, naming what was typed. A `/driver` command of this form given while test mode is off is refused, saying a restart puts `/driver` right.
 
 **Signing a fake driver up.** `/signup start user:<mention or ID>` opens its signup, as the Sign Up button does for a member: a channel named from its test name plus `-signup`, a welcome naming it, and the driver at Pending Signup Completion. Any league admin then answers its wizard in that channel, by the buttons and by typing, each answer saved as the fake driver's own; a real driver's wizard still answers to nobody but its driver. The review, approval and rejection run as any signup's, and approval grants no role. It is refused for a real driver, while signups are closed, and for a fake driver already signing up or approved.
 
@@ -301,7 +303,7 @@ Building a season to test one thing is slow, and testing the next thing usually 
 2. `/test-mode roster add` or `add-bulk` for the drivers. With the signup module off there is no signup, so skip the rest of this step and step 3: step 5's `/driver assign` seats a fake driver straight from Not Signed Up. With it on, `/signup open` (a fake driver is placed only after a signup there), `/signup start` for each, answer each wizard in its channel as a league admin, nationality included if you mean to look at the graphics, and approve each. To build a grid quickly, `/signup open` first and then `/test-mode roster sign-up-bulk` in place of the roster command and the wizards.
 3. `/signup close`, which takes the season to placements.
 4. Build the divisions and calendar as normal. Filling a calendar by hand is tedious, and `tools/data-generator/calendar-data/` writes one for you — random circuits, a weekday and an evening slot per division, rounds a week apart — as the XML `/round add-xml` takes. See [the generator's README](../../tools/data-generator/README.md). **Keep every round still to come, and beyond the configured windows**: a round whose moment has passed is refused at confirmation whatever the modules, and a first round inside the check-in notice or a weather phase deadline is refused as well, test mode included. The generator's own dates, in the year after the run, clear them all.
-5. `/driver assign` seats each, **before** confirming placements. `/test-mode roster list` to collect the mention strings.
+5. `/driver assign` seats each, or `/driver assign-bulk` all of them from one pasted list, **before** confirming placements. `/test-mode roster list` to collect the mention strings.
 6. `/season placements-review`, and approve it.
 7. `/test-mode advance` repeatedly, checking each posted message as it appears.
 8. For attendance rounds, `/attendance test rsvp` once the check-in has been advanced into existence.

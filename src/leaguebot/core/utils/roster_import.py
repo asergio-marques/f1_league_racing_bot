@@ -164,11 +164,11 @@ def _parse(text: str, columns: int) -> tuple[list[ParsedDriver], list[str]]:
 
 
 def format_roster_errors(errors: list[str]) -> str:
-    """One shape for every refusal, capped so a systematically wrong file still replies.
+    """One shape for every refusal, naming every fault.
 
-    A file whose every row is wrong produces one fault per row, and fifty-one of them
-    exceed Discord's 2000-character limit — which refuses the whole message rather than
-    truncating it, leaving the manager with no reply at all.
+    A file whose every row is wrong produces one fault per row, and fifty-one of them exceed
+    Discord's 2000-character limit, which refuses the whole message. The list is not cut to fit:
+    whoever sends the refusal divides a long one into parts.
     """
     return _format(
         errors,
@@ -177,7 +177,7 @@ def format_roster_errors(errors: list[str]) -> str:
 
 
 def format_sign_up_errors(errors: list[str]) -> str:
-    """`format_roster_errors` for a sign-up list: the same shape and cap, its headline saying
+    """`format_roster_errors` for a sign-up list: the same shape, its headline saying
     nobody was signed up."""
     return _format(
         errors,
@@ -186,9 +186,6 @@ def format_sign_up_errors(errors: list[str]) -> str:
 
 
 def _format(errors: list[str], headline: str) -> str:
-    shown = errors[:15]
     lines = [headline]
-    lines += [f"• {problem}" for problem in shown]
-    if len(errors) > len(shown):
-        lines.append(f"…and {len(errors) - len(shown)} more.")
+    lines += [f"• {problem}" for problem in errors]
     return "\n".join(lines)

@@ -235,25 +235,176 @@ async def test_text_naming_no_driver_is_refused_naming_the_text(tmp_path, text):
     assert await change_rows(league.db_path) == []
 
 
-async def test_a_test_mode_command_given_while_test_mode_is_off_is_refused(tmp_path):
+async def _open_bulk_form(league):
+    """Admin runs the test-mode `/driver assign-bulk`: the command's interaction and the form it
+    opened, or None where it opened none."""
+    from leaguebot.core.cogs.driver_test_cog import DriverTestCog
+    from tests.support.undecorate import undecorate
+
+    opened = _asked_by_admin(league, "driver assign-bulk")
+    forms = []
+
+    async def _send_modal(modal, *_args, **_kwargs):
+        forms.append(modal)
+
+    opened.response.send_modal = AsyncMock(side_effect=_send_modal)
+    await undecorate(DriverTestCog.assign_bulk)(DriverTestCog(league.bot), opened)
+    return opened, (forms[0] if forms else None)
+
+
+async def _paste_bulk(league, text: str):
+    """Admin runs the test-mode `/driver assign-bulk`, pastes *text* into the form and submits it:
+    the form's interaction. The queue is not run."""
+    from tests.core.test_driver_assign_bulk import _box
+
+    _opened, form = await _open_bulk_form(league)
+    _box(form)._value = text
+    asked = _asked_by_admin(league, "driver assign-bulk")
+    await form.on_submit(asked)
+    return asked
+
+
+async def _assign_while_off(league):
+    return await _run_variant(league, "assign", user=str(GHOST), division="Am", team="McLaren")
+
+
+async def _assign_bulk_while_off(league):
+    opened, form = await _open_bulk_form(league)
+    assert form is None
+    return opened
+
+
+@pytest.mark.parametrize(
+    "name, give",
+    [
+        pytest.param("assign", _assign_while_off, id="assign"),
+        pytest.param("assign-bulk", _assign_bulk_while_off, id="assign-bulk"),
+    ],
+)
+async def test_a_test_mode_command_given_while_test_mode_is_off_is_refused(tmp_path, name, give):
     """Test mode is off (a swap having failed, the test-mode group still shows). Admin runs its
-    `/driver assign` of Ghost by ID to McLaren in Am. The reply refuses it, saying test mode is off
-    and that a restart puts `/driver` right; the log channel takes the refusal as its one line;
-    nothing is asked of the queue."""
-    from tests.core.test_driver_assign import _assign_lines, _assign_refusal
+    `/driver assign` of Ghost by ID to McLaren in Am, or its `/driver assign-bulk`, whose form does
+    not open. The reply refuses it, saying test mode is off and that a restart puts `/driver`
+    right; the log channel takes the refusal as its one line; nothing is asked of the queue."""
+    from leaguebot.framework.utils.log_lines import reply_reason
+    from tests.core.test_driver_assign import _ADMIN, _assign_lines
     from tests.support.change_queue import change_rows
     from tests.support.settings_league import last_said, log_lines
 
     league = await _league(tmp_path, test_mode=False)
 
-    asked = await _run_variant(league, "assign", user=str(GHOST), division="Am", team="McLaren")
+    asked = await give(league)
 
     reply = last_said(asked)
     assert reply.startswith("⛔")
     assert "test mode" in reply.casefold() and "restart" in reply.casefold()
-    assert _assign_lines(await log_lines(league)) == [_assign_refusal(reply)]
+    assert _assign_lines(await log_lines(league)) == [
+        f"⛔ `/driver {name}` refused for {_ADMIN} — {reply_reason(reply)}"
+    ]
     assert await change_rows(league.db_path) == []
 
+
+async def test_fake_drivers_pasted_by_mention_are_placed(tmp_path):
+    """Test mode is on and the season in Placements; McLaren in Am and Ferrari in Pro each have a
+    third seat free. Admin runs the test-mode `/driver assign-bulk` and pastes two lines, each
+    naming a fake driver by mention: Ghost (Unassigned) into McLaren in Am, and Tester (seated at
+    McLaren in Am) into Ferrari in Pro. One change of kind `core.driver_assign_bulk` is asked, and
+    the queue runs it: Ghost sits at McLaren in Am and Tester at Ferrari in Pro as well, neither
+    confirmed; no role is given; and the reply reads "✅ Assigned **2** driver(s).\""""
+    from tests.support.change_queue import change_rows, run_queue
+    from tests.support.season_league import FERRARI, MCLAREN
+    from tests.support.settings_league import last_said
+
+    league = await _league(tmp_path)
+    for team in (MCLAREN, FERRARI):
+        await league.write(
+            "INSERT INTO team_seats (team_instance_id, seat_number) VALUES (?, 3)", team
+        )
+
+    asked = await _paste_bulk(league, f"<@{GHOST}>, Am, McLaren\n<@{TESTER}>, Pro, Ferrari")
+
+    assert [row["kind"] for row in await change_rows(league.db_path)] == [
+        "core.driver_assign_bulk"
+    ]
+    await run_queue(league.bot)
+
+    rows = await league.rows(
+        "SELECT dp.discord_user_id AS account, d.name AS division, ti.name AS team, "
+        "dsa.committed FROM driver_season_assignments dsa "
+        "JOIN driver_profiles dp ON dp.id = dsa.driver_profile_id "
+        "JOIN divisions d ON d.id = dsa.division_id "
+        "JOIN team_seats ts ON ts.id = dsa.team_seat_id "
+        "JOIN team_instances ti ON ti.id = ts.team_instance_id "
+        "WHERE dp.discord_user_id IN (?, ?) ORDER BY dsa.id", str(GHOST), str(TESTER),
+    )
+    placed = [(r["account"], r["division"], r["team"], bool(r["committed"])) for r in rows]
+    assert [p for p in placed if p[0] == str(GHOST)] == [(str(GHOST), "Am", "McLaren", False)]
+    assert [p for p in placed if p[0] == str(TESTER) and p[1] == "Pro"] == [
+        (str(TESTER), "Pro", "Ferrari", False)
+    ]
+    assert league.granted == {}
+    assert last_said(asked) == "✅ Assigned **2** driver(s)."
+
+
+async def test_a_pasted_mention_naming_no_driver_is_refused_as_a_numbered_line(tmp_path):
+    """Test mode is on and the season in Placements; McLaren in Am has a third seat free. Admin
+    runs the test-mode `/driver assign-bulk` and pastes Ghost into McLaren in Am, then a mention
+    of 555, an account no driver has held, into McLaren in Am. The reply names line 2, saying no
+    driver was found for 555 without inviting an ID (the paste takes mentions only), and not
+    line 1; nobody is placed; the log channel takes the refusal
+    as its one line for the paste; and nothing is asked of the queue."""
+    from tests.core.test_driver_assign_bulk import _reply
+    from tests.support.change_queue import change_rows
+    from tests.support.season_league import MCLAREN
+    from tests.support.settings_league import log_lines
+
+    league = await _league(tmp_path)
+    await league.write(
+        "INSERT INTO team_seats (team_instance_id, seat_number) VALUES (?, 3)", MCLAREN
+    )
+    placements = await league.rows("SELECT * FROM driver_season_assignments ORDER BY id")
+
+    asked = await _paste_bulk(league, f"<@{GHOST}>, Am, McLaren\n<@555>, Am, McLaren")
+
+    reply = _reply(asked)
+    [line] = [line for line in reply.splitlines() if "Line 2:" in line]
+    assert "No driver found for" in line and "555" in line
+    assert "an ID" not in line, "the paste takes mentions only, so the reason invites no ID"
+    assert "Line 1:" not in reply
+    assert await league.rows("SELECT * FROM driver_season_assignments ORDER BY id") == placements
+    [logged] = [line for line in await log_lines(league) if "/driver assign-bulk" in line]
+    assert "refused" in logged
+    assert await change_rows(league.db_path) == []
+
+
+
+async def test_a_real_driver_pasted_beside_a_fake_one_is_refused(tmp_path):
+    """Test mode is on and the season in Placements; McLaren in Am has a third seat free. Admin
+    runs the test-mode `/driver assign-bulk` and pastes Ghost, a fake driver, into McLaren in Am,
+    then Valtteri, a real driver approved and never placed, by mention into McLaren in Am. The
+    reply names line 2, refused as the single `/driver assign` refuses a real driver under test
+    mode ("Test mode is active — a real driver cannot be assigned to a team."), and not line 1;
+    nobody is placed, Ghost included; and nothing is left on the queue."""
+    from tests.core.test_driver_assign_bulk import _names_line, _reply
+    from tests.support.change_queue import change_rows, run_queue
+    from tests.support.season_league import MCLAREN
+
+    league = await _league(tmp_path)
+    await league.write(
+        "INSERT INTO team_seats (team_instance_id, seat_number) VALUES (?, 3)", MCLAREN
+    )
+    placements = await league.rows("SELECT * FROM driver_season_assignments ORDER BY id")
+
+    asked = await _paste_bulk(league, f"<@{GHOST}>, Am, McLaren\n<@106>, Am, McLaren")
+    await run_queue(league.bot)
+
+    reply = _reply(asked)
+    assert _names_line(
+        reply, 2, "Test mode is active — a real driver cannot be assigned to a team."
+    )
+    assert "Line 1:" not in reply
+    assert await league.rows("SELECT * FROM driver_season_assignments ORDER BY id") == placements
+    assert await change_rows(league.db_path) == []
 
 @pytest.mark.parametrize(
     "old_user, new_user", [(str(TESTER), "555"), ("103", str(TESTER))], ids=["old", "new"]
@@ -368,3 +519,21 @@ async def test_both_groups_load_and_the_global_tree_carries_the_member_group(tmp
 
     assert [c.name for c in bot.tree.get_commands()].count("driver") == 1
     assert bot.tree.get_command("driver") is member_cog.driver
+
+
+async def test_both_driver_groups_carry_the_same_commands():
+    """The member `/driver` group and the test-mode one, each made for one bot: they carry the
+    same commands by name, `assign-bulk` among them, so that whichever group the server shows, a
+    league manager has every `/driver` command."""
+    import discord
+    from discord.ext import commands
+
+    from leaguebot.core.cogs.driver_cog import DriverCog
+    from leaguebot.core.cogs.driver_test_cog import DriverTestCog
+
+    bot = commands.Bot(command_prefix="!", intents=discord.Intents.none())
+    member = sorted(c.name for c in DriverCog(bot).driver.commands)
+    test = sorted(c.name for c in DriverTestCog(bot).driver.commands)
+
+    assert member == test
+    assert "assign-bulk" in member

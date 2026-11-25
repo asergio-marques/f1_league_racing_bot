@@ -1013,7 +1013,7 @@ Manually sets the `former_driver` flag on a driver profile. Only available when 
 | `user` | String | ✅ | The driver whose flag is being updated: a mention or the driver's ID, a fake driver included, offered by name as you type. Text that names no driver is refused, naming what was typed |
 | `value` | Boolean | ✅ | The new value for the `former_driver` flag (`True` / `False`) |
 
-> **The roster changes in any stage of the season, `sign-up-bulk` apart.** `/test-mode roster add`, `add-bulk`, `remove` and `clear` run whatever the season's stage, while test mode is on. A fake driver is created at Not Signed Up, with no seat: it signs up through [`/signup start`](#signup-start--start-a-fake-drivers-signup), or with others through [`sign-up-bulk`](#test-mode-roster-sign-up-bulk--create-sign-up-and-approve-a-list-at-once), and `/driver assign` seats it once approved, or, with the signup module off, straight from Not Signed Up.
+> **The roster changes in any stage of the season, `sign-up-bulk` apart.** `/test-mode roster add`, `add-bulk`, `remove` and `clear` run whatever the season's stage, while test mode is on. A fake driver is created at Not Signed Up, with no seat: it signs up through [`/signup start`](#signup-start--start-a-fake-drivers-signup), or with others through [`sign-up-bulk`](#test-mode-roster-sign-up-bulk--create-sign-up-and-approve-a-list-at-once), and `/driver assign` (or `/driver assign-bulk` for many) seats it once approved, or, with the signup module off, straight from Not Signed Up.
 
 #### `/test-mode roster add` — Add a fake driver
 *Access: League admin · Requires test mode active*
@@ -1029,7 +1029,7 @@ Creates a synthetic driver profile at Not Signed Up — no seat, no signup, no n
 #### `/test-mode roster add-bulk` — Create a whole roster at once
 *Access: League admin · Requires test mode active*
 
-No parameters. Opens a box; paste the roster, header row and all, two columns, `ID,Driver name`, and every driver in it is created at Not Signed Up, with no seat. Each is seated afterwards with `/driver assign`, once its signup is approved, or at once with the signup module off.
+No parameters. Opens a box; paste the roster, header row and all, two columns, `ID,Driver name`, and every driver in it is created at Not Signed Up, with no seat. Each is seated afterwards with `/driver assign` or `/driver assign-bulk`, once its signup is approved, or at once with the signup module off.
 
 **The IDs in the file are the IDs written**, unlike `roster add`, which allocates its own. The generator's other scripts — results, check-ins — name drivers by those IDs, so importing the CSV keeps a generated results file lined up with the grid.
 
@@ -1040,7 +1040,7 @@ No parameters. Opens a box; paste the roster, header row and all, two columns, `
 #### `/test-mode roster sign-up-bulk` — Create, sign up and approve a list at once
 *Access: League admin · Requires test mode active, and signups open*
 
-No parameters. Opens a box; paste the list, header row optional, three columns, `ID,Driver name,Nationality`, the nationality blank for none. Every driver in it is created as `add-bulk` creates one, signed up and approved with default answers, and left Unassigned with no seat: Steam, its name as its platform ID, every availability slot, Full-Time Driver, no preferred teams, teammate, lap times or notes. Seat each with `/driver assign` once signups close, as any approved driver. It is a quick way to build a season's grid, not a way round the signup: to see the wizard, walk a driver through [`/signup start`](#signup-start--start-a-fake-drivers-signup).
+No parameters. Opens a box; paste the list, header row optional, three columns, `ID,Driver name,Nationality`, the nationality blank for none. Every driver in it is created as `add-bulk` creates one, signed up and approved with default answers, and left Unassigned with no seat: Steam, its name as its platform ID, every availability slot, Full-Time Driver, no preferred teams, teammate, lap times or notes. Seat them with `/driver assign-bulk`, or each with `/driver assign`, once signups close, as any approved driver. It is a quick way to build a season's grid, not a way round the signup: to see the wizard, walk a driver through [`/signup start`](#signup-start--start-a-fake-drivers-signup).
 
 It makes no signup channel, wizard or review panel, grants no role and posts nothing. The reply is *"✅ Signed up and approved **N** fake driver(s). Close signups with `/signup close`, then seat each with `/driver assign`."*, one line goes in the log channel, and each driver's addition, the start of its signup and its approval are audited, naming you. The drivers appear in `/signup unassigned list` and the placements review by their test names, and `/test-mode roster list` shows each Unassigned with its nationality, or a dash.
 
@@ -1081,7 +1081,7 @@ Clears the fake drivers seated in the division. It is refused as a whole, naming
 
 > Turning test mode **off** — by the toggle in configuration, or by the season ending — deletes every fake driver on the server, across all divisions, keeping their history. The seeded points configurations are **not** deleted with them — they are ordinary configurations of the server, and `/results config remove` takes them away if you do not want them. Turning it **on** creates the Standard and Half Points configurations and attaches them to the current season only where the server holds no points configuration at all, and is refused outright while the server holds real drivers.
 
-> While test mode is on, no real driver may sign up or be placed: the Sign Up button and `/driver assign` refuse them, and only a league admin's [`/signup start`](#signup-start--start-a-fake-drivers-signup) signs a fake driver up. Every `/driver` command acts on a fake driver as on a real one, named by mention or ID (see [Driver Commands](#driver-commands)).
+> While test mode is on, no real driver may sign up or be placed: the Sign Up button, `/driver assign` and `/driver assign-bulk` refuse them, and only a league admin's [`/signup start`](#signup-start--start-a-fake-drivers-signup) signs a fake driver up. Every `/driver` command acts on a fake driver as on a real one, named by mention or ID (see [Driver Commands](#driver-commands)).
 
 See [Testing with test mode](docs/how-to/test-mode.md) for how these fit together.
 
@@ -1282,6 +1282,15 @@ Refused while test mode is active: a real driver is never seated in a division u
 | `user` | Member | ✅ | The driver to assign |
 | `division` | String | ✅ | Division tier number or name (e.g. `1` or `Pro`) |
 | `team` | String | ✅ | The team's shorthand — suggested as you type |
+
+#### `/driver assign-bulk` — Assign many drivers from a pasted list
+*Access: League manager*
+
+No parameters. Opens a box; paste one driver to a line, `<@driver>, division, team`: the driver as a mention, the division by its tier number or its name, and the team by its shorthand, as `/driver assign` takes them. The box holds 4000 characters, which is about a hundred lines. To get a mention, type `@` and pick the member in the message box (or copy their ID and wrap it as `<@ID>`), then paste the line into the form.
+
+Every driver is placed, in the order of the list, or none is. Each line is judged as `/driver assign` judges it, in the same stages and by the same rules, and against the lines above it too: a driver listed twice for one division, or more drivers than a team has seats free, has the later lines refused, and a line that, with the lines before it in its division that are not themselves refused, would carry the division past what an image template draws is refused. A past account of a driver stands for their current one, and only the current account need be in the server. If any line is refused nothing is placed, and the refusal goes in the log channel. The list is judged in three passes and refused at the first it fails, the reply naming every line at fault in that pass with its number and the reason: the lines that cannot be read, then the drivers, divisions and teams not found (or a driver with no profile), then what the seats, the drivers' states, test mode and the templates allow. Once the lines are read, and before any is looked up, a season whose stage places no drivers, or an archived one, refuses the whole list once, naming no line. Correcting one kind of fault may bring the refusal of the next. The seats are taken in the order of the list, so a team's seats go to its drivers as they are pasted.
+
+Like `/driver assign`, no role is granted and no lineup posted: the placements are unconfirmed until they are confirmed from the review. The reply is *"✅ Assigned **N** driver(s)."*, one line goes in the log channel naming each placement, and each driver's placement is audited, naming you. Under test mode it is the test-mode group's command and the mentions name fake drivers as well; a mention naming no driver is refused as a numbered line.
 
 #### `/driver unassign` — Remove a driver from a division
 *Access: League manager*

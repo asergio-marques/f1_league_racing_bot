@@ -6,7 +6,7 @@ Restores the base and runs the whole of a signup mid-season, as a league would, 
 question in the driver's own channel by you, a league admin, standing in for a driver who has no
 account; the review panel, with one signup approved, one rejected and one sent back for a
 correction and approved once corrected; `/test-mode roster sign-up-bulk`, the quick route; then
-`/signup close`, `/driver assign` and the mid-season confirmation of the placements; and last
+`/signup close`, `/driver assign`, a refused `/driver assign-bulk` and the mid-season confirmation of the placements; and last
 `/driver sack` and `/driver move` on fake drivers. Every post and line of the signup names a fake
 driver by its test name, never by a mention. Read [the README](README.md) first for the step format and how to
 report a failure, and run [`00-base.md`](00-base.md) first: this spec reuses its **Fixture**
@@ -770,7 +770,33 @@ Every answer in this part is given in `#wade-walsh-signup`, as you.
         division: Division 2
       ```
 
-43. **Do:** `/driver reject user:9000000000000000050`
+43. **`assign-bulk` refused, nothing placed.** Wade Walsh and Yuri Yashin already hold a seat in
+    Division 2, so a list placing either there again is refused, each such line named, and no
+    driver of the list is placed (`PlacementService.judge_assign_paste_on`).
+
+    **Do:** `/driver assign-bulk`, and submit the form with:
+
+    ```
+    <@9000000000000000046>, Division 2, CHL
+    <@9000000000000000048>, Division 2, CHL
+    ```
+
+    **Expect:**
+    - **Reply:**
+      ```
+      ⛔ The list was not placed — 2 problem(s). **No drivers were placed.**
+      • Line 1: Driver is already assigned to a team in **Division 2**.
+      • Line 2: Driver is already assigned to a team in **Division 2**.
+      ```
+    - **Log:**
+      ```
+      ⛔ `/driver assign-bulk` refused for <you> — The list was not placed — 2 problem(s). **No drivers were placed.**
+      Line 1: Driver is already assigned to a team in **Division 2**.
+      Line 2: Driver is already assigned to a team in **Division 2**.
+      ```
+    - **Posts:** nothing. Both drivers keep the seats of step 42.
+
+44. **Do:** `/driver reject user:9000000000000000050`
 
     **Expect:**
     - **Ack:** `Turning down **Vito Vargas**`
@@ -782,7 +808,7 @@ Every answer in this part is given in `#wade-walsh-signup`, as you.
       ```
     Every signup is now settled: three placed, two turned down.
 
-44. **Do:** `/season placements-review`
+45. **Do:** `/season placements-review`
 
     **Expect:** the mid-season review, of the placements alone (`SeasonCog._review_mid_season_placements`).
     - **Ack:** `Posting the review of /season placements-review`
@@ -818,13 +844,13 @@ Every answer in this part is given in `#wade-walsh-signup`, as you.
     Each mention is of an account no member holds, so Discord shows it as an unknown user; the
     test name beside it names the driver.
 
-45. **Do:** within five minutes, press **✅ Confirm placements**.
+46. **Do:** within five minutes, press **✅ Confirm placements**.
 
     **Expect:**
     - **Ack:** `Confirming season 1's placements`
     - **Then:** `✅ 3 placement(s) confirmed. The season is ongoing again.`
-    - **Posts:** every message of step 44 is deleted. `#d2-lineup`: Division 2's lineup as a
-      picture, as step 44 drew it, and the lineup the base posted there is deleted. Nothing in
+    - **Posts:** every message of step 45 is deleted. `#d2-lineup`: Division 2's lineup as a
+      picture, as step 45 drew it, and the lineup the base posted there is deleted. Nothing in
       `#d1-lineup`.
     - **Roles:** none granted: the drivers are fake.
     - **Log:**
@@ -840,7 +866,7 @@ Every answer in this part is given in `#wade-walsh-signup`, as you.
 
 ## Part J — The `/driver` commands on fake drivers
 
-46. **A real member's ID.** Under test mode `/driver` takes text, and a real member with no
+47. **A real member's ID.** Under test mode `/driver` takes text, and a real member with no
     driver profile names no driver.
 
     **Do:** `/driver move user:<your own Discord ID> from_division:Division 2 team:CHL`
@@ -849,13 +875,13 @@ Every answer in this part is given in `#wade-walsh-signup`, as you.
     - **Reply:** ``⛔ No driver found for `<your own Discord ID>`. Give a mention or an ID of any account the driver has held.``
     - **Log:** ``⛔ `/driver move` refused for <you> — No driver found for `<your own Discord ID>`. Give a mention or an ID of any account the driver has held.``
 
-47. **Do:** `/driver sack user:9000000000000000049`
+48. **Do:** `/driver sack user:9000000000000000049`
 
     **Expect:**
     - **Ack:** `Sacking **Zeno Zappa**`
     - **Then:** `✅ **Zeno Zappa** has been sacked. All roles and season assignments removed.`
     - **Posts** (`#d2-lineup`): Division 2's lineup again, `Charlie GP` with Aaron Abbott alone,
-      and step 45's deleted.
+      and step 46's deleted.
     - **Log:**
       ```
       <you> | /driver sack | Success
@@ -863,13 +889,13 @@ Every answer in this part is given in `#wade-walsh-signup`, as you.
       ```
     Zeno Zappa is back at Not Signed Up.
 
-48. **Do:** `/driver move user:9000000000000000046 from_division:Division 2 team:CHL`
+49. **Do:** `/driver move user:9000000000000000046 from_division:Division 2 team:CHL`
 
     **Expect:**
     - **Ack:** `Moving **Wade Walsh** to **Charlie GP** in **Division 2**`
     - **Then:** `✅ Moved **Wade Walsh** from **Bravo Motorsport** in **Division 2** to **Charlie GP** in **Division 2**.`
     - **Posts** (`#d2-lineup`): Division 2's lineup once, `Bravo Motorsport` with Yuri Yashin
-      alone and `Charlie GP` with Aaron Abbott and Wade Walsh, and step 47's deleted.
+      alone and `Charlie GP` with Aaron Abbott and Wade Walsh, and step 48's deleted.
     - **Log:**
       ```
       <you> | /driver move | Success
@@ -882,13 +908,13 @@ Every answer in this part is given in `#wade-walsh-signup`, as you.
 
 ## Part K — Restoring the base
 
-49. **Do:** steps 1 to 4 again: `/test-mode backup status`, `/test-mode backup restore` and
+50. **Do:** steps 1 to 4 again: `/test-mode backup status`, `/test-mode backup restore` and
     **♻️ Restore**, and restart the bot.
 
     **Expect:** as steps 1 to 4: still `Readable: yes` and locked; `Started on a restored
     database.` in the host's log.
 
-50. **Do:** `/signup config view`
+51. **Do:** `/signup config view`
 
     **Expect:** as step 5: **Signups Open** `No`. The window, the five fake drivers and their
     signups, and every placement of Part I are gone from the bot.
@@ -897,7 +923,7 @@ Discord is not restored with the database. Left behind by this spec, for you to 
 you wish: the channels `#wade-walsh-signup`, `#xavi-ximenez-signup` and `#yuri-yashin-signup`,
 whose deletion a day on the restore has taken away with the scheduler's store; the
 `🔒 Signups are now closed.` notice of step 40 in `#signup`, which the base does not record; and
-the Division 2 lineup of step 48 in `#d2-lineup`, the base's own having been deleted at step 45.
+the Division 2 lineup of step 49 in `#d2-lineup`, the base's own having been deleted at step 46.
 A later spec that opens signups, or posts Division 2's lineup, finds the message the base recorded
 gone and carries on (`standing_posts` passes over a message already deleted).
 

@@ -19,7 +19,7 @@ league admin role.
 
 | Spec | What it does |
 |---|---|
-| [00-base.md](00-base.md) | Builds the base from no database file: the server's roles and channels, every module on, teams, and a two-division test season taken through its signup window — fake drivers signed up in bulk, then seated with `/driver assign` — with its calendar, approved. Ends by saving that state as a **locked backup**. |
+| [00-base.md](00-base.md) | Builds the base from no database file: the server's roles and channels, every module on, teams, and a two-division test season taken through its signup window — fake drivers signed up in bulk, then seated with one `/driver assign-bulk` — with its calendar, approved. Ends by saving that state as a **locked backup**. |
 | `01-full-season.md` | Restores the base and runs the season to completion. |
 | `02-roster-changes.md` | Restores the base and makes roster and team changes in test mode. |
 | `03-calendar-changes.md` | Restores the base and changes the calendar and the divisions mid-season. |
@@ -28,7 +28,7 @@ league admin role.
 | `06-settings.md` | Restores the base and works the bot's settings, its views and the signup configuration in test mode. |
 | `07-image-config.md` | Restores the base and works the image configuration — templates, asset folders, colours and driver portraits — checking each change by preview, then puts the base's settings back. |
 | `08-recovery.md` | Restores the base and restarts the bot at awkward moments, checking what resumes. |
-| `10-signup-and-drivers.md` | Restores the base, opens signups mid-season, signs fake drivers up through the real wizard with a league admin answering for them, reviews them, seats them with `/driver assign`, and works the `/driver` commands on fake drivers. |
+| `10-signup-and-drivers.md` | Restores the base, opens signups mid-season, signs fake drivers up through the real wizard with a league admin answering for them, reviews them, seats them with `/driver assign` (and refuses a list `/driver assign-bulk` cannot place), and works the `/driver` commands on fake drivers. |
 | `09-season-endings.md` | Restores the base, cancels its season, aborts a season set up after it, packs the bot and factory-resets it. **It erases everything: only `11-signup-off.md` runs after it without `00-base.md` first.** The last spec that restores the base. |
 | `11-signup-off.md` | Builds its own season, with the signup module never turned on, from the fresh install `09` leaves: the configuration confirmed straight into placements, fake drivers seated by `/driver assign` from Not Signed Up, `/driver unassign` and `/driver reject` returning one to Not Signed Up, and the placements confirmed. **Run after `09`**: it cannot restore the base, whose season fixed signup on. |
 
