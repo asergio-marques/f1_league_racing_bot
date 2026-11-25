@@ -153,9 +153,10 @@ class SeasonCog(commands.Cog):
     ) -> None:
         """Ask the change queue to post the review the command has computed (`season.review.post`).
 
-        The command posts nothing public itself: the queue posts the pictures after a notice
-        that they are being drawn, then the *report*'s sections, then the question where the
-        review *offered* it, in the channel the command was run in. The reply is the queue's
+        The command posts nothing public itself: the queue posts a notice that the pictures are
+        being drawn, then the *report*'s sections, each picture slotted in after the sections its
+        ``after_sections`` counts, then the question where the review *offered* it, in the
+        channel the command was run in. The reply is the queue's
         acknowledgement, updated with the outcome, and a stopped queue holds the review whole.
 
         *question* is the text of the question (the placements review's by default); *view*
