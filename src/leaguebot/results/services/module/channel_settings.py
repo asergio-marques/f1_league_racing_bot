@@ -308,9 +308,9 @@ def _channel_setting(
 async def _where_posts_stand(
     db_path: str, payload: dict[str, Any], which: str, replaced: int
 ) -> int:
-    """The channel the posts stand in, as far as the queue shows: where *replaced* is the channel an
-    earlier carry of this division's *which* is still waiting to move them to, that carry's old
-    channel, since nothing has gone up in *replaced*; otherwise *replaced* itself."""
+    """The channel the posts stand in, as far as the queue shows: where *replaced* is the new
+    channel of an earlier carry of this division's *which* that is queued or started and not
+    ended, that carry's old channel; otherwise *replaced* itself."""
     standing = replaced
     for waiting in await unfinished(db_path, [CHANNEL_CARRY]):
         if (
