@@ -490,11 +490,12 @@ async def test_drivers_level_on_points_are_ordered_by_the_standings_final_tiebre
 ):
     """Division 1's sheet after round 3, and its final sheet, the images module on. Mike (222,
     Apex Racing) is on 5. Level on 3: two drivers both named Zoe (333 and 666, Apex Racing), Aaron
-    (111, Bravo GP), Rex (444, in the reserve team) and Sam (555, sacked earlier, holding no
-    seat). Ties are ordered as the standings' final tiebreak orders them (attendance spec,
-    Updating attendance sheets): by team, a named team before the reserve team and the reserve
-    team before no seat, then by name, then by identifier. The text lists 222, 333, 666, 111,
-    444, 555, and the picture draws its rows in the same order."""
+    (111, Vortex GP), Rex (444, in the reserve team, named Reserve) and Sam (555, sacked earlier,
+    holding no seat). Ties are ordered as the standings' final tiebreak orders them (attendance
+    spec, Updating attendance sheets): by team, a named team before the reserve team and the
+    reserve team before no seat, then by name, then by identifier. Vortex GP sorts after Reserve
+    by name, so Aaron before Rex shows the reserve team ranked after every named team. The text
+    lists 222, 333, 666, 111, 444, 555, and the picture draws its rows in the same order."""
     from types import SimpleNamespace
 
     from leaguebot.core.services.drivers import driver_names
@@ -512,9 +513,9 @@ async def test_drivers_level_on_points_are_ordered_by_the_standings_final_tiebre
         await db.executemany(
             "INSERT INTO team_instances (id, division_id, name, full_name, is_reserve) "
             "VALUES (?, 7, ?, ?, ?)",
-            [(101, "Bravo", "Bravo GP", 0), (102, "Reserve", "Reserve", 1)],
+            [(101, "Vortex", "Vortex GP", 0), (102, "Reserve", "Reserve", 1)],
         )
-        # Aaron (111) drives for Bravo GP, on 3.
+        # Aaron (111) drives for Vortex GP, on 3.
         await db.execute("UPDATE team_seats SET team_instance_id = 101 WHERE id = 200")
         await db.execute("UPDATE driver_round_attendance SET total_points_after = 3")
         await db.commit()
