@@ -17,7 +17,8 @@ passes the form how to name a pasted mention (`Resolver`), the member group refu
 the server and swapping a past account for the current one, the test-mode group resolving it as it
 resolves text, so a fake driver can be pasted. The paste is refused in up to three passes, each
 naming every fault of its kind: a line that cannot be read, at the form; a driver, division or team
-that is not found, here; what the seats, the stage and the templates allow, by the change
+that is not found, here, after the stage and an archived season refuse the whole paste once; what
+the seats, the drivers' states, test mode and the templates allow, by the change
 (`driver_assign_bulk_change`).
 """
 from __future__ import annotations
