@@ -1277,8 +1277,8 @@ async def test_the_approval_s_reply_names_the_opening_standings_and_sheet_drawn_
     Each opening standings picture (the drivers' and the teams' championships of Pro and of Am)
     and each opening attendance sheet (Pro's and Am's) draws as a PNG with one font substituted,
     a font of its own. In the log channel, every picture's notice is held once, in a block that
-    opens with the member and the change ("| /season placements-review |") and then "Image render
-    notices — <picture>:". The reply ends in one "Image notices" section listing every one of the
+    opens with the member and the change ("| the ✅ Approve button of `/season
+    placements-review` |") and then "Image render notices — <picture>:". The reply ends in one "Image notices" section listing every one of the
     six pictures under the name its log line gives it, each linked to the log channel's message
     holding it, and its notice beneath (image spec, Errors and the rejection of input; issue
     #635)."""
@@ -1326,7 +1326,7 @@ async def test_the_approval_s_reply_names_the_opening_standings_and_sheet_drawn_
     told = reply(press)
     assert told.count("⚠️ **Image notices**") == 1, told
     assert "\n\n⚠️ **Image notices**\n" in told, told
-    opening = "| /season placements-review | Image render notices — "
+    opening = "| the ✅ Approve button of `/season placements-review` | Image render notices — "
     for font in fonts:
         held = [(n, line) for n, line in enumerate(_log_lines(league), 1) if font + " " in line]
         assert len(held) == 1, (font, _log_lines(league))
