@@ -59,14 +59,14 @@ class TestDriverInfo(TypedDict):
 @dataclass(frozen=True)
 class ListedDriver:
     """A fake driver as `roster list` shows it: its ID, name and state, the nationality its signup
-    gave (None where none) and each seat it holds as (team's full name, division's name), none
-    where it holds none."""
+    gave (None where none) and each seat it holds as (team's shorthand, team's full name,
+    division's name), none where it holds none."""
 
     discord_user_id: int
     display_name: str
     state: str
     nationality: str | None
-    seats: tuple[tuple[str, str], ...]
+    seats: tuple[tuple[str, str, str], ...]
 
 
 # ─── Internal helpers ────────────────────────────────────────────────────────
@@ -293,7 +293,8 @@ async def list_test_drivers(
         )
         profiles = await cursor.fetchall()
         cursor = await db.execute(
-            "SELECT ts.driver_profile_id AS profile_id, ti.full_name AS team_name, "
+            "SELECT ts.driver_profile_id AS profile_id, ti.name AS team_shorthand, "
+            "       ti.full_name AS team_name, "
             "       d.id AS division_id, d.name AS division_name "
             "FROM team_seats ts "
             "JOIN team_instances ti ON ti.id = ts.team_instance_id "
@@ -304,10 +305,12 @@ async def list_test_drivers(
         )
         seat_rows = await cursor.fetchall()
 
-    seats: dict[int, list[tuple[str, str]]] = {}
+    seats: dict[int, list[tuple[str, str, str]]] = {}
     in_division: set[int] = set()
     for row in seat_rows:
-        seats.setdefault(row["profile_id"], []).append((row["team_name"], row["division_name"]))
+        seats.setdefault(row["profile_id"], []).append(
+            (row["team_shorthand"], row["team_name"], row["division_name"])
+        )
         if row["division_id"] == division_id:
             in_division.add(row["profile_id"])
 

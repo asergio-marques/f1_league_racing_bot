@@ -128,7 +128,10 @@ COMMAND = "/bot init"
 #: they have run. Neither swaps the server's `/driver` and `/signup` commands
 #: (`swap_test_mode_commands`, which the toggle and a test season's end carry): a restart does, and
 #: the member is told so.
-DRIVER_RESTART = f"{COMMANDS_NAMED.capitalize()} will show correctly once the bot is restarted."
+DRIVER_RESTART = (
+    f"{COMMANDS_NAMED.capitalize()} will show correctly once the bot is restarted; then reload "
+    "Discord (Ctrl+R on desktop) before using them."
+)
 
 #: The four settings `/bot init` claims: the column, the reply's label, and the line's own key
 #: for it. The reply names each by its mention alone; the line adds a role's name beside its

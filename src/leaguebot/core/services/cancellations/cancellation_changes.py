@@ -183,6 +183,7 @@ from leaguebot.core.services.seasons.season_service import (
 )
 from leaguebot.core.services.test_mode.driver_commands import (
     SWAP_TEST_MODE_COMMANDS,
+    reload_reply,
     swap_not_done_line,
     swap_not_done_reply,
 )
@@ -1554,6 +1555,7 @@ def season_cancel_change(
             )
             + swap_not_done_reply(ctx.steps)
             + _calendar_notices(ctx)
+            + reload_reply(ctx.steps)
         )
 
     def describing(text: str) -> Callable[[StepContext], Awaitable[str]]:

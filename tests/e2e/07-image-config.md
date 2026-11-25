@@ -85,7 +85,7 @@ magenta (`#FF00FF`).
      ```
    - **Reply** to the press:
      ```
-     ✅ The backup is staged. **Restart the bot** and it will come back on the restored database — under a service it will restart itself; from a terminal, stop it and run it again.
+     ✅ The backup is staged. **Restart the bot** and it will come back on the restored database — under a service it will restart itself; from a terminal, stop it and run it again. Once it is back, reload Discord (Ctrl+R on desktop) before using the `/driver` and `/signup` commands, which the restart may change.
      The database being replaced was copied to `bot.prerestore.db` first, so this can be walked back by hand if it was not what you wanted.
      ```
    - **Log:**
@@ -95,7 +95,8 @@ magenta (`#FF00FF`).
      ```
 
 3. **Restart the bot.** From a terminal, stop it and run `python -m leaguebot` again; under a
-   service, restart the service (`systemctl restart <unit>`).
+   service, restart the service (`systemctl restart <unit>`). Then **reload Discord** (Ctrl+R on desktop): the restart swaps `/driver` and `/signup` to suit the
+   restored state, and a client loaded before it may still offer the other forms.
 
    **Expect:**
    - **Host log:** `Started on a restored database.`, before `Logged in as <bot user> (id=<bot id>)`.

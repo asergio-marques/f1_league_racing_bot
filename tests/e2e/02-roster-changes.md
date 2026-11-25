@@ -73,14 +73,15 @@ rule of 110 `-`, and beneath it:
 
 ```
 Copy mention strings above when submitting results in the format:
-`Position, <@user_id>, <@&role_id>, ...`
+`Position, <@user_id>, <team shorthand>, ...`
 ```
 
 Every fake driver is listed, in the order they were created, or, where a division is given, only
 those seated in it. A state is shown in words (`Not Signed Up`, `Unassigned`, `Assigned`), a
-nationality is the one the driver's signup gave (`—` where none), and a seat is the team's full
-name with its division in brackets (`none` where the driver holds none). A long roster comes in
-more than one message. A step quotes the table alone.
+nationality is the one the driver's signup gave (`—` where none), and a seat is the team's
+shorthand, ` = `, its full name and its division in brackets, as `ALP = Alpha Racing (Division 1)`
+(`none` where the driver holds none), so the shorthand the footer names can be copied from it. A
+long roster comes in more than one message. A step quotes the table alone.
 
 **A role made by hand.** Before step 1, create one role in Discord, outside the bot:
 `@Lima Racing`, **below** the bot's own role and held by nobody. It is the free role a team is
@@ -123,7 +124,7 @@ server: delete it by hand at the end if you wish.
    **Expect:**
    - **Reply:**
      ```
-     ✅ The backup is staged. **Restart the bot** and it will come back on the restored database — under a service it will restart itself; from a terminal, stop it and run it again.
+     ✅ The backup is staged. **Restart the bot** and it will come back on the restored database — under a service it will restart itself; from a terminal, stop it and run it again. Once it is back, reload Discord (Ctrl+R on desktop) before using the `/driver` and `/signup` commands, which the restart may change.
      The database being replaced was copied to `bot.prerestore.db` first, so this can be walked back by hand if it was not what you wanted.
      ```
    - **Log:**
@@ -133,7 +134,8 @@ server: delete it by hand at the end if you wish.
      ```
 
 4. **Restart the bot.** From a terminal, stop it and run `python -m leaguebot` again; under a
-   service, restart the service (`systemctl restart <unit>`).
+   service, restart the service (`systemctl restart <unit>`). Then **reload Discord** (Ctrl+R on desktop): the restart swaps `/driver` and `/signup` to suit the
+   restored state, and a client loaded before it may still offer the other forms.
 
    **Expect:**
    - **Host log:** `Started on a restored database.`, before `Logged in as <bot user> (id=<bot id>)`.
@@ -273,7 +275,7 @@ driver who holds a confirmed seat. The team list is fixed, but a team's role is 
 
     **Expect:** as `00-base.md`'s listing of Division 2: headed `**Fake Driver Roster — Division 2**`,
     the 21 Division 2 drivers of the Fixture, each `Assigned`, with the Fixture's nationality, Aaron
-    Abbott alone seated in `Charlie GP (Division 2)` and nobody in `Bravo Motorsport`. Zoe Zimmer
+    Abbott alone seated in `CHL = Charlie GP (Division 2)` and nobody in `Bravo Motorsport`. Zoe Zimmer
     holds no seat, so a list of a division leaves her out. No log line.
 
 ### Other refusals of a running season
@@ -466,7 +468,14 @@ roster change posts nothing, and in placements no lineup is posted until approva
     **Expect:**
     - **Ack:** `Cancelling season 1`
     - **Then:** `✅ Season cancelled.`, followed, where a calendar drew with notices, by a blank
-      line and a `⚠️ **Image notices**` section naming each calendar with its notices.
+      line and a `⚠️ **Image notices**` section naming each calendar with its notices, and
+      last, after a blank line, the reload notice, the cancellation having swapped `/driver` and
+      `/signup` back:
+      ```
+      🔄 Reload Discord (Ctrl+R on desktop) before using the `/driver` and `/signup` commands, which have just changed. Reloading clears every reply only you can see, this one included.
+      ```
+      No step until step 57 uses either command: reload Discord then, once step 49 has swapped them
+      again, not now.
     - **Posts**, for each division in turn, Division 1 then Division 2 (`N` being its number):
       - `#dN-rsvp`:
         ```
@@ -712,7 +721,13 @@ cancelled, so this is Season #2.
     - **Then:** ``✅ Test mode **enabled**. Use `/test-mode advance` to step through phases, or `/test-mode review` to inspect season status.``
       No `📌 Added default point configs` line: the server already holds `Standard` and
       `Half Points` from Season #1, and test mode seeds them only on a server holding none
-      (`seed_test_configs_on`). Nor are they attached to Season #2: step 53 attaches one.
+      (`seed_test_configs_on`). Nor are they attached to Season #2: step 53 attaches one. After a
+      blank line the reply ends with the reload notice:
+      ```
+      🔄 Reload Discord (Ctrl+R on desktop) before using the `/driver` and `/signup` commands, which have just changed. Reloading clears every reply only you can see, this one included.
+      ```
+      **Reload Discord now**, once you have read it: step 57 is the first to use `/signup`, and a
+      client loaded before the swap answers it `Unknown Integration`.
     - **Log:**
       ```
       <you> | /test-mode toggle | Success
@@ -1166,10 +1181,10 @@ Each division holds the Fixture's eleven teams of two seats and a Reserve team, 
       ```
       Name                 Mention                        State                      Nationality    Seats
       --------------------------------------------------------------------------------------------------------------
-      Felix Fournier       <@9000000000000000021>         Assigned                   British        Alpha Racing (Division 1)
-      Gabriel Gomes        <@9000000000000000022>         Assigned                   Brazilian      Bravo Motorsport (Division 1)
-      Willem Wouters       <@9000000000000000023>         Assigned                   German         Reserve (Division 1)
-      Xavier Xu            <@9000000000000000024>         Assigned                   —              Reserve (Division 1)
+      Felix Fournier       <@9000000000000000021>         Assigned                   British        ALP = Alpha Racing (Division 1)
+      Gabriel Gomes        <@9000000000000000022>         Assigned                   Brazilian      BRV = Bravo Motorsport (Division 1)
+      Willem Wouters       <@9000000000000000023>         Assigned                   German         Reserve = Reserve (Division 1)
+      Xavier Xu            <@9000000000000000024>         Assigned                   —              Reserve = Reserve (Division 1)
       ```
       The four unseated drivers are left out of a list of a division.
     - **Log:** nothing.
@@ -1280,7 +1295,7 @@ Season #2 is left in placements, test mode on. Putting the base back is what let
 start where `00-base.md` left off.
 
 90. **Do:** steps 1 to 4 again: `/test-mode backup status`, `/test-mode backup restore`, press
-    **♻️ Restore**, and restart the bot.
+    **♻️ Restore**, restart the bot and reload Discord.
 
     **Expect:** as steps 1 to 4. `bot.prerestore.db` and `scheduler.prerestore.db` now hold
     Season #2 as this part found it, should it be wanted.

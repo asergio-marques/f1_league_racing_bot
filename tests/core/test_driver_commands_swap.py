@@ -219,6 +219,33 @@ async def test_an_unclaimed_bot_takes_driver_off_every_server_it_is_on(tmp_path)
     )
 
 
+@pytest.mark.parametrize(
+    ("result", "done", "told"),
+    [
+        pytest.param({}, True, True, id="done"),
+        pytest.param(None, False, False, id="not-done"),
+        pytest.param({"problem": "refused"}, True, False, id="refused"),
+        pytest.param({"discarded": {"by": 77}}, True, False, id="discarded"),
+    ],
+)
+def test_the_reload_notice_follows_a_swap_done_with_no_problem_and_nothing_else(
+    result, done, told
+):
+    """A swap job done with an empty result is followed by the notice; one not done, one that
+    Discord refused and one a league admin discarded are not, nor is a reply with no swap job."""
+    from leaguebot.core.services.test_mode.driver_commands import (
+        RELOAD,
+        SWAP_TEST_MODE_COMMANDS,
+        reload_reply,
+    )
+    from leaguebot.framework.services.queue.change_types import StepView
+
+    swap = StepView(SWAP_TEST_MODE_COMMANDS, {}, result, done)
+
+    assert reload_reply([swap]) == (f"\n\n{RELOAD}" if told else "")
+    assert reload_reply([StepView("save", {}, {}, True)]) == ""
+
+
 # ── After the toggle ──────────────────────────────────────────────────────────
 
 
@@ -286,7 +313,8 @@ async def test_the_toggle_swaps_driver_after_its_save(toggling, on):
     the toggle, the server shows the `/driver` and the `/signup` the new flag calls for, the bot's
     own cogs' groups: on, neither on the global tree and each test-mode group on the server; off,
     each member group on the global tree and neither on the server. Both trees were synced, the
-    reply says nothing of `/driver` or `/signup`, and the queue is not stopped."""
+    reply ends with the notice to reload Discord, and the queue is not stopped."""
+    from leaguebot.core.services.test_mode.driver_commands import RELOAD
     from tests.support.settings_league import last_said
 
     bot, path, guild = toggling
@@ -298,7 +326,7 @@ async def test_the_toggle_swaps_driver_after_its_save(toggling, on):
     assert _shown(bot, guild) == _called_for(_groups(bot), on)
     assert call() in bot.tree.sync.await_args_list
     assert call(guild=guild) in bot.tree.sync.await_args_list
-    assert "/driver" not in last_said(asked) and "/signup" not in last_said(asked)
+    assert last_said(asked).endswith(f"\n\n{RELOAD}")
     assert await stopped_job(path) is None
 
 
@@ -322,7 +350,9 @@ async def test_a_swap_discord_refuses_ends_on_a_fault_and_the_toggle_stands(togg
     """Discord refuses every sync. Admin turns test mode on: test mode is on all the same, the
     queue is not stopped, and both Admin's reply and a line in the log channel say the `/driver`
     and `/signup` commands could not be changed and will be put right when the bot next restarts, never asking
-    for the toggle again. A second toggle, turning it off, then runs."""
+    for the toggle again, and it does not tell the member to reload Discord, nothing having changed.
+    A second toggle, turning it off, then runs."""
+    from leaguebot.core.services.test_mode.driver_commands import RELOAD
     from tests.support.settings_league import last_said
 
     bot, path, _guild = toggling
@@ -335,6 +365,7 @@ async def test_a_swap_discord_refuses_ends_on_a_fault_and_the_toggle_stands(togg
         assert (await cursor.fetchone())["test_mode_active"] == 1
     assert await stopped_job(path) is None
     reply = last_said(asked)
+    assert RELOAD not in reply
     tail = reply.split("/driver", 1)[1]
     assert "/signup" in tail and "restart" in tail and "toggle" not in tail
     assert any(
@@ -387,21 +418,27 @@ async def test_a_test_seasons_end_swaps_driver_back_and_a_real_ones_does_not(
     """The season ends through `/season complete`, `/season abort` or `/season cancel`, run by
     admin 77 and carried out by the queue. A test season's end, which switches test mode off,
     leaves both member groups on the global tree and no `/driver` or `/signup` on the server,
-    where the test-mode groups stood, both trees synced. A real season's end syncs nothing."""
+    where the test-mode groups stood, both trees synced, and its reply ends with the notice to
+    reload Discord. A real season's end syncs nothing and its reply has no such notice."""
+    from leaguebot.core.services.test_mode.driver_commands import RELOAD
+    from tests.support.season_league import reply
+
     league, ending = await _ENDS[end](tmp_path, test_mode)
     bot, guild = league.bot, league.guild
     if test_mode:
         _test_mode_groups_shown(bot, guild)
 
-    await ending(league)
+    asked = await ending(league)
     await run_queue(bot)
 
     if test_mode:
         assert _shown(bot, guild) == _called_for(_groups(bot), False)
         assert call() in bot.tree.sync.await_args_list
         assert call(guild=guild) in bot.tree.sync.await_args_list
+        assert reply(asked).endswith(f"\n\n{RELOAD}")
     else:
         bot.tree.sync.assert_not_awaited()
+        assert RELOAD not in reply(asked)
 
 
 #: What each end leaves of season 7: completed, cancelled, or deleted by its abort.
@@ -417,7 +454,8 @@ async def test_a_swap_discord_refuses_at_a_test_seasons_end_ends_on_a_fault_and_
     `/season cancel`, and the queue carries it out: the season has ended all the same (completed,
     deleted, or cancelled), test mode is off, the queue is not stopped, and both the reply and a
     line in the log channel name `/driver`, `/signup` and a restart, never asking for anything to
-    be run again."""
+    be run again; the reply does not tell the member to reload Discord, nothing having changed."""
+    from leaguebot.core.services.test_mode.driver_commands import RELOAD
     from tests.support.season_league import SEASON_ID, reply
 
     league, ending = await _ENDS[end](tmp_path, True)
@@ -433,6 +471,7 @@ async def test_a_swap_discord_refuses_at_a_test_seasons_end_ends_on_a_fault_and_
         "test_mode_active"
     ] == 0
     assert await stopped_job(league.db_path) is None
+    assert RELOAD not in reply(asked)
     logged = [line for posted in _log_lines(bot) for line in posted.splitlines()]
     for told in (reply(asked).splitlines(), logged):
         named = [line for line in told if "/driver" in line]

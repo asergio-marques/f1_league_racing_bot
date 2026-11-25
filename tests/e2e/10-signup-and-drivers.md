@@ -117,7 +117,7 @@ names you as the one who acted, and the driver by its test name beneath.
    **Expect:**
    - **Reply:**
      ```
-     ✅ The backup is staged. **Restart the bot** and it will come back on the restored database — under a service it will restart itself; from a terminal, stop it and run it again.
+     ✅ The backup is staged. **Restart the bot** and it will come back on the restored database — under a service it will restart itself; from a terminal, stop it and run it again. Once it is back, reload Discord (Ctrl+R on desktop) before using the `/driver` and `/signup` commands, which the restart may change.
      The database being replaced was copied to `bot.prerestore.db` first, so this can be walked back by hand if it was not what you wanted.
      ```
    - **Log:**
@@ -127,7 +127,8 @@ names you as the one who acted, and the driver by its test name beneath.
      ```
 
 4. **Restart the bot.** From a terminal, stop it and run `python -m leaguebot` again; under a
-   service, restart the service (`systemctl restart <unit>`).
+   service, restart the service (`systemctl restart <unit>`). Then **reload Discord** (Ctrl+R on desktop): the restart swaps `/driver` and `/signup` to suit the
+   restored state, and a client loaded before it may still offer the other forms.
 
    **Expect:**
    - **Host log:** `Started on a restored database.`, before `Logged in as <bot user> (id=<bot id>)`.
@@ -817,9 +818,6 @@ Every answer in this part is given in `#wade-walsh-signup`, as you.
       that step records.
     - **Posts** (`#bot-commands`, public), in this order:
       - `🎨 Drawing the graphics for this review — one moment.`, deleted once the picture is up;
-      - `🏎️ **Lineup**` with a PNG: Division 2's lineup as it will stand, `Bravo Motorsport`
-        holding Wade Walsh and Yuri Yashin and `Charlie GP` Aaron Abbott and Zeno Zappa, each by
-        name;
       - the report, opening:
         ```
         **Placements Review (Season #1) — mid-season**
@@ -831,7 +829,11 @@ Every answer in this part is given in `#wade-walsh-signup`, as you.
         ```
         then Division 1's lineup as text, which no new driver touches: `📂 **Division 1** — lineup
         once confirmed`, then a line per team, `  **<shorthand>**: <@<ID>> (<driver>), <@<ID>> (<driver>)`,
-        e.g. `  **ALP**: <@9000000000000000001> (Adam Archer), <@9000000000000000002> (Bruno Bianchi)`;
+        e.g. `  **ALP**: <@9000000000000000001> (Adam Archer), <@9000000000000000002> (Bruno Bianchi)`,
+        then Division 2's heading alone, `📂 **Division 2** — lineup once confirmed`;
+      - directly under that heading, `🏎️ **Lineup**` with a PNG: Division 2's lineup as it will
+        stand, `Bravo Motorsport` holding Wade Walsh and Yuri Yashin and `Charlie GP` Aaron Abbott
+        and Zeno Zappa, each by name; the notice above is deleted once it is up;
       - last, the question, with a **✅ Confirm placements** button:
         ```
         📋 **Do you confirm these placements?**
@@ -909,7 +911,7 @@ Every answer in this part is given in `#wade-walsh-signup`, as you.
 ## Part K — Restoring the base
 
 50. **Do:** steps 1 to 4 again: `/test-mode backup status`, `/test-mode backup restore` and
-    **♻️ Restore**, and restart the bot.
+    **♻️ Restore**, restart the bot and reload Discord.
 
     **Expect:** as steps 1 to 4: still `Readable: yes` and locked; `Started on a restored
     database.` in the host's log.

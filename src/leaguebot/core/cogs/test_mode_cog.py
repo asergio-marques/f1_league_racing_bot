@@ -44,6 +44,7 @@ from leaguebot.core.services.drivers.driver_reference import (
     reference_name,
     resolve_driver,
 )
+from leaguebot.core.services.test_mode.driver_commands import COMMANDS_NAMED
 from leaguebot.core.services.test_mode.test_mode_settings import NOT_IN_TEST_MODE
 from leaguebot.core.services.test_mode.test_roster_sign_up_change import (
     TEST_ROSTER_SIGN_UP_BULK,
@@ -759,7 +760,12 @@ class TestModeCog(commands.Cog):
         for driver in result:
             mention = f"<@{driver.discord_user_id}>"
             state = driver.state.replace("_", " ").title()
-            seats = "; ".join(f"{team} ({name})" for team, name in driver.seats) or "none"
+            seats = (
+                "; ".join(
+                    f"{shorthand} = {team} ({name})" for shorthand, team, name in driver.seats
+                )
+                or "none"
+            )
             body.append(
                 f"{driver.display_name:<20} {mention:<30} {state:<26} "
                 f"{driver.nationality or '—':<14} {seats}"
@@ -770,7 +776,7 @@ class TestModeCog(commands.Cog):
             body_lines=body,
             footer=(
                 "Copy mention strings above when submitting results in the format:\n"
-                "`Position, <@user_id>, <@&role_id>, ...`"
+                "`Position, <@user_id>, <team shorthand>, ...`"
             ),
         ):
             await interaction.followup.send(page, ephemeral=True)
@@ -959,7 +965,8 @@ class _ConfirmRestoreView(LeagueView):
         await interaction.followup.send(
             "✅ The backup is staged. **Restart the bot** and it will come back on the "
             "restored database — under a service it will restart itself; from a terminal, "
-            "stop it and run it again.\n"
+            "stop it and run it again. Once it is back, reload Discord (Ctrl+R on desktop) "
+            f"before using {COMMANDS_NAMED}, which the restart may change.\n"
             "The database being replaced was copied to `bot.prerestore.db` first, so this "
             "can be walked back by hand if it was not what you wanted.",
             ephemeral=True,

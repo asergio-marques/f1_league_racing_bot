@@ -21,8 +21,15 @@ the step that runs it (`Step.on_fault`) or the start-up to report. A swap that f
 wrong commands in place until the next one, which is accepted: the remedy is a restart.
 
 **The notices name the groups in words** (`COMMANDS_NAMED`): the notice a factory reset or
-`/bot init` adds, built where no swap is, and the swap's own refusal (`SWAP_PROBLEM`) are both built
-from it; only the step's describe line spells the names out.
+`/bot init` adds, built where no swap is, the sentence of the restore's reply that sends the member
+to reload after the restart, the swap's own refusal (`SWAP_PROBLEM`) and the reload notice
+(`RELOAD`) are all built from it; only the step's describe line spells the names out.
+
+**A swap done tells the member to reload** (`reload_reply`): a Discord client loaded before the
+swap still offers the old commands, and Discord answers them with `Unknown Integration` without
+the bot seeing them. The notice is the last thing in the reply of each change that plans the
+swap, and of the `!sync` command, which is no change and ends its own reply with it once its sync
+has gone through; it is not given where Discord refused the swap, which changed nothing.
 """
 
 from __future__ import annotations
@@ -49,6 +56,13 @@ COMMANDS_NAMED = "the `/driver` and `/signup` commands"
 #: restart, never the change run again.
 SWAP_PROBLEM = (
     f"{COMMANDS_NAMED} could not be changed; they will be put right when the bot next restarts"
+)
+
+#: What a swap done asks of the member, as a change's reply ends: a client loaded before the swap
+#: still offers the old commands. A reload clears every reply only the member can see, this included.
+RELOAD = (
+    f"🔄 Reload Discord (Ctrl+R on desktop) before using {COMMANDS_NAMED}, which have just "
+    "changed. Reloading clears every reply only you can see, this one included."
 )
 
 #: The pair of groups a command name is shown as: the member group and the test-mode group.
@@ -145,8 +159,23 @@ def swap_not_done_reply(views: Sequence[StepView]) -> str:
     return f"\n⚠️ Done, but on Discord:\n• {problem}" if problem else ""
 
 
+def reload_reply(views: Sequence[StepView]) -> str:
+    """The notice ending a change's reply that the commands have changed and Discord must be
+    reloaded: where the swap among *views* is done with no problem, none where it ran not at all,
+    is not done, was discarded or was refused."""
+    for view in views:
+        if (
+            view.name == SWAP_TEST_MODE_COMMANDS
+            and view.done
+            and "discarded" not in (view.result or {})
+            and swap_problem([view]) is None
+        ):
+            return f"\n\n{RELOAD}"
+    return ""
+
+
 __all__ = [
-    "COMMANDS_NAMED", "GroupPair", "SWAP_PROBLEM", "SWAP_TEST_MODE_COMMANDS",
-    "swap_not_done_line", "swap_not_done_reply", "swap_problem", "swap_test_mode_commands",
-    "swap_test_mode_commands_step",
+    "COMMANDS_NAMED", "GroupPair", "RELOAD", "SWAP_PROBLEM", "SWAP_TEST_MODE_COMMANDS",
+    "reload_reply", "swap_not_done_line", "swap_not_done_reply", "swap_problem",
+    "swap_test_mode_commands", "swap_test_mode_commands_step",
 ]

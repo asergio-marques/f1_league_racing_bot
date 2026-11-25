@@ -17,6 +17,7 @@ from dotenv import load_dotenv
 from leaguebot.attendance import wiring as attendance_wiring
 from leaguebot.attendance.services.hooks.preview_sources import AttendancePreviewSources
 from leaguebot.core.services.seasons.season_review_changes import recover_expired_review_prompts
+from leaguebot.core.services.test_mode.driver_commands import RELOAD
 from leaguebot.framework.services.jobs.start_up import start_up
 from leaguebot.framework.utils.hooks import AwaitedHook, Hook, StartingHook
 from leaguebot.framework.models.change import GuildUnavailable
@@ -1435,7 +1436,7 @@ async def build(settings: Settings) -> LeagueBot:
         except discord.HTTPException:
             pass
         done = "Cleared guild overrides and synced" if ctx.guild is not None else "Synced"
-        await ctx.send(f"✅ {done} {len(synced)} global command(s).", delete_after=15)
+        await ctx.send(f"✅ {done} {len(synced)} global command(s).\n\n{RELOAD}", delete_after=15)
 
     _sign_up_to_starting(bot)
 

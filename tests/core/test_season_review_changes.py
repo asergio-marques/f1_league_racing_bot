@@ -498,6 +498,39 @@ async def test_each_review_picture_is_drawn_and_posted_by_a_job_of_its_own_in_or
     assert posting.views and posting.views[0]["season_id"] == 1
 
 
+
+async def test_a_review_picture_is_posted_after_the_report_sections_it_follows(posting):
+    """Alex's review of season 1 has three report sections: the season's heading, Pro's
+    configuration and the season's unsettled signups. Pro's calendar and lineup each follow one
+    section, the heading. Once the queue runs, channel 700 reads: the drawing notice, the
+    heading, Pro's calendar, Pro's lineup, the notice deleted as soon as the lineup is up, Pro's
+    configuration and the unsettled signups, then the question."""
+    _attach(posting)
+    report = ["**Season 1 placements**", "\U0001f4c2 **Configuration**", "**Unsettled signups**"]
+    pictures = [{**picture, "after_sections": 1} for picture in PICTURES]
+    interaction = member_interaction(posting.bot, user=_alex())
+    interaction.channel_id = REVIEW_CHANNEL
+    await posting.bot.change_queue.ask(
+        POST, {**_payload(), "pictures": pictures, "report": report},
+        interaction=interaction, what="posting the placements review",
+    )
+    await run_queue(posting.bot)
+
+    def _read(event: str, message: Any) -> str:
+        if event == "delete":
+            return "notice deleted"
+        if message.picture:
+            return message.content + " picture"
+        return message.content
+
+    notice, *rest = [_read(event, message) for event, message in posting.channel.events]
+    assert notice.startswith("\U0001f3a8 Drawing the graphics")
+    assert rest == [
+        report[0], "\U0001f4c5 **Calendar** picture", "\U0001f3ce\ufe0f **Lineup** picture",
+        "notice deleted", *report[1:], QUESTION,
+    ]
+
+
 async def test_a_refused_review_picture_falls_back_to_text_in_the_same_try(posting):
     """Discord refuses every message carrying a file in channel 700 (no Attach Files). Once the
     queue runs, each picture is posted as its text instead, in the same try: the queue does not

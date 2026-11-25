@@ -125,7 +125,7 @@ them.
    **Expect:**
    - **Reply:**
      ```
-     ✅ The backup is staged. **Restart the bot** and it will come back on the restored database — under a service it will restart itself; from a terminal, stop it and run it again.
+     ✅ The backup is staged. **Restart the bot** and it will come back on the restored database — under a service it will restart itself; from a terminal, stop it and run it again. Once it is back, reload Discord (Ctrl+R on desktop) before using the `/driver` and `/signup` commands, which the restart may change.
      The database being replaced was copied to `bot.prerestore.db` first, so this can be walked back by hand if it was not what you wanted.
      ```
    - **Log:**
@@ -135,7 +135,8 @@ them.
      ```
 
 5. **Restart the bot.** From a terminal, stop it and run `python -m leaguebot` again; under a
-   service, restart the service (`systemctl restart <unit>`).
+   service, restart the service (`systemctl restart <unit>`). Then **reload Discord** (Ctrl+R on desktop): the restart swaps `/driver` and `/signup` to suit the
+   restored state, and a client loaded before it may still offer the other forms.
 
    **Expect:**
    - **Host log:** `Started on a restored database.`, before `Logged in as <bot user> (id=<bot id>)`.
@@ -1010,7 +1011,8 @@ sets up Season #2 with test mode on, leaving it in configuration.
     **Expect:** as `02-roster-changes.md` step 31: `Cancelling season 1`, then
     `✅ Season cancelled.`, the cancellation notices in each division's check-in, weather and
     results channels, each calendar posted again with its rounds cancelled, and the line
-    `<you> | /season cancel | Success`. Test mode is off and the fake drivers deleted. **The saved
+    `<you> | /season cancel | Success`. The reply ends with the reload notice (step 76 says when to
+    act on it). Test mode is off and the fake drivers deleted. **The saved
     backup is kept**: `bot.bkup.db`, `scheduler.bkup.db` and `backup.lock` are still in the bot
     host folder.
 
@@ -1033,6 +1035,8 @@ sets up Season #2 with test mode on, leaving it in configuration.
     **Expect:** as `02-roster-changes.md` step 49: test mode **enabled**, with no `📌 Added default
     point configs` line, and the line `<you> | /test-mode toggle | Success` with
     `test_mode: enabled` beneath. This switches test mode **on**; never run it again in this spec.
+    The reply ends, after a blank line, with the reload notice, which `02-roster-changes.md` step 49
+    quotes. **Reload Discord now**, once you have read it: step 77 is the first to use `/signup`.
 
 ### The three toggles
 
@@ -1296,7 +1300,7 @@ the base had it, the hub apart: no command unsets it. Restoring the base takes t
 and the cancellation back out of the database, so the next spec starts where `00-base.md` left off.
 
 101. **Do:** steps 2 to 5 again: `/test-mode backup status`, `/test-mode backup restore`, press
-     **♻️ Restore**, and restart the bot.
+     **♻️ Restore**, restart the bot and reload Discord.
 
      **Expect:** as steps 2 to 5. The status still reads `Readable: yes` and locked: the
      cancellation of step 73 kept the backup. `bot.prerestore.db` and `scheduler.prerestore.db` now
