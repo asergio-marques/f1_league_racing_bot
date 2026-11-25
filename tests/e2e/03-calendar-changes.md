@@ -105,7 +105,7 @@ Discord timestamp, `<t:<unix time>:F>`, which Discord shows in your own time zon
      **Division 1**
        Round 1 · Silverstone Circuit · <YEAR+1>-03-01  P1: ⏳  P2: ⏳  P3: ⏳  Cleanup: ⏳  |  Results: ⏳  |  RSVP: ⏳  Last: ⏳  Deadline: ⏳  Cleared: ⏳
        Round 2 · Hungaroring     · <YEAR+1>-03-08  P1: ⏳  P2: ⏳  P3: ⏳  Cleanup: ⏳  |  Results: ⏳  |  RSVP: ⏳  Last: ⏳  Deadline: ⏳  Cleared: ⏳
-       Round 3 · TBA             · <YEAR+1>-03-15  Notice: ⏳  |  Results: ⏳  |  RSVP: ⏳  Last: ⏳  Deadline: ⏳  Cleared: ⏳
+       Round 3 · TBA             · <YEAR+1>-03-15  Notice: ⏳  Cleanup: ⏳  |  Results: ⏳  |  RSVP: ⏳  Last: ⏳  Deadline: ⏳  Cleared: ⏳
      ```
      and Division 2 its three rounds, `Autodromo Nazionale Monza`,
      `Circuit de Spa-Francorchamps` and `Circuit Zandvoort`, on `<YEAR+1>-03-01`, `-03-08` and
@@ -480,7 +480,7 @@ ways out, then the amendments: two go through, and one is refused for the moment
       ```
       **Division 1**
         Round 1 · Silverstone Circuit · <YEAR+1>-03-01  P1: ⏳  P2: ⏳  P3: ⏳  Cleanup: ⏳  |  Results: ⏳  |  RSVP: ⏳  Last: ⏳  Deadline: ⏳  Cleared: ⏳
-        Round 2 · TBA             · <YEAR+1>-03-15  Notice: ⏳  |  Results: ⏳  |  RSVP: ⏳  Last: ⏳  Deadline: ⏳  Cleared: ⏳
+        Round 2 · TBA             · <YEAR+1>-03-15  Notice: ⏳  Cleanup: ⏳  |  Results: ⏳  |  RSVP: ⏳  Last: ⏳  Deadline: ⏳  Cleared: ⏳
         Round 3 · Hungaroring     · <YEAR+1>-03-22  P1: ⏳  P2: ⏳  P3: ⏳  Cleanup: ⏳  |  Results: ⏳  |  RSVP: ⏳  Last: ⏳  Deadline: ⏳  Cleared: ⏳
       ```
       Every mark of the moved round ⏳, not ⚠️: the amendment took its timed work down and armed
@@ -866,7 +866,7 @@ its own word in its own channel, and the calendar is reposted with the round cov
     - **Reply:** the two cancelled rounds are gone from it:
       ```
       **Division 1**
-        Round 2 · TBA             · <YEAR+1>-03-15  Notice: ⏳  |  Results: ⏳  |  RSVP: ⏳  Last: ⏳  Deadline: ⏳  Cleared: ⏳
+        Round 2 · TBA             · <YEAR+1>-03-15  Notice: ⏳  Cleanup: ⏳  |  Results: ⏳  |  RSVP: ⏳  Last: ⏳  Deadline: ⏳  Cleared: ⏳
         Round 3 · Hungaroring     · <YEAR+1>-03-22  P1: ⏳  P2: ⏳  P3: ⏳  Cleanup: ⏳  |  Results: ⏳  |  RSVP: ⏳  Last: ⏳  Deadline: ⏳  Cleared: ⏳
 
       **Division 2**
@@ -1008,7 +1008,7 @@ cancelled. Division 1 runs on, so the season stays ongoing.
     - **Reply:** Division 2 is gone from it, and Division 1 is as in step 54:
       ```
       **Division 1**
-        Round 2 · TBA             · <YEAR+1>-03-15  Notice: ⏳  |  Results: ⏳  |  RSVP: ⏳  Last: ⏳  Deadline: ⏳  Cleared: ⏳
+        Round 2 · TBA             · <YEAR+1>-03-15  Notice: ⏳  Cleanup: ⏳  |  Results: ⏳  |  RSVP: ⏳  Last: ⏳  Deadline: ⏳  Cleared: ⏳
         Round 3 · Hungaroring     · <YEAR+1>-03-22  P1: ⏳  P2: ⏳  P3: ⏳  Cleanup: ⏳  |  Results: ⏳  |  RSVP: ⏳  Last: ⏳  Deadline: ⏳  Cleared: ⏳
       ```
       and the legend.

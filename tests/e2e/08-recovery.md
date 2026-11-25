@@ -551,7 +551,7 @@ bot is down.
 
 29. **Do:** `/results rounds amend division_name:Division 1 round_number:1 session:Feature Race`
 
-    **Expect:** as `01-full-season.md` step 135:
+    **Expect:** as `01-full-season.md` step 136:
     - **Ack:** `Opening an amendment of a round's results`
     - **Then:** `✅ Amendment channel created: <#<amend channel id>>`
     - **Posts:** the channel **`amend-s1-division-1-r1`**, with the opening
@@ -589,11 +589,11 @@ bot is down.
     prompt. The amendment of step 29 is closed, and a round takes a new one.
 
 32. **Do:** within five minutes of the prompt, in `#amend-s1-division-1-r1`, send the corrected
-    race of `01-full-season.md` step 136, as it stands (22 lines,
+    race of `01-full-season.md` step 137, as it stands (22 lines,
     `1, <@9000000000000000008>, DLT, 1:25:12.345, 1:29.100, N/A` first): Hiro Hayashi and Kevin
     Keller swapped.
 
-    **Expect:** as `01-full-season.md` steps 136 and 137:
+    **Expect:** as `01-full-season.md` steps 137 and 138:
     - **Posts** (amendment channel): your message marked ⏳, then deleted; then the report stage,
       `🏁 **Penalty Review — Round 1 | Division 1**` with
       `**Stage 2 of 3 — Reports.**`, and `**Staged Penalties (1):**` listing Rafael Rossi's +5s,
