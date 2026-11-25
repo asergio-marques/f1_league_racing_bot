@@ -467,8 +467,9 @@ it leaves the channel saved and the reply says what was not posted. Where signup
 closed notice stands in another channel, two more steps follow: `CARRY_CLOSED` posts it in the new
 channel, keeping the new message and channel as the notice's record, and `DELETE_CARRIED_CLOSED`
 takes the old one down through the standing-post handler, a message or channel already gone
-counting as done; a refused post leaves the old notice for the next opening, a refused delete is
-named in the reply with its link and recorded as a failure, and neither stops the lane
+counting as done. A failure of either step, refused or not, is named once in the reply and recorded
+as a failure line, the channel staying saved and the lane going on: a refused post leaves the old
+notice standing for the next opening, and a refused delete names the old message with its link
 (`channel_setting`'s module docstring; the specification's "Enabling signup flow"). Pinned by
 `test_signup_channel_refuses_a_channel_lacking_what_the_bot_needs_before_anything_is_edited`,
 `test_moving_the_signup_channel_sets_the_new_before_clearing_the_old`,
@@ -476,7 +477,8 @@ named in the reply with its link and recorded as a failure, and neither stops th
 `test_a_signup_channel_deleted_mid_season_is_replaced` and
 `test_a_signup_channel_replaced_while_signups_are_open_carries_the_sign_up_button`,
 `test_a_move_while_signups_are_closed_carries_the_closed_notice_across` and
-`test_a_closed_notice_that_cannot_be_carried_stays_where_it_was`.
+`test_a_closed_notice_that_cannot_be_carried_stays_where_it_was` and
+`test_a_closed_notice_carry_or_take_down_that_fails_without_a_refusal_is_named_in_the_reply`.
 
 **The switch-on and the switch-off read the season's stage again as they start**, so one asked
 before a season's configuration is confirmed and run after it is refused in the words the ask
