@@ -310,7 +310,8 @@ def window_open_change(
                 "⚠️ Signups were not opened: the information message could not be posted and "
                 "was discarded. Run `/signup open` again."
             )
-        text = f"✅ Signups opened. Button posted in <#{ctx.payload['channel_id']}>."
+        posted_in = (views[POST_INFO].result or {}).get("channel_id", ctx.payload["channel_id"])
+        text = f"✅ Signups opened. Button posted in <#{posted_in}>."
         close_at = ctx.payload["close_at"]
         if close_at:
             moment = datetime.fromisoformat(close_at)

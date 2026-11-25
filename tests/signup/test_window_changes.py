@@ -244,11 +244,12 @@ async def test_the_window_is_opened_in_the_record_of_the_post_that_shows_it(tmp_
     stay closed and the season waits. When it runs, the `post_info` job is done, the information
     is posted in the signup channel as it stands then (620) and nothing in 621, and with it the
     window is recorded open, the Sign Up button's message id kept with the channel it was posted
-    in (620), the season moved to SIGNUPS and the SIGNUP_OPEN audit row written naming him."""
+    in (620), his reply naming 620, the season moved to SIGNUPS and the SIGNUP_OPEN audit row
+    written naming him."""
     league = await _league(tmp_path)
     await _set_signup_channel(league, asked_in)
 
-    await _open(league)
+    interaction = await _open(league)
     await _set_signup_channel(league, SIGNUP_CHANNEL)
 
     assert not (await league.config())["signups_open"]
@@ -264,6 +265,7 @@ async def test_the_window_is_opened_in_the_record_of_the_post_that_shows_it(tmp_
     assert config["signup_button_message_id"] == posted.id
     assert config["signup_button_message_channel_id"] == SIGNUP_CHANNEL
     assert _sent_in(league, OLD_SIGNUP_CHANNEL) == []
+    assert f"<#{SIGNUP_CHANNEL}>" in updated_reply(interaction)
     assert await league.stage() == "SIGNUPS"
     [audit] = await league.audits()
     assert str(audit["actor_id"]) == "77"
