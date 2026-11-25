@@ -539,7 +539,7 @@ would make the file's write wait on a record of it.
   check finds no longer due (a review reopened for a round that has since gone final) is dropped,
   not stopped: only a channel missing or unusable stops its lane. Where a league should read why,
   the check gives the verdict a line (`Verdict.not_due`'s `line`), and the queue writes it to the log
-  channel in the save that ends the change; results' carry of a moved channel's posts is its user.
+  channel in the save that ends the change, as results' carry of a moved channel's posts does.
 - **All or nothing in one step.** Where a change must be all or nothing (as the results
   specification's "Changing points system mid-season" requires of an approval), everything it
   saves is saved in one step behind the gate, and only its posts come after, as
@@ -670,30 +670,31 @@ channel is moved, or the signup channel's permissions set (the new channel's fir
 cleared last); see "The record is the queue's"), after any step before the save, and the work after
 it that the setting does not need (checking it against the templates, arming or removing a timed
 job, granting a role to every driver, asking the hub's panel to be posted again as the bot's own
-change, posting the signup information in the new signup channel where a window is open, or
-carrying the closed notice to it where signups are closed) is work nothing later depends on. Work
-the save waits on may come before it (a module's kept channels checked before it is switched on, the
-channels an output switched to a picture posts to, and what it put back on Discord): it saves
-nothing, and a fault in it, or a refusal by it, ends the setting with nothing saved and no audit
-record, what a step before the save changed on Discord being undone so that nothing is half-set
-(framework.md, "Settings"). A fault in any of these leaves nothing half-done and nothing behind it
-on the lane waits on it. A fault in a step before the save saves nothing, and one in the save is
-rolled back whole, so nothing is saved and the member can simply ask again; a fault in a step after
-the save leaves the setting saved, so asking again with the same value saves nothing and repeats no
-step, and the reply says what was not done, or what to do by hand, where the step has anything to
-say. So such a step carries `Step.on_fault`: where it raises, the queue does not stop the lane but
-marks the job done with what `on_fault` returns, in a save of its own with its lines, and the change
-carries on to its next step or finishes. A change type may likewise give `ChangeType.on_check_fault`
-for a check that raises as a **member's** change starts: the change is ended as REFUSED in one save,
-with the failure line in place of a refusal's, and the reply it returns. What the member is told and
-what the log channel records of either is the core specification's "How a change is carried out";
-the full detail goes to the host's log. A step that is `undiscardable` may not carry `on_fault`,
-since it is a step a stop must hold. `framework/services/queue/setting_change.py` builds both
-callbacks for every settings command once. *Rejected:* a step that catches its own fault, which
-would leave its partial writes on the save's connection and could not catch what fails after it
-returns, the queue's own audit and line writes and the commit; stopping the lane for a setting,
-which would hold every other change for a fault that either the member cures by asking again (a save
-rolled back) or that nothing later on the lane depends on (a step after it).
+change, asking the posts of a moved results or standings channel to be carried as the bot's own
+change, posting the signup information in the new signup channel where a window is open, or carrying
+the closed notice to it where signups are closed) is work nothing later depends on. Work the save
+waits on may come before it (a module's kept channels checked before it is switched on, the channels
+an output switched to a picture posts to, and what it put back on Discord): it saves nothing, and a
+fault in it, or a refusal by it, ends the setting with nothing saved and no audit record, what a
+step before the save changed on Discord being undone so that nothing is half-set (framework.md,
+"Settings"). A fault in any of these leaves nothing half-done and nothing behind it on the lane
+waits on it. A fault in a step before the save saves nothing, and one in the save is rolled back
+whole, so nothing is saved and the member can simply ask again; a fault in a step after the save
+leaves the setting saved, so asking again with the same value saves nothing and repeats no step, and
+the reply says what was not done, or what to do by hand, where the step has anything to say. So such
+a step carries `Step.on_fault`: where it raises, the queue does not stop the lane but marks the job
+done with what `on_fault` returns, in a save of its own with its lines, and the change carries on to
+its next step or finishes. A change type may likewise give `ChangeType.on_check_fault` for a check
+that raises as a **member's** change starts: the change is ended as REFUSED in one save, with the
+failure line in place of a refusal's, and the reply it returns. What the member is told and what the
+log channel records of either is the core specification's "How a change is carried out"; the full
+detail goes to the host's log. A step that is `undiscardable` may not carry `on_fault`, since it is
+a step a stop must hold. `framework/services/queue/setting_change.py` builds both callbacks for
+every settings command once. *Rejected:* a step that catches its own fault, which would leave its
+partial writes on the save's connection and could not catch what fails after it returns, the queue's
+own audit and line writes and the commit; stopping the lane for a setting, which would hold every
+other change for a fault that either the member cures by asking again (a save rolled back) or that
+nothing later on the lane depends on (a step after it).
 
 One kind of setting is not wholly so: a change that recalculates and posts as `/attendance sync`
 does follows the sync's rule whatever starts it, a setting included. Its cards, lineups and sheets
