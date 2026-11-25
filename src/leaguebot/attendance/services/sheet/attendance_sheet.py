@@ -44,6 +44,13 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
+def after_round_order_key(total: int | None, name: str) -> tuple[int, str]:
+    """The order of a sheet after a round and of the final one: most attendance points first, drivers
+    level on points by name. The opening sheet is ordered by team then driver instead. The textual
+    sheet sorts by this, and whatever draws the sheet is handed its rows in this order."""
+    return (-(total or 0), name.lower())
+
+
 @posts_in_a_job
 async def post_attendance_sheet(
     bot: LeagueBot,
@@ -163,7 +170,7 @@ async def post_attendance_sheet(
     def _sort_key(r):
         member = guild.get_member(int(r["discord_user_id"]))
         display = member.display_name if member else str(r["discord_user_id"])
-        return (-(r["total_points_after"] or 0), display.lower())
+        return after_round_order_key(r["total_points_after"], display)
 
     # Nobody has attended anything yet, so the points above separate nobody. The opening
     # sheet is ordered as the opening standings grid is — team, then driver — so that a

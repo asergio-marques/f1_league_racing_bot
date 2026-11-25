@@ -1109,6 +1109,16 @@ async def build_attendance_preview(services: PreviewServices, context: PreviewCo
     # many rounds of the calendar have been run.
     limit = fabricate_attendance_limit(run_ordinals)
     records = fabricate_attendance_records(context.drivers, run_ordinals, limit)
+    # The drawing keeps the order it is handed, so the fabricated rows are put in the order
+    # attendance gives its sheet: most points first, drivers level on points by name.
+    row_of = {record.key: record for record in records}
+    records = [
+        row_of[key]
+        for key in services.preview_sources.attendance_sheet_order(
+            {record.key: record.total for record in records},
+            {record.key: names[record.key] for record in records},
+        )
+    ]
 
     drawing = resolve_drawing(
         division_name=context.division_name,

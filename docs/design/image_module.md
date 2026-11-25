@@ -289,7 +289,10 @@ drawing through the same file's `resolve_drawing` (`attendance_drawing`); the ve
 results builds and words through `verdict_banner_drawing`; and `VerdictKind`, which names a verdict
 results asks to be drawn. The aspect a results or a standings picture is switched by is declared
 beside its model, for results to ask the gate about. Results reads a verdict's team name and key
-from core's team readers itself. Attendance hands in a check-in call's deadline. A resolution kept
+from core's team readers itself. Attendance hands in a check-in call's deadline. The attendance
+sheet's rows are drawn in the order attendance hands them: the sheet's own order is attendance's
+(the attendance specification, "Updating attendance sheets"), and the picture adds none of its own
+(`attendance_drawing.resolve_drawing`). A resolution kept
 among the models is pure, as the models are, and holds the picture's own rules (the attendance
 sheet's limit plate and marks); the projection onto a template stays in the aspect's service.
 
@@ -349,10 +352,11 @@ What a preview draws is the image specification's ("The test commands"). What an
 owns is read through a protocol image declares, `PreviewSources` (`preview/preview_sources.py`):
 each module implements the part whose data it owns, results its sample sessions and
 classification rows, compounds, standings, results drawing and the sanction's wording
-(`results/services/publishing/preview_sources.py`), and attendance its check-in deadline
-(`attendance/services/hooks/preview_sources.py`), and the builder joins the two and attaches them as
-`bot.preview_sources`. A method hands back a worked answer, never a stored row or a service of the
-module's.
+(`results/services/publishing/preview_sources.py`), and attendance its check-in deadline and the
+order its sheet lists a set of drivers in after a round, which the attendance preview's fabricated
+rows take (`attendance/services/hooks/preview_sources.py`), and the builder joins the two and
+attaches them as `bot.preview_sources`. A method hands back a worked answer, never a stored row or a
+service of the module's.
 
 Image has no entry in the dependency table and declares no hook; the one seam it declares for others
 to fill is this protocol (`architecture.md`, "How modules and core fit together").
@@ -490,3 +494,9 @@ Each of these is held by the docstring named, and pinned by a test where one is 
   whatever the output's switch holds: the step runs while the output is still text, and the drawing
   is not asked, the step's connection being held (`picture_channels`, `core.md`).
 - **`posting_origin` is required and never inferred** (`render_for_posting`).
+- **The attendance picture's rows keep the order they are handed**, whichever sheet it is: image
+  sorts none, so the picture cannot disagree with the text sheet, and the preview takes its order
+  from attendance too (`attendance_drawing.resolve_drawing`, `PreviewSources.attendance_sheet_order`,
+  `build_attendance_preview`, `test_rows_are_drawn_in_the_order_they_are_handed`,
+  `test_the_opening_sheet_and_its_picture_list_drivers_by_team_then_name`,
+  `test_the_preview_draws_its_rows_in_the_sheet_s_order`).

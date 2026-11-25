@@ -398,8 +398,11 @@ async def test_a_missing_channel_is_reported_by_the_divisions_name(sheet_db):
 # ── What the sheet says (FR-017–FR-019) ──────────────────────────────────
 
 
-async def _seat(db_path, *, profile_id: int, user_id: str, seat: int, total: int) -> None:
-    """Seat another driver in Apex Racing with *total* attendance points after round 3."""
+async def _seat(
+    db_path, *, profile_id: int, user_id: str, seat: int, total: int, team: int = 100
+) -> None:
+    """Seat another driver in the team *team* (Apex Racing unless said) with *total* attendance
+    points after round 3."""
     async with get_connection(db_path) as db:
         await db.execute(
             "INSERT INTO driver_profiles (id, discord_user_id, current_state) "
@@ -408,8 +411,8 @@ async def _seat(db_path, *, profile_id: int, user_id: str, seat: int, total: int
         )
         cursor = await db.execute(
             "INSERT INTO team_seats (team_instance_id, seat_number, driver_profile_id) "
-            "VALUES (100, ?, ?)",
-            (seat, profile_id),
+            "VALUES (?, ?, ?)",
+            (team, seat, profile_id),
         )
         await db.execute(
             "INSERT INTO driver_season_assignments "
@@ -425,9 +428,24 @@ async def _seat(db_path, *, profile_id: int, user_id: str, seat: int, total: int
 
 
 @pytest.mark.asyncio
-async def test_the_sheet_lists_the_most_points_first_then_by_name(sheet_db):
-    """FR-017/FR-018. Zebra and Alpha are level on 3, so the name decides between them; the
-    name is the one the server shows, not the Discord id, which here sorts the other way."""
+async def test_the_sheet_lists_the_most_points_first_then_by_name(sheet_db, monkeypatch):
+    """FR-017/FR-018. Division 1's sheet after round 3, the images module on: Mike (222) on 5,
+    and Zebra (111) and Alpha (333) level on 3, so the name decides between them; the name is the
+    one the server shows, not the Discord id, which here sorts the other way. The picture draws
+    its rows in the text's order, though the names it draws (Aaron for 111, Zoe for 333) sort the
+    other way (owner's decision 2026-11-24, until #598/#641)."""
+    from types import SimpleNamespace
+
+    from leaguebot.core.services.drivers import driver_names
+
+    async def _names(*_args, **_kwargs):
+        return {111: "Aaron", 222: "Mike", 333: "Zoe"}
+
+    async def _empty(*_args, **_kwargs):
+        return {}
+
+    monkeypatch.setattr(driver_names, "read_driver_names", _names)
+    monkeypatch.setattr(driver_names, "read_driver_nationalities", _empty)
     await _config(sheet_db, prior=None)
     async with get_connection(sheet_db) as db:
         await db.execute("UPDATE driver_round_attendance SET total_points_after = 3")
@@ -436,9 +454,13 @@ async def test_the_sheet_lists_the_most_points_first_then_by_name(sheet_db):
     await _seat(sheet_db, profile_id=3, user_id="333", seat=3, total=3)
     channel = _FakeChannel([])
     guild = _FakeGuild(channel, {111: "Zebra", 222: "Mike", 333: "Alpha"})
+    drawing = _drawing_that_draws_nothing("none")
 
     with in_a_job():
-        await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
+        await post_attendance_sheet(
+            SimpleNamespace(db_path=sheet_db), guild, sheet_db, round_id=3, division_id=7,
+            drawing=drawing,
+        )
 
     listed = [
         line.split(" ")[0]
@@ -446,6 +468,8 @@ async def test_the_sheet_lists_the_most_points_first_then_by_name(sheet_db):
         if line.startswith("<@")
     ]
     assert listed == ["<@222>", "<@333>", "<@111>"]
+    [sheet], _asked = drawing.draw_attendance_sheet.await_args
+    assert [entry.driver_name for entry in sheet.entries] == ["Mike", "Zoe", "Aaron"]
 
 
 @pytest.mark.parametrize(
@@ -942,3 +966,51 @@ async def test_the_sheet_is_drawn_and_named_for_its_season_division_and_occasion
     [sheet], asked = drawing.draw_attendance_sheet.await_args
     assert asked["what"] == named
     assert (sheet.season_number, sheet.division_tier, sheet.race_name) == ("3", "2", grand_prix)
+
+
+@pytest.mark.asyncio
+async def test_the_opening_sheet_and_its_picture_list_drivers_by_team_then_name(
+    sheet_db, monkeypatch
+):
+    """Division 1's opening sheet, the images module on: Zane (111) seated in Apex Racing and
+    Aaron (222) in Bravo GP, both on nought. The text lists Zane before Aaron, team first, and the
+    picture draws its rows in that same order rather than by name (attendance spec, Updating
+    attendance sheets; image spec, Attendance, Generation and posting)."""
+    from types import SimpleNamespace
+
+    from leaguebot.core.services.drivers import driver_names
+
+    async def _names(*_args, **_kwargs):
+        return {111: "Zane", 222: "Aaron"}
+
+    async def _empty(*_args, **_kwargs):
+        return {}
+
+    monkeypatch.setattr(driver_names, "read_driver_names", _names)
+    monkeypatch.setattr(driver_names, "read_driver_nationalities", _empty)
+    async with get_connection(sheet_db) as db:
+        await db.execute(
+            "INSERT INTO team_instances (id, division_id, name, full_name) "
+            "VALUES (101, 7, 'Bravo', 'Bravo GP')"
+        )
+        await db.commit()
+    await _seat(sheet_db, profile_id=2, user_id="222", seat=1, total=0, team=101)
+    await _config(sheet_db, prior=None)
+    channel = _FakeChannel([])
+    guild = _FakeGuild(channel, {111: "Zane", 222: "Aaron"})
+    drawing = _drawing_that_draws_nothing("none")
+
+    with in_a_job():
+        await post_attendance_sheet(
+            SimpleNamespace(db_path=sheet_db), guild, sheet_db, round_id=3, division_id=7,
+            occasion=_occasion("SEASON_OPENING"), drawing=drawing,
+        )
+
+    listed = [
+        line.split(" ")[0]
+        for line in channel.sent_content.splitlines()
+        if line.startswith("<@")
+    ]
+    assert listed == ["<@111>", "<@222>"]
+    [sheet], _asked = drawing.draw_attendance_sheet.await_args
+    assert [entry.driver_name for entry in sheet.entries] == ["Zane", "Aaron"]

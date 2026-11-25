@@ -114,25 +114,17 @@ def test_one_driver_against_a_ten_row_template_draws_with_no_error():
 # ── Ordering, and the ordinal that is not a datum ─────────────────────────
 
 
-def test_rows_are_ordered_by_total_descending():
+def test_rows_are_drawn_in_the_order_they_are_handed():
+    """The order is attendance's, the textual sheet's: the image module never re-orders."""
     drawing = resolve_drawing(
         division_name="D",
         round_number=3,
         records=_records((1, 2, {}, False), (2, 9, {}, False), (3, 5, {}, False)),
-        display_names={1: "A", 2: "B", 3: "C"},
+        display_names={1: "Zoe", 2: "Mike", 3: "Alice"},
     )
-    assert [e.points for e in drawing.entries] == ["9", "5", "2"]
-
-
-def test_drivers_level_on_totals_are_ordered_alphabetically_by_resolved_name():
-    """The tie-break reads the same string the graphic draws."""
-    drawing = resolve_drawing(
-        division_name="D",
-        round_number=3,
-        records=_records((1, 4, {}, False), (2, 4, {}, False)),
-        display_names={1: "Zoe", 2: "Alice"},
-    )
-    assert [e.driver_name for e in drawing.entries] == ["Alice", "Zoe"]
+    assert [e.driver_name for e in drawing.entries] == ["Zoe", "Mike", "Alice"]
+    assert [e.points for e in drawing.entries] == ["2", "9", "5"]
+    assert [e.ordinal for e in drawing.entries] == [1, 2, 3]
 
 
 def test_the_sheet_draws_no_position_even_though_it_is_ordered():

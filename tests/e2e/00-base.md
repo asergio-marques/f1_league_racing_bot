@@ -877,7 +877,9 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
         eleven in each, Division 2's empty `Bravo Motorsport` among them on zero
         (`opening_driver_standings`, `opening_team_standings`).
       - `#d1-attendance`, `#d2-attendance`: the opening attendance sheet, as a picture, every
-        racing driver on zero, reserves left out: 22 rows in Division 1, 19 in Division 2.
+        racing driver on zero, reserves left out, ordered as the opening text sheet orders them:
+        by team, and within a team by account number, as no fake driver is on the server. 22 rows
+        in Division 1, 19 in Division 2.
       - Nothing in the weather, results, verdicts or RSVP channels.
       > UNVERIFIED: the caption, if any, posted with each of these pictures, and how many
       > messages the opening classification takes (drivers and teams).
