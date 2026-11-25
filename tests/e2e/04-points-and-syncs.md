@@ -1166,7 +1166,7 @@ division counts as having something to post once any round of it holds results, 
 
     **Expect:** the name is matched whatever its case, and given back as the season holds it.
     - **Ack:** `Syncing the standings of every round of **Division 1**`
-    - **Then:** `✅ Standings for **Division 1** synced to the standings channel.`
+    - **Then:** `✅ Standings for **Division 1** synced to the standings channel.` Then, where a picture drew with notices, a blank line and the `⚠️ **Image notices**` section, as in `00-base.md` step 37.
     - **Posts** (`#d1-standings`): drivers and teams again, `Final Results`, with the amended
       totals of step 74 (Kevin Keller 43, Hiro Hayashi 32; Foxtrot Motorsport 46, Delta Racing
       34), and the pair before them deleted. Nothing in `#d1-results`.
