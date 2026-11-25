@@ -13,7 +13,7 @@ it only to place it; the rules governing it belong to its own specification.
 - Division: one championship within a season, holding its own drivers, its own calendar, its own role and its own channels.
 - Tier: the standing of a division within its season. Tier 1 is the highest.
 - Round: one race weekend in a division's calendar.
-- Round format: the shape of a round's weekend, being one of normal, sprint, endurance or mystery.
+- Round format: the shape of a round's weekend, being one of normal, sprint, endurance or mystery. A message a league reads shall name a format as Normal, Sprint, Endurance or Mystery, save where it lists the values a manager is to type.
 - Session: one part of a round that is qualified or raced. The sessions of a round follow from its format and are configured by nothing else.
 - Track: one circuit the bot ships knowledge of.
 - Team: a constructor a driver races for. A team holds seats.

@@ -22,6 +22,7 @@ from datetime import datetime, timezone
 import pytest
 
 from leaguebot.core.cogs.round_cog import RoundCog
+from leaguebot.core.models.round import RoundFormat
 from leaguebot.framework.db.database import get_connection
 from leaguebot.utils.messages import discord_ts
 from tests.support.setup_rounds import (
@@ -69,7 +70,7 @@ def _added(number: int, division: str, fmt: str, track: str | None, at: datetime
            rows: list[tuple[int, str, str | None, str]]) -> str:
     """`/round add`'s reply once the round is saved, word for word: the division's rounds, *rows*
     as `round_rows` gives them, follow."""
-    from leaguebot.core.models.round import Round, RoundFormat
+    from leaguebot.core.models.round import Round
     from leaguebot.core.utils.formatting import format_round_list
 
     listed = [
@@ -79,7 +80,7 @@ def _added(number: int, division: str, fmt: str, track: str | None, at: datetime
     ]
     return (
         f"✅ Round **{number}** added to **{division}**.\n"
-        f"Format: {fmt} | Track: {track or 'Mystery'} | {discord_ts(at.replace(tzinfo=timezone.utc))}\n\n"
+        f"Format: {RoundFormat(fmt).label} | Track: {track or 'Mystery'} | {discord_ts(at.replace(tzinfo=timezone.utc))}\n\n"
         + format_round_list(listed)
     )
 
@@ -89,7 +90,7 @@ def _success_line(number: int, division: str, fmt: str, track: str | None, at: d
     return (
         f"{NAMED} | /round add | Success\n"
         f"  division: {division}\n"
-        f"  round: {number}, format: {fmt}\n"
+        f"  round: {number}, format: {RoundFormat(fmt).label}\n"
         f"  track: {track or 'Mystery'}\n"
         f"  scheduled_at: {at.isoformat()} UTC"
     )
@@ -404,8 +405,8 @@ _OVERFLOW = (
         ),
         pytest.param(
             {}, {"format": "NORMAL"},
-            "❌ A track is required for `NORMAL` rounds. Leave track blank only for "
-            "`MYSTERY` rounds.",
+            "❌ A track is required for Normal rounds. Leave track blank only for "
+            "Mystery rounds.",
             id="a_track_required",
         ),
         pytest.param(

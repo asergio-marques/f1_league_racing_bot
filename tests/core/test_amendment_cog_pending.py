@@ -196,13 +196,13 @@ async def test_a_setup_round_amendment_its_renumbering_audit_entry_and_line_are_
         pytest.param(
             2, {"format": "MYSTERY"},
             (2, "MYSTERY", None, "2026-06-21T18:00:00+00:00"),
-            ("format: NORMAL → MYSTERY", "track: Hungaroring → none"),
+            ("format: Normal → Mystery", "track: Hungaroring → none"),
             id="a-mystery-round-loses-its-track",
         ),
         pytest.param(
             3, {"format": "NORMAL"},
             (3, "NORMAL", "Hungaroring", "2026-06-28T18:00:00+00:00"),
-            ("format: MYSTERY → NORMAL",),
+            ("format: Mystery → Normal",),
             id="a-round-leaving-mystery-keeps-the-track-it-holds",
         ),
         pytest.param(
@@ -540,7 +540,7 @@ async def test_a_setup_round_amended_to_what_stands_changes_nothing(
         ),
         pytest.param(
             {"format": "NORMAL"},
-            "❌ Format `NORMAL` requires a track. Supply a `track` value or change format to "
+            "❌ Format Normal requires a track. Supply a `track` value or change format to "
             "MYSTERY.",
             id="a-format-that-needs-a-track",
         ),

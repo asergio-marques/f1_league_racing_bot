@@ -96,11 +96,14 @@ def amend_payload(
 
 
 def _field_text(value: object) -> str:
-    """A round's field as a log line states it: a moment in UTC without its offset."""
+    """A round's field as a log line states it: a moment in UTC without its offset, a format by
+    its label (`RoundFormat.label`: "Sprint", never ``SPRINT``)."""
     if value is None:
         return "none"
     if isinstance(value, datetime):
         return str(value.astimezone(timezone.utc).replace(tzinfo=None))
+    if isinstance(value, RoundFormat):
+        return value.label
     return str(getattr(value, "value", value))
 
 
@@ -223,7 +226,7 @@ def _check(seasons: SeasonService) -> Callable[[CheckContext], Awaitable[Verdict
         fmt = asked.get("format", rnd.format)
         if fmt is not RoundFormat.MYSTERY and not asked.get("track_name", rnd.track_name):
             return Verdict.refuse(
-                f"❌ Format `{fmt.value}` requires a track. "
+                f"❌ Format {fmt.label} requires a track. "
                 "Supply a `track` value or change format to MYSTERY."
             )
 

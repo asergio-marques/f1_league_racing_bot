@@ -179,8 +179,8 @@ def _add_check(
         track_name = str(payload["track"]).strip() or None
         if fmt is not RoundFormat.MYSTERY and not track_name:
             return Verdict.refuse(
-                f"❌ A track is required for `{fmt.value}` rounds. "
-                "Leave track blank only for `MYSTERY` rounds."
+                f"❌ A track is required for {fmt.label} rounds. "
+                f"Leave track blank only for {RoundFormat.MYSTERY.label} rounds."
             )
         if track_name:
             async with get_connection(ctx.db_path) as db:
@@ -259,7 +259,7 @@ def _add_save(
         line = (
             f"{ctx.named} | {COMMAND} | Success\n"
             f"  division: {division.name}\n"
-            f"  round: {placed.round_number}, format: {fmt.value}\n"
+            f"  round: {placed.round_number}, format: {fmt.label}\n"
             f"  track: {track_name or 'Mystery'}\n"
             f"  scheduled_at: {utc_text(moment)} UTC"
         )
@@ -292,7 +292,7 @@ def _add_outcome(ctx: OutcomeContext) -> str:
         return ADD_DISCARDED
     return (
         f"✅ Round **{saved['number']}** added to **{saved['division']}**.\n"
-        f"Format: {saved['format']} | Track: {saved['track'] or 'Mystery'} | "
+        f"Format: {RoundFormat(saved['format']).label} | Track: {saved['track'] or 'Mystery'} | "
         f"{discord_ts(datetime.fromisoformat(saved['at']))}\n\n"
         + format_round_list(round_models(saved["rounds"]))
     )

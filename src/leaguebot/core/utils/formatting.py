@@ -34,7 +34,8 @@ def format_division_list(divisions: "list[Division]") -> str:
 def format_round_list(rounds: "list[Round]") -> str:
     """Format a list of Round objects as a readable summary.
 
-    Returns one line per round showing number, format, track, and datetime.
+    Returns one line per round showing number, format, track, and datetime, the format named by
+    its label (`RoundFormat.label`: "Sprint", never ``SPRINT``).
     """
     if not rounds:
         return "*(no rounds)*"
@@ -43,7 +44,7 @@ def format_round_list(rounds: "list[Round]") -> str:
         track = r.track_name or "TBD"
         status_tag = " ~~[CANCELLED]~~" if r.status == "CANCELLED" else ""
         lines.append(
-            f"  Round {r.round_number}: {r.format.value} @ {track}"
+            f"  Round {r.round_number}: {r.format.label} @ {track}"
             f" — {discord_ts(r.scheduled_at)}{status_tag}"
         )
     return "\n".join(lines)

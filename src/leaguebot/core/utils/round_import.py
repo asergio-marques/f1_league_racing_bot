@@ -116,8 +116,8 @@ def _check_track(
     """True where the track is acceptable for *fmt*. Mirrors `/round add`."""
     if fmt is not _TRACKLESS_FORMAT and not track_raw:
         errors.append(
-            f"{location}: a track is required for `{fmt.value}` rounds. "
-            f"Only `{_TRACKLESS_FORMAT.value}` rounds may omit one."
+            f"{location}: a track is required for {fmt.label} rounds. "
+            f"Only {_TRACKLESS_FORMAT.label} rounds may omit one."
         )
         return False
     return True

@@ -3520,7 +3520,7 @@ async def test_a_round_amendment_writes_one_line_naming_the_member_the_round_and
     assert "round 3" in body.lower()
     changes = body.splitlines()
     assert f"  track: {BAHRAIN} → {SILVERSTONE}" in changes
-    assert "  format: NORMAL → SPRINT" in changes
+    assert "  format: Normal → Sprint" in changes
     assert "track_name" not in body
 
 
@@ -3538,7 +3538,7 @@ async def test_a_round_amendment_line_leaves_out_a_field_given_at_the_value_it_h
     [line] = _success_lines(league)
     head, _, body = line.partition("\n")
     assert head == "Admin (`<@77>`) | /round amend | Success"
-    assert "  format: NORMAL → SPRINT" in body.splitlines()
+    assert "  format: Normal → Sprint" in body.splitlines()
     assert "track:" not in body
 
 

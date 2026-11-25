@@ -41,6 +41,7 @@ import discord
 import pytest
 
 from leaguebot.core.cogs.division_cog import DivisionCog
+from leaguebot.core.models.round import RoundFormat
 from leaguebot.framework.db.database import get_connection
 from leaguebot.utils.messages import discord_ts
 from tests.support.setup_rounds import (
@@ -419,10 +420,10 @@ def _duplicated(new: str, tier: int, source: str, offset: str,
                 listed: list[tuple[str, int, int]], rounds, *warnings: str) -> str:
     """`/division duplicate`'s reply once the copy is saved, word for word: the setup's divisions,
     *listed* as (name, tier, role id), then *new*'s *rounds*, each (format, track, moment), in
-    their order, then each warning."""
+    their order, each format named by its label, then each warning."""
     if rounds:
         calendar = "**Rounds:**\n" + "\n".join(
-            f"  Round {number}: {fmt} @ {track} — {discord_ts(at)}"
+            f"  Round {number}: {RoundFormat(fmt).label} @ {track} — {discord_ts(at)}"
             for number, (fmt, track, at) in enumerate(rounds, 1)
         )
     else:
