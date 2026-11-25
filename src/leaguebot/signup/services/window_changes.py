@@ -53,6 +53,7 @@ from leaguebot.framework.models.change import (
     AuditRecord,
     PlannedStep,
     StepKind,
+    StepFailedOnDiscord,
     StepResult,
     Verdict,
 )
@@ -246,9 +247,13 @@ def window_open_change(
         payload = ctx.step_payload
         close_at = payload["close_at"]
         track_ids = [str(each) for each in payload["track_ids"]]
+        cfg = await signup.get_config()
+        if cfg is None or cfg.signup_channel_id is None:
+            raise StepFailedOnDiscord("the signup channel could not be found to post in")
+        channel_id = int(cfg.signup_channel_id)
         message_id = await post_information(
             ctx.bot, signup=signup, config=config, queue=queue(),
-            channel_id=int(payload["channel_id"]), track_ids=track_ids, close_at=close_at,
+            channel_id=channel_id, track_ids=track_ids, close_at=close_at,
         )
         audited: dict[str, Any] = {"track_ids": track_ids}
         if close_at:
@@ -259,15 +264,16 @@ def window_open_change(
         if close_at:
             line += f"\n  close_time: {close_at}"
         return StepResult(
-            result={"new": message_id, "channel_id": int(payload["channel_id"])}, lines=(line,),
+            result={"new": message_id, "channel_id": channel_id}, lines=(line,),
             audits=(AuditRecord("SIGNUP_OPEN", "", audited),),
         )
 
     async def record(db: aiosqlite.Connection, ctx: StepContext, result: StepResult) -> None:
         payload = ctx.step_payload
+        posted = result.result or {}
         await signup.set_window_open_on(
-            db, int((result.result or {})["new"]), [str(each) for each in payload["track_ids"]],
-            now=queue().now(), channel_id=int(payload["channel_id"]),
+            db, int(posted["new"]), [str(each) for each in payload["track_ids"]],
+            now=queue().now(), channel_id=int(posted["channel_id"]),
         )
         await advance_on_window_open_on(db)
         if payload["close_at"]:
