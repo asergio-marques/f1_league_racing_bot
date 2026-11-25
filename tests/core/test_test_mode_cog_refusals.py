@@ -146,11 +146,11 @@ def _submission_open(status: str):
 
         where = "**Pro** — **Round 2**"
         reply = (
-            f"⏸️ Result submission for {where} is already in progress. Please submit "
-            f"results in the submission channel before advancing."
-            if status == "FINAL" else
             f"⏸️ {where} is awaiting penalty review approval. Please complete the penalty "
             f"review in the submission channel before advancing."
+            if status == "AWAITING_REPORT_VERDICTS" else
+            f"⏸️ Result submission for {where} is already in progress. Please submit "
+            f"results in the submission channel before advancing."
         )
         cog.bot.advance_steps = AdvanceSteps()
         cog.bot.advance_steps.register_step(
