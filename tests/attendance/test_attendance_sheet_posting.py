@@ -25,7 +25,7 @@ from leaguebot.attendance.services.sheet import attendance_sheet
 from leaguebot.attendance.services.check_in.attendance_config_service import derive_checkin_deadline
 from leaguebot.attendance.services.sheet.attendance_sheet import post_attendance_sheet
 from leaguebot.image.services.render.image_render_service import discard_attachment
-from tests.support.change_queue import in_a_job
+from tests.support.change_queue import http_error, in_a_job
 
 
 # ── The deadline derivation (T010/T011) ───────────────────────────────────
@@ -112,6 +112,13 @@ class _FakeGuild:
     def get_member(self, user_id):
         name = self._members.get(int(user_id))
         return _FakeMember(name) if name else None
+
+    async def fetch_member(self, user_id):
+        """Discord's answer for anyone the server does not show: not found."""
+        name = self._members.get(int(user_id))
+        if name is None:
+            raise http_error(discord.NotFound, status=404, text="Unknown Member")
+        return _FakeMember(name)
 
 
 def _fake_attachment(sentinel):
