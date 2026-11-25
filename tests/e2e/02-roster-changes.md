@@ -274,7 +274,7 @@ driver who holds a confirmed seat. The team list is fixed, but a team's role is 
 
     **Expect:** as `00-base.md`'s listing of Division 2: headed `**Fake Driver Roster — Division 2**`,
     the 21 Division 2 drivers of the Fixture, each `Assigned`, with the Fixture's nationality, Aaron
-    Abbott alone seated in `Charlie GP (Division 2)` and nobody in `Bravo Motorsport`. Zoe Zimmer
+    Abbott alone seated in `CHL = Charlie GP (Division 2)` and nobody in `Bravo Motorsport`. Zoe Zimmer
     holds no seat, so a list of a division leaves her out. No log line.
 
 ### Other refusals of a running season
