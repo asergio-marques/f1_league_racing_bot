@@ -370,7 +370,9 @@ ends the reply of each change that plans the swap, to reload Discord (`RELOAD`);
 describe line names them in words. The reload notice is given by `reload_reply`, read off the
 swap's step in the outcome, where the step is done with no problem: a refused swap changed nothing
 for a client to reload, and a real season's end plans no swap, so the notice follows from the plan
-and no outcome tests the season's kind. It runs as the step after the save of the toggle and of a test
+and no outcome tests the season's kind. `!sync` is no change on the queue and ends its reply with
+`RELOAD` itself once its sync has gone through; `/bot init` and a factory reset swap nothing and so
+give none, and a restart, which swaps and replies to no one, gives none either. It runs as the step after the save of the toggle and of a test
 season's completion, abort and cancellation, and off the queue as start-up's command sync and
 `!sync`'s, both trees. How a refusal is met in each, the swap being a fifth exception to the lane
 stop, is `architecture.md`'s. The moments of the swap, and the restart a factory reset's and
