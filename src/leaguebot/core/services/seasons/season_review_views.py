@@ -100,7 +100,8 @@ class ApproveView(LeagueView):
     or, refused or cancelled, ends it as expired once the five minutes have run; one that raised
     leaves the review to expire then, its lapse saying an earlier press failed and may have been
     partly done. A second press while one is being worked is refused, so a double-click cannot
-    approve twice.
+    approve twice; a press while the review is being taken down is refused too, as that and
+    not as another press.
     """
 
     #: The command whose report this button answers, named when the review expires.
@@ -208,14 +209,28 @@ class ApproveView(LeagueView):
     async def _refuse_if_under_way(
         self, interaction: discord.Interaction, review: StandingReview
     ) -> bool:
-        """Claim the button for this press, or refuse it where another press of the review is
-        being worked (or the review is being taken down).
+        """Claim the button for this press, or refuse it, saying which of two things stops it:
+        the review is being taken down, or another press of it is being worked.
 
         A double-click would otherwise run a second approval (or confirmation) beside the
-        first until the first commits. The second confirms nothing, and is recorded.
+        first until the first commits. The second confirms nothing, and is recorded. So is a
+        press made while the review is being taken down (after a restart, once the five minutes
+        end, or after a press that went through or was refused for a changed season), which is
+        told the review is going, not that another press is answering it. ``review.press`` is
+        exact here: the review was read after the last await, and nothing awaits before the claim.
         """
         if mark_press(review.question_id, UNDER_WAY, only_from=(None, FAILED)):
             return False
+        if review.press == TAKING_DOWN:
+            await refuse(
+                interaction,
+                "\u26d4 This review is being taken down, so it can no longer be answered. "
+                f"**Nothing has been {self._verb} by this one.** "
+                f"If it was not {self._verb}, run `{self._review_command}` again.",
+                what=self._button,
+                reason="the review was being taken down",
+            )
+            return True
         await refuse(
             interaction,
             "\u26d4 This review is already being answered by another press. "

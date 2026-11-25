@@ -761,7 +761,6 @@ async def test_a_second_press_while_one_is_being_worked_is_refused(
     assert " refused for Alex (<@4242>) — " in refusals[0], refusals
 
 
-@pytest.mark.xfail(strict=True, reason="#622: a press during a take-down is refused as another press")
 @pytest.mark.parametrize("kind,label,review,helper,verb", _BUTTONS)
 async def test_a_press_while_the_review_is_being_taken_down_is_refused_as_such(
     tmp_path, monkeypatch, kind, label, review, helper, verb
