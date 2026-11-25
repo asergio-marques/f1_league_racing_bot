@@ -811,9 +811,17 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
       (change <n>)` — believed a bot defect: record it, and carry on.
     - **Posts** (`#bot-commands`, public), in this order:
       - `🎨 Drawing the graphics for this review — one moment.`, deleted once the pictures are up;
-      - four pictures, each a message with a PNG attached: `📅 **Calendar**` (Division 1),
-        `🏎️ **Lineup**` (Division 1), `📅 **Calendar**` (Division 2), `🏎️ **Lineup**`
-        (Division 2). Look at each as a PNG: the calendar holds the division's three rounds on
+      - the report, one message per section: the first opening
+        `**Season Review (Season #1 — F1 25)**` and `**Modules**`, with the five modules in the
+        order Weather, Signup, Results, Attendance, Images, each `✅ Enabled` and then the same note as
+        the configuration review's line for it, Signup's ending ` | Channel: <#<signup id>>` (a
+        note is not a fault); one per module's settings, one headed `**Image output**`; then, for each
+        division in turn, a banner `# DIVISION 1 (Tier 1)` (or `# DIVISION 2 (Tier 2)`) between two
+        rules of `─`, a message opening `📂 **Configuration**` with
+        `  Role: <@&<Division N role id>>`, `  Calendar channel: <#<dN-calendar id>>`,
+        `  Lineup channel: <#<dN-lineup id>>` and each module's channel lines, and then the
+        division's two pictures, each a message with a PNG attached: `📅 **Calendar**`, then
+        `🏎️ **Lineup**`. Look at each as a PNG: the calendar holds the division's three rounds on
         their dates, round 3 of Division 1 as a mystery round; each lineup holds eleven team blocks, `Alpha Racing` to
         `Kilo Racing`, and a reserve block, each driver by name with the flag of their
         nationality where `resources/league/flags/` holds it, else the packaged fallback flag,
@@ -822,16 +830,8 @@ Every command is run in `#bot-commands`, as you, unless the step says otherwise.
         Division 2: the `Bravo Motorsport` block drawn with both seats blank, the `Charlie GP`
         block with its first seat named and its second blank, every other block full, and two
         reserves. A blank seat is drawn with its name cleared and no flag, and raises no
-        image notice (`image_lineup_service.put_seat_name`);
-      - the report, one message per section: the first opening
-        `**Season Review (Season #1 — F1 25)**` and `**Modules**`, with the five modules in the
-        order Weather, Signup, Results, Attendance, Images, each `✅ Enabled` and then the same note as
-        the configuration review's line for it, Signup's ending ` | Channel: <#<signup id>>` (a
-        note is not a fault); one per module's settings, one headed `**Image output**`; then, for each
-        division, a banner `# DIVISION 1 (Tier 1)` (or `# DIVISION 2 (Tier 2)`) between two
-        rules of `─`, and a message opening `📂 **Configuration**` with
-        `  Role: <@&<Division N role id>>`, `  Calendar channel: <#<dN-calendar id>>`,
-        `  Lineup channel: <#<dN-lineup id>>` and each module's channel lines;
+        image notice (`image_lineup_service.put_seat_name`). The drawing notice above is
+        deleted once Division 2's lineup is up;
       - nothing reporting a fault, and no line naming a round as already run or inside a
         window. In particular, nothing about Division 2's empty `Bravo Motorsport` or
         half-filled `Charlie GP`: no review check counts a team's empty seats. The one lineup

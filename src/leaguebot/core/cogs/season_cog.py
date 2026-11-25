@@ -153,9 +153,10 @@ class SeasonCog(commands.Cog):
     ) -> None:
         """Ask the change queue to post the review the command has computed (`season.review.post`).
 
-        The command posts nothing public itself: the queue posts the pictures after a notice
-        that they are being drawn, then the *report*'s sections, then the question where the
-        review *offered* it, in the channel the command was run in. The reply is the queue's
+        The command posts nothing public itself: the queue posts a notice that the pictures are
+        being drawn, then the *report*'s sections, each picture slotted in after the sections its
+        ``after_sections`` counts, then the question where the review *offered* it, in the
+        channel the command was run in. The reply is the queue's
         acknowledgement, updated with the outcome, and a stopped queue holds the review whole.
 
         *question* is the text of the question (the placements review's by default); *view*
@@ -571,8 +572,9 @@ class SeasonCog(commands.Cog):
                     await self.bot.season_service.get_division_rounds(_div.id)
                 )
         # The pictures the league will see in place of a section's text are asked of the
-        # queue, which draws and posts them ahead of the report; the section that stands
-        # in for each is carried with it (posted only where Discord refuses the file).
+        # queue, which draws and posts each after the report sections queued before it
+        # (`after_sections`), so a division's pictures stand under its own banner; the section
+        # that stands in for each is carried with it (posted only where Discord refuses the file).
         draws_calendar, draws_lineup = await self._review_picture_gates()
 
         # The leads both date faults are judged against, read once for the season
@@ -641,6 +643,7 @@ class SeasonCog(commands.Cog):
                     "division_id": div.id,
                     "kind": "calendar", "text": "\n".join(cal_lines),
                     "season_number": season.season_number or None,
+                    "after_sections": len(report),
                 })
                 if fault_lines:
                     report.append("\n".join(fault_lines))
@@ -692,12 +695,13 @@ class SeasonCog(commands.Cog):
             else:
                 lineup_lines.append("  *(no drivers assigned)*")
             if draws_lineup:
-                if role_warning is not None:
-                    report.append(role_warning.strip())
                 pictures.append({
                     "name": f"{div.name} lineup", "division_id": div.id,
                     "kind": "lineup", "text": "\n".join(lineup_lines),
+                    "after_sections": len(report),
                 })
+                if role_warning is not None:
+                    report.append(role_warning.strip())
             else:
                 report.append("\n".join(lineup_lines))
 
@@ -856,7 +860,8 @@ class SeasonCog(commands.Cog):
         ]
         # The divisions whose lineup confirming posts: those holding a new driver. Where the
         # league conveys its lineup as a picture, theirs is asked of the queue, drawn with the
-        # new drivers in it, the section's text carried to stand in for it.
+        # new drivers in it, the section's text carried to stand in for it, and posted under the
+        # division's heading.
         posted = {p["division_id"] for p in placements}
         _, draws_lineup = await self._review_picture_gates()
         for division in divisions:
@@ -874,9 +879,13 @@ class SeasonCog(commands.Cog):
                 ]
                 block.append(f"  **{team['name']}**: {', '.join(seated) or '*(empty)*'}")
             if draws_lineup and division.id in posted:
+                # The picture stands in its division's place: under the division's heading, which
+                # is a section of the report and so is not in the text that stands in for it.
+                report.append(block[0])
                 pictures.append({
                     "name": f"{division.name} lineup", "division_id": division.id,
-                    "kind": "lineup", "text": "\n".join(block), "include_uncommitted": True,
+                    "kind": "lineup", "text": "\n".join(block[1:]), "include_uncommitted": True,
+                    "after_sections": len(report),
                 })
             else:
                 report.extend(chunk_message("\n".join(block)))

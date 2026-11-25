@@ -7,18 +7,21 @@ Approve button. This file holds the change that posts one and the change that ta
 that a stopped queue holds it whole and a post Discord refuses stops the queue (core
 specification "Reviewing placements"). Its payload is ``channel_id``, ``season_id``,
 ``reviewer_id``, ``review`` (the command), ``pictures`` (each ``name``, ``division_id``, ``kind``,
-``text``, and where the review draws it so, ``include_uncommitted`` or ``season_number``),
+``text``, ``after_sections``, how many report sections are posted before it, none meaning none,
+and where the review draws it so, ``include_uncommitted`` or ``season_number``),
 ``report`` (its sections, in order), ``question`` (its text, or none where the review offers no
 question) and ``evidence`` (what the report was computed from, kept with the question). Its jobs:
 
-- `post_drawing_notice`, where pictures are due, then one `draw_and_post` per picture, then
-  `delete_drawing_notice`: a picture is drawn by the callable the builder hands the factory,
-  off the event loop, and posted with its text in place of it where Discord refuses the file
-  (the same try). A picture that will not draw (a render fault, not Discord's) stops nothing: its
+- `post_drawing_notice`, where pictures are due, then the report's sections with one `draw_and_post`
+  per picture slotted in after the sections it follows, and `delete_drawing_notice` straight after
+  the last picture, so a picture stands under the division it belongs to. A picture is drawn by
+  the callable the builder hands the factory, off the event loop, and posted with its text in
+  place of it where Discord refuses the file (the same try). A picture that will not draw (a render fault, not Discord's) stops nothing: its
   text stands in, the fault is kept on the job, and the question is withheld. The
   reviewer is told which pictures did not draw in their reply, and the fault is written to the log
   channel besides, since the queue does not say whether a reply could be updated;
-- `post_report`, one per section;
+- `post_report`, one per section, the sections after the last picture following the notice's
+  deletion;
 - `post_question`, whose record writes the review's `season_review_prompts` row (every report id,
   the evidence) and whose line records who ran the review; the Approve button is the view the
   builder's factory makes. Where a picture would not draw it posts nothing and records nothing,
@@ -498,13 +501,23 @@ def season_review_post_change(
         return Verdict.go()
 
     def plan(payload: dict[str, Any]) -> tuple[PlannedStep, ...]:
+        report = list(payload["report"])
+        pictures = sorted(
+            payload.get("pictures") or (),
+            key=lambda picture: min(int(picture.get("after_sections", 0)), len(report)),
+        )
         planned: list[PlannedStep] = []
-        pictures = list(payload.get("pictures") or ())
         if pictures:
             planned.append(PlannedStep(POST_DRAWING_NOTICE))
-            planned.extend(PlannedStep(DRAW_AND_POST, {"picture": picture}) for picture in pictures)
-            planned.append(PlannedStep(DELETE_DRAWING_NOTICE))
-        planned.extend(PlannedStep(POST_REPORT, {"text": text}) for text in payload["report"])
+        posted = 0
+        for index, picture in enumerate(pictures):
+            due = min(int(picture.get("after_sections", 0)), len(report))
+            planned.extend(PlannedStep(POST_REPORT, {"text": text}) for text in report[posted:due])
+            posted = max(posted, due)
+            planned.append(PlannedStep(DRAW_AND_POST, {"picture": picture}))
+            if index == len(pictures) - 1:
+                planned.append(PlannedStep(DELETE_DRAWING_NOTICE))
+        planned.extend(PlannedStep(POST_REPORT, {"text": text}) for text in report[posted:])
         if payload.get("question") is not None:
             planned.append(PlannedStep(POST_QUESTION))
             planned.append(PlannedStep(ARM_EXPIRY))
