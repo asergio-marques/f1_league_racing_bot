@@ -1493,7 +1493,7 @@ The two roles the module uses are the league's, set by [`/bot base-role` and `/b
 #### `/signup config view` — View current signup configuration
 *Access: League manager*
 
-No parameters. Displays the current signup module configuration as an embed, with the league's base role and driver role beside it.
+No parameters. Displays the current signup module configuration as an embed, with the league's base role and driver role beside it. It is the one signup command that still answers while the module is off, so you can read back what was kept before switching it on again.
 
 #### `/signup nationality` — Toggle nationality requirement
 *Access: League manager*
