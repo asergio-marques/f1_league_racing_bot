@@ -668,7 +668,6 @@ async def _report(cog, interaction, monkeypatch) -> list[str]:
     return _texts(await _review_asked(cog, interaction, monkeypatch))
 
 
-@pytest.mark.xfail(strict=True, reason="#643: module lines differ from the placements review's")
 async def test_a_sound_configuration_is_reported_and_offered_for_confirmation(monkeypatch):
     """Manager runs `/season config-review` in channel 111 on a sound configuration of season 31
     (test mode on, signup on with channel 1, results off; teams Alpha Motorsport, shorthand ALP,

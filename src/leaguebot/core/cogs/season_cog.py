@@ -977,7 +977,14 @@ class SeasonCog(commands.Cog):
 
         await interaction.response.defer(ephemeral=True)
         module = self.bot.module_service
-        on, off = "✅ Enabled", "❌ Disabled"
+        # Every module's configuration, subsection by subsection, in the words and the
+        # order of the placements review — save the divisions, which do not exist yet.
+        sections = await read_review_sections(
+            self.bot.review_sections_read,
+            Review.CONFIGURATION,
+            season_id=season.id,
+            division_ids=[],
+        )
         server_config = await self.bot.config_service.get_server_config()
         test_mode = bool(server_config is not None and server_config.test_mode_active)
         lines = [
@@ -985,13 +992,10 @@ class SeasonCog(commands.Cog):
             "",
             f"  Test mode: {'✅ On' if test_mode else '❌ Off'}",
             "",
-            "**Modules**",
-            f"  Signup: {on if await module.is_enabled("signup") else off}",
-            f"  Results: {on if await module.is_enabled("results") else off}",
-            f"  Attendance: {on if await module.is_enabled("attendance") else off}",
-            f"  Weather: {on if await module.is_enabled("weather") else off}",
-            f"  Images: {on if await module.is_enabled("images") else off}",
-            "",
+            *module_review_lines(
+                await self._module_states(),
+                {section.module: section.modules_note for section in sections},
+            ),
         ]
         lines += await self._league_roles_review_lines()
         teams = await self.bot.team_service.get_teams_with_roles()
@@ -1007,14 +1011,6 @@ class SeasonCog(commands.Cog):
                 "",
             ]
 
-        # Every module's configuration, subsection by subsection, in the words and the
-        # order of the placements review — save the divisions, which do not exist yet.
-        sections = await read_review_sections(
-            self.bot.review_sections_read,
-            Review.CONFIGURATION,
-            season_id=season.id,
-            division_ids=[],
-        )
         section_lines: list[list[str]] = [lines, *[section.lines for section in sections]]
         if await module.is_enabled("images"):
             section_lines.append(await self._build_image_review_section())
