@@ -368,20 +368,34 @@ async def test_a_bulk_paste_that_applies_nothing_is_not_warned_about(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-async def test_amend_session_warns_and_still_stages_the_change(tmp_path):
-    """The season holds 25 and 18 in amendment mode; Admin stages P2 at 30: once the change has
-    run it is staged, with the warning naming the refusal that is coming."""
+@pytest.mark.parametrize(
+    ("points", "comparison"),
+    [
+        (30, "position 1 (25 pts) < position 2 (30 pts)"),
+        pytest.param(
+            25,
+            "position 1 (25 pts) = position 2 (25 pts)",
+            marks=pytest.mark.xfail(strict=True, reason="#669: a tie is warned about as <, not ="),
+        ),
+    ],
+    ids=["rise", "tie"],
+)
+async def test_amend_session_warns_and_still_stages_the_change(tmp_path, points, comparison):
+    """The season holds 25 and 18 in amendment mode; Admin stages P2 at 30 (a rise) or at 25 (a
+    tie): once the change has run it is staged, with the warning naming the two positions — `<`
+    for a rise, `=` for a tie — and the refusal that is coming."""
     league = await _league(tmp_path)
 
     asked = await _command(
-        league, "amend_session", "results amend session", CONFIG, RACE, 2, 30
+        league, "amend_session", "results amend session", CONFIG, RACE, 2, points
     )
 
     replies = _replies(asked)
     assert "✅ Updated in modification store" in replies, "the edit is staged, not refused"
     assert "out of order" in replies
+    assert comparison in replies
     assert "amendment cannot be approved" in replies, "and it names the refusal that is coming"
-    assert (await _table("amend", league.db_path))[2] == 30
+    assert (await _table("amend", league.db_path))[2] == points
 
 
 async def test_amend_session_says_nothing_extra_about_a_clean_change(tmp_path):
