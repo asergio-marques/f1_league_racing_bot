@@ -39,7 +39,11 @@ runs, on a connection the change queue or a core hook hands in.
 **The configuration row and the settings row are apart.** The configuration holds the channel and
 the window's state, which a close and an opening write, and the settings hold what a manager chose,
 which no window touches. The switch-off keeps both ("What disabling keeps", below), and the closed
-notice has one record, the configuration's `signup_closed_message_id` with `signup_closed_message_channel_id` beside it, which the switch-off leaves. The button's has the same two, `signup_button_message_id` and `signup_button_message_channel_id`. Each channel is kept so that a signup channel moved afterwards does not aim a deletion at the channel that is now the signup channel; where none was recorded the present channel is taken (`standing_posts.posted_in`).
+notice has one record, the configuration's `signup_closed_message_id` with
+`signup_closed_message_channel_id` beside it, which the switch-off leaves. The button's record has
+the same two, `signup_button_message_id` and `signup_button_message_channel_id`. Each channel is
+kept as `architecture.md` ("Posting to Discord", "Every post keeps three things") has it; where
+none was recorded the present channel is taken (`standing_posts.posted_in`).
 
 **One open window to a season is the schema's rule**, not a service's: a close time and a close are
 written to "the window whose `closed_at` is null", which is only one row because the index refuses a
@@ -611,9 +615,9 @@ channel is created by `WizardService._create_wizard_channel`, in the `create_cha
 channel always shows one or the other: an opening takes the notice down only once its message is up
 (`delete_closed`), from the channel the notice was posted in, and a close takes the button down
 before it posts the notice, from the channel the button was posted in, the notice going up in the
-present signup channel (`window_changes`' module docstring). One function posts the information message,
-`information_post.post_information`, for `signup.open` and for `/signup channel`, so a window moved
-to a new channel shows what an opened one does.
+present signup channel (`window_changes`' module docstring). One function posts the information
+message, `information_post.post_information`, for `signup.open` and for `/signup channel`, so a
+window moved to a new channel shows what an opened one does.
 
 **A driver's channel is a bot-owned channel**, handled as `architecture.md`'s table of the kinds of
 post ("Posting to Discord") has one. The review panel notifies users, never a group

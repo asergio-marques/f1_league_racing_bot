@@ -63,13 +63,13 @@ there is one).
 | `round_standings_posts` | the standings a round posted: each championship's anchor and chunk list | keyed by the round |
 | `classification_posts` | a division's opening or final classification as posted, each championship's anchor and chunk list | `PRIMARY KEY (division_id, occasion)` |
 
-Each posting keeps the channel it was posted in beside its ids (`session_results.results_message_channel_id`,
-and `standings_message_channel_id` and `constructor_standings_message_channel_id` on both posting
-tables), so that a results or standings channel moved afterwards does not aim the delete at the
-channel that is now the division's: a replacement or a switch-off takes the old message down from
-where it stands (`standing_posts.posted_in`), and a post that recorded no channel falls back to
-the present one. A resubmission rebuilds `session_results`, so it carries each table's ids and
-channel across by hand.
+Each posting keeps the channel it was posted in beside its ids
+(`session_results.results_message_channel_id`, and `standings_message_channel_id` and
+`constructor_standings_message_channel_id` on both posting tables), as `architecture.md`
+("Posting to Discord", "Every post keeps three things") has it: a replacement or a switch-off takes
+the old message down from where it stands (`standing_posts.posted_in`), and a post that recorded no
+channel falls back to the present one. A resubmission rebuilds `session_results`, so it carries each
+table's ids and channel across by hand.
 
 A round's standings posting is a row of its own, keyed by the round, and not a column on the
 snapshot of whoever leads it: a posting's ids sit on a row whose identity is the posting
@@ -572,7 +572,7 @@ failure for the next try to remove first
 a fresh repost and the standings channel is still the one they were posted in; a shorter table
 hands back the chunks it no longer fills for deletion (`produce_standings`). Where the channel has
 moved they are posted afresh in the present one and the old message is handed back for deletion
-from where it stands, since an edit would keep them in a channel that is no longer the division's.
+from where it stands, as the results specification has it ("Amending a submitted session").
 
 ### Pictures and their fallbacks
 
