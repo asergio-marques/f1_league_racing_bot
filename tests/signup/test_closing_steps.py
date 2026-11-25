@@ -197,10 +197,6 @@ SIGNUP_CHANNEL, BUTTON_POSTED_IN = 620, 621
 BUTTON = 6201
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "#645: the close a season's end plans is given no channel the Sign Up button was posted in, "
-    "so it deletes the button from the present signup channel"
-))
 @pytest.mark.parametrize(("recorded", "deleted_from"), [
     pytest.param(BUTTON_POSTED_IN, BUTTON_POSTED_IN, id="moved since"),
     pytest.param(None, SIGNUP_CHANNEL, id="no channel recorded"),

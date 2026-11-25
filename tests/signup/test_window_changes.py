@@ -70,9 +70,6 @@ DRIVER_ROLE = 555002
 CLOSED_NOTICE = 8901
 #: The signup channel before `/signup channel` moved it, still on the server.
 OLD_SIGNUP_CHANNEL = 621
-#: Why a post in a signup channel since moved is looked for in the present one.
-NO_CHANNEL_KEPT = ("#645: the Sign Up button and the closed notice keep no channel they were "
-                   "posted in, so each is looked for in the present signup channel")
 #: The permissions the bot needs on the signup channel to post the Sign Up button.
 NEEDED = ("**View Channel**", "**Send Messages**", "**Embed Links**")
 
@@ -557,7 +554,6 @@ async def test_signup_close_returns_drivers_deletes_the_button_posts_the_notice_
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=NO_CHANNEL_KEPT)
 @pytest.mark.parametrize("close", ["/signup close", "the close time", "a restart past it",
                                    "signup switched off"])
 async def test_a_close_takes_the_sign_up_button_down_from_the_channel_it_was_posted_in(

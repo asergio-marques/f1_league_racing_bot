@@ -116,9 +116,7 @@ def _closed_notices(league) -> list:
 
 @pytest.mark.parametrize("posted_in", [
     pytest.param(SIGNUP_CHANNEL, id="in the signup channel"),
-    pytest.param(OLD_SIGNUP_CHANNEL, id="in a channel since replaced", marks=pytest.mark.xfail(
-        strict=True, reason="#645: the Sign Up button keeps no channel it was posted in, so a "
-                            "season's end looks for it in the present signup channel")),
+    pytest.param(OLD_SIGNUP_CHANNEL, id="in a channel since replaced"),
 ])
 async def test_a_season_end_s_close_deletes_the_sign_up_button_as_a_job(tmp_path, posted_in):
     """The season is ongoing with its signup window open, the Sign Up button standing where it

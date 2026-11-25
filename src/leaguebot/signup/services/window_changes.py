@@ -399,28 +399,29 @@ def window_was_closed(steps: tuple[StepView, ...]) -> bool:
     ) and not any(view.name == RETURN_DRIVERS and discarded(view) for view in steps)
 
 
-#: What a close plans once it has returned its drivers: given the job, the signup channel and the
-#: Sign Up button's message where the configuration holds them, and each driver returned with the
-#: signup channel their wizard held, it gives the jobs that follow.
+#: What a close plans once it has returned its drivers: given the job, the signup channel, the Sign
+#: Up button's message and the channel it was posted in where the configuration holds them, and
+#: each driver returned with the signup channel their wizard held, it gives the jobs that follow.
 PlanAfter = Callable[
-    [StepContext, int | None, int | None, Sequence[tuple[str, int | None]]],
+    [StepContext, int | None, int | None, int | None, Sequence[tuple[str, int | None]]],
     tuple[PlannedStep, ...],
 ]
 
 
 def planned_by_a_member_s_close(
     ctx: StepContext, channel_id: int | None, button_id: int | None,
-    returned: Sequence[tuple[str, int | None]],
+    button_channel_id: int | None, returned: Sequence[tuple[str, int | None]],
 ) -> tuple[PlannedStep, ...]:
     """The jobs after the return of a close the queue was asked for: the Sign Up button's
-    deletion and the "Signups are now closed" post (whose record closes the window and moves the
-    season on), then for each driver whose wizard held a channel their notice, lock and deletion's
+    deletion, from the channel it was posted in (*button_channel_id*, the signup channel where none
+    is recorded), and the "Signups are now closed" post in the present signup channel (whose record
+    closes the window and moves the season on), then for each driver whose wizard held a channel their notice, lock and deletion's
     arming. The payload's ``audit_action`` is what the close is audited under."""
     planned: list[PlannedStep] = []
     if button_id is not None and channel_id is not None:
         planned.append(PlannedStep(DELETE_BUTTON, {
-            "channel_id": int(channel_id), "message_id": int(button_id),
-            "what": "Sign Up button", "division_name": "signups",
+            "channel_id": standing_posts.posted_in(button_channel_id, int(channel_id)),
+            "message_id": int(button_id), "what": "Sign Up button", "division_name": "signups",
         }))
     planned.append(PlannedStep(POST_CLOSED, {
         "channel_id": None if channel_id is None else int(channel_id),
@@ -440,7 +441,7 @@ def planned_by_a_member_s_close(
 
 def planned_by_a_season_s_end(
     ctx: StepContext, channel_id: int | None, button_id: int | None,
-    returned: Sequence[tuple[str, int | None]],
+    button_channel_id: int | None, returned: Sequence[tuple[str, int | None]],
 ) -> tuple[PlannedStep, ...]:
     """The jobs after the return of a close at a season's end: the Sign Up button's deletion and
     the "Signups are now closed" post (whose record closes the window, with its audit and the line
@@ -448,7 +449,7 @@ def planned_by_a_season_s_end(
     of their channel, which the season's end tells and locks itself."""
     planned = list(window_close_jobs(
         str(ctx.step_payload["cause"]), len(returned),
-        channel_id=channel_id, button_message_id=button_id,
+        channel_id=channel_id, button_message_id=button_id, button_channel_id=button_channel_id,
     ))
     for account, _wizard_channel in returned:
         planned.append(PlannedStep(SIGNUP_NOTICE, {"user_id": account, "notice": WINDOW_CLOSED_NOTICE}))
@@ -482,11 +483,13 @@ def return_drivers_step(
         states = [state.value for state in returned_by_close]
         rows = await drivers_in_states(db, states)
         cursor = await db.execute(
-            "SELECT signup_channel_id, signup_button_message_id FROM signup_module_config WHERE id = 1"
+            "SELECT signup_channel_id, signup_button_message_id, signup_button_message_channel_id "
+            "FROM signup_module_config WHERE id = 1"
         )
         config = await cursor.fetchone()
         channel_id = None if config is None else config["signup_channel_id"]
         button_id = None if config is None else config["signup_button_message_id"]
+        button_channel_id = None if config is None else config["signup_button_message_channel_id"]
         returned: list[tuple[str, int | None]] = []
         fake_names: dict[str, str] = {}
         for row in rows:
@@ -513,7 +516,7 @@ def return_drivers_step(
                 [account for account, _ in returned],
                 close_timer=disarm_close_timer,
             ),
-            *plan_after(ctx, channel_id, button_id, returned),
+            *plan_after(ctx, channel_id, button_id, button_channel_id, returned),
         )
         result: dict[str, Any] = {"returned": [account for account, _ in returned]}
         if fake_names:
