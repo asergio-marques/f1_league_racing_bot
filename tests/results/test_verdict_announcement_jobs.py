@@ -1046,11 +1046,53 @@ async def test_a_verdict_picture_s_render_fault_is_named_by_its_own_picture(
 #: The detail of the one render notice the drawing below comes back with.
 NOTICE_DETAIL = "no `flag` image for “Lewis”"
 
+#: The job that posts each verdict picture.
+_POSTED_BY = {"verdicts": "announce_verdict", "verdict_banner": "announce_heading"}
+
+#: What a verdict picture's notice block opens with: Alex, then the button he pressed.
+_NOTICE_OPENING = (
+    "Admin (<@4242>) | ✅ Approve on round 3's penalty review | Image render notices — "
+)
+
+#: Why the two tests below fail until #635 is built.
+NOT_YET_FRAMED = (
+    "#635: a verdict picture's notices reach the log as a bare block headed by the kind's code, "
+    "the member and the change unnamed, and its job keeps nothing of them for the reply"
+)
+
+
+async def _notice_is_framed_and_kept(league: ReviewLeague, aspect: str) -> None:
+    """The log channel carries the one notice once, in a line opening with Alex and the button he
+    pressed, then "Image render notices — <picture>:" naming Pro and round 3, and beneath it the
+    notice under "Artwork not supplied by the league", naming its field `flag`, with no kind code
+    and no template name; the job that posted the *aspect* picture keeps the picture's name and
+    its grouped notices on its result, for the approval's reply to list."""
+    from tests.support.change_queue import step_rows
+
+    log = league.log()
+    assert log.count(NOTICE_DETAIL) == 1, log
+    [block] = [message for message in league.bot.log_channel.sent if NOTICE_DETAIL in message]
+    assert block.startswith(_NOTICE_OPENING), block
+    heading, *grouped = block.splitlines()
+    assert "Pro" in heading and "round 3" in heading.lower(), block
+    assert grouped == [
+        "  Artwork not supplied by the league", f"    • `flag` — {NOTICE_DETAIL}",
+    ], block
+    assert "ASSET_FALLBACK_USED" not in block and "_template" not in block, block
+    from leaguebot.framework.models.change import RESULT_DRAWN, RESULT_NOTICES, RESULT_PICTURES
+    [kept] = [row["result"] for row in await step_rows(league.db_path)
+              if row["name"] == _POSTED_BY[aspect]]
+    assert kept[RESULT_PICTURES] == [{
+        RESULT_DRAWN: heading.removeprefix(_NOTICE_OPENING).removesuffix(":"),
+        RESULT_NOTICES: grouped,
+    }], kept
+
 
 @pytest.mark.parametrize(
     ("aspect", "template", "name"), _FAULTED_PICTURES,
     ids=[aspect for aspect, _t, _n in _FAULTED_PICTURES],
 )
+@pytest.mark.xfail(strict=True, reason=NOT_YET_FRAMED)
 async def test_a_verdict_picture_s_render_notices_reach_the_log_once_naming_the_round(
     tmp_path, aspect, template, name,
 ):
@@ -1058,8 +1100,10 @@ async def test_a_verdict_picture_s_render_notices_reach_the_log_once_naming_the_
     valid. Alex approves a five-second penalty for Lewis in round 3 of Pro, and the image
     module's render of that picture is drawn with one notice, a flag falling back. The verdict is
     announced naming Lewis and the queue runs to the end; the log channel carries the notice
-    once, in a block whose heading names Pro and round 3, and no block without a heading carries
-    it a second time."""
+    once, in a line opening with Alex and the button he pressed, then a heading naming Pro and
+    round 3, and beneath it the notice grouped under its kind in plain words, naming its field;
+    the job that posted the picture keeps its name and grouped notices for the reply (issue #635;
+    Constitution V)."""
     from leaguebot.image.models.image_module import RenderNotice, RenderOutcome
 
     league = await review_league(tmp_path)
@@ -1081,17 +1125,14 @@ async def test_a_verdict_picture_s_render_notices_reach_the_log_once_naming_the_
 
     assert await stopped_at(league) is None
     assert any(f"<@{LEWIS}>" in verdict for verdict in _verdicts(league))
-    log = league.log()
-    assert log.count(NOTICE_DETAIL) == 1, log
-    [block] = [message for message in league.bot.log_channel.sent if NOTICE_DETAIL in message]
-    heading = block.splitlines()[0]
-    assert "Pro" in heading and "round 3" in heading.lower(), block
+    await _notice_is_framed_and_kept(league, aspect)
 
 
 @pytest.mark.parametrize(
     ("aspect", "template", "name"), _FAULTED_PICTURES,
     ids=[aspect for aspect, _t, _n in _FAULTED_PICTURES],
 )
+@pytest.mark.xfail(strict=True, reason=NOT_YET_FRAMED)
 async def test_a_refused_verdict_picture_s_notice_reaches_the_log_once_when_it_is_retried(
     tmp_path, aspect, template, name,
 ):
@@ -1099,8 +1140,11 @@ async def test_a_refused_verdict_picture_s_notice_reaches_the_log_once_when_it_i
     and the verdicts channel refuses every post carrying a picture. Alex approves a five-second
     penalty for Lewis in round 3 of Pro; the picture is drawn with one notice, a flag falling back,
     and Discord refuses its post, stopping the queue. A Retry posts it in words: the queue runs to
-    the end, Lewis's verdict is announced, and the log channel carries the notice once, in a block
-    whose heading names Pro and round 3, never lost with the refused try."""
+    the end, Lewis's verdict is announced, and the log channel carries the notice once, in a line
+    opening with Alex and the button he pressed, then a heading naming Pro and round 3, and the
+    notice grouped beneath; the job keeps the picture's name and grouped notices across the stop,
+    never lost with the refused try (issue #635; image spec, Errors and the rejection of input,
+    #550)."""
     from leaguebot.image.models.image_module import RenderNotice, RenderOutcome
 
     league = await review_league(tmp_path)
@@ -1130,11 +1174,7 @@ async def test_a_refused_verdict_picture_s_notice_reaches_the_log_once_when_it_i
 
     assert await stopped_at(league) is None
     assert any(f"<@{LEWIS}>" in verdict for verdict in _verdicts(league))
-    log = league.log()
-    assert log.count(NOTICE_DETAIL) == 1, log
-    [block] = [message for message in league.bot.log_channel.sent if NOTICE_DETAIL in message]
-    heading = block.splitlines()[0]
-    assert "Pro" in heading and "round 3" in heading.lower(), block
+    await _notice_is_framed_and_kept(league, aspect)
 
 
 async def test_a_verdict_picture_that_could_not_be_drawn_keeps_its_fault_line_when_its_text_post_is_refused(
