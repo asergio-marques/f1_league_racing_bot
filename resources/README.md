@@ -33,7 +33,8 @@ root is accepted — but most leagues never need to run one.
 **Templates are the exception in the table.** They have nothing to fall back to — the folder
 you configure is the only place a template is searched — so their folder is still
 `defaults/templates/`, and `/images config template-directory` **refuses** a folder that does
-not hold all fifteen, valid. Put the files in place first, then point the bot at it.
+not hold, valid, every template your switched-on outputs need. Put the files in place first,
+then point the bot at it.
 
 ## Using `league/`
 
