@@ -173,16 +173,17 @@ its record and a fault's ending in `change_types`', each pinned by a test in
   "Image notices", whichever change's reply it ends. *Rejected:* saving the link with the job,
   a column for a reply that cannot outlive the restart
   (`test_an_outcome_links_to_the_line_its_job_named`).
-- **The framework opens every notice block with the member and the change, and the job marks which
-  lines they are.** Image hands a drawing's notices back already grouped and headed, and knows no
-  member and no change; the job that drew it does, so it wraps them in `NoticeBlock` and
-  `framed_picture_lines` opens each with `named | what |` and joins a job's blocks in one line, so
-  that they reach the log in one message and the reply links to it once. The framing is done before
-  `StepFailedOnDiscord.carrying` keeps the lines, because a `str` subclass does not survive being
-  saved in a result; a job that drew several pictures keeps each one's label and notices
-  (`RESULT_PICTURES`, `DRAWN_PICTURES`), so a stop loses neither which picture a notice belongs to nor
-  the block's opening. *Rejected:* image writing the member into its own notices, which would give
-  it a notion of who asked, and a reply finding the notices again by reading the log
+- **A notice block is opened with the member and the change by the job that drew the picture,
+  and image marks which lines they are.** Image hands a drawing's notices back already grouped and
+  headed, as a `NoticeBlock` (`ImageRenderService.format_notices`), and knows no member and no
+  change. A results, attendance or weather job opens each block through `framed_picture_lines`,
+  with `named | what |`, and joins its blocks in one line, so that they reach the log in one message
+  and the reply links to it once. Core's jobs and the lineup a command draws open theirs through
+  `drawn_notices_line`, and a preview's runner opens its own message
+  (`preview_runner._log_notices`). The framing is done before `StepFailedOnDiscord.carrying` keeps
+  the lines, because a `str` subclass does not survive being saved in a result; a job that drew
+  several pictures keeps each one's label and notices (`RESULT_PICTURES`, `DRAWN_PICTURES`), so a
+  stop loses neither which picture a notice belongs to nor the block's opening
   (`test_an_outcome_gathers_every_picture_s_notices_once_a_stopped_job_kept_each_label`).
 
 The stop notice's buttons are one persistent view, `QueueStopView`, registered as the queue

@@ -589,8 +589,8 @@ hands back (`PostedTable.fault`, `SentVerdict`)
 `test_a_sync_s_sanction_card_whose_picture_fails_is_posted_as_text_and_says_why`).
 
 **A picture's notices are the job's to frame and keep.** A job that drew a table, the standings, a
-verdict or a banner wraps what image handed back in `NoticeBlock` and frames it with the member and
-the change (`framed_picture_lines`) before `carrying` keeps it, each picture under its own label
+verdict or a banner opens the block image handed back (a `NoticeBlock`) with the member and the
+change (`framed_picture_lines`) before `carrying` keeps it, each picture under its own label
 (`RESULT_PICTURES`), so that a stop keeps them and the reply of an approval, an amendment or a
 `/results rounds sync` lists every one (`drawn_notices_in`) with its log link.
 
