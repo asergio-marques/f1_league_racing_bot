@@ -123,7 +123,7 @@ never stored (`_snapshot_to_dict`'s docstring; `AvailabilitySlot`'s docstring, p
 | Table | Written by | What it writes |
 |---|---|---|
 | `signup_module_config` | `module_switch_settings` | a bare row, inserted only where none stands; the kept channel another setting took, cleared (`clear_signup_channel_on`) |
-| | `channel_setting` | the channel; the Sign Up button's id where `/signup channel` posts the information message |
+| | `channel_setting` | the channel; the Sign Up button's id where `/signup channel` posts the information message; the closed notice's id and channel where it carries the notice across |
 | | `signup_module_service` (`set_window_open_on`, `set_window_closed_on`, `set_close_at_on`) | the window opened, closed and its close time, for `window_changes`, `closing_steps` and `close_time_settings` |
 | | `signup_module_service` (`switch_off_on`, `bot_packed_on`) | the window's state cleared by the switch-off, the row and its channel kept; the ids of Discord objects cleared by a pack |
 | `signup_module_settings` | `signup_settings` | the three settings |
@@ -463,13 +463,24 @@ open, a second step (`POST_INFORMATION`) posts the information message with its 
 the new channel and keeps its id, and the channel it was posted in, as the window's, so drivers can
 sign up there at once; the old message is not taken down, since a move while a window is open is
 allowed only once the old channel is gone from the server, and the message with it; a fault in
-it leaves the channel saved and the reply says what was not posted (`channel_setting`'s module
-docstring; the specification's "Enabling signup flow"). Pinned by
+it leaves the channel saved and the reply says what was not posted. Where signups are closed and a
+closed notice stands in another channel, two more steps follow: `CARRY_CLOSED` posts it in the new
+channel, keeping the new message and channel as the notice's record, and `DELETE_CARRIED_CLOSED`
+takes the old one down through the standing-post handler, a message or channel already gone
+counting as done. A failure of either step, refused or not, is named once in the reply and recorded
+as a failure line, the channel staying saved and the lane going on: a refused post leaves the old
+notice standing for the next opening (none, where its channel is gone), and a refused delete names
+the old message with its link
+(`channel_setting`'s module docstring; the specification's "Enabling signup flow"). Pinned by
 `test_signup_channel_refuses_a_channel_lacking_what_the_bot_needs_before_anything_is_edited`,
 `test_moving_the_signup_channel_sets_the_new_before_clearing_the_old`,
 `test_an_unforeseen_refusal_keeps_the_channel_and_names_the_fault`,
-`test_a_signup_channel_deleted_mid_season_is_replaced` and
-`test_a_signup_channel_replaced_while_signups_are_open_carries_the_sign_up_button`.
+`test_a_signup_channel_deleted_mid_season_is_replaced`,
+`test_a_signup_channel_replaced_while_signups_are_open_carries_the_sign_up_button`,
+`test_a_move_while_signups_are_closed_carries_the_closed_notice_across`,
+`test_a_closed_notice_that_cannot_be_carried_stays_where_it_was`,
+`test_a_refused_carry_from_a_deleted_signup_channel_says_no_notice_stands` and
+`test_a_closed_notice_carry_or_take_down_that_fails_without_a_refusal_is_named_in_the_reply`.
 
 **The switch-on and the switch-off read the season's stage again as they start**, so one asked
 before a season's configuration is confirmed and run after it is refused in the words the ask
@@ -607,7 +618,7 @@ channel is created by `WizardService._create_wizard_channel`, in the `create_cha
 | Post | Kind | Channel | Handler | Found again by |
 |---|---|---|---|---|
 | the information message with its Sign Up button | standing post | the signup channel | `post_standing_message`, pinging the base role | `signup_module_config.signup_button_message_id` and its channel, which also name the window a close was asked about |
-| the "signups are closed" notice | standing post | the signup channel | `post_standing_message` | `signup_module_config.signup_closed_message_id` and its channel, which a switch-off keeps |
+| the "signups are closed" notice | standing post | the signup channel | `post_standing_message`, no mentions, by a close and by `/signup channel` (`CARRY_CLOSED`) | `signup_module_config.signup_closed_message_id` and its channel, which a switch-off keeps |
 | the welcome, the questions, the refusals, the review panel, the choices, the closing notice | bot-owned channel | the driver's signup channel | `post` (`post_in_owned_channel`), naming who each may mention | the channel itself; a divided panel's parts are kept by the job for a retry |
 | the driver's signup channel | bot-owned channel | in the signup channel's category | made by `WizardService`; deleted whole by `delete_channel` (`delete_owned_channel`) | `signup_wizard_records.signup_channel_id` |
 
@@ -615,7 +626,12 @@ channel is created by `WizardService._create_wizard_channel`, in the `create_cha
 channel always shows one or the other: an opening takes the notice down only once its message is up
 (`delete_closed`), from the channel the notice was posted in, and a close takes the button down
 before it posts the notice, from the channel the button was posted in, the notice going up in the
-present signup channel (`window_changes`' module docstring). One function posts the information
+present signup channel (`window_changes`' module docstring). A notice standing in another channel
+when `/signup channel` moves the signup channel while signups are closed is carried in the
+opening's order: posted anew in the new channel (`CARRY_CLOSED`), then taken down from the old one
+in a step of its own (`DELETE_CARRIED_CLOSED`), so that, once the copy is up, the channel is never
+empty. An opening takes down the notice `post_info` found held as it ran, not the one its plan read
+when it was asked, since a carry may have moved it between. One function posts the information
 message, `information_post.post_information`, for `signup.open` and for `/signup channel`, so a
 window moved to a new channel shows what an opened one does.
 
@@ -783,6 +799,7 @@ Each is stated where it lives and pinned by the test named.
 | The new channel's overwrites are set before the old one's are cleared | `channel_setting`'s docstring | `test_moving_the_signup_channel_sets_the_new_before_clearing_the_old` |
 | A signup channel gone is replaced though the configuration is fixed | `channel_setting`'s docstring | `test_a_signup_channel_deleted_mid_season_is_replaced` |
 | A channel replaced while signups are open carries the Sign Up button | `channel_setting`'s docstring | `test_a_signup_channel_replaced_while_signups_are_open_carries_the_sign_up_button` |
+| A channel replaced while signups are closed carries the closed notice, posted before the old one is taken down, and an opening takes down the notice standing as it posts | `channel_setting`'s and `window_changes`' docstrings | `test_a_move_while_signups_are_closed_carries_the_closed_notice_across`, `test_an_opening_takes_down_the_closed_notice_a_move_carried_since_it_was_asked` |
 | A held channel is deleted on time with signup off | `channel_delete_change`'s docstring | `test_a_held_channel_is_deleted_while_signup_is_off`, `test_switching_signup_off_keeps_a_held_channel_s_deletion` |
 | The held channels' start-up step runs with signup off, the wizards' does not | `recover_held_channels`' docstring and the wiring's comment | `test_a_held_channel_due_while_signup_is_off_is_deleted_on_start`, `test_a_restart_while_signup_is_off_ends_releases_and_expires_no_signup` |
 | The league lane's disarm leaves a closing's deletion standing | `cancel_wizard_timers`' docstring | `test_the_closing_s_deletion_survives_the_disarm_whichever_lane_runs_first` |

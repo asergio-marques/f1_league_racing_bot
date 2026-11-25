@@ -41,6 +41,7 @@ from tests.support.change_queue import (
     league_queue,
     run_queue,
     seed_server,
+    step_rows,
     stopped_job,
 )
 from tests.support.current_documents import ROOT, current_text_paths
@@ -436,20 +437,324 @@ async def test_moving_the_signup_channel_sets_the_new_before_clearing_the_old(tm
     assert await _stored(league.db_path) == NEW
 
 
+#: The "signups are closed" notice the last close posted, standing in the old signup channel, and
+#: the copy of it a move posts in the new one.
+OLD_NOTICE, CARRIED_NOTICE = 950, 951
+#: The closed notice's words, as a close posts them.
+CLOSED = "🔒 Signups are now closed."
+
+
+def _holding(channel, events, *standing, post_fault=None, delete_fault=None):
+    """*channel* holding the messages *standing*, recording in *events* each message Discord posts
+    there, as `("send", channel id, message id, text, allowed mentions)`, and each it deletes, as
+    `("delete", channel id, message id)`. A post is given the id `CARRIED_NOTICE` and raises
+    *post_fault* where one is given; a delete raises *delete_fault* where one is given, and
+    `NotFound` for a message not standing. A message's link is Discord's
+    (`https://discord.com/channels/<server>/<channel>/<message>`)."""
+    held = set(standing)
+
+    async def _send(content=None, **kwargs):
+        if post_fault is not None:
+            raise post_fault
+        held.add(CARRIED_NOTICE)
+        events.append(("send", channel.id, CARRIED_NOTICE, content, kwargs.get("allowed_mentions")))
+        return MagicMock(id=CARRIED_NOTICE)
+
+    def _message(message_id):
+        message = MagicMock(name=f"message {message_id}")
+        message.id = message_id
+        message.jump_url = f"https://discord.com/channels/{SERVER_ID}/{channel.id}/{message_id}"
+
+        async def _delete(*_args, **_kwargs):
+            if delete_fault is not None:
+                raise delete_fault
+            if message_id not in held:
+                raise discord.NotFound(MagicMock(status=404, reason="Not Found"), "Unknown Message")
+            held.discard(message_id)
+            events.append(("delete", channel.id, message_id))
+
+        message.delete = AsyncMock(side_effect=_delete)
+        return message
+
+    channel.send = AsyncMock(side_effect=_send)
+    channel.get_partial_message = MagicMock(side_effect=_message)
+    channel.fetch_message = AsyncMock(side_effect=_message)
+    return channel
+
+
+async def _closed_notice(league, *, message_id=OLD_NOTICE, channel_id: int | None = OLD) -> None:
+    """The last close's notice, *message_id*, kept by the configuration as posted in *channel_id*
+    (None where no channel was recorded beside it); signups are closed."""
+    async with get_connection(league.db_path) as db:
+        await db.execute(
+            "UPDATE signup_module_config SET signups_open = 0, signup_closed_message_id = ?, "
+            "signup_closed_message_channel_id = ?",
+            (message_id, channel_id),
+        )
+        await db.commit()
+
+
+async def _notice_kept(db_path) -> tuple[int | None, int | None]:
+    """The closed notice as the configuration keeps it: its id and the channel it was posted in."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT signup_closed_message_id, signup_closed_message_channel_id "
+            "FROM signup_module_config"
+        )
+        return tuple(await cursor.fetchone())
+
+
+def _sent(events) -> list[tuple]:
+    return [event for event in events if event[0] == "send"]
+
+
+def _deleted(events) -> list[tuple]:
+    return [event for event in events if event[0] == "delete"]
+
+
+@pytest.mark.parametrize("recorded, standing", [
+    pytest.param(OLD, True, id="recorded-in-the-old-channel"),
+    pytest.param(None, True, id="no-channel-recorded"),
+    pytest.param(OLD, False, id="old-notice-deleted-by-hand"),
+])
+async def test_a_move_while_signups_are_closed_carries_the_closed_notice_across(
+    tmp_path, recorded, standing
+):
+    """Signups are closed, and the last close's "🔒 Signups are now closed." notice (950) was
+    posted in the league's signup channel, 650, kept with 650 as its channel or, from before
+    channels were kept beside it, with none. The manager moves the signup channel to 700 and the
+    queue runs. The notice is posted in 700 (951) notifying nobody, and only then is 950 deleted
+    from 650, as two steps after the permissions, in that order; the configuration keeps 951 with
+    700 as its channel, the manager is told only that the channel was set, nothing is logged as
+    a failure, and the queue goes on. Where 950 was already deleted by hand from 650, which still
+    stands (*old-notice-deleted-by-hand*), it is left gone: the move ends the same way, with
+    nothing named to delete by hand."""
+    league = await _league(tmp_path, held=OLD)
+    await _closed_notice(league, channel_id=recorded)
+    events: list[tuple] = []
+    old = _holding(_channel(OLD), events, *((OLD_NOTICE,) if standing else ()))
+    new = _holding(_channel(NEW), events)
+    _discord(league, old, new)
+
+    asked = await _run(league, new)
+
+    assert last_said(asked) == f"✅ Signup channel set to <#{NEW}>."
+    [sent] = _sent(events)
+    assert sent[:4] == ("send", NEW, CARRIED_NOTICE, CLOSED)
+    assert sent[4].to_dict() == discord.AllowedMentions.none().to_dict()
+    if standing:
+        assert _deleted(events) == [("delete", OLD, OLD_NOTICE)]
+        assert events.index(sent) < events.index(("delete", OLD, OLD_NOTICE))
+    else:
+        assert _deleted(events) == []
+    assert await _notice_kept(league.db_path) == (CARRIED_NOTICE, NEW)
+    assert [line for line in await log_lines(league) if line.startswith("❌ ")] == []
+    assert await stopped_job(league.db_path) is None
+    from leaguebot.signup.services.channel_setting import (
+        CARRY_CLOSED,
+        DELETE_CARRIED_CLOSED,
+        SET_PERMISSIONS,
+    )
+
+    rows = await step_rows(league.db_path)
+    names = [row["name"] for row in rows]
+    assert names[names.index(SET_PERMISSIONS):] == [
+        SET_PERMISSIONS, CARRY_CLOSED, DELETE_CARRIED_CLOSED,
+    ]
+    assert all(row["done_at"] for row in rows)
+
+
+@pytest.mark.parametrize("held, notice", [
+    pytest.param(None, (None, None), id="no-notice-first-configuration"),
+    pytest.param(OLD, (OLD_NOTICE, NEW), id="notice-already-in-the-new-channel"),
+])
+async def test_a_closed_notice_already_in_the_new_channel_or_none_held_posts_nothing(
+    tmp_path, held, notice
+):
+    """Signups are closed and the manager sets 700 as the signup channel. Where no close has ever
+    posted a notice (*no-notice-first-configuration*: no signup channel was set before), or the
+    notice the last close posted (950) already stands in 700 (*notice-already-in-the-new-channel*:
+    700 was the signup channel when signups closed, and it is moved back there from 650), nothing
+    is posted in 700
+    and nothing deleted; the configuration keeps the notice as it was, and the manager is told
+    the channel was set."""
+    league = await _league(tmp_path, held=held)
+    message_id, channel_id = notice
+    if message_id is not None:
+        await _closed_notice(league, message_id=message_id, channel_id=channel_id)
+    events: list[tuple] = []
+    old = _holding(_channel(OLD), events)
+    new = _holding(_channel(NEW), events, *(() if message_id is None else (message_id,)))
+    _discord(league, old, new)
+
+    asked = await _run(league, new)
+
+    assert last_said(asked) == f"✅ Signup channel set to <#{NEW}>."
+    assert _sent(events) == [] and _deleted(events) == []
+    assert await _notice_kept(league.db_path) == notice
+    assert await _stored(league.db_path) == NEW
+
+
+@pytest.mark.parametrize("refused", ["post", "delete"])
+async def test_a_closed_notice_that_cannot_be_carried_stays_where_it_was(tmp_path, refused):
+    """Signups are closed and the last close's notice (950) stands in the signup channel, 650. The
+    manager moves the signup channel to 700, and Discord refuses the notice's post in 700
+    (*post*), or its deletion from 650 once it is posted in 700 (*delete*). 700 is saved as the
+    signup channel either way, and the queue goes on.
+
+    Where the post is refused, the configuration keeps 950 in 650 and nothing is deleted; the
+    reply says the notice was not carried, naming 650, where the next `/signup open` takes it
+    down. Where the deletion is refused, the configuration keeps the copy posted in 700 (951),
+    and the reply names the old notice with its link, to delete by hand. Either way the log
+    channel carries one failure line for `/signup channel`."""
+    league = await _league(tmp_path, held=OLD)
+    await _closed_notice(league)
+    events: list[tuple] = []
+    old = _holding(
+        _channel(OLD), events, OLD_NOTICE,
+        delete_fault=_forbidden() if refused == "delete" else None,
+    )
+    new = _holding(_channel(NEW), events, post_fault=_forbidden() if refused == "post" else None)
+    _discord(league, old, new)
+
+    asked = await _run(league, new)
+
+    assert await _stored(league.db_path) == NEW
+    assert await stopped_job(league.db_path) is None
+    replied = last_said(asked)
+    assert f"Signup channel set to <#{NEW}>" in replied
+    assert _deleted(events) == []
+    if refused == "post":
+        assert _sent(events) == []
+        assert await _notice_kept(league.db_path) == (OLD_NOTICE, OLD)
+        assert f"<#{OLD}>" in replied
+        assert "/signup open" in replied
+    else:
+        assert len(_sent(events)) == 1
+        assert await _notice_kept(league.db_path) == (CARRIED_NOTICE, NEW)
+        assert f"https://discord.com/channels/{SERVER_ID}/{OLD}/{OLD_NOTICE}" in replied
+        assert "by hand" in replied
+    [failed] = [line for line in await log_lines(league) if line.startswith("❌ ")]
+    assert failed.startswith(f"❌ `/signup channel` failed for {NAMED} (")
+    said = (
+        f"The closed notice was not carried to <#{NEW}>" if refused == "post"
+        else "The old closed notice could not be"
+    )
+    assert replied.count(said) == 1
+
+
+async def test_a_refused_carry_from_a_deleted_signup_channel_says_no_notice_stands(
+    tmp_path
+):
+    """Signups are closed and the last close's notice (950) was posted in the signup channel, 650,
+    which has since been deleted from the server, taking the notice with it. The admin replaces
+    the signup channel with 700, and Discord refuses the notice's post in 700. 700 is saved as the
+    signup channel and the queue goes on; the reply says the notice was not carried and that the
+    old signup channel is gone, so none stands to take down, never that it still stands in 650."""
+    league = await _league(tmp_path, held=OLD)
+    await _closed_notice(league)
+    events: list[tuple] = []
+    new = _holding(_channel(NEW), events, post_fault=_forbidden())
+    _discord(league, new)
+    missing = discord.NotFound(MagicMock(status=404, reason="Not Found"), "Unknown Channel")
+
+    fetch = league.bot.fetch_channel
+
+    async def _fetch(channel_id):
+        if channel_id == OLD:
+            raise missing
+        return await fetch(channel_id)
+
+    league.guild.fetch_channel = AsyncMock(side_effect=_fetch)
+    league.bot.fetch_channel = AsyncMock(side_effect=_fetch)
+
+    asked = await _run(league, new)
+
+    assert await _stored(league.db_path) == NEW
+    assert await stopped_job(league.db_path) is None
+    assert _sent(events) == [] and _deleted(events) == []
+    replied = last_said(asked)
+    assert (
+        f"⚠️ The closed notice was not carried to <#{NEW}>: the old signup channel is gone, so "
+        f"no notice stands to take down, and the next `/signup open` posts in <#{NEW}> as usual."
+    ) in replied
+    assert "still stands" not in replied
+    assert replied.count("was not carried") == 1
+
+
+@pytest.mark.parametrize("step, warning", [
+    pytest.param(
+        "carry",
+        f"⚠️ The closed notice was not carried to <#{NEW}>: delete any copy of it in <#{NEW}> by "
+        "hand; the one in the earlier signup channel stays for the next `/signup open` to take "
+        "down.",
+        id="carry-posted-but-not-recorded",
+    ),
+    pytest.param(
+        "take-down",
+        f"⚠️ The old closed notice could not be deleted (in <#{OLD}>): delete it by hand.",
+        id="take-down-server-unavailable",
+    ),
+])
+async def test_a_closed_notice_carry_or_take_down_that_fails_without_a_refusal_is_named_in_the_reply(
+    tmp_path, step, warning
+):
+    """Signups are closed and the last close's notice (950) stands in the signup channel, 650. The
+    manager moves the signup channel to 700, and one of the notice's two steps fails with no
+    refusal from Discord: the copy is posted in 700 but the database will not record it (*carry*),
+    or the league's server is unavailable as the old notice is taken down from 650 (*take-down*).
+    700 is saved as the signup channel, the queue goes on, and the manager's reply carries that
+    step's warning line, once, saying what was not done and what to do by hand: for the carry, to
+    delete any copy in 700 by hand, the recorded notice in 650 staying for the next `/signup open`;
+    for the take-down, naming 650, where the old notice stands."""
+    from leaguebot.framework.models.change import GuildUnavailable
+
+    league = await _league(tmp_path, held=OLD)
+    await _closed_notice(league)
+    if step == "carry":
+        async with get_connection(league.db_path) as db:
+            await db.execute(
+                "CREATE TRIGGER refuse_the_notice BEFORE UPDATE OF signup_closed_message_id "
+                "ON signup_module_config BEGIN SELECT RAISE(ABORT, 'database or disk is full'); "
+                "END"
+            )
+            await db.commit()
+    events: list[tuple] = []
+    old = _holding(
+        _channel(OLD), events, OLD_NOTICE,
+        delete_fault=(
+            GuildUnavailable("the league's server is not in the cache")
+            if step == "take-down" else None
+        ),
+    )
+    new = _holding(_channel(NEW), events)
+    _discord(league, old, new)
+
+    asked = await _run(league, new)
+
+    assert await _stored(league.db_path) == NEW
+    assert await stopped_job(league.db_path) is None
+    replied = last_said(asked)
+    assert f"Signup channel set to <#{NEW}>" in replied
+    assert replied.count(warning) == 1
+
+
 @pytest.mark.parametrize("gone", [
     pytest.param(True, id="gone"),
     pytest.param(False, id="standing"),
 ])
 async def test_a_signup_channel_deleted_mid_season_is_replaced(tmp_path, gone):
     """Season 3's configuration is confirmed (the season waiting for its signup window), which
-    fixes the signup settings, and an admin runs `/signup channel` for 700.
+    fixes the signup settings, signups are closed and the last close's notice (950) was posted in
+    the league's signup channel, 650; an admin runs `/signup channel` for 700.
 
-    Where the league's signup channel, 650, has since been deleted from the server, the command
-    is a repair: it is not refused as fixed for the season; 700 is saved as the signup channel,
-    Discord is asked to set 700's overwrites and nothing of 650's, and the admin is told the
-    channel was set. Where 650 still stands, the repair is not owed and the command is refused
-    as fixed for Season 3, as before: 650 stays the signup channel, no channel is edited, and
-    one refusal line is written."""
+    Where 650 has since been deleted from the server, the command is a repair: it is not refused
+    as fixed for the season; 700 is saved as the signup channel, Discord is asked to set 700's
+    overwrites and nothing of 650's, the closed notice is posted in 700 (951) and kept with 700
+    as its channel, the old notice counts as gone with its channel, the queue goes on, and the
+    admin is told the channel was set. Where 650 still stands, the repair is not owed and the
+    command is refused as fixed for Season 3, as before: 650 stays the signup channel, no channel
+    is edited, nothing is posted or deleted, and one refusal line is written."""
     league = await _league(tmp_path, held=OLD)
     async with get_connection(league.db_path) as db:
         await db.execute(
@@ -457,8 +762,10 @@ async def test_a_signup_channel_deleted_mid_season_is_replaced(tmp_path, gone):
             "VALUES ('2026-09-17', 'SETUP', 3, 'WAITING')"
         )
         await db.commit()
-    new = _channel(NEW)
-    old = _channel(OLD)
+    await _closed_notice(league)
+    events: list[tuple] = []
+    new = _holding(_channel(NEW), events)
+    old = _holding(_channel(OLD), events, OLD_NOTICE)
     edits = _discord(league, new) if gone else _discord(league, old, new)
     # Where 650 is gone from the server, Discord answers so when the bot asks for it; where it
     # stands, Discord hands it back.
@@ -483,10 +790,17 @@ async def test_a_signup_channel_deleted_mid_season_is_replaced(tmp_path, gone):
         assert [channel_id for channel_id, _overwrites in edits] == [NEW]
         assert edits[0][1] != {}
         assert "✅ Signup channel set to <#700>." in last_said(asked)
+        assert [event[:4] for event in _sent(events)] == [
+            ("send", NEW, CARRIED_NOTICE, CLOSED)
+        ]
+        assert _deleted(events) == []
+        assert await _notice_kept(league.db_path) == (CARRIED_NOTICE, NEW)
+        assert await stopped_job(league.db_path) is None
     else:
         assert "fixed for Season 3" in last_said(asked)
         assert await _stored(league.db_path) == OLD
         assert edits == []
+        assert events == []
         await _assert_one_refusal_line(league, "/signup channel", "fixed for Season 3")
 
 

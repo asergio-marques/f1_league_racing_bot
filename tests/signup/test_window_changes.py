@@ -299,6 +299,51 @@ async def test_the_last_closed_notice_is_deleted_after_the_information_is_posted
     assert CLOSED_NOTICE not in league.guild.get_channel(closed_in).messages
 
 
+#: The copy of the closed notice `/signup channel` posts in the new signup channel when it moves
+#: the channel while signups are closed (#665), below the fake channels' ids as `CLOSED_NOTICE` is.
+CARRIED_NOTICE = 8902
+
+
+async def test_an_opening_takes_down_the_closed_notice_a_move_carried_since_it_was_asked(tmp_path):
+    """The signup channel is 621, where Discord refuses every post, and the last close's notice
+    (8901) stands there. Manager 77 runs `/signup open` and the queue stops at `post_info`. While
+    it is stopped, `/signup channel` moves the signup channel to 620 and carries the notice
+    across: it is posted in 620 (8902), kept with 620 as its channel, and 8901 is deleted from
+    621. A league manager presses Retry: the information is posted in 620, and the notice deleted
+    is the one standing as the job runs, 8902 from 620, and nothing else; no notice is kept, and
+    the manager's reply names nothing to delete by hand."""
+    league = await _league(tmp_path, closed_notice=True, closed_in=OLD_SIGNUP_CHANNEL)
+    await _set_signup_channel(league, OLD_SIGNUP_CHANNEL)
+    old = league.guild.get_channel(OLD_SIGNUP_CHANNEL)
+    old.send_fails = http_error(discord.Forbidden, status=403, text="Missing Permissions")
+    interaction = await _open(league)
+    await run_queue(league.bot)
+    job = await stopped_job(league.db_path)
+    assert job is not None and job["name"] == "post_info"
+
+    async with get_connection(league.db_path) as db:
+        await db.execute(
+            "UPDATE signup_module_config SET signup_channel_id = ?, signup_closed_message_id = ?, "
+            "signup_closed_message_channel_id = ?",
+            (SIGNUP_CHANNEL, CARRIED_NOTICE, SIGNUP_CHANNEL),
+        )
+        await db.commit()
+    league.signup.seed(CARRIED_NOTICE, "🔒 Signups are now closed.")
+    del old.messages[CLOSED_NOTICE]
+    await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    [posted] = league.posts()
+    assert [event for event in league.events if event[0] == "delete"] == [
+        ("delete", SIGNUP_CHANNEL, CARRIED_NOTICE)
+    ]
+    assert CARRIED_NOTICE not in league.signup.messages
+    config = await league.config()
+    assert config["signups_open"]
+    assert config["signup_closed_message_id"] is None
+    assert "could not be deleted" not in updated_reply(interaction)
+
+
 async def test_signup_open_without_the_bot_s_permissions_is_refused_naming_them(tmp_path):
     """The bot may view the signup channel and send messages in it, but not embed links. Manager
     77 runs `/signup open`: he is refused at once, the reply naming View Channel, Send Messages

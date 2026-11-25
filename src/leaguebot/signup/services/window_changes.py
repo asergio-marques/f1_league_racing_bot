@@ -12,13 +12,16 @@ is posted. Its jobs are three:
   refuses stops the queue with signups still closed, and a Discard leaves them closed.
 - `arm_close` arms the close timer, where a close time was given.
 - `delete_closed` takes down the "signups closed" notice the last close left, once the information
-  message stands, so that the channel always shows one or the other.
+  message stands, so that the channel always shows one or the other. The notice is the one held
+  when `post_info` ran, which that job returns: a `/signup channel` run in between (a repair after
+  a refused post) may have carried it to a new message and channel, and the one the command read
+  when it was asked is gone. The planned notice stands in only where `post_info` returned none.
 
 The command reads the close time and the tracks it was given, which are its own input, and the
-notice standing in the signup channel, which the plan of the jobs reads from the payload. The
-signup channel itself is read by `post_info` as it runs, never taken from the payload: a
-`/signup channel` run ahead of it on the queue, or run to repair a post Discord refused before
-a Retry, is where the information is posted, the window recorded and the reply points.
+notice standing in the signup channel when it was asked, which the plan of the jobs reads from the
+payload. The signup channel itself is read by `post_info` as it runs, never taken from the
+payload: a `/signup channel` run ahead of it on the queue, or run to repair a post Discord refused
+before a Retry, is where the information is posted, the window recorded and the reply points.
 
 `signup.close` closes it again, for `/signup close` (and its Confirm Close), the close timer and
 the restart past the close time. Its jobs, in order, are:
@@ -177,9 +180,10 @@ def window_open_change(
     close time or None), and ``channel_id``, ``closed_message_id`` and ``closed_channel_id`` (the
     signup channel when the change was asked, the "signups closed" notice and the channel that
     notice was posted in, each or None; the notice is taken down from there, the signup channel
-    since replaced or not). ``channel_id`` only stands in for a notice that kept no channel and
-    names the channel in a reply whose post kept none: ``post_info`` posts in the signup channel
-    as it stands when the job runs.
+    since replaced or not, unless ``post_info`` finds another held as it runs, which it returns
+    as ``held`` and which is the one taken down). ``channel_id`` only stands in for a notice that
+    kept no channel and names the channel in a reply whose post kept none: ``post_info`` posts in
+    the signup channel as it stands when the job runs.
     *arm_once* arms the close timer (`window_close.CLOSE_TIMER`) at the close time, and *queue* is
     the change queue the Sign Up button is handed.
     """
@@ -268,9 +272,15 @@ def window_open_change(
             line += f"\n  track_ids: {', '.join(track_ids)}"
         if close_at:
             line += f"\n  close_time: {close_at}"
+        result: dict[str, Any] = {"new": message_id, "channel_id": channel_id}
+        if cfg.signup_closed_message_id is not None:
+            result["held"] = {
+                "message_id": int(cfg.signup_closed_message_id),
+                "channel_id": standing_posts.posted_in(
+                    cfg.signup_closed_message_channel_id, channel_id),
+            }
         return StepResult(
-            result={"new": message_id, "channel_id": channel_id}, lines=(line,),
-            audits=(AuditRecord("SIGNUP_OPEN", "", audited),),
+            result=result, lines=(line,), audits=(AuditRecord("SIGNUP_OPEN", "", audited),),
         )
 
     async def record(db: aiosqlite.Connection, ctx: StepContext, result: StepResult) -> None:
@@ -305,8 +315,27 @@ def window_open_change(
     async def describe_arm(_ctx: StepContext) -> str:
         return "arming the signup window's close"
 
-    async def describe_delete(_ctx: StepContext) -> str:
-        return "taking down the earlier signups closed notice"
+    def held_notice(steps: Sequence[StepView]) -> dict[str, Any] | None:
+        """The closed notice standing when `post_info` ran, which a `/signup channel` since the
+        open was asked may have carried to a new id and channel; None where it kept none."""
+        posted = next((view for view in steps if view.name == POST_INFO), None)
+        held = (posted.result or {}).get("held") if posted is not None else None
+        return held if isinstance(held, dict) else None
+
+    def deleting(ctx: StepContext) -> StepContext:
+        held = held_notice(ctx.steps)
+        if held is None:
+            return ctx
+        return dataclasses.replace(ctx, step_payload={
+            **ctx.step_payload, "channel_id": held["channel_id"], "message_id": held["message_id"],
+        })
+
+    async def delete_closed(ctx: StepContext) -> StepResult:
+        return await standing_posts.delete_replaced_step(DELETE_CLOSED).run(deleting(ctx))
+
+    async def describe_delete(ctx: StepContext) -> str:
+        where = deleting(ctx).step_payload["channel_id"]
+        return f"taking down the earlier signups closed notice in <#{where}>"
 
     def outcome(ctx: OutcomeContext) -> str:
         views = {view.name: view for view in ctx.steps}
@@ -331,11 +360,15 @@ def window_open_change(
                 text += f" Auto-close scheduled for {_stamp(moment)} ({_stamp(moment, 'R')})."
         closed = views.get(DELETE_CLOSED)
         if closed is not None and "discarded" in (closed.result or {}):
-            where = standing_posts.posted_in(
+            held = held_notice(ctx.steps)
+            where = held["channel_id"] if held is not None else standing_posts.posted_in(
                 ctx.payload.get("closed_channel_id"), ctx.payload["channel_id"],
             )
             link = (closed.result or {}).get("link") or f"in <#{where}>"
-            text += f"\nThe earlier signups closed notice could not be deleted ({link}): delete it by hand."
+            text += (
+                f"\nThe earlier signups closed notice could not be deleted ({link}): "
+                "delete it by hand."
+            )
         return text
 
     steps: dict[str, Step] = {
@@ -347,8 +380,8 @@ def window_open_change(
             ARM_CLOSE, StepKind.ACT, arm_close, still_due=opened_here, describe=describe_arm
         ),
         DELETE_CLOSED: dataclasses.replace(
-            standing_posts.delete_replaced_step(DELETE_CLOSED), still_due=opened_here,
-            describe=describe_delete,
+            standing_posts.delete_replaced_step(DELETE_CLOSED), run=delete_closed,
+            still_due=opened_here, describe=describe_delete,
         ),
     }
     return ChangeType(

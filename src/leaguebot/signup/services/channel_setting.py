@@ -40,21 +40,40 @@ permissions** (`POST_INFORMATION`, an `After` step planned by the save), posted 
 channel and kept as the window's button message, so drivers can sign up in the channel at once.
 It is no line's carrier: a fault in it leaves the channel saved and the reply says what was not
 posted.
+
+**Where signups are closed, the closed notice follows the permissions** (`CARRY_CLOSED`, then
+`DELETE_CARRIED_CLOSED`, both `After` steps planned by the save where a notice stands in another
+channel), so the signup channel always shows one notice or the other. The carry posts the notice in
+the new channel, with no mentions, and keeps it as the notice with its channel; the delete takes
+the old one down in a step of its own after it, through the standing-post handler, a message or a
+channel already gone counting as done (which is what a replacement for a deleted channel finds). A
+post Discord refuses leaves the old notice standing for the next opening to take down, and a
+delete it refuses is named in the reply with its link and recorded as a failure beside the log
+line. Neither stops the lane. Where no close posted a notice, nothing is posted.
 """
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
 import discord
 
-from leaguebot.framework.models.change import AuditRecord, PlannedStep, StepKind, StepResult, Verdict
+from leaguebot.framework.models.change import (
+    AuditRecord,
+    PlannedStep,
+    StepFailedOnDiscord,
+    StepKind,
+    StepResult,
+    Verdict,
+)
 from leaguebot.core.services.seasons.approval_checks import channel_on_server
 from leaguebot.framework.models.refusal import Refused
 from leaguebot.framework.services.queue.change_types import CheckContext, Step, StepContext
 from leaguebot.framework.services.queue.setting_change import (
+    LEFT,
     RENAMED_OUTCOME,
     SAVE,
     After,
@@ -67,11 +86,15 @@ from leaguebot.core.services.settings.channel_registry_service import (
     refusal,
     unusable_refusal,
 )
+from leaguebot.framework.services.posting import standing_posts
+from leaguebot.framework.services.posting.standing_posts import posted_in
 from leaguebot.framework.utils.interaction_errors import describe_fault
 from leaguebot.framework.utils.league_server import league_guild
 from leaguebot.signup.services.channel_uses import channel_needs
+from leaguebot.signup.services.closing_steps import CLOSED_NOTICE
 from leaguebot.signup.services.information_post import post_information
 from leaguebot.signup.services.signup_module_service import signup_channel_overwrites
+from leaguebot.signup.services.signup_posting import post_standing_message
 from leaguebot.signup.services.signup_settings import open_to_change
 
 if TYPE_CHECKING:
@@ -91,6 +114,12 @@ SET_PERMISSIONS = "set_permissions"
 #: The name of the step, after the permissions, that posts the information message and its Sign Up
 #: button in the new channel where a window is open.
 POST_INFORMATION = "post_information"
+#: The name of the step, after the permissions, that posts the closed notice again in the new
+#: channel where signups are closed and the notice the last close posted stands in another.
+CARRY_CLOSED = "carry_closed"
+#: The name of the step, after the carry, that takes the old closed notice down from the channel it
+#: stood in.
+DELETE_CARRIED_CLOSED = "delete_carried_closed"
 
 NOT_CONFIGURED = "❌ Signup module is not configured."
 
@@ -224,6 +253,172 @@ def _post_information(
     )
 
 
+def _carry_closed(signup: "SignupModuleService") -> After:
+    """The step after the permissions, planned where signups are closed and the closed notice
+    stands in another channel: post it again in the new channel, notifying nobody, and keep the new
+    message and its channel as the notice, so that the signup channel always shows the closed
+    notice or the Sign Up button.
+
+    The notice and its channel are read as the step runs, never taken from the payload, and kept in
+    its result beside the new ones (`old`, `old_channel_id`) for the step that takes the old one
+    down (`DELETE_CARRIED_CLOSED`); a delete is its own step after the new post. The step is no
+    longer due where signups have opened, the signup channel has moved on since, no notice is held
+    or it already stands in the new channel. Like every step after a setting's save it ends on a
+    fault and never stops the lane.
+    """
+
+    async def held(ctx: StepContext) -> tuple[int, int] | None:
+        """The notice standing as the step runs and the channel it stands in, or None where
+        none is held to carry from."""
+        config = await signup.get_config()
+        if (
+            config is None or config.signups_open
+            or config.signup_channel_id != int(ctx.payload["channel_id"])
+            or config.signup_closed_message_id is None
+        ):
+            return None
+        old_signup = next(
+            (view.result or {}).get("old_channel_id") for view in ctx.steps if view.name == SAVE
+        )
+        standing_in = posted_in(config.signup_closed_message_channel_id, old_signup)
+        if standing_in is None or standing_in == int(ctx.payload["channel_id"]):
+            return None
+        return int(config.signup_closed_message_id), int(standing_in)
+
+    async def due(ctx: StepContext) -> bool:
+        return await held(ctx) is not None
+
+    async def run(ctx: StepContext) -> StepResult:
+        standing = await held(ctx)
+        if standing is None:
+            raise RuntimeError("no closed notice stands to carry")
+        new_id = int(ctx.payload["channel_id"])
+        guild = await league_guild(ctx.bot)
+        if guild is None:
+            raise RuntimeError("the league's server is not in the cache")
+
+        async def left() -> str:
+            """What the reply says of a notice not carried: where it stands and who takes it
+            down, or, where its channel is gone from the server, that nothing stands to take
+            down."""
+            said = f"The closed notice was not carried to <#{new_id}>"
+            if not await channel_on_server(guild, standing[1]):
+                return (
+                    f"{said}: the old signup channel is gone, so no notice stands to take down, "
+                    f"and the next `/signup open` posts in <#{new_id}> as usual."
+                )
+            return (
+                f"{said}: it still stands in <#{standing[1]}>, where the next `/signup open` "
+                "takes it down."
+            )
+
+        channel = guild.get_channel(new_id)
+        if not isinstance(channel, discord.TextChannel):
+            raise StepFailedOnDiscord(
+                "the signup channel could not be found to post in", notice=await left()
+            )
+        try:
+            message_id = await post_standing_message(
+                channel, CLOSED_NOTICE, mentions=discord.AllowedMentions.none(),
+                refused=f"the closed notice could not be posted in channel {new_id}",
+            )
+        except StepFailedOnDiscord as error:
+            raise StepFailedOnDiscord(error.reason, notice=await left()) from error
+        return StepResult(result={
+            "new": message_id, "channel_id": new_id, "old": standing[0],
+            "old_channel_id": standing[1],
+        })
+
+    async def record(
+        db: "aiosqlite.Connection", _ctx: StepContext, result: StepResult
+    ) -> None:
+        await db.execute(
+            "UPDATE signup_module_config SET signup_closed_message_id = ?, "
+            "signup_closed_message_channel_id = ?",
+            (int((result.result or {})["new"]), int((result.result or {})["channel_id"])),
+        )
+
+    async def describe(ctx: StepContext) -> str:
+        return f"posting the closed notice in <#{int(ctx.payload['channel_id'])}>"
+
+    def fault_reply(payload: dict[str, Any], reply: str) -> str:
+        said = f"The closed notice was not carried to <#{int(payload['channel_id'])}>"
+        if said in reply:
+            return reply
+        return (
+            f"{reply}\n⚠️ {said}: delete any copy of it in <#{payload['channel_id']}> by hand; "
+            "the one in the earlier signup channel stays for the next `/signup open` to take down."
+        )
+
+    return After(
+        step=Step(CARRY_CLOSED, StepKind.ACT, run, still_due=due, describe=describe, record=record),
+        fault_reply=fault_reply,
+    )
+
+
+def _delete_carried_closed() -> After:
+    """The step after the carry: take the old closed notice down from the channel it stood in, once
+    the copy is posted in the new one.
+
+    The delete is the standing-post handler's (`standing_posts.delete_replaced_step`), which this
+    step runs with the notice and its channel the carry kept in its result (`old`,
+    `old_channel_id`) as its payload: a message or a channel already gone counts as done, which is
+    what a replacement for a deleted channel finds. The step is due only where the carry posted.
+    It is a `DELETE` step, not an `ACT` one, so that a `NotFound` completes it. A fault of any other
+    kind, a refusal or a failure of the bot's own, is turned into the one notice naming the old
+    channel, or the link where Discord gave one, for the reply and the log to carry. Like every
+    step after a setting's save it ends on a fault and never stops the lane.
+    """
+    inner = standing_posts.delete_replaced_step(DELETE_CARRIED_CLOSED)
+
+    def carried(ctx: StepContext) -> StepContext | None:
+        posted = next(
+            ((view.result or {}) for view in ctx.steps if view.name == CARRY_CLOSED), {}
+        )
+        if "new" not in posted:
+            return None
+        return dataclasses.replace(ctx, step_payload={
+            "channel_id": int(posted["old_channel_id"]), "message_id": int(posted["old"]),
+            "what": "closed notice", "division_name": "signups",
+        })
+
+    async def due(ctx: StepContext) -> bool:
+        return carried(ctx) is not None
+
+    async def run(ctx: StepContext) -> StepResult:
+        deleting = carried(ctx)
+        if deleting is None:
+            raise RuntimeError("no closed notice was carried to take down the old one of")
+        try:
+            return await inner.run(deleting)
+        except discord.NotFound:
+            raise
+        except Exception as error:  # noqa: BLE001 — every other fault names the old notice
+            refused = error if isinstance(error, StepFailedOnDiscord) else None
+            where = deleting.step_payload["channel_id"]
+            link = ((refused.result if refused else None) or {}).get("link") or f"in <#{where}>"
+            raise StepFailedOnDiscord(
+                refused.reason if refused else "the old closed notice could not be deleted",
+                notice=f"The old closed notice could not be deleted ({link}): delete it by hand.",
+            ) from error
+
+    async def describe(ctx: StepContext) -> str:
+        return "taking down the old closed notice from the earlier signup channel"
+
+    def fault_reply(_payload: dict[str, Any], reply: str) -> str:
+        said = "The old closed notice could not be"
+        if said in reply:
+            return reply
+        return (
+            f"{reply}\n⚠️ {said} taken down: delete it from the earlier signup channel by hand."
+        )
+
+    return After(
+        step=dataclasses.replace(inner, run=run, still_due=due, describe=describe),
+        fault_reply=fault_reply,
+    )
+
+
 def channel_setting(
     *,
     modules: "ModuleService",
@@ -279,7 +474,8 @@ def channel_setting(
     async def save(db: "aiosqlite.Connection", payload: dict[str, Any]) -> Saved:
         new_id = int(payload["channel_id"])
         cursor = await db.execute(
-            "SELECT signup_channel_id, signups_open, selected_tracks_json, close_at "
+            "SELECT signup_channel_id, signups_open, selected_tracks_json, close_at, "
+            "signup_closed_message_id, signup_closed_message_channel_id "
             "FROM signup_module_config"
         )
         row = await cursor.fetchone()
@@ -294,6 +490,10 @@ def channel_setting(
             then.append(PlannedStep(POST_INFORMATION, {
                 "track_ids": json.loads(row["selected_tracks_json"]), "close_at": row["close_at"],
             }))
+        elif row["signup_closed_message_id"] is not None:
+            standing_in = posted_in(row["signup_closed_message_channel_id"], old_id)
+            if standing_in is not None and standing_in != new_id:
+                then.extend((PlannedStep(CARRY_CLOSED), PlannedStep(DELETE_CARRIED_CLOSED)))
         return Saved(
             changed=True,
             audits=(
@@ -313,6 +513,9 @@ def channel_setting(
         text = f"✅ Signup channel set to <#{channel_id}>."
         for fault in (results.get(SET_PERMISSIONS) or {}).get("faults", ()):
             text += f"\n⚠️ {fault}"
+        for name in (CARRY_CLOSED, DELETE_CARRIED_CLOSED):
+            if notice := (results.get(name) or {}).get(LEFT):
+                text += f"\n⚠️ {notice}"
         return text
 
     return Setting(
@@ -326,12 +529,14 @@ def channel_setting(
         after={
             SET_PERMISSIONS: _set_permissions(config),
             POST_INFORMATION: _post_information(signup, config, queue),
+            CARRY_CLOSED: _carry_closed(signup),
+            DELETE_CARRIED_CLOSED: _delete_carried_closed(),
         },
         repairs_the_bot=True,
     )
 
 
 __all__ = [
-    "COMMAND", "KIND", "NOT_CONFIGURED", "POST_INFORMATION", "SET_PERMISSIONS", "channel_setting",
-    "may_not_edit",
+    "CARRY_CLOSED", "COMMAND", "DELETE_CARRIED_CLOSED", "KIND", "NOT_CONFIGURED",
+    "POST_INFORMATION", "SET_PERMISSIONS", "channel_setting", "may_not_edit",
 ]
