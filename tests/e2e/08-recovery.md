@@ -803,8 +803,8 @@ that the cancellation reads as that spec gives it.
     - A press on **✅ Confirm configuration** in (a), between the start and the question's
       deletion, confirms nothing: the button is routed again only to refuse, the take-down
       having marked the review first.
-      - **Reply:** ``⛔ This review is being taken down, so it can no longer be answered. **Nothing has been confirmed by this one.** If it was not confirmed, run `/season config-review` again.``
-      - **Log:** ``⛔ the ✅ Confirm configuration button of `/season config-review` refused for <you> — the review was being taken down``
+      - **Reply:** `⛔ This review is already being answered by another press. **Nothing has been confirmed by this one.**`
+      - **Log:** ``⛔ the ✅ Confirm configuration button of `/season config-review` refused for <you> — another press of the review was being worked``
 
 46. **Only in (b): the button answers after the restart.** **Do:** within five minutes of the
     question, press **✅ Confirm configuration**.
