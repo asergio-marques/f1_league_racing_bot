@@ -969,8 +969,6 @@ async def test_the_review_lists_a_division_s_rounds_in_the_order_they_race(tmp_p
     assert summary.index(_round_row(summary, 2)) < summary.index(_round_row(summary, 1))
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#595: the review gives a mystery round no Cleanup cell yet")
 async def test_the_review_marks_every_queued_job_as_queued(tmp_path, paused_round_jobs) -> None:
     """Every step of a season armed as approval arms it has its job queued, and reads ⏳: a
     mystery round's notice and its clean-up among them."""
@@ -999,8 +997,7 @@ async def test_the_review_marks_every_queued_job_as_queued(tmp_path, paused_roun
         (1, "rsvp_deadline", "Deadline"),
         (1, "rsvp_cleanup", "Cleared"),
         (2, "weather_p1", "Notice"),
-        pytest.param(2, "cleanup", "Cleanup", marks=pytest.mark.xfail(
-            strict=True, reason="#595: the review gives a mystery round no Cleanup cell yet")),
+        (2, "cleanup", "Cleanup"),
     ],
     ids=[
         "p1", "p2", "p3", "forecast-cleanup", "results", "call", "last-notice", "deadline",

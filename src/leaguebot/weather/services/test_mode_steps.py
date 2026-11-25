@@ -18,10 +18,10 @@ that asked for it cancelled the scheduler's job, so the database alone would off
 weather is off nothing of it is armed and nothing is handed back.
 
 The review's marks of a round come through core's `review_marks_read` hook: Phases 1 to 3 and the
-clean-up, or a mystery round's notice alone, each done (✅), pending with its job queued or with no
-scheduler to ask (⏳), pending with no job (⚠️), or, where the round's race has been run, passed
-over (⏭️). The clean-up is done once nothing of Phases 1 to 3 stands and Phase 3 has run or the
-race has.
+clean-up, or a mystery round's notice and the clean-up, each done (✅), pending with its job queued
+or with no scheduler to ask (⏳), pending with no job (⚠️), or, where the round's race has been run,
+passed over (⏭️). The clean-up is done once nothing of Phases 1 to 3 stands and Phase 3 has run or
+the race has; a mystery round's, once its notice no longer stands and was given or the race has run.
 """
 
 from __future__ import annotations
@@ -144,7 +144,13 @@ async def review_marks(
         if rnd.format.upper() == "MYSTERY":
             # A mystery round's notice is armed as `weather_p1`: weather's `ask_forecast` reads
             # the round's format as it fires.
-            marks[rid] = [("Notice", mark(first, "weather_p1"))]
+            marks[rid] = [
+                ("Notice", mark(first, "weather_p1")),
+                (
+                    "Cleanup",
+                    phase_mark((first or raced) and rid not in standing, (rid, "cleanup"), queued),
+                ),
+            ]
         else:
             marks[rid] = [
                 ("P1", mark(p1, "weather_p1")),

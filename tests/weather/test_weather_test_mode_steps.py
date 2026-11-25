@@ -156,9 +156,6 @@ async def test_weather_hands_back_its_own_pending_steps_and_those_passed_over(
 #: The jobs the scheduler holds of round 1, as (round, the event each is armed under).
 P2_QUEUED = {(1, "weather_p2")}
 
-#: Why a mystery round's marks fail until #595 is built.
-MYSTERY_CLEANUP_CELL = "#595: the review gives a mystery round no Cleanup cell yet"
-
 
 @pytest.mark.parametrize("state, queued, marks", [
     pytest.param({}, None, [("P1", "⏳"), ("P2", "⏳"), ("P3", "⏳"), ("Cleanup", "⏳")],
@@ -170,10 +167,9 @@ MYSTERY_CLEANUP_CELL = "#595: the review gives a mystery round no Cleanup cell y
                  [("P1", "✅"), ("P2", "⏳"), ("P3", "⚠️"), ("Cleanup", "⚠️")],
                  id="phase 1 posted, with phase 2's job queued"),
     pytest.param({"format": "MYSTERY"}, None, [("Notice", "⏳"), ("Cleanup", "⏳")],
-                 id="a mystery round's notice still to post", marks=pytest.mark.xfail(strict=True, reason=MYSTERY_CLEANUP_CELL)),
+                 id="a mystery round's notice still to post"),
     pytest.param({"format": "MYSTERY", "notice": True, "standing": (0,)}, set(),
-                 [("Notice", "✅"), ("Cleanup", "⚠️")], id="a mystery round's notice posted",
-                 marks=pytest.mark.xfail(strict=True, reason=MYSTERY_CLEANUP_CELL)),
+                 [("Notice", "✅"), ("Cleanup", "⚠️")], id="a mystery round's notice posted"),
     pytest.param({"scheduled_at": RACED}, set(),
                  [("P1", "⏭️"), ("P2", "⏭️"), ("P3", "⏭️"), ("Cleanup", "✅")],
                  id="a raced round with nothing posted"),
@@ -182,10 +178,10 @@ MYSTERY_CLEANUP_CELL = "#595: the review gives a mystery round no Cleanup cell y
                  id="a raced round with phase 2 still posted"),
     pytest.param({"scheduled_at": RACED, "format": "MYSTERY"}, None,
                  [("Notice", "⏭️"), ("Cleanup", "✅")],
-                 id="a raced mystery round with no notice, with no scheduler", marks=pytest.mark.xfail(strict=True, reason=MYSTERY_CLEANUP_CELL)),
+                 id="a raced mystery round with no notice, with no scheduler"),
     pytest.param({"scheduled_at": RACED, "format": "MYSTERY", "notice": True}, set(),
                  [("Notice", "✅"), ("Cleanup", "✅")],
-                 id="a raced mystery round with its notice taken down", marks=pytest.mark.xfail(strict=True, reason=MYSTERY_CLEANUP_CELL)),
+                 id="a raced mystery round with its notice taken down"),
     pytest.param({"done": (1, 2, 3), "standing": (3,)}, None,
                  [("P1", "✅"), ("P2", "✅"), ("P3", "✅"), ("Cleanup", "⏳")],
                  id="every phase posted, phase 3 still up"),
