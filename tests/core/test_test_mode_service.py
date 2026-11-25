@@ -787,9 +787,11 @@ async def test_a_forecast_cleanup_is_offered_for_an_earlier_phase_still_standing
     assert (result["round_id"], result["phase_number"], result["kind"]) == (1, 8, "cleanup")
 
 
-async def test_a_mystery_round_s_notice_is_offered_no_forecast_cleanup(tmp_path) -> None:
+async def test_a_mystery_round_s_notice_is_offered_its_forecast_cleanup(tmp_path) -> None:
     """A finished mystery round, its check-in cleared, with its notice (phase 0) standing: the
-    notice is not a forecast the clean-up deletes, so nothing is offered."""
+    clean-up a day after the race deletes the notice as it deletes a forecast, so its cleanup (8)
+    is offered, of kind `cleanup`: from its job in the store, or from the database once the store
+    is empty."""
     db_path = str(tmp_path / "notice_standing.db")
     await run_migrations(db_path)
     await _seed_all_done(db_path, [{"track_name": None, "format": "MYSTERY"}])
@@ -798,13 +800,12 @@ async def test_a_mystery_round_s_notice_is_offered_no_forecast_cleanup(tmp_path)
         await db.execute("UPDATE rounds SET checkin_cleared = 1 WHERE id = 1")
         await db.commit()
 
-    assert await get_next_pending_phase(
-        db_path, _StubScheduler([_job(1, 8, days=1)]), now=NOW,
-        pending_steps_read=pending_steps_read(),
-    ) is None
-    assert await get_next_pending_phase(
-        db_path, _StubScheduler(), now=NOW, pending_steps_read=pending_steps_read(),
-    ) is None
+    for stub in (_StubScheduler([_job(1, 8, days=1)]), _StubScheduler()):
+        result = await get_next_pending_phase(
+            db_path, stub, now=NOW, pending_steps_read=pending_steps_read(),
+        )
+        assert result is not None
+        assert (result["round_id"], result["phase_number"], result["kind"]) == (1, 8, "cleanup")
 
 
 # ---------------------------------------------------------------------------
