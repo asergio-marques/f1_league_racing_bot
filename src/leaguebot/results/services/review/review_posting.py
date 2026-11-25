@@ -1120,7 +1120,7 @@ async def _record_standings_post(
         await set_standings_message_id_on(
             db, result.result["division_id"], result.result["round_id"],
             new[0] if new else None, table["championship"],
-            message_ids=json.dumps(new) if new else None,
+            message_ids=json.dumps(new) if new else None, channel_id=result.result["channel_id"],
         )
 
 

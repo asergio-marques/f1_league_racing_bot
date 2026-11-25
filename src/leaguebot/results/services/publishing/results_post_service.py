@@ -1275,6 +1275,13 @@ _STANDINGS_IDS_COLUMNS = {
 }
 
 
+#: The same two, for the channel each championship was posted in.
+_STANDINGS_CHANNEL_COLUMNS = {
+    STANDINGS_DRIVERS: "standings_message_channel_id",
+    STANDINGS_CONSTRUCTORS: "constructor_standings_message_channel_id",
+}
+
+
 async def get_standings_message_id(
     db_path: str,
     division_id: int,
@@ -1335,6 +1342,7 @@ async def set_standings_message_id_on(
     championship: str = STANDINGS_DRIVERS,
     *,
     message_ids: str | None = None,
+    channel_id: int | None = None,
 ) -> None:
     """Persist *message_id* for *championship* on the round's standings row, committing nothing.
 
@@ -1346,6 +1354,9 @@ async def set_standings_message_id_on(
     (#345). Clearing an id clears the list with it: a stale list outliving the message it
     described would send a delete at somebody else's posting.
 
+    *channel_id* is the channel the posting was made in, kept beside the id so that a later move of
+    the standings channel never aims the delete at the wrong one; clearing an id clears it too.
+
     The row is the round's: one for the round, found again whoever leads it and whatever a
     recomputation does to the snapshots, and a new posting replaces the old in place (#345).
 
@@ -1354,12 +1365,13 @@ async def set_standings_message_id_on(
     """
     column = _STANDINGS_ID_COLUMNS[championship]
     list_column = _STANDINGS_IDS_COLUMNS[championship]
+    channel_column = _STANDINGS_CHANNEL_COLUMNS[championship]
     await db.execute(
-        f"INSERT INTO round_standings_posts (round_id, division_id, {column}, {list_column}) "  # noqa: S608
-        "VALUES (?, ?, ?, ?) "
+        f"INSERT INTO round_standings_posts (round_id, division_id, {column}, {list_column}, "  # noqa: S608
+        f"{channel_column}) VALUES (?, ?, ?, ?, ?) "
         f"ON CONFLICT(round_id) DO UPDATE SET {column} = excluded.{column}, "
-        f"{list_column} = excluded.{list_column}",
-        (round_id, division_id, message_id, message_ids),
+        f"{list_column} = excluded.{list_column}, {channel_column} = excluded.{channel_column}",
+        (round_id, division_id, message_id, message_ids, channel_id if message_id else None),
     )
 
 
@@ -1371,6 +1383,7 @@ async def set_classification_message_id_on(
     championship: str = STANDINGS_DRIVERS,
     *,
     message_ids: str | None = None,
+    channel_id: int | None = None,
 ) -> None:
     """Persist *message_id* for *championship* on the division's row of *occasion* in
     ``classification_posts``, committing nothing: the opening or final classification the
@@ -1379,15 +1392,17 @@ async def set_classification_message_id_on(
     As :func:`set_standings_message_id_on`, but the row is the division's for the occasion, not a
     round's, since neither classification has a round to key it by. Written on the connection it
     is handed, so that the change queue saves the ids in the save that marks the post done.
+    *channel_id* is kept beside the id as there, and cleared with it.
     """
     column = _STANDINGS_ID_COLUMNS[championship]
     list_column = _STANDINGS_IDS_COLUMNS[championship]
+    channel_column = _STANDINGS_CHANNEL_COLUMNS[championship]
     await db.execute(
-        f"INSERT INTO classification_posts (division_id, occasion, {column}, {list_column}) "  # noqa: S608
-        "VALUES (?, ?, ?, ?) "
+        f"INSERT INTO classification_posts (division_id, occasion, {column}, {list_column}, "  # noqa: S608
+        f"{channel_column}) VALUES (?, ?, ?, ?, ?) "
         f"ON CONFLICT(division_id, occasion) DO UPDATE SET {column} = excluded.{column}, "
-        f"{list_column} = excluded.{list_column}",
-        (division_id, occasion.value, message_id, message_ids),
+        f"{list_column} = excluded.{list_column}, {channel_column} = excluded.{channel_column}",
+        (division_id, occasion.value, message_id, message_ids, channel_id if message_id else None),
     )
 
 
