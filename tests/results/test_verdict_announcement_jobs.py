@@ -53,12 +53,14 @@ from tests.support.review_league import (
     LEWIS,
     LEWIS_PROFILE,
     MAX,
+    MAX_PROFILE,
     NOW,
     PROMPT,
     ROUND_ID,
     SUBMISSION_CHANNEL,
     VERDICTS_CHANNEL,
     ReviewLeague,
+    candidate,
     channel,
     one,
     penalty,
@@ -1214,3 +1216,100 @@ async def test_a_verdict_picture_that_could_not_be_drawn_keeps_its_fault_line_wh
     lines = [line for line in log.splitlines() if RENDER_FAULT in line]
     assert len(lines) == 1, log
     assert lines[0].startswith("⚠️ Verdicts image — "), lines[0]
+
+
+#: The notice the review's attendance sheet and its refreshed lineup are each drawn with, grouped
+#: as the drawing hands it back: its kind in plain words, then the notice naming its field.
+_GROUPED_NOTICE = (
+    "  Artwork not supplied by the league", f"    • `flag` — {NOTICE_DETAIL}",
+)
+
+#: Pro's sheet after round 3, as the sheet's notice block names it.
+_SHEET_DRAWN = "Season 1 Pro — attendance after round 3"
+
+
+def _held(league: ReviewLeague) -> tuple[int, str]:
+    """The one log channel message carrying the notice, and its place among those sent, which
+    the reply's link names."""
+    [(held, message)] = [(n, message) for n, message in enumerate(league.bot.log_channel.sent, 1)
+                         if NOTICE_DETAIL in message]
+    return held, message
+
+
+def _told_once(interaction: Any, label: str, held: int) -> None:
+    """Alex's reply ends in one "Image notices" section listing the picture *label* linked to the
+    log message *held*, its grouped notice beneath, told once."""
+    from tests.support.drawn_notices import told_section
+
+    told = updated_reply(interaction)
+    assert told.count("⚠️ **Image notices**") == 1, told
+    listed = told_section(label, f"https://discord.test/{held}", _GROUPED_NOTICE)
+    assert listed.split("\n", 1)[1] in told, told
+    assert told.count(NOTICE_DETAIL) == 1, told
+
+
+@pytest.mark.parametrize("refused", [False, True], ids=["posted", "refused_then_retried"])
+async def test_a_review_s_attendance_sheet_drawn_with_notices_is_framed_kept_and_listed_in_the_reply(
+    tmp_path, refused,
+):
+    """Attendance is on, and Max is owed an autoreserve. Alex approves round 3's reports with a
+    five-second penalty for Lewis, so the sanction applies and Pro's attendance sheet is posted
+    twice by the review's own sheet jobs: plain before the sanction, and after it drawn with one
+    notice, a flag falling back, which attendance's posting hands back marked as the drawing marks
+    it: "Image render notices — Season 1 Pro — attendance after round 3:" over the notice grouped
+    under its kind. Run twice: posted on the first try; and refused by Discord on the first try
+    (Missing Access), the stop keeping the notice, then posted as text by a Retry. Either way the
+    queue runs to the end, and the log channel carries the notice once, in one message opening
+    with Alex and the button he pressed, then the heading and the grouped notice beneath, never a
+    bare block; the sheet job after the sanction keeps the sheet's name and its grouped notice on
+    its result and no raw fault list, the one before it no pictures; and Alex's reply ends in one
+    "Image notices" section listing the sheet under that name, linked to that log message, its
+    notice told once (issue #635; owner decision 2026-11-25)."""
+    from leaguebot.framework.models.change import (
+        RESULT_DRAWN,
+        RESULT_NOTICES,
+        RESULT_PICTURES,
+        NoticeBlock,
+        StepFailedOnDiscord,
+    )
+    from leaguebot.framework.utils.log_lines import notices_block
+    from tests.support.change_queue import step_rows
+
+    league = await review_league(tmp_path, attendance=True)
+    league.attendance.candidates = [candidate(MAX_PROFILE, MAX)]
+    block = NoticeBlock(notices_block(_SHEET_DRAWN, _GROUPED_NOTICE))
+    posted = {"new": 9001, "channel_id": 4242, "takes_slot": False, "faults": []}
+
+    async def _post_sheet(_round_id: int, _division_id: int, *, sanctioned: Any, as_text: bool,
+                          earlier_lines: tuple[str, ...] = ()) -> dict[str, Any]:
+        # The sheet before the sanctions is posted plain; the one after them is drawn.
+        if not sanctioned:
+            return posted
+        if refused and not as_text:
+            raise StepFailedOnDiscord(
+                "the attendance sheet could not be posted: 403 Forbidden: Missing Access"
+            ).carrying((block,))
+        return posted if refused else {**posted, "faults": [block]}
+
+    league.attendance.post_sheet = _post_sheet
+    interaction = await _approve_reports(league, [penalty(LEWIS)])
+    await run_queue(league.bot)
+    if refused:
+        assert await stopped_at(league) == "attendance_sheet"
+        await retry_job(league.bot)
+
+    assert await stopped_at(league) is None
+    held, message = _held(league)
+    assert message.count(NOTICE_DETAIL) == 1, league.log()
+    assert unruled(message) == _NOTICE_OPENING + "\n".join(
+        [f"{_SHEET_DRAWN}:", *_GROUPED_NOTICE]
+    ), message
+    before, kept = [row["result"] for row in await step_rows(league.db_path)
+                    if row["name"] == "attendance_sheet"]
+    assert RESULT_PICTURES not in before, before
+    assert kept[RESULT_PICTURES] == [
+        {RESULT_DRAWN: _SHEET_DRAWN, RESULT_NOTICES: list(_GROUPED_NOTICE)},
+    ], kept
+    assert "faults" not in kept, kept
+    _told_once(interaction, _SHEET_DRAWN, held)
+
