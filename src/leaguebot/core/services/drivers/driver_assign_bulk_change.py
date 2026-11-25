@@ -159,7 +159,7 @@ def driver_assign_bulk_change(
             key=_line_number,
         )
         if faults:
-            return Verdict.refuse(format_placement_errors(faults))
+            return Verdict.refuse(format_placement_errors(faults), "\n".join(faults))
         return Verdict.go()
 
     async def save(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
@@ -171,7 +171,11 @@ def driver_assign_bulk_change(
             reply = format_placement_errors(faults)
             return StepResult(
                 result={"refused": reply},
-                lines=(refusal_line(ctx.named, ctx.what, reply_reason(reply)),),
+                lines=(
+                    refusal_line(
+                        ctx.named, ctx.what, reply_reason(reply), detail="\n".join(faults)
+                    ),
+                ),
             )
         placed: list[dict[str, Any]] = []
         audits: list[AuditRecord] = []

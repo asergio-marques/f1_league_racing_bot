@@ -320,7 +320,8 @@ async def test_a_refused_line_places_nobody(tmp_path, arrange, second, reason):
     the second line puts Lewis into Williams in Am. Nobody is
     placed, Valtteri included, no profile is made, no audit entry is written and no change is
     left on the queue; the reply names line 2 and why it was refused, and not line 1; and the log
-    channel takes the refusal as its one line for the paste."""
+    channel takes the refusal as its one line for the paste, naming line 2 and why it was refused,
+    and not line 1."""
     from tests.support.change_queue import change_rows, run_queue
 
     league = await _placing_bulk(tmp_path)
@@ -340,6 +341,9 @@ async def test_a_refused_line_places_nobody(tmp_path, arrange, second, reason):
     assert await change_rows(league.db_path) == []
     [line] = await _bulk_lines(league)
     assert "refused" in line
+    # The log channel sets a mention in backticks, so that it pings nobody.
+    assert _names_line(line.replace("`", ""), 2, reason.replace("`", ""))
+    assert "Line 1:" not in line
 
 
 @pytest.mark.parametrize(

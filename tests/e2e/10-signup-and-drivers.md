@@ -788,7 +788,12 @@ Every answer in this part is given in `#wade-walsh-signup`, as you.
       • Line 1: Driver is already assigned to a team in **Division 2**.
       • Line 2: Driver is already assigned to a team in **Division 2**.
       ```
-    - **Log:** ``⛔ `/driver assign-bulk` refused for <you> — The list was not placed — 2 problem(s). **No drivers were placed.**``
+    - **Log:**
+      ```
+      ⛔ `/driver assign-bulk` refused for <you> — The list was not placed — 2 problem(s). **No drivers were placed.**
+      Line 1: Driver is already assigned to a team in **Division 2**.
+      Line 2: Driver is already assigned to a team in **Division 2**.
+      ```
     - **Posts:** nothing. Both drivers keep the seats of step 42.
 
 44. **Do:** `/driver reject user:9000000000000000050`
