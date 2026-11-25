@@ -434,10 +434,6 @@ async def _seat(
         await db.commit()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#598: the text orders drivers level on points by the server's name, not the drawn one",
-)
 @pytest.mark.asyncio
 async def test_the_sheet_lists_the_most_points_first_then_by_name(sheet_db, monkeypatch):
     """FR-017/FR-018. Division 1's sheet after round 3, the images module on: Mike (222) on 5,
@@ -483,10 +479,6 @@ async def test_the_sheet_lists_the_most_points_first_then_by_name(sheet_db, monk
     assert [entry.driver_name for entry in sheet.entries] == ["Mike", "Aaron", "Zoe"]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#598: a driver the server does not show is ordered by account number",
-)
 @pytest.mark.parametrize(
     "occasion_name,zulu_left",
     [
@@ -553,10 +545,6 @@ async def test_a_driver_off_the_server_is_ordered_by_the_name_the_bot_holds(
     assert listed == ["<@333>", "<@111>"]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#598: a name read that fails is swallowed, or never made, and the sheet posts anyway",
-)
 @pytest.mark.parametrize("images_on", [False, True], ids=["text-only", "images-on"])
 @pytest.mark.asyncio
 async def test_a_name_read_that_fails_stops_the_sheet_for_retry(sheet_db, images_on):

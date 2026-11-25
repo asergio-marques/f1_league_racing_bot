@@ -23,10 +23,6 @@ from leaguebot.image.services.aspects.image_attendance_service import resolve_dr
 # ── The values both paths draw (FR-013) ───────────────────────────────────
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#598: the textual sheet orders by a Discord member lookup of its own",
-)
 def test_the_driver_name_is_resolved_by_the_shared_convention_not_a_second_one():
     """One person is named by one name wherever the sheet names them.
 
