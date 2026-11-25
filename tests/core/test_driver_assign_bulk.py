@@ -253,6 +253,24 @@ async def _past_account_gone(league):
     league.absent.add(_NICO)
 
 
+async def _placements_open_mid_season(league):
+    """The season is Ongoing with placements open, as a closed mid-season signup window leaves it:
+    its divisions active, no round run, Lewis's seat at Ferrari in Pro confirmed and every other
+    placement not."""
+    from tests.support.season_league import LEWIS, SEASON_ID, profile_id
+
+    await league.write(
+        "UPDATE seasons SET status = 'ACTIVE', stage = 'ONGOING_PLACEMENTS' WHERE id = ?",
+        SEASON_ID,
+    )
+    await league.write("UPDATE divisions SET status = 'ACTIVE' WHERE season_id = ?", SEASON_ID)
+    await league.write("UPDATE rounds SET status = 'NOT_RUN'")
+    await league.write(
+        "UPDATE driver_season_assignments SET committed = 1 WHERE driver_profile_id = ?",
+        profile_id(LEWIS),
+    )
+
+
 async def _as_built(_league):
     pass
 
@@ -286,6 +304,11 @@ async def _as_built(_league):
             f"<@{_STRANGER}> is not a member of this server.", id="not-in-the-server",
         ),
         pytest.param(
+            _placements_open_mid_season, "<@101>, Am, Williams",
+            "Driver already holds a confirmed placement this season.",
+            id="mid-season-a-confirmed-driver",
+        ),
+        pytest.param(
             _past_account_gone, f"<@{_NICO_PAST}>, Am, Williams",
             f"<@{_NICO_PAST}> is a past account of a driver whose current account, <@{_NICO}>, "
             "is not in the server.",
@@ -299,7 +322,9 @@ async def test_a_refused_line_places_nobody(tmp_path, arrange, second, reason):
     Oscar into McLaren, whose last free seat the first line takes; Charles into Williams in Am,
     where he already holds a seat; Oscar, holding no profile, with the signup module on; Oscar
     into a division named Masters, or a team Haas, neither of which exists; a member who is not
-    in the server; or Nico's past account, whose current account has left the server. Nobody is
+    in the server; or Nico's past account, whose current account has left the server. Or the
+    season is Ongoing with placements open, Lewis holding a confirmed seat at Ferrari in Pro, and
+    the second line puts Lewis into Williams in Am. Nobody is
     placed, Valtteri included, no profile is made, no audit entry is written and no change is
     left on the queue; the reply names line 2 and why it was refused, and not line 1; and the log
     channel takes the refusal as its one line for the paste."""
@@ -361,6 +386,108 @@ async def test_every_refused_line_is_named_at_once(tmp_path, paste, refused):
         assert _names_line(reply, number, reason)
     assert await _placements(league) == placements
 
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
+async def test_a_paste_is_placed_while_placements_are_open_mid_season(tmp_path):
+    """The season is Ongoing with placements open: Lewis's seat at Ferrari in Pro is confirmed,
+    Max's beside him and Charles's at McLaren in Am are not. The league admin pastes Valtteri
+    (approved, never placed) into McLaren in Am and Max into Williams in Am. The queue runs it:
+    both sit where the list put them, not confirmed, and the reply reads "✅ Assigned **2**
+    driver(s).\""""
+    from tests.support.change_queue import run_queue
+    from tests.support.settings_league import last_said
+
+    league = await _placing_bulk(tmp_path)
+    await _placements_open_mid_season(league)
+    before = await _placements(league)
+
+    asked = await _paste(league, "<@106>, Am, McLaren\n<@102>, Am, Williams")
+    await run_queue(league.bot)
+
+    assert (await _placements(league))[len(before):] == [
+        ("106", "Am", "McLaren", False), ("102", "Am", "Williams", False),
+    ]
+    assert last_said(asked) == "✅ Assigned **2** driver(s)."
+
+
+async def _standings_room_for_one_more(league):
+    """The image module's drawing answers that the driver standings template draws one more race
+    driver of Am than it seats now, and no more."""
+    from unittest.mock import AsyncMock
+
+    from leaguebot.core.services.modules.image_drawing import CapacityProblem
+    from tests.support.season_league import AM
+
+    [row] = await league.rows(
+        "SELECT COUNT(*) AS seated FROM driver_season_assignments dsa "
+        "JOIN team_seats ts ON ts.id = dsa.team_seat_id "
+        "JOIN team_instances ti ON ti.id = ts.team_instance_id "
+        "WHERE dsa.division_id = ? AND ti.is_reserve = 0", AM,
+    )
+    room = row["seated"] + 1
+
+    async def _problem(drivers):
+        if drivers <= room:
+            return None
+        return CapacityProblem(
+            problem="The driver standings template draws too few rows",
+            remedy="Enlarge the driver standings template.",
+        )
+
+    league.bot.image_drawing.standings_capacity_problem = AsyncMock(side_effect=_problem)
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
+async def test_a_paste_that_together_outgrows_a_graphic_is_refused(tmp_path):
+    """The season is in Placements, and the driver standings template can draw one more race
+    driver of Am and no more. The league admin pastes Valtteri into McLaren in Am and Oscar into
+    Williams in Am: either line alone would fit, as a single `/driver assign` would be let
+    through, but together they would carry Am past what the standings can draw. The reply names
+    line 2 with the template's problem, and not line 1; nobody is placed, no audit entry is
+    written and no change is left on the queue."""
+    from tests.support.change_queue import change_rows, run_queue
+
+    league = await _placing_bulk(tmp_path)
+    await _standings_room_for_one_more(league)
+    placements = await _placements(league)
+
+    asked = await _paste(league, "<@106>, Am, McLaren\n<@108>, Am, Williams")
+    await run_queue(league.bot)
+
+    reply = _reply(asked)
+    assert _names_line(reply, 2, "The driver standings template draws too few rows")
+    assert "Line 1:" not in reply
+    assert await _placements(league) == placements
+    assert await _assign_entries(league) == []
+    assert await change_rows(league.db_path) == []
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
+async def test_a_refusal_too_long_for_one_message_arrives_in_parts(tmp_path):
+    """The season is in Placements. The league admin pastes eighty lines, each putting Oscar into
+    a team Haas of Am, which does not exist: a paste the form's 4000-character box takes. Every
+    line is refused, and the refusal is too long for one Discord message, so it arrives in more
+    than one, each under 2000 characters, together naming every one of the eighty lines; nobody
+    is placed."""
+    from tests.support.change_queue import run_queue
+    from tests.support.settings_league import said
+
+    league = await _placing_bulk(tmp_path)
+    placements = await _placements(league)
+    paste = "\n".join("<@108>, Am, Haas" for _ in range(80))
+    assert len(paste) <= 4000, "longer than the form accepts"
+
+    asked = await _paste(league, paste)
+    await run_queue(league.bot)
+
+    parts = said(asked)
+    assert len(parts) > 1
+    assert all(len(part) < 2000 for part in parts)
+    reply = "\n".join(parts)
+    for number in range(1, 81):
+        assert _names_line(reply, number, "No team of this division has the shorthand `Haas`.")
+    assert await _placements(league) == placements
 
 async def _archive(league):
     from unittest.mock import AsyncMock
