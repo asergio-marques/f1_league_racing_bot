@@ -179,8 +179,8 @@ def _add_check(
         track_name = str(payload["track"]).strip() or None
         if fmt is not RoundFormat.MYSTERY and not track_name:
             return Verdict.refuse(
-                f"❌ A track is required for `{fmt.value}` rounds. "
-                "Leave track blank only for `MYSTERY` rounds."
+                f"❌ A track is required for {fmt.label} rounds. "
+                f"Leave track blank only for {RoundFormat.MYSTERY.label} rounds."
             )
         if track_name:
             async with get_connection(ctx.db_path) as db:

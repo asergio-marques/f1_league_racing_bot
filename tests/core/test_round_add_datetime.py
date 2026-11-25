@@ -405,8 +405,8 @@ _OVERFLOW = (
         ),
         pytest.param(
             {}, {"format": "NORMAL"},
-            "❌ A track is required for `NORMAL` rounds. Leave track blank only for "
-            "`MYSTERY` rounds.",
+            "❌ A track is required for Normal rounds. Leave track blank only for "
+            "Mystery rounds.",
             id="a_track_required",
         ),
         pytest.param(

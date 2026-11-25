@@ -226,7 +226,7 @@ def _check(seasons: SeasonService) -> Callable[[CheckContext], Awaitable[Verdict
         fmt = asked.get("format", rnd.format)
         if fmt is not RoundFormat.MYSTERY and not asked.get("track_name", rnd.track_name):
             return Verdict.refuse(
-                f"❌ Format `{fmt.value}` requires a track. "
+                f"❌ Format {fmt.label} requires a track. "
                 "Supply a `track` value or change format to MYSTERY."
             )
 

@@ -540,7 +540,7 @@ async def test_a_setup_round_amended_to_what_stands_changes_nothing(
         ),
         pytest.param(
             {"format": "NORMAL"},
-            "❌ Format `NORMAL` requires a track. Supply a `track` value or change format to "
+            "❌ Format Normal requires a track. Supply a `track` value or change format to "
             "MYSTERY.",
             id="a-format-that-needs-a-track",
         ),

@@ -107,7 +107,10 @@ def test_every_other_format_must_name_a_track(fmt):
 
     assert rounds == []
     assert len(errors) == 1
-    assert "a track is required" in errors[0]
+    assert errors == [
+        f"Line 1: a track is required for {RoundFormat(fmt.upper()).label} rounds. "
+        "Only Mystery rounds may omit one."
+    ]
 
 
 def test_a_track_name_may_contain_a_comma():
