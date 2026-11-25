@@ -511,10 +511,11 @@ division (`seat_holders_on`), and every driver with a total recorded in the divi
 round, so that one sacked or moved to Reserve stays on the sheet (`_sheet_rows`' docstring). Each
 row carries the seat its driver holds now, a named team, the reserve team or none, and the rows are
 ordered through `after_round_order`, which calls results' `order_drivers` with the attendance
-points and no finishes, so that drivers level on points follow the standings' final tiebreak. The
+points and no finishes, so that drivers level on points are ordered as the attendance
+specification, "Updating attendance sheets", asks. The
 two alternatives rejected were a copy of the tiebreak in attendance, which would drift from the
 standings' the first time one changed, and a `final_tiebreak_key` split out of results, which
-moves a function for one caller and leaves two orderings to keep alike; the cost of calling
+adds a public function to results, with a test of its own, for one caller; the cost of calling
 `order_drivers` as it is is that a step added to it after the points would reach the sheet too,
 which the docstring of `after_round_order` and its test guard. The opening sheet is drawn against the division's first round, the final sheet against the round the
 completion hands it, and the sync's, for its division, against the last round it recalculated, and
@@ -622,8 +623,8 @@ and, for the verdicts channel, results' (`channel_needs` in `results.services.mo
 same drawing whether the aspect attaches files (`ImageDrawing.aspect_attaches_files`), which the cog
 reads off the bot. It also implements its share of the image module's `PreviewSources`, the check-in
 deadline the previews draw and the order its sheet lists drivers in after a round
-(`after_round_order`, handed each driver's seat, which the image module's preview takes from the
-sheet's own teams), and the builder joins it with results' share and hands the whole in as
+(`after_round_order`, handed each driver's seat, which the image module's preview reads from its
+context's teams), and the builder joins it with results' share and hands the whole in as
 `bot.preview_sources`.
 
 ---
