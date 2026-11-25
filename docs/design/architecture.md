@@ -537,7 +537,9 @@ would make the file's write wait on a record of it.
   module's specification lets a restart lose: the change it feeds reads it, and finds its work no
   longer due after a restart, as results' penalty-review staging does. A bot's request that this
   check finds no longer due (a review reopened for a round that has since gone final) is dropped,
-  not stopped: only a channel missing or unusable stops its lane.
+  not stopped: only a channel missing or unusable stops its lane. Where a league should read why,
+  the check gives the verdict a line (`Verdict.not_due`'s `line`), and the queue writes it to the log
+  channel in the save that ends the change; results' carry of a moved channel's posts is its user.
 - **All or nothing in one step.** Where a change must be all or nothing (as the results
   specification's "Changing points system mid-season" requires of an approval), everything it
   saves is saved in one step behind the gate, and only its posts come after, as
@@ -1117,7 +1119,8 @@ sweep to apply, which puts a module's rule in core.
 moment and the `now` it is handed ("The time is always passed in"), since the scheduler does not,
 and a job caught up by the sweep and the same job fired late take that one judgement. A skip that
 needs no record is the change, or its step, found no longer due and dropped, as any change the bot
-asks is when its work is not due (the host's log says so).
+asks is when its work is not due (the host's log says so, and the log channel too where the check
+gave the verdict a line).
 
 **Jobs are made only through the framework's scheduler.** Nothing else arms, finds or removes a job.
 A round's job is named from the round and the event, so arming it again replaces the old one instead
