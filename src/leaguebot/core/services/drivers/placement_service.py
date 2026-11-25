@@ -224,6 +224,22 @@ class PlacementService:
             raise Refused(f"**{team_name}** in this division has no available seats.")
         return None, is_reserve
 
+    @staticmethod
+    async def _free_seats_on(db, division_id: int, team_name: str) -> int | None:
+        """How many seats of the race team *team_name* in *division_id* are free, read only; None
+        for the reserve team, which makes another seat rather than running out, and for a team the
+        division does not hold."""
+        cursor = await db.execute(
+            "SELECT ti.is_reserve, COUNT(CASE WHEN ts.driver_profile_id IS NULL THEN 1 END) AS free "
+            "FROM team_instances ti LEFT JOIN team_seats ts ON ts.team_instance_id = ti.id "
+            "WHERE ti.division_id = ? AND ti.name = ? GROUP BY ti.id",
+            (division_id, team_name),
+        )
+        row = await cursor.fetchone()
+        if row is None or row["is_reserve"]:
+            return None
+        return int(row["free"])
+
     async def _free_seat(self, db, division_id: int, team_name: str) -> tuple[int, bool]:
         """The first free seat of *team_name* in *division_id*, and whether it is Reserve,
         making the reserve team another seat where it has none free.
@@ -579,6 +595,53 @@ class PlacementService:
 
         await self._find_free_seat(db, division_id, team_name)
         return {"current_state": current_state}
+
+    async def judge_assign_paste_on(
+        self, db, lines: list[dict], *, season_id: int, signup_off: bool = False
+    ) -> list[str]:
+        """Judge a pasted list of placements on *db*, in order, writing nothing: the faults of
+        every line, each "Line N: " and then the words a single assignment refuses in. Empty where
+        the whole paste may be placed.
+
+        A line is judged as `judge_assign_on` judges one, which reads the database alone, and then
+        against a running tally of what the lines accepted before it would take, since nothing is
+        written until the list is saved: a driver placed earlier into the same division is refused
+        as `judge_assign_on` refuses one already in it, and a race team's free seats are counted
+        down, the lines past the last refused as `_find_free_seat` refuses a full team. The reserve
+        team never runs out. A refused line takes nothing from the tally, so one fault does not
+        cascade onto the lines after it. The tally follows each line's account
+        (``discord_user_id``), which a member holding no profile has as well as one with.
+
+        Each line is a dict carrying ``line``, ``driver_profile_id`` (None where the member has no
+        profile), ``discord_user_id``, ``division_id`` and ``team_name``.
+        """
+        faults: list[str] = []
+        placed: set[tuple[str, int]] = set()
+        seats_taken: dict[tuple[int, str], int] = {}
+        for line in lines:
+            division_id, team_name = line["division_id"], line["team_name"]
+            try:
+                await self.judge_assign_on(
+                    db, driver_profile_id=line["driver_profile_id"], division_id=division_id,
+                    team_name=team_name, season_id=season_id, signup_off=signup_off,
+                )
+                who = (str(line["discord_user_id"]), division_id)
+                if who in placed:
+                    cursor = await db.execute(
+                        "SELECT name FROM divisions WHERE id = ?", (division_id,)
+                    )
+                    row = await cursor.fetchone()
+                    name = row["name"] if row else str(division_id)
+                    raise Refused(f"Driver is already assigned to a team in **{name}**.")
+                free = await self._free_seats_on(db, division_id, team_name)
+                if free is not None and seats_taken.get((division_id, team_name), 0) >= free:
+                    raise Refused(f"**{team_name}** in this division has no available seats.")
+            except Refused as refusal:
+                faults.append(f"Line {line['line']}: {refusal}")
+                continue
+            placed.add(who)
+            seats_taken[(division_id, team_name)] = seats_taken.get((division_id, team_name), 0) + 1
+        return faults
 
     async def assign_on(
         self,

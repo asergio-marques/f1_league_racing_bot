@@ -404,7 +404,6 @@ async def _judge_paste(db_path: str, lines: list[dict], *, signup_off: bool = Fa
         )
 
 
-@pytest.mark.xfail(strict=True, reason="#633: a pasted list of placements is not judged")
 async def test_a_clean_paste_is_judged_with_no_faults(tmp_path):
     """Three Unassigned drivers into a division whose Alpha has two free seats: two into Alpha,
     one into Reserve. Nothing is refused, and nothing is written."""
@@ -422,7 +421,6 @@ async def test_a_clean_paste_is_judged_with_no_faults(tmp_path):
     assert await _seat_of(db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason="#633: a pasted list of placements is not judged")
 async def test_lines_past_a_teams_last_free_seat_are_refused(tmp_path):
     """Alpha has two free seats and three drivers are pasted into it, on lines 1, 2 and 4 (a
     blank line between). The first two fit; the third is refused as line 4, in the words a
@@ -442,7 +440,6 @@ async def test_lines_past_a_teams_last_free_seat_are_refused(tmp_path):
     assert "**Alpha** in this division has no available seats." in faults[0]
 
 
-@pytest.mark.xfail(strict=True, reason="#633: a pasted list of placements is not judged")
 async def test_a_driver_pasted_twice_into_one_division_is_refused_the_second_time(tmp_path):
     """The same driver on line 1 into Alpha and on line 2 into Reserve, both of Division 1. The
     second line is refused in a single assign's words for a driver already in the division."""
@@ -458,7 +455,6 @@ async def test_a_driver_pasted_twice_into_one_division_is_refused_the_second_tim
     assert "Driver is already assigned to a team in **Division 1**." in faults[0]
 
 
-@pytest.mark.xfail(strict=True, reason="#633: a pasted list of placements is not judged")
 async def test_a_driver_pasted_into_two_divisions_is_not_refused(tmp_path):
     """The same driver on line 1 into Division 1's Alpha and on line 2 into Division 2's Alpha.
     A driver may race in more than one division, so neither line is refused."""
@@ -487,7 +483,6 @@ async def test_a_driver_pasted_into_two_divisions_is_not_refused(tmp_path):
     assert faults == []
 
 
-@pytest.mark.xfail(strict=True, reason="#633: a pasted list of placements is not judged")
 async def test_the_reserve_team_never_runs_out_in_a_paste(tmp_path):
     """Reserve has one free seat and three drivers are pasted into it. None is refused: the
     reserve team makes another seat rather than refusing."""
@@ -504,7 +499,6 @@ async def test_the_reserve_team_never_runs_out_in_a_paste(tmp_path):
     assert faults == []
 
 
-@pytest.mark.xfail(strict=True, reason="#633: a pasted list of placements is not judged")
 async def test_a_member_with_no_profile_pasted_twice_into_one_division_is_refused(tmp_path):
     """Signup is off. A member holding no profile yet is pasted on line 1 into Alpha and on line 2
     into Reserve, both of Division 1. Without a profile the tally follows the member's account,
