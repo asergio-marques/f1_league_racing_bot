@@ -4,7 +4,7 @@ from __future__ import annotations
 from tests.support.current_documents import ROOT, current_text_paths
 
 
-def test_the_current_documents_include_every_live_end_to_end_spec():
+def test_the_current_documents_include_every_end_to_end_spec_and_design_file():
     """A withdrawn command quoted in a manual end-to-end spec or a design file sends a
     maintainer to a command Discord no longer offers, so the guards read both; `specs/` is a
     historical record and is not read."""
