@@ -61,7 +61,7 @@ from leaguebot.attendance.services.check_in.check_in_changes import (
 )
 from leaguebot.attendance.services.check_in.check_in_clean_up import earlier_messages, forget_vanished_call
 from leaguebot.framework.db.database import get_connection
-from leaguebot.framework.utils.log_lines import framed_picture_lines
+from leaguebot.framework.utils.log_lines import drawn_notices_section, framed_picture_lines
 from leaguebot.framework.models.change import (
     ChangeOrigin,
     PlannedStep,
@@ -80,6 +80,7 @@ from leaguebot.framework.services.queue.change_types import (
     OutcomeContext,
     Step,
     StepContext,
+    drawn_notices_in,
 )
 from leaguebot.core.services.seasons import season_service
 from leaguebot.framework.utils.channels import as_text_channel
@@ -535,10 +536,16 @@ def check_in_call_change(
         return Verdict.go() if reason is None else Verdict.not_due(reason)
 
     def outcome(ctx: OutcomeContext) -> str:
-        """What a member who posted the call by hand is told: it was posted, or why it was not.
-        The bot's own request tells nobody."""
+        """What a member who posted the call by hand is told: it was posted, or why it was not,
+        and where its picture drew with notices, the section listing them (`drawn_notices_section`)
+        after a blank line. The bot's own request tells nobody."""
         if ctx.actor_id is None:
             return ""
+        told = _told(ctx)
+        section = drawn_notices_section(drawn_notices_in(ctx.steps))
+        return f"{told}\n\n{section}" if section else told
+
+    def _told(ctx: OutcomeContext) -> str:
         name, number = ctx.payload.get("division_name", "?"), ctx.payload.get("round_number", "?")
         steps = {step.name: step for step in ctx.steps}
         posted = steps.get(POST_CALL)
