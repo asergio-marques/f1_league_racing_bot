@@ -332,7 +332,9 @@ are ordered by what each may fail at:
 5. **The closing line,** written last, so that it carries what a discard left undone.
 
 The change's reply ends, after the sanctions applied and not applied, with the notices of the
-pictures its jobs drew (`drawn_notices_in`), each with the link to the log message holding it.
+pictures its jobs drew (`drawn_notices_in`), each with the link to the log message holding it. The
+change of a penalty that recalculates the season, which posts the same sheets, and a hand-posted
+check-in call end their replies with the section as well; the bot's own call tells nobody.
 
 The cards, lineups and sheets are jobs of the change and not work done after it, so a stop between
 the sanctions and their cards is finished by the queue when the bot is back. A second sync plans no
