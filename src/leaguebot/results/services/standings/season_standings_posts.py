@@ -42,7 +42,6 @@ from leaguebot.framework.models.change import (
     StepKind,
     StepResult,
     drawn_kept,
-    drawn_lines_kept,
     drawn_part,
 )
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
