@@ -1592,6 +1592,37 @@ async def test_contrast_with_per_tier_colours_is_the_lowest_tier(
     assert reading.divisions == ("Division 2",)
 
 
+async def test_per_tier_contrast_is_the_lowest_across_every_marked_background(
+    db_path, module_service, config_service, template_dir, monkeypatch
+):
+    """A marked canvas in a fixed black, and a marked band each division paints its own colour.
+
+    Division 1 paints its band black, so white reads 21:1 on both of its backgrounds; Division 2
+    paints its band a pale grey, close to white. The canvas comes first in the document, so a
+    reading taken from the first marked shape alone would report black for both divisions.
+    """
+    await _enable(module_service, config_service)
+    await _seed_season(db_path, ["Division 1", "Division 2"])
+    await _per_tier(
+        config_service,
+        template_dir,
+        monkeypatch,
+        _race_template(
+            '<rect class="fastest-lap-background" fill="#000000"/>'
+            "<style>.colour-fill-band { fill:#000000 }</style>"
+            '<rect class="colour-fill-band fastest-lap-background"/>'
+        ),
+        {"Division 1": {"band": "#000000"}, "Division 2": {"band": "#E0E0E0"}},
+    )
+
+    reading = await _measure(config_service, module_service, "#FFFFFF")
+
+    assert reading.problem is None
+    assert reading.background == "#E0E0E0"
+    assert reading.ratio == pytest.approx(1.320, abs=0.001)
+    assert reading.divisions == ("Division 2",)
+
+
 async def test_contrast_with_per_tier_colours_off_ignores_stored_palettes(
     db_path, module_service, config_service, template_dir, monkeypatch
 ):
