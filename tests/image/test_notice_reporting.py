@@ -233,7 +233,6 @@ def test_the_standings_path_posts_one_grouped_message():
     assert lines[0].startswith("Image render notices — drivers standings — Season 3:")
 
 
-@pytest.mark.xfail(strict=True, reason="#635: a drawing's notice block is not yet marked as one")
 def test_the_standings_notice_block_is_marked_for_the_job_to_frame():
     """The job that drew the picture opens its notice block with the member and the change it
     ran for; the drawing marks the block so the job can tell it from a fault line."""

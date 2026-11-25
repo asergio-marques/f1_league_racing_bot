@@ -314,7 +314,6 @@ def test_a_job_s_notice_line_opens_with_member_and_change_and_carries_the_groupe
     )
 
 
-@pytest.mark.xfail(strict=True, reason="#635: a job does not yet frame its notice blocks")
 def test_a_job_frames_its_notice_blocks_with_member_and_change_and_leaves_its_other_lines():
     """A module job's lines mix the drawing's notice block with fault lines and lines kept from an
     earlier try, already framed. Only the block the drawing marked gains the opening."""

@@ -338,10 +338,6 @@ async def test_a_fault_is_reported_to_the_log_channel_naming_the_championship():
     post_log.assert_not_awaited()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#635: the notice block comes back unmarked, headed by the kind's code",
-)
 async def test_notices_are_reported_alongside_a_graphic_that_did_draw(tmp_path):
     """The drivers' picture draws with a render notice, a flag falling back: it keeps its
     picture, and the notice comes back as one block naming the round and the championship,

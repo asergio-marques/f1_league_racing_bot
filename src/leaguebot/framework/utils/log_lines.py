@@ -40,7 +40,7 @@ from typing import Any
 
 import discord
 
-from leaguebot.framework.models.change import LEAGUE_LANE, DrawnNotices
+from leaguebot.framework.models.change import LEAGUE_LANE, DrawnNotices, NoticeBlock
 from leaguebot.framework.utils.league_server import league_guild
 from leaguebot.framework.utils.member_names import interaction_member, member_named  # noqa: F401
 from leaguebot.utils.messages import chunk_message
@@ -336,6 +336,16 @@ def drawn_notices_line(named: str, what: str, drawn: str, body: Iterable[str]) -
     was drawn ("lineup — Pro"), over *body*, the grouped notices. The notices are one line of the
     job, so they reach the log channel once, in one message, never as a second unheaded block."""
     return f"{named} | {what} | " + notices_block(drawn, body)
+
+
+def job_notice_lines(named: str, what: str, lines: Iterable[str]) -> tuple[str, ...]:
+    """A job's *lines* with each notice block the drawing marked (`NoticeBlock`) opened with *named*
+    and *what*, the member and the change the job ran for, as every line of the log opens; every
+    other line (a fault's, one kept from an earlier try and already framed) is left as it is. The
+    framed block is a plain string, so framing it again changes nothing."""
+    return tuple(
+        f"{named} | {what} | {line}" if isinstance(line, NoticeBlock) else line for line in lines
+    )
 
 
 def log_link(url: str) -> str:

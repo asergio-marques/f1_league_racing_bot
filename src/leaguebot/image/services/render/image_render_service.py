@@ -24,6 +24,7 @@ from pathlib import Path
 
 from dataclasses import dataclass, field as dataclass_field
 
+from leaguebot.framework.models.change import NoticeBlock
 from leaguebot.framework.utils.interaction_errors import describe_fault
 from leaguebot.framework.utils.log_lines import notices_block
 from leaguebot.image.models.image_constants import (
@@ -946,8 +947,9 @@ class ImageRenderService:
         return RenderOutcome(png_paths=[png], notices=notices)
 
     @staticmethod
-    def format_notices(notices: list[RenderNotice], *, subject: str | None = None) -> str:
-        """The notice block, shared by the log channel and a command's own reply.
+    def format_notices(notices: list[RenderNotice], *, subject: str | None = None) -> NoticeBlock:
+        """The notice block, shared by the log channel and a command's own reply, marked as one
+        (`NoticeBlock`) for the job that drew the picture to open with the member and the change.
 
         Grouped by kind, and identical culprits counted rather than repeated — see
         :func:`grouped_notice_lines`.
@@ -957,7 +959,7 @@ class ImageRenderService:
         which is not the same thing as naming the championship or the session a reader is
         looking for in a log of many.
         """
-        return notices_block(subject, grouped_notice_lines(notices))
+        return NoticeBlock(notices_block(subject, grouped_notice_lines(notices)))
 
     # ── Posting: the commanded / uncommanded split (Constitution XIV.7) ────
 

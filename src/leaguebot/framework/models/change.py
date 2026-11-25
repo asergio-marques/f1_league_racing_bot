@@ -147,6 +147,17 @@ RESULT_NOTICES = "notices"
 RESULT_DRAWN = "drawn"
 
 
+class NoticeBlock(str):
+    """A picture's render notices as one block of lines ("Image render notices — <picture>:" and
+    the grouped notices beneath), marked as such, so that the job which drew the picture can tell
+    it from the fault lines among its own (`job_notice_lines`) and open it with the member and the
+    change it ran for. A plain `str` in every other respect, it reads, joins and compares as one.
+    The mark does not survive being saved in a step's result: a job frames its blocks before it
+    keeps them (`StepFailedOnDiscord.carrying`)."""
+
+    __slots__ = ()
+
+
 @dataclass(frozen=True)
 class DrawnNotices:
     """The render notices of one picture, as a reply lists them: *label* is what the picture's log

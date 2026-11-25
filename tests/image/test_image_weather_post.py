@@ -368,11 +368,6 @@ def _attach_bot(*, notices=(), problem=None, draws=True):
     return bot
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#635: the notice block comes back unmarked, headed by the kind's code and naming "
-           "the template",
-)
 async def test_a_substituted_asset_still_draws_and_reports_its_notice(monkeypatch, tmp_path):
     """FR-059 — the picture is handed back, and the substitution with it, as a line for the log
     channel naming what it pertains to: Division 1's round 4, phase 2, as a league reads the
