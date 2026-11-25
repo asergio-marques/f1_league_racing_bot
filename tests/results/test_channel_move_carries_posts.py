@@ -74,9 +74,6 @@ MOVES = {
     "standings": (STANDINGS_CHANNEL, NEW_STANDINGS, "standings_channel_id"),
 }
 
-NOT_CARRIED = "#667: a move does not yet carry the posts already up to the new channel"
-NOT_DROPPED = "#667: no carry is yet asked, so none is dropped with its log line"
-
 
 async def _league(tmp_path: Any) -> ReviewLeague:
     """`review_league`'s league with round 3 final, no verdicts channel, results switched on, and
@@ -203,7 +200,6 @@ def _lines(league: ReviewLeague, since: int = 0) -> list[str]:
     return [str(line) for line in league.bot.log_channel.sent[since:]]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_CARRIED)
 async def test_a_results_move_carries_every_table_to_the_new_channel(tmp_path):
     """Rounds 3 and 4 each have a Feature Race table standing in 700 (8800, 8810). Admin moves
     Pro's results channel to 703, and the queue runs. The setting saves 703 with its usual
@@ -246,7 +242,6 @@ async def test_a_results_move_carries_every_table_to_the_new_channel(tmp_path):
         lines)
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_CARRIED)
 async def test_a_standings_move_carries_each_round_s_standings_to_the_new_channel(tmp_path):
     """Rounds 3 and 4 each have standings standing in 701 (8801, 8811). Admin moves Pro's
     standings channel to 704, and the queue runs. The reply says the channel was updated and that
@@ -388,7 +383,6 @@ def _refused_in_new_channel(league: ReviewLeague) -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_CARRIED)
 async def test_a_carried_table_discord_refuses_stops_the_lane_and_leaves_the_old_table(tmp_path):
     """Discord refuses every post in 703. Admin moves Pro's results channel from 700 to 703, and
     the queue runs. The setting is done and 703 stays saved, but the carry stops the league's lane
@@ -410,7 +404,6 @@ async def test_a_carried_table_discord_refuses_stops_the_lane_and_leaves_the_old
     assert league.deleted_in(RESULTS_CHANNEL) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_CARRIED)
 async def test_a_carry_whose_new_channel_has_gone_stops_the_lane(tmp_path):
     """The league's lane is stopped at a job of another change. Admin moves Pro's results channel
     from 700 to 703: the setting runs past the stop and saves 703, and its carry waits behind the
@@ -438,7 +431,6 @@ async def test_a_carry_whose_new_channel_has_gone_stops_the_lane(tmp_path):
     assert league.deleted_in(RESULTS_CHANNEL) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_CARRIED)
 async def test_a_discarded_carried_table_ends_the_carry_incomplete(tmp_path):
     """Discord refuses every post in 703, so the carry stops at round 3's table, and a league
     admin discards it. The carry's line is Incomplete: it says round 3's Feature Race results
@@ -480,7 +472,6 @@ async def _moved_again(league: ReviewLeague) -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_DROPPED)
 @pytest.mark.parametrize("meanwhile,words", [
     pytest.param(_amendment_opens, ("amend",), id="an amendment opens"),
     pytest.param(_results_switched_off, ("off", "disabled", "not enabled"),
@@ -515,7 +506,6 @@ async def test_a_carry_no_longer_due_is_dropped_with_its_line(tmp_path, meanwhil
                for line in lines), lines
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_DROPPED)
 async def test_a_carry_the_season_reaches_pending_completion_ahead_of_is_dropped_saying_why(
     tmp_path,
 ):

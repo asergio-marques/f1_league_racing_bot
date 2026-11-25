@@ -47,7 +47,11 @@ from leaguebot.framework.services.queue.change_types import (
 from leaguebot.framework.utils.hooks import AwaitedHook
 from leaguebot.framework.utils.league_server import league_guild
 from leaguebot.results.models.switch import SWITCH_KEY
-from leaguebot.results.services.module.channel_settings import held_channel
+from leaguebot.results.services.module.channel_settings import (
+    CHANNEL_CARRY,
+    carry_what,
+    held_channel,
+)
 from leaguebot.results.services.module.division_channels import channel_needs
 from leaguebot.results.services.review import review_posting
 from leaguebot.results.services.round_amendment.amendment_writes import open_amendment_in_division
@@ -57,7 +61,6 @@ if TYPE_CHECKING:
     from leaguebot.framework.services.switches.module_service import ModuleService
     from leaguebot.image.services.render.image_drawing import ImageDrawing
 
-CHANNEL_CARRY = "results.channel.carry"
 NOTE_OLD_CHANNEL = "note_old_channel"
 PLAN_CARRY = "plan_carry"
 CLOSE = "close"
@@ -70,14 +73,6 @@ _COLUMNS = {RESULTS: "results_channel_id", STANDINGS: "standings_channel_id"}
 
 #: The sync command that posts each kind of post where a league wants it.
 _SYNCS = {RESULTS: "/results rounds sync", STANDINGS: "/results standings sync"}
-
-
-def carry_what(payload: dict[str, Any]) -> str:
-    """What the carry of *payload* is called in the log: the posts, the division and both channels."""
-    return (
-        f"Carrying the {payload['which']} of **{payload['division_name']}** from "
-        f"<#{payload['old_channel_id']}> to <#{payload['new_channel_id']}>"
-    )
 
 
 def _stay(payload: dict[str, Any], why: str) -> str:

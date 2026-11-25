@@ -31,6 +31,15 @@ audit entry stamped by the queue's clock (`division_channels` holds the upserts)
 replaces is read in the save, never at the ask, so a change waiting behind another for the same
 division records what that one left, and its reply reads "set" or "updated" by it.
 
+**A save that moved a channel which still stands asks the carry.** The results and the standings
+channel each plan an `After` step, `ask_carry`, where the save replaced a channel (never a first
+set). It finds again that the channel moved away from stands, as the check did, and that the sync's own
+plan (`plan_division_posts`) has posts to move, and only then asks
+`results.channel.carry` (`publishing/channel_move`) as the bot's own follow-on, whose job it is to
+move the tables or standings already up across, as a sync would; the setting's reply then says so.
+The step asks and does nothing else, so the setting never stops the queue, and a channel that has
+gone since the save, whose posts went with it, and a division with no posts up ask nothing.
+
 **Each overtakes a stopped job on the league lane** (`Setting.repairs_the_bot`): a stop notice for
 a channel gone tells the league to set the channel and press Retry, which a change waiting behind
 the stop could never do.
@@ -46,8 +55,15 @@ from leaguebot.core.models.channel_needs import Needs
 from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.services.seasons.approval_checks import PresenceState, judged_presence
 from leaguebot.framework.db.database import get_connection
-from leaguebot.framework.models.change import AuditRecord, Verdict
-from leaguebot.framework.services.queue.change_types import CheckContext
+from leaguebot.framework.models.change import (
+    AuditRecord,
+    FollowOn,
+    PlannedStep,
+    StepKind,
+    StepResult,
+    Verdict,
+)
+from leaguebot.framework.services.queue.change_types import CheckContext, Step, StepContext
 from leaguebot.core.services.settings.channel_registry_service import (
     ChannelUse,
     find_channel_use,
@@ -55,7 +71,7 @@ from leaguebot.core.services.settings.channel_registry_service import (
     unusable_refusal,
 )
 from leaguebot.core.services.settings.division_settings import NO_SEASON_REFUSAL, division_not_found
-from leaguebot.framework.services.queue.setting_change import Saved, Setting
+from leaguebot.framework.services.queue.setting_change import SAVE, After, Saved, Setting
 from leaguebot.framework.utils.league_server import league_guild
 from leaguebot.results.services.module.division_channels import (
     channel_needs,
@@ -64,6 +80,7 @@ from leaguebot.results.services.module.division_channels import (
     set_division_standings_channel,
 )
 
+from leaguebot.results.services.review.review_posting import plan_division_posts
 from leaguebot.results.services.round_amendment.amendment_writes import (
     amendment_wait_text,
     open_amendment_in_division,
@@ -83,7 +100,20 @@ RESULTS_CHANNEL = "results.setting.results_channel"
 STANDINGS_CHANNEL = "results.setting.standings_channel"
 VERDICTS_CHANNEL = "results.setting.verdicts_channel"
 
+ASK_CARRY = "ask_carry"
+#: The bot's own change that carries a moved channel's posts (`publishing/channel_move`), named
+#: here, where it is asked, so that the module that runs it can import what it needs from here.
+CHANNEL_CARRY = "results.channel.carry"
+
 NOT_ENABLED = "❌ The Results & Standings module is not enabled."
+
+
+def carry_what(payload: dict[str, Any]) -> str:
+    """What the carry of *payload* is called in the log: the posts, the division and both channels."""
+    return (
+        f"Carrying the {payload['which']} of **{payload['division_name']}** from "
+        f"<#{payload['old_channel_id']}> to <#{payload['new_channel_id']}>"
+    )
 
 
 def verdicts_division_not_found(name: str) -> str:
@@ -187,6 +217,10 @@ def _channel_setting(
             audits=(audit(old_value, value, division_id),),
             details=details,
             result={"replaced": old_value},
+            then=(
+                (PlannedStep(ASK_CARRY),)
+                if held_column is not None and old_value is not None else ()
+            ),
         )
 
     def doing(payload: dict[str, Any]) -> str:
@@ -194,6 +228,8 @@ def _channel_setting(
             f"Setting the {key} channel for **{payload['division_name']}** to "
             f"<#{int(payload['value'])}>"
         )
+
+    posts = "tables" if key == "results" else "standings"
 
     def reply(payload: dict[str, Any], results: Mapping[str, dict[str, Any]]) -> str:
         saved = results["save"]
@@ -205,7 +241,37 @@ def _channel_setting(
             # answers in the same words should the save ever find it so.
             return f"ℹ️ {mention} is already the {key} channel for **{name}**. Nothing was changed."
         verb = "set" if saved["replaced"] is None else "updated"
-        return said(verb, name, int(payload["value"]), payload["channel_name"])
+        said_so = said(verb, name, int(payload["value"]), payload["channel_name"])
+        if results.get(ASK_CARRY, {}).get("carrying"):
+            said_so += f" The {posts} already up are being moved across."
+        return said_so
+
+    async def ask_carry(ctx: StepContext) -> StepResult:
+        old = next(
+            (view.result or {}).get("replaced") for view in ctx.steps if view.name == SAVE
+        )
+        if old is None or not await _stands(ctx.bot, int(old), (await channel_needs(drawing))[key]):
+            return StepResult(result={"carrying": False})
+        async with get_connection(ctx.db_path) as db:
+            up = await plan_division_posts(
+                db, int(ctx.payload["division_id"]), results_only=key == "results",
+                standings_only=key == "standings",
+            )
+        if not up:
+            return StepResult(result={"carrying": False})
+        carry = {
+            "division_id": int(ctx.payload["division_id"]),
+            "division_name": ctx.payload["division_name"],
+            "which": key,
+            "old_channel_id": int(old),
+            "new_channel_id": int(ctx.payload["value"]),
+        }
+        return StepResult(
+            result={"carrying": True}, follow_ons=(FollowOn(CHANNEL_CARRY, carry, carry_what(carry)),)
+        )
+
+    def carry_fault_reply(_payload: dict[str, Any], reply: str) -> str:
+        return reply
 
     return Setting(
         kind=kind,
@@ -215,6 +281,10 @@ def _channel_setting(
         save=save,
         reply=reply,
         writes=("division_results_config",),
+        after=(
+            {ASK_CARRY: After(Step(ASK_CARRY, StepKind.ACT, ask_carry), carry_fault_reply)}
+            if held_column is not None else {}
+        ),
         repairs_the_bot=True,
     )
 
@@ -302,7 +372,7 @@ def results_channel_settings(
 
 
 __all__ = [
-    "held_channel", "NOT_ENABLED", "RESULTS_CHANNEL", "STANDINGS_CHANNEL", "VERDICTS_CHANNEL",
+    "ASK_CARRY", "CHANNEL_CARRY", "carry_what", "held_channel", "NOT_ENABLED", "RESULTS_CHANNEL", "STANDINGS_CHANNEL", "VERDICTS_CHANNEL",
     "results_channel_settings", "typed_channel_audit", "verdicts_channel_audit",
     "verdicts_division_not_found",
 ]
