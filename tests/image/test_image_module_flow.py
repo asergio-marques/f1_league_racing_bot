@@ -1460,10 +1460,6 @@ async def test_contrast_unmeasurable_where_one_marked_background_cannot_be_read(
     assert "`fastest-lap-background`" in reading.problem
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#616: the shipped race template marks no background behind the fastest lap",
-)
 @pytest.mark.parametrize(
     ("colour", "background", "figure"),
     [("#FFFFFF", "#14171C", "17.96"), ("#000000", "#0B0D10", "1.08"),

@@ -561,10 +561,6 @@ def test_a_shipped_template_paints_the_shared_ground_and_accent(path):
     assert ACCENT in text, path.stem
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#616: the shipped race template marks no shape with the class fastest-lap-background",
-)
 def test_the_race_template_marks_the_ground_behind_every_fastest_lap_cell():
     """The fastest-lap colour paints `row_<x>_fastest_lap`, which sits on the canvas in a row
     with no band and on the band in a row that has one; the contrast check measures every shape
