@@ -52,6 +52,7 @@ from leaguebot.framework.db.database import get_connection, run_migrations
 from leaguebot.core.services.settings.config_service import ConfigService
 from tests.support.channel_faults import answer_attachments, league_server, server_holding
 from tests.support.channel_uses import sign_up_channel_uses_read, sign_up_setting_channels_read
+from tests.support.current_documents import ROOT, current_text_paths
 from tests.support.undecorate import undecorate
 
 SERVER_ID = 4242
@@ -2379,22 +2380,14 @@ def test_nothing_current_names_a_withdrawn_bot_command():
     offers. `specs/` and the constitution's sync reports are historical records and are not
     read; everything a league or a maintainer reads as current is.
     """
-    import pathlib
     import re
 
-    root = pathlib.Path(__file__).resolve().parents[2]
     withdrawn = re.compile(
         r"/bot-(?:init|log-channel|interaction-channel|interaction-role|admin-role|reset)\b"
     )
-    paths = [
-        *sorted((root / "src").rglob("*.py")),
-        root / "README.md",
-        *sorted((root / "docs" / "how-to").glob("*.md")),
-        *sorted((root / "docs" / "wip-specs").glob("*.md")),
-    ]
     offenders = sorted(
-        str(path.relative_to(root))
-        for path in paths
+        str(path.relative_to(ROOT))
+        for path in current_text_paths()
         if withdrawn.search(path.read_text(encoding="utf-8"))
     )
     assert offenders == []
