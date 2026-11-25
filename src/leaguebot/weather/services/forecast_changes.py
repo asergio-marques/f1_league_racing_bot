@@ -864,10 +864,10 @@ def forecast_failure(view: StepView, _steps: Sequence[StepView]) -> tuple[str, s
             if "guild_id" in result and "message_id" in result
             else f"message {result.get('message_id')} in <#{result.get('channel_id')}>"
         )
-        if phase == 0:
+        if view.payload.get("clean_up"):
+            what = f"the {_occasion(phase)} could not be deleted a day after the round"
+        elif phase == 0:
             what = "the mystery round notice could not be deleted"
-        elif view.payload.get("clean_up"):
-            what = f"the Phase {result.get('phase')} forecast could not be deleted a day after the round"
         else:
             which = "superseded" if view.payload.get("superseded") else "withdrawn"
             what = f"the {which} Phase {result.get('phase')} forecast could not be deleted"
@@ -1006,7 +1006,7 @@ def amendment_steps(
     async def describe_forecast_delete(ctx: StepContext) -> str:
         if ctx.step_payload.get("clean_up"):
             return (
-                f"deleting the Phase {ctx.step_payload['phase']} forecast of round "
+                f"deleting the {_occasion(ctx.step_payload['phase'])} of round "
                 f"{await round_number_now(seasons, ctx)} in **{ctx.payload['division_name']}** a "
                 f"day after it"
             )
