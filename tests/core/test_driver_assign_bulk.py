@@ -559,6 +559,46 @@ async def test_a_paste_is_judged_again_as_it_starts(tmp_path, meanwhile, words):
     assert await stopped_job(league.db_path) is None
 
 
+async def test_a_paste_is_judged_again_by_its_save(tmp_path, monkeypatch):
+    """The season is in Placements. The league admin pastes Valtteri into McLaren in Am and Oscar
+    into Williams in Am and is acknowledged. The queue runs it, and its check as it starts lets it
+    through; between the check and the save, Max takes McLaren's last free seat. The save judges
+    the paste again before it writes and refuses it: nobody of the paste is placed, Oscar is given
+    no profile, no audit entry is written, the reply names line 1 and why it was refused, the log
+    channel's refusal names it too, and the queue is not stopped."""
+    from tests.support.change_queue import run_queue, stopped_job
+    from tests.support.season_league import NEWCOMER
+    from tests.support.settings_league import last_said
+
+    league = await _placing_bulk(tmp_path)
+    asked = await _paste(league, "<@106>, Am, McLaren\n<@108>, Am, Williams")
+    placement = league.bot.placement_service
+    guard = placement.guard_assign_paste
+
+    async def _then_the_seat_is_taken(*args, **kwargs):
+        # The check's last guard: once it has passed, the seat is taken before the save runs.
+        faults = await guard(*args, **kwargs)
+        monkeypatch.setattr(placement, "guard_assign_paste", guard)
+        await _fill_mclaren(league)
+        return faults
+
+    monkeypatch.setattr(placement, "guard_assign_paste", _then_the_seat_is_taken)
+    await run_queue(league.bot)
+
+    assert placement.guard_assign_paste is guard, "the check did not run as the change started"
+    reason = "**McLaren** in this division has no available seats."
+    assert _names_line(last_said(asked), 1, reason)
+    assert "Line 2:" not in last_said(asked)
+    assert [p for p in await _placements(league) if p[0] in ("106", str(NEWCOMER))] == []
+    assert await league.rows(
+        "SELECT 1 FROM driver_profiles WHERE discord_user_id = ?", str(NEWCOMER)
+    ) == []
+    assert await _assign_entries(league) == []
+    [line] = await _bulk_lines(league)
+    assert "refused" in line and _names_line(line, 1, reason)
+    assert await stopped_job(league.db_path) is None
+
+
 async def test_a_fault_in_the_save_places_nobody(tmp_path):
     """The season is in Placements. The league admin pastes Valtteri into McLaren in Am and Oscar
     into Williams in Am, and as the queue runs it the database fails writing an audit entry.
