@@ -33,14 +33,15 @@ root is accepted — but most leagues never need to run one.
 **Templates are the exception in the table.** They have nothing to fall back to — the folder
 you configure is the only place a template is searched — so their folder is still
 `defaults/templates/`, and `/images config template-directory` **refuses** a folder that does
-not hold all fifteen, valid. Put the files in place first, then point the bot at it.
+not hold, valid, every template your switched-on outputs need. Put the files in place first,
+then point the bot at it.
 
 ## Using `league/`
 
 **Drop a file in and it is drawn.** There is nothing to configure:
 
 ```
-resources/league/teams/red_bull_racing.svg
+resources/league/teams/red_bull.svg
 ```
 
 **Mixing is the ordinary case, and it is now the default.** Fill `teams` and `drivers` with
@@ -71,7 +72,7 @@ Two different classes need not match each other, and flags and maps deliberately
 > **The bot does not compare one template against another.** Draw flags 3:2 on your calendar
 > and 2:1 on your standings and both are accepted, with your flags letterboxed on one of
 > them. So when you change a class's shape, change it in *every* template that draws it —
-> flags appear on fourteen of the fifteen, team badges on seven.
+> flags appear on fifteen of the sixteen, team badges on seven.
 
 > **The `markers` class is held to nothing at all.** One folder carries the square movement
 > arrows and the marks that stretch into a result cell, so no one shape covers it. An arrow
@@ -86,7 +87,7 @@ Two different classes need not match each other, and flags and maps deliberately
 
 **Shipped:**
 
-- the fifteen default templates in `defaults/templates/`, one per image type;
+- the sixteen default templates in `defaults/templates/`, one per image type;
 - one `fallback.svg` in each asset directory, except `markers/`, which ships two — see below.
   The tyre one is a special case worth knowing: since every compound now ships and a
   submission cannot record anything else, it stands for **no compound recorded** and nothing
@@ -156,12 +157,14 @@ The bot takes the value it wants to draw, normalises it, and appends `.svg`:
 > trim → lowercase → strip accents → every run of non-alphanumeric characters becomes a
 > single underscore → drop leading and trailing underscores
 
-So `Red Bull Racing` is looked up as `red_bull_racing.svg` in whichever directory the team
-badge class points at, and `São Paulo` as `sao_paulo.svg` in the track directory. A name may
-begin with a digit: `2Fast Motorsport` is looked up as `2fast_motorsport.svg`. Driver portraits are the one exception: they are keyed on the
-Discord user ID. The ID is immutable, where both a Discord username and the display name an
-account carries on your server can be changed by the driver at any moment — a portrait keyed
-on either would go missing the day they changed it, so neither is worth keying on.
+So a team whose shorthand is `Red Bull` is looked up as `red_bull.svg` in whichever directory
+the team badge class points at — a team's badge is keyed on its shorthand, never its full
+name — and `São Paulo` as `sao_paulo.svg` in the track directory. A name may begin with a
+digit: the shorthand `2 Fast` is looked up as `2_fast.svg`. Driver portraits are the one
+exception: they are keyed on the Discord user ID. The ID is immutable, where both a Discord
+username and the display name an account carries on your server can be changed by the driver
+at any moment — a portrait keyed on either would go missing the day they changed it, so
+neither is worth keying on.
 
 **The bot can fill `league/drivers/` for you.** `/images use-pfp toggle` lets it obtain each
 driver's portrait from the profile picture they present on your server, saving it under that
@@ -204,7 +207,7 @@ what you supplied, or a placeholder.
 
 This class is not like the other seven, in three ways worth knowing before you use it.
 
-**Nothing draws it until you say so.** None of the fifteen templates the bot ships declares a
+**Nothing draws it until you say so.** None of the sixteen templates the bot ships declares a
 division logo, so the class does nothing at all on a stock installation. To use it, add an
 image node with the id `division_logo` to a template of your own, anywhere you like on the
 canvas, and the logo appears there. Leave it out of a template and that graphic simply carries

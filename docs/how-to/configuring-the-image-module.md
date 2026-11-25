@@ -179,7 +179,7 @@ One flag serves every circuit in the same country, so three American rounds need
 
 The bot works out the filename from the thing it is drawing. It trims the name, makes it lowercase, drops any accents, turns each **run** of spaces and punctuation into a *single* underscore, and drops any underscore left at the start or the end.
 
-So a team called **Red Bull Racing** needs a file called **`red_bull_racing.svg`**, a track called **São Paulo** needs **`sao_paulo.svg`**, and **Alfa Romeo (Sauber)** needs **`alfa_romeo_sauber.svg`** — one underscore between each word, and none trailing.
+So a team whose shorthand is **Red Bull** needs a file called **`red_bull.svg`**, a track called **São Paulo** needs **`sao_paulo.svg`**, and a team whose shorthand is **Alfa (Sauber)** needs **`alfa_sauber.svg`** — one underscore between each word, and none trailing.
 
 **What the name is taken from** varies by folder, and this is the part that trips people up:
 
