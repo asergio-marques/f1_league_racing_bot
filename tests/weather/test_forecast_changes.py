@@ -345,15 +345,8 @@ FORECAST_NOTICE = "no `weather_icon` image for “Heavy rain”"
 FORECAST_FAULT = "the template declares no `phase` field"
 
 
-#: Why the forecast's notice case fails until #635 is built.
-NOT_YET_FRAMED = (
-    "#635: a forecast's notices reach the log as a bare block headed by the kind's code and "
-    "naming the template, the member and the change unnamed"
-)
-
-
 @pytest.mark.parametrize("outcome", [
-    pytest.param("notice", marks=pytest.mark.xfail(strict=True, reason=NOT_YET_FRAMED)),
+    "notice",
     "fault",
 ])
 async def test_a_refused_forecast_s_picture_line_reaches_the_log_once_when_it_is_retried(
@@ -1505,11 +1498,13 @@ async def test_a_forecast_s_channel_is_saved_with_its_message(tmp_path):
 
 
 def _step_context(league: Any, payload: dict[str, Any]) -> Any:
-    """What a forecast job reads of its context: the change's *payload*, none of its own."""
+    """What a forecast job reads of its context: the change's *payload*, none of its own, and the
+    member and the change its log lines open with."""
     from types import SimpleNamespace
 
     return SimpleNamespace(bot=league.bot, db_path=league.db_path, payload=payload,
-                           step_payload={}, kept=None, tries=0, steps=())
+                           step_payload={}, kept=None, tries=0, steps=(), named="the bot",
+                           what="a forecast")
 
 
 def _steps(league: Any) -> dict[str, Any]:
