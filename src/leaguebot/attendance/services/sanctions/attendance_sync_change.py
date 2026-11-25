@@ -56,6 +56,7 @@ from leaguebot.core.models.season import ONGOING_STAGES
 from leaguebot.core.services.drivers import lineup_posting
 from leaguebot.core.services.drivers.role_moves import role_move_step
 from leaguebot.framework.services.posting import standing_posts
+from leaguebot.framework.utils.log_lines import drawn_notices_section
 from leaguebot.framework.services.queue.change_types import (
     ChangeType,
     CheckContext,
@@ -63,6 +64,7 @@ from leaguebot.framework.services.queue.change_types import (
     Step,
     StepContext,
     StepView,
+    drawn_notices_in,
 )
 from leaguebot.core.services.seasons import season_service
 from leaguebot.core.services.seasons.season_approval_change import unposted_lineup_line
@@ -518,7 +520,10 @@ def attendance_sync_change(
             f"{payload['round_number']} on."
         ]
         reply += sanction_reply_lines(saved["applied"], saved["failed"])
-        return "\n".join(reply)
+        # The banners, cards, lineups and sheets the sync drew with notices are listed beneath,
+        # each with the link to the log message holding its notices.
+        section = drawn_notices_section(drawn_notices_in(ctx.steps))
+        return "\n".join(reply) + (f"\n\n{section}" if section else "")
 
     steps = {
         CHECK_RESERVE: Step(CHECK_RESERVE, StepKind.ACT, check_reserve, describe=describe_check),

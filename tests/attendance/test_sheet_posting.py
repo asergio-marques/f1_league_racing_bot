@@ -483,7 +483,6 @@ async def _sheet_notice_is_framed_and_kept(league: Any, interaction: Any) -> Non
     assert told.count(SHEET_NOTICE) == 1, told
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_FRAMED)
 async def test_a_sheet_s_render_notices_reach_the_log_once_naming_the_round(tmp_path):
     """The image module is on with the attendance graphic switched on and its template valid,
     and the image module's render of Pro's sheet is drawn with one notice, a flag falling back.

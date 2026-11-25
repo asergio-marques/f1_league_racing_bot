@@ -898,12 +898,6 @@ CARD_NOTICE = "no `flag` image for “Racer”"
 SHEET_NOTICE = "no `team_badge` image for “Alpha”"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#635: the sync's reply lists no picture drawn with notices, neither the sanction's "
-           "card nor the sheet, and a notice's log line does not open with the member and the "
-           "command",
-)
 async def test_a_refused_sanction_card_s_picture_notice_reaches_the_log_once_when_it_is_retried(
     tmp_path, drawn, monkeypatch,
 ):
