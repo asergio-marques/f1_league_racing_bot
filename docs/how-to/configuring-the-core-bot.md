@@ -291,7 +291,7 @@ The other modules' settings stay open after confirmation, but none of them can b
 /season config-review
 ```
 
-The bot posts the configuration to the channel, a message per subject: test mode, which modules are on, the team list with its roles, and the settings of each module you turned on — signup, attendance, the points configurations attached, the weather deadlines and the image outputs — in the same words the placements review uses later. Then it checks everything that can be checked before the season has any divisions:
+The bot posts the configuration to the channel, a message per subject: test mode, each module on or off with whether that can still change, the team list with its roles, and the settings of each module you turned on — signup, attendance, the points configurations attached, the weather deadlines and the image outputs — in the same words the placements review uses later. Then it checks everything that can be checked before the season has any divisions:
 
 | The check | Only with |
 |---|---|
@@ -482,7 +482,7 @@ With test mode on, a fake driver is created by `/test-mode roster add`, signed u
 
 The bot posts the whole season to the channel, **as several messages rather than one**:
 
-1. The season, and which modules are on.
+1. The season, and each module on or off, in the same words as the configuration review. Approving fixes every module but signup (which the configuration's confirmation fixed): one left off stays off, and one switched off later stays off.
 2. Signup settings.
 3. Attendance settings.
 4. Points configurations.
