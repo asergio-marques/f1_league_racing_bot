@@ -71,10 +71,21 @@ cd <main checkout> && echo $$ > ~/e2e-tests/logs/<run>.pid && exec .venv/bin/pyt
   that it has ended is how you learn the bot stopped. If it stops without being asked to, say so
   at once, with the log's last lines.
 - **The bot is up** when the log shows `Logged in as … (id=…)`.
-- **To stop it,** send it Ctrl-C's signal by its ID, and wait for it to go:
+- **Is it still the bot?** A PID outlives its process: after a reboot or a crash, another program
+  can be given the same number. Before you signal the PID file's process, and before you take it
+  for a running bot, check both its command and its folder:
 
   ```bash
-  pid=$(cat ~/e2e-tests/logs/<run>.pid); kill -INT "$pid"; timeout 60 tail --pid="$pid" -f /dev/null
+  pid=$(cat ~/e2e-tests/logs/<run>.pid); ps -o args= -p "$pid"; readlink /proc/"$pid"/cwd
+  ```
+
+  It is the bot only where the command holds `-m leaguebot` and the folder is the main checkout.
+  Otherwise the bot is gone. Never signal that process.
+- **To stop it,** once the check above passes, send it Ctrl-C's signal by its ID, and wait for it
+  to go:
+
+  ```bash
+  kill -INT <pid>; timeout 60 tail --pid=<pid> -f /dev/null
   ```
 
   SIGINT makes `asyncio.run` cancel the bot and shut it down cleanly. Never `pkill` or `pgrep`
