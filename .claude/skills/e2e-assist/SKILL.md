@@ -129,7 +129,10 @@ When the maintainer says a step is done:
   step as "Step N: pass", or name the step and quote what was expected and what was posted. A
   post the step expects that never appeared is a failure. If nothing new was posted, say so;
   never assume a step passed.
-- Report every WARNING, ERROR or traceback in the log, even where the posts match.
+- Report every WARNING, ERROR or traceback in the log, even where the posts match. Two kinds
+  are expected and are no defect: discord.py's two voice warnings at every start
+  (`PyNaCl is not installed` and `davey is not installed`), and the `KeyboardInterrupt`
+  traceback a stop you asked for leaves behind. List them in the report once, as expected.
 - Look at every downloaded image as a PNG and check it against what the step describes. Send it
   to the maintainer only where it fails or needs their eye.
 - Where something does not match, read `src/` to decide which is wrong. Under `CLAUDE.md`, `src/`
