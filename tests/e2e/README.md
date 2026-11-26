@@ -15,6 +15,11 @@ you can stop and start the bot on its host and delete files beside it, and that 
 are the owner or hold Discord's Administrator permission, which `/bot init` needs, and hold the
 league admin role.
 
+A Claude Code session can assist a run through the `e2e-assist` skill. You still type every
+command. The skill starts the bot, restarts it when you ask, keeps the run's log and report,
+and checks what the bot posted and logged at each step against the spec. It depends on a
+read-only helper bot, the logs and the reports kept on the host in `~/e2e-tests/`, outside the repo.
+
 ## The specs, and the order to run them in
 
 | Spec | What it does |
