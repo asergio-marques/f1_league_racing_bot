@@ -35,10 +35,18 @@ Read `tests/e2e/README.md` first, then the spec.
 
 ## Setting up a run
 
-1. **No bot already running.** Check `ps -eo pid,ppid,etime,args` for a `leaguebot` process,
-   and `systemctl list-units --all` for a bot unit that is active. If one is running, stop and
-   tell the maintainer: two bots on one token fight over the gateway. Never stop one you did not
-   start.
+1. **No bot already running, and no process holding the databases.** Check all three:
+   - `ps -eo pid,ppid,etime,args` for a `leaguebot` process, however it was started;
+   - `systemctl list-units --all` for a bot unit that is active;
+   - `fuser -v <main checkout>/*.db`, for any process holding a database in the main checkout open,
+     whatever its command line: a bot in another terminal, a service, or a script reading it.
+     The glob takes in a database `.env` renames, as long as it sits in the root, without reading
+     `.env`. `fuser` sees only your own user's processes, so a service run as another user shows
+     only in the `systemctl` check.
+
+   If any finds one, stop and tell the maintainer, with its PID and command line. Two bots on one
+   token fight over the gateway, and two processes writing one database corrupt the run. Never
+   stop a process you did not start.
 2. **Name the run** and create its log. `<spec>` is the spec's file name without `.md`:
 
    ```bash
