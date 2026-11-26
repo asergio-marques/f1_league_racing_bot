@@ -53,7 +53,8 @@ Read `tests/e2e/README.md` first, then the spec.
    spec's earlier reports in `~/e2e-tests/reports/` to compare against.
 4. **Check the channels:** `channels`. Tell the maintainer about any channel the spec's
    Fixture names that does not exist. Then `mark`.
-5. **Start the bot** (below), and confirm the log shows it logged in. Note the log's line count.
+5. **Start the bot** (below). Read its start-up lines, from the log's first line, as you would a
+   step's: they count. Note the line read to.
 6. Tell the maintainer the bot is up and the run is ready for step 1.
 
 ## Starting, restarting and stopping the bot
@@ -70,7 +71,10 @@ cd <main checkout> && echo $$ > ~/e2e-tests/logs/<run>.pid && exec .venv/bin/pyt
   `exec` keeps the shell's. The background task ends when the bot does, and the notification
   that it has ended is how you learn the bot stopped. If it stops without being asked to, say so
   at once, with the log's last lines.
-- **The bot is up** when the log shows `Logged in as … (id=…)`.
+- **The bot is up** when the log shows `Synced <n> slash command(s)` after `Logged in as … (id=…)`.
+  Start-up recovery runs between the two. Read only the lines after the last start: the log is
+  appended to, so an earlier start's lines are already in it, and a start that failed must not be
+  taken for a good one.
 - **Is it still the bot?** A PID outlives its process: after a reboot or a crash, another program
   can be given the same number. Before you signal the PID file's process, and before you take it
   for a running bot, check both its command and its folder:
