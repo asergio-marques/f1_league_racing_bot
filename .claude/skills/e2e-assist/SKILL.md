@@ -88,9 +88,13 @@ cd <main checkout> && echo $$ > ~/e2e-tests/logs/<run>.pid && exec .venv/bin/pyt
   kill -INT <pid>; timeout 60 tail --pid=<pid> -f /dev/null
   ```
 
-  SIGINT makes `asyncio.run` cancel the bot and shut it down cleanly. Never `pkill` or `pgrep`
-  by pattern, and never `kill -9` unless the maintainer asks after a stop has timed out.
-- **To restart it,** stop it and start it again with the same `<run>`, so the log is appended to.
+  SIGINT makes `asyncio.run` cancel the bot and shut it down cleanly. The bot has stopped only
+  where `tail` exits 0 and `ps -p <pid>` then finds nothing. If `tail` times out (exit 124),
+  the bot is still up. Tell the maintainer and wait for their word, and start nothing meanwhile.
+  Never `pkill` or `pgrep` by pattern, and never `kill -9` unless the maintainer asks after a stop
+  has timed out.
+- **To restart it,** stop it, and only once it has stopped, start it again with the same `<run>`,
+  so the log is appended to. Two bots on one token fight over the gateway and the database.
   A step that asks for a restart passes only when the log shows the bot starting again, plus any
   start-up line the step quotes, such as `Started on a restored database.`
 - **At the end of the run,** stop the bot when the maintainer says the run is over, unless they
