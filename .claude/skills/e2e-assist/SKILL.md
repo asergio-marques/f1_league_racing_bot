@@ -158,9 +158,19 @@ When the maintainer pauses, set the report's status to say so: the last step che
 read to, and whether the bot was left up.
 
 On `resume <spec>`, take the newest report of that spec whose status is not complete, and its log.
-Read the report, then the log from the line it records. Check whether the bot from the PID file is
-still running (`kill -0 <pid>`). If it is, carry on with it; if not, start it again with the same
-`<run>` once the maintainer says so. `mark` again only if they say messages since the pause do not
+Read the report, then the log from the line it records. Then find out what is running:
+
+- **The PID file's bot**, where the PID file exists and its process passes the "Is it still the
+  bot?" check. Carry on with it. It is not this session's background task, so no notification
+  will say it stopped: check it is still the bot before each step instead.
+- **Any other bot**: set-up step 1's check, run every time. A run paused before this skill
+  existed, or a bot the maintainer restarted by hand, has no PID file, or not this one. Leave that
+  bot alone: tell the maintainer and let them stop it, or carry on with it if they say so. You
+  then cannot stop or restart it yourself.
+- **No bot at all**: start it again with the same `<run>` once the maintainer says so.
+
+A session that ends may take its background tasks with it, the bot included, and not cleanly. When
+a pause ends the session, record in the report whether the bot is still up. `mark` again only if they say messages since the pause do not
 matter; otherwise `new --download` shows them. Carry on from the next step.
 
 ## Rules for the run
