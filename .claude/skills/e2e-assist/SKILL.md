@@ -39,12 +39,15 @@ Read `tests/e2e/README.md` first, then the spec.
    and `systemctl list-units --all` for a bot unit that is active. If one is running, stop and
    tell the maintainer: two bots on one token fight over the gateway. Never stop one you did not
    start.
-2. **Name the run** and create its files:
+2. **Name the run** and create its log. `<spec>` is the spec's file name without `.md`:
 
    ```bash
-   RUN="<spec>-$(date +%F-%H%M)"
-   : >> ~/e2e-tests/logs/$RUN.log
+   RUN="<spec>-$(date +%F-%H%M)"; : >> ~/e2e-tests/logs/$RUN.log; echo "$RUN"
    ```
+
+   Shell variables do not outlive one `Bash` call. Take the name it prints, and write that name
+   out in every later command, the report's and the bot's alike. Never compute it again: a minute
+   turning over between two calls splits the run across two logs.
 
 3. **Create the report** (see "The report") with its header and an empty step table. Read the
    spec's earlier reports in `~/e2e-tests/reports/` to compare against.
