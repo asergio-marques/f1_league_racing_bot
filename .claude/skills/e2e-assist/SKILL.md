@@ -123,6 +123,13 @@ channel it has no permission for. The maintainer pastes or screenshots those.
 
 ## Each step
 
+The maintainer no longer sees the log. Where a step has them act the moment a line appears, as
+`08-recovery.md` does on `Logged in as`, watch for it and tell them at once:
+
+```bash
+timeout 300 tail -n +<next line> -f ~/e2e-tests/logs/<run>.log | grep -m1 -F "<the line>"
+```
+
 When the maintainer says a step is done:
 
 - Run `new --download`, and read the new log lines.
