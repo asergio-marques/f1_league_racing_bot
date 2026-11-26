@@ -52,7 +52,8 @@ Read `tests/e2e/README.md` first, then the spec.
 3. **Create the report** (see "The report") with its header and an empty step table. Read the
    spec's earlier reports in `~/e2e-tests/reports/` to compare against.
 4. **Check the channels:** `channels`. Tell the maintainer about any channel the spec's
-   Fixture names that does not exist. Then `mark`.
+   Fixture names that does not exist, leaving out those the spec itself creates. `00-base`
+   builds its channels in step 1, so for it this check comes after step 1. Then `mark`.
 5. **Start the bot** (below). Read its start-up lines, from the log's first line, as you would a
    step's: they count. Note the line read to.
 6. Tell the maintainer the bot is up and the run is ready for step 1.
